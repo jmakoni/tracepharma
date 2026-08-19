@@ -7,6 +7,8 @@
 /storage/tenant*
 .phpactor.json
 .phpunit.result.cache
+__pycache__/
+*.pyc
 /.codex
 /.cursor/
 /.idea
