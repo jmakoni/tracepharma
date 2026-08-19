@@ -1,0 +1,102 @@
+{
+    "meta": {
+        "disclaimer": "This is a synthetic fixture for automated tests. It is not real openFDA data.",
+        "terms": "https://open.fda.gov/terms/",
+        "license": "https://open.fda.gov/license/",
+        "last_updated": "2026-07-01",
+        "results": {
+            "skip": 0,
+            "limit": 2,
+            "total": 2
+        }
+    },
+    "results": [
+        {
+            "product_id": "TEST-OPENFDA-1_aaa",
+            "product_ndc": "99999-101",
+            "generic_name": "Test Generic Alpha",
+            "brand_name": "TestBrand Alpha",
+            "brand_name_base": "TestBrand",
+            "labeler_name": "OpenFDA Test Labeler Alpha",
+            "finished": true,
+            "marketing_category": "ANDA",
+            "application_number": "ANDA999901",
+            "product_type": "HUMAN PRESCRIPTION DRUG",
+            "dosage_form": "TABLET",
+            "dea_schedule": "CIV",
+            "route": [
+                "ORAL"
+            ],
+            "marketing_start_date": "20200115",
+            "listing_expiration_date": "20301231",
+            "spl_id": "aaa11111-1111-1111-1111-111111111111",
+            "active_ingredients": [
+                {
+                    "name": "TESTOSTERONE ALPHA",
+                    "strength": "10 mg/1"
+                }
+            ],
+            "packaging": [
+                {
+                    "package_ndc": "99999-101-01",
+                    "description": "30 TABLET in 1 BOTTLE",
+                    "marketing_start_date": "20200115",
+                    "sample": false
+                },
+                {
+                    "package_ndc": "99999-101-02",
+                    "description": "90 TABLET in 1 BOTTLE",
+                    "marketing_start_date": "20200115",
+                    "sample": false
+                }
+            ],
+            "openfda": {
+                "upc": [
+                    "030000101018"
+                ],
+                "spl_set_id": [
+                    "bbb22222-2222-2222-2222-222222222222"
+                ],
+                "pharm_class_epc": [
+                    "Alpha Class Increased Activity [EPC]"
+                ]
+            }
+        },
+        {
+            "product_id": "TEST-OPENFDA-2_bbb",
+            "product_ndc": "99999-202",
+            "generic_name": "Test Generic Beta",
+            "brand_name": "",
+            "brand_name_base": "",
+            "labeler_name": "OpenFDA Test Labeler Beta",
+            "finished": true,
+            "marketing_category": "OTC MONOGRAPH NOT FINAL",
+            "application_number": "",
+            "product_type": "HUMAN OTC DRUG",
+            "dosage_form": "CAPSULE",
+            "route": "ORAL",
+            "marketing_start_date": "",
+            "listing_expiration_date": "20990101",
+            "spl_id": "ccc33333-3333-3333-3333-333333333333",
+            "active_ingredients": [
+                {
+                    "name": "TEST INGREDIENT BETA",
+                    "strength": "500 mg/1"
+                }
+            ],
+            "packaging": [
+                {
+                    "package_ndc": "99999-202-01",
+                    "description": "100 CAPSULE in 1 BOTTLE",
+                    "marketing_start_date": "20200601",
+                    "sample": false
+                }
+            ],
+            "openfda": {
+                "spl_set_id": [
+                    "ddd44444-4444-4444-4444-444444444444"
+                ]
+            }
+        }
+    ]
+}

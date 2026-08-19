@@ -1,0 +1,137 @@
+{
+    "meta": {
+        "disclaimer": "This is a synthetic fixture for automated tests. It is not real openFDA data.",
+        "terms": "https://open.fda.gov/terms/",
+        "license": "https://open.fda.gov/license/",
+        "last_updated": "2026-07-01",
+        "results": {
+            "skip": 0,
+            "limit": 2,
+            "total": 2
+        }
+    },
+    "results": [
+        {
+            "submissions": [
+                {
+                    "submission_type": "ORIG",
+                    "submission_number": "1",
+                    "submission_status": "AP",
+                    "submission_status_date": "20020221"
+                }
+            ],
+            "application_number": "ANDA075911",
+            "sponsor_name": "TESTOBEDIENT",
+            "openfda": {
+                "application_number": [
+                    "ANDA075911"
+                ],
+                "brand_name": [
+                    "TESTULOSE"
+                ],
+                "generic_name": [
+                    "TESTULOSE"
+                ],
+                "manufacturer_name": [
+                    "Test Laboratories, Inc."
+                ],
+                "product_ndc": [
+                    "0116-4005"
+                ],
+                "product_type": [
+                    "HUMAN PRESCRIPTION DRUG"
+                ],
+                "route": [
+                    "ORAL"
+                ],
+                "substance_name": [
+                    "TESTULOSE"
+                ],
+                "spl_id": [
+                    "4f6f0368-4b59-a9df-e063-6294a90ae43c"
+                ],
+                "spl_set_id": [
+                    "df62ad54-5aba-4d05-e053-2a95a90aa48d"
+                ],
+                "package_ndc": [
+                    "0116-4005-08",
+                    "0116-4005-40",
+                    "0116-4005-41",
+                    "0116-4005-16"
+                ],
+                "pharm_class_epc": [
+                    "Osmotic Laxative [EPC]"
+                ]
+            },
+            "products": [
+                {
+                    "product_number": "001",
+                    "reference_drug": "No",
+                    "brand_name": "TESTULOSE",
+                    "active_ingredients": [
+                        {
+                            "name": "TESTULOSE",
+                            "strength": "10GM/15ML"
+                        }
+                    ],
+                    "reference_standard": "No",
+                    "dosage_form": "SOLUTION",
+                    "route": "ORAL",
+                    "marketing_status": "Prescription",
+                    "te_code": "AA"
+                }
+            ]
+        },
+        {
+            "submissions": [
+                {
+                    "submission_type": "ORIG",
+                    "submission_number": "1",
+                    "submission_status": "AP",
+                    "submission_status_date": "20100101"
+                }
+            ],
+            "application_number": "ANDA999902",
+            "sponsor_name": "TEST UNMATCHED SPONSOR",
+            "openfda": {
+                "application_number": [
+                    "ANDA999902"
+                ],
+                "brand_name": [
+                    "UNMATCHEDBRAND"
+                ],
+                "generic_name": [
+                    "UNMATCHED GENERIC"
+                ],
+                "product_ndc": [
+                    "99999-303"
+                ],
+                "product_type": [
+                    "HUMAN PRESCRIPTION DRUG"
+                ],
+                "route": [
+                    "ORAL"
+                ],
+                "package_ndc": [
+                    "99999-303-01",
+                    "99999-303-02"
+                ]
+            },
+            "products": [
+                {
+                    "product_number": "001",
+                    "brand_name": "UNMATCHEDBRAND",
+                    "active_ingredients": [
+                        {
+                            "name": "UNMATCHED INGREDIENT",
+                            "strength": "5 mg/1"
+                        }
+                    ],
+                    "dosage_form": "TABLET",
+                    "route": "ORAL",
+                    "marketing_status": "Prescription"
+                }
+            ]
+        }
+    ]
+}

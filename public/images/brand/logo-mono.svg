@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 48" role="img" aria-label="TracePharma">
+  <g transform="translate(2, 6)" fill="currentColor" stroke="currentColor">
+    <path d="M18 7 L28 12.5 L28 25.5 L18 31 L8 25.5 L8 12.5 Z" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M18 9.5 V19 M18 19 L9 24.5 M18 19 L27 24.5" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="18" cy="9.5" r="2.3" stroke="none"/>
+    <circle cx="9" cy="24.5" r="2.3" stroke="none"/>
+    <circle cx="27" cy="24.5" r="2.3" stroke="none"/>
+    <circle cx="18" cy="19" r="3.8" stroke="none"/>
+    <circle cx="18" cy="19" r="3.8" fill="none" stroke-width="2.4"/>
+  </g>
+  <line x1="40" y1="24" x2="48" y2="24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".4"/>
+  <text x="48" y="31" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" letter-spacing="0.03em" fill="currentColor">
+    <tspan font-weight="700" letter-spacing="0.055em">TRACE</tspan><tspan font-weight="500">PHARMA</tspan>
+  </text>
+</svg>

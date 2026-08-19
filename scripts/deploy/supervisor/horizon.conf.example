@@ -1,0 +1,29 @@
+; Example Supervisor programs for Laravel Horizon / queue workers on tracepharma.io.
+; Production deploys use the dedicated files in this directory:
+;
+;   tracepharma-prod-horizon.conf      → /var/www/html/tracepharma-prod
+;   tracepharma-stage-horizon.conf       → /var/www/html/tracepharma-stage
+;   tracepharma-marketing-queue.conf     → /var/www/html/tracepharma-marketing (database queue)
+;   pharmatrace-internal-horizon.conf    → /home/jmakoni/projects/vatengitracerx.com (*.internal.vatengi.com)
+;
+; Schedulers use cron templates in scripts/deploy/cron/ (prod + stage only).
+;
+; Install all tracepharma workers:
+;   sudo cp scripts/deploy/supervisor/tracepharma-*.conf /etc/supervisor/conf.d/
+;   sudo cp scripts/deploy/cron/tracepharma-scheduler-* /etc/cron.d/
+;   sudo supervisorctl reread && sudo supervisorctl update
+;
+; See docs/operations/tracepharma-deployment.md and local-dev-queues.md.
+
+[program:tracepharma-prod-horizon]
+process_name=%(program_name)s
+command=/usr/bin/php /var/www/html/tracepharma-prod/artisan horizon
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/tracepharma-prod-horizon.log
+stopwaitsecs=3660

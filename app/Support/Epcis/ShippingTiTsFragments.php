@@ -1,0 +1,158 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Epcis;
+
+/**
+ * DSCSA TI/TS fragments for outbound shipping EPCIS: business transaction
+ * references, source/destination parties, the transaction statement, and the
+ * SBDH.
+ *
+ * Shared by the first-send document (GenerateShippingEpcisEvents) and the
+ * full-history rebuild ({@see BuildFullHistoryShippingEpcisXml}) so the two
+ * never drift on URN or element shapes.
+ */
+final class ShippingTiTsFragments
+{
+    public const BTT_PO = 'urn:epcglobal:cbv:btt:po';
+
+    public const BTT_DESADV = 'urn:epcglobal:cbv:btt:desadv';
+
+    public const SDT_OWNING_PARTY = 'urn:epcglobal:cbv:sdt:owning_party';
+
+    public const SDT_LOCATION = 'urn:epcglobal:cbv:sdt:location';
+
+    public const LEGAL_NOTICE = 'Seller has complied with each applicable subsection of FDCA Sec. 581(27)(A)-(G).';
+
+    /**
+     * The PO is referenced against the buyer's GLN and the ASN against the
+     * seller's, per the GS1 US Implementation Guideline.
+     *
+     * @return list<array{type_uri: string, value: string}>
+     */
+    public static function bizTransactions(
+        ?string $po,
+        ?string $asn,
+        ?string $destOwningGln,
+        ?string $sourceOwningGln,
+    ): array {
+        $transactions = [];
+
+        if (filled($po) && filled($destOwningGln)) {
+            $transactions[] = [
+                'type_uri' => self::BTT_PO,
+                'value' => self::bizTransactionUrn((string) $destOwningGln, (string) $po),
+            ];
+        }
+
+        if (filled($asn) && filled($sourceOwningGln)) {
+            $transactions[] = [
+                'type_uri' => self::BTT_DESADV,
+                'value' => self::bizTransactionUrn((string) $sourceOwningGln, (string) $asn),
+            ];
+        }
+
+        return $transactions;
+    }
+
+    public static function bizTransactionUrn(string $gln, string $reference): string
+    {
+        return 'urn:epcglobal:cbv:bt:'.$gln.':'.$reference;
+    }
+
+    /**
+     * Empty string when neither reference can be authored, so the event omits the
+     * element rather than emitting an invalid empty list.
+     */
+    public static function bizTransactionListXml(
+        ?string $po,
+        ?string $asn,
+        ?string $destOwningGln,
+        ?string $sourceOwningGln,
+    ): string {
+        $transactions = self::bizTransactions($po, $asn, $destOwningGln, $sourceOwningGln);
+
+        if ($transactions === []) {
+            return '';
+        }
+
+        $items = '';
+        foreach ($transactions as $transaction) {
+            $items .= '          <bizTransaction type="'.self::e($transaction['type_uri']).'">'
+                .self::e($transaction['value'])
+                ."</bizTransaction>\n";
+        }
+
+        return
+            "        <bizTransactionList>\n".
+            $items.
+            "        </bizTransactionList>\n";
+    }
+
+    public static function sourceDestinationExtensionXml(
+        string $sourceOwningSgln,
+        string $sourceLocationSgln,
+        string $destOwningSgln,
+        string $destLocationSgln,
+    ): string {
+        return
+            "        <extension>\n".
+            "          <sourceList>\n".
+            '            <source type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($sourceOwningSgln)."</source>\n".
+            '            <source type="'.self::e(self::SDT_LOCATION).'">'.self::e($sourceLocationSgln)."</source>\n".
+            "          </sourceList>\n".
+            "          <destinationList>\n".
+            '            <destination type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($destOwningSgln)."</destination>\n".
+            '            <destination type="'.self::e(self::SDT_LOCATION).'">'.self::e($destLocationSgln)."</destination>\n".
+            "          </destinationList>\n".
+            "        </extension>\n";
+    }
+
+    /**
+     * Indented for a direct child of EPCISHeader.
+     */
+    public static function dscsaTransactionStatementXml(): string
+    {
+        return
+            "    <gs1ushc:dscsaTransactionStatement>\n".
+            "      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
+            '      <gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
+            "    </gs1ushc:dscsaTransactionStatement>\n";
+    }
+
+    /**
+     * Indented for a direct child of EPCISHeader.
+     *
+     * @param  string  $creationDate  already formatted as xs:dateTime
+     */
+    public static function sbdhXml(
+        string $senderGln,
+        string $receiverGln,
+        string $instanceId,
+        string $creationDate,
+    ): string {
+        return
+            "    <sbdh:StandardBusinessDocumentHeader>\n".
+            "      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>\n".
+            "      <sbdh:Sender>\n".
+            '        <sbdh:Identifier Authority="GLN">'.self::e($senderGln)."</sbdh:Identifier>\n".
+            "      </sbdh:Sender>\n".
+            "      <sbdh:Receiver>\n".
+            '        <sbdh:Identifier Authority="GLN">'.self::e($receiverGln)."</sbdh:Identifier>\n".
+            "      </sbdh:Receiver>\n".
+            "      <sbdh:DocumentIdentification>\n".
+            "        <sbdh:Standard>EPCglobal</sbdh:Standard>\n".
+            "        <sbdh:TypeVersion>1.0</sbdh:TypeVersion>\n".
+            '        <sbdh:InstanceIdentifier>'.self::e($instanceId)."</sbdh:InstanceIdentifier>\n".
+            "        <sbdh:Type>Events</sbdh:Type>\n".
+            '        <sbdh:CreationDateAndTime>'.self::e($creationDate)."</sbdh:CreationDateAndTime>\n".
+            "      </sbdh:DocumentIdentification>\n".
+            "    </sbdh:StandardBusinessDocumentHeader>\n";
+    }
+
+    private static function e(string $value): string
+    {
+        return htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+    }
+}

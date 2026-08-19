@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument
+    xmlns:epcis="urn:epcglobal:epcis:xsd:1"
+    xmlns:sbdh="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader"
+    xmlns:cbvmda="urn:epcglobal:cbv:mda"
+    xmlns:gs1ushc="http://epcis.gs1us.org/hc/ns"
+    schemaVersion="1.2"
+    creationDate="2026-07-15T20:15:49.056Z">
+  <EPCISHeader>
+    <sbdh:StandardBusinessDocumentHeader>
+      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>
+      <sbdh:Sender>
+        <sbdh:Identifier Authority="GLN">0301160000009</sbdh:Identifier>
+      </sbdh:Sender>
+      <sbdh:Receiver>
+        <sbdh:Identifier Authority="GLN">0096295000009</sbdh:Identifier>
+      </sbdh:Receiver>
+      <sbdh:DocumentIdentification>
+        <sbdh:Standard>EPCglobal</sbdh:Standard>
+        <sbdh:TypeVersion>1.0</sbdh:TypeVersion>
+        <sbdh:InstanceIdentifier>11111111-2222-3333-4444-555555555555</sbdh:InstanceIdentifier>
+        <sbdh:Type>Events</sbdh:Type>
+        <sbdh:CreationDateAndTime>2026-07-15T20:15:49.056Z</sbdh:CreationDateAndTime>
+      </sbdh:DocumentIdentification>
+    </sbdh:StandardBusinessDocumentHeader>
+    <gs1ushc:dscsaTransactionStatement>
+      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>
+      <gs1ushc:legalNotice>Seller has complied with each applicable subsection of FDCA Sec. 581(27)(A)-(G).</gs1ushc:legalNotice>
+    </gs1ushc:dscsaTransactionStatement>
+  </EPCISHeader>
+  <EPCISBody>
+    <EventList>
+      <ObjectEvent>
+        <eventTime>2026-06-18T23:27:32.897Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sgtin:030116.0200116.10000082001560</epc>
+        </epcList>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+        <readPoint>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </readPoint>
+        <bizLocation>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </bizLocation>
+        <extension>
+          <ilmd>
+            <cbvmda:lotNumber>606412T</cbvmda:lotNumber>
+            <cbvmda:itemExpirationDate>2029-05-31</cbvmda:itemExpirationDate>
+          </ilmd>
+        </extension>
+      </ObjectEvent>
+      <AggregationEvent>
+        <eventTime>2026-07-15T19:24:20.000Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <parentID>urn:epc:id:sscc:030116.01001227052</parentID>
+        <childEPCs>
+          <epc>urn:epc:id:sgtin:030116.0200116.10000082001560</epc>
+        </childEPCs>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:packing</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:in_progress</disposition>
+        <readPoint>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </readPoint>
+        <bizLocation>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </bizLocation>
+      </AggregationEvent>
+    </EventList>
+  </EPCISBody>
+</epcis:EPCISDocument>

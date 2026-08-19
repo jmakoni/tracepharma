@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument
+    xmlns:epcis="urn:epcglobal:epcis:xsd:1"
+    xmlns:sbdh="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader"
+    xmlns:cbvmda="urn:epcglobal:cbv:mda"
+    xmlns:gs1ushc="http://epcis.gs1us.org/hc/ns"
+    schemaVersion="1.2"
+    creationDate="2026-07-15T23:06:33.411Z">
+  <EPCISHeader>
+    <sbdh:StandardBusinessDocumentHeader>
+      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>
+      <sbdh:Sender>
+        <sbdh:Identifier Authority="GLN">0301160000009</sbdh:Identifier>
+      </sbdh:Sender>
+      <sbdh:Receiver>
+        <sbdh:Identifier Authority="GLN">0860249001509</sbdh:Identifier>
+      </sbdh:Receiver>
+      <sbdh:DocumentIdentification>
+        <sbdh:Standard>EPCglobal</sbdh:Standard>
+        <sbdh:TypeVersion>1.0</sbdh:TypeVersion>
+        <sbdh:InstanceIdentifier>aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</sbdh:InstanceIdentifier>
+        <sbdh:Type>Events</sbdh:Type>
+        <sbdh:CreationDateAndTime>2026-07-15T23:06:33.411Z</sbdh:CreationDateAndTime>
+      </sbdh:DocumentIdentification>
+    </sbdh:StandardBusinessDocumentHeader>
+    <gs1ushc:dscsaTransactionStatement>
+      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>
+      <gs1ushc:legalNotice>Seller has complied with each applicable subsection of FDCA Sec. 581(27)(A)-(G).</gs1ushc:legalNotice>
+    </gs1ushc:dscsaTransactionStatement>
+  </EPCISHeader>
+  <EPCISBody>
+    <EventList>
+      <ObjectEvent>
+        <eventTime>2026-07-06T21:12:18.697Z</eventTime>
+        <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sscc:030116.01001274303</epc>
+        </epcList>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+      </ObjectEvent>
+    </EventList>
+  </EPCISBody>
+</epcis:EPCISDocument>

@@ -1,0 +1,4 @@
+Type	Facility_Name	Doing_Business_As	Facility_Street	Facility_City	Facility_State	Facility_Zip	License_Number	License_State	License_Expiration_Date	Facility_Contact_Name	Facility_Contact_Phone	Facility_Contact_Email	Reporting_Year
+WDD	Test WDD Partner Alpha		100 Alpha Way	Austin	US-TX	78701	LIC-ALPHA-001	US-TX	12/31/2027	Alpha Contact	512-555-0100	alpha@example.test	2026
+3PL	Unlisted Facility LLC	Test WDD Partner Beta	200 Beta Blvd	Dallas	US-TX	75201	LIC-BETA-002	US-TX	06/30/2027	Beta Contact	214-555-0200	beta@example.test	2026
+WDD	Totally Unknown Facility Co		300 Nowhere Rd	Houston	US-TX	77001	LIC-UNK-003	US-TX	01/15/2028	Unknown Contact	713-555-0300	unknown@example.test	2026

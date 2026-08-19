@@ -1,0 +1,87 @@
+@extends('marketing.layout')
+
+@section('title', 'Terms of Service — TracePharma')
+@section('meta_description', 'TracePharma Terms of Service for the L4 DSCSA traceability platform—account use, Customer Data, regulatory responsibilities, disclaimers, and contact.')
+
+@section('content')
+  @php
+      $sections = \App\Support\Marketing\TermsOfService::sections();
+      $effectiveDate = \App\Support\Marketing\TermsOfService::effectiveDate();
+      $version = \App\Support\Marketing\TermsOfService::version();
+  @endphp
+
+    <x-marketing.page-hero
+        eyebrow="Legal"
+        title="Terms of Service"
+        description="These terms govern access to TracePharma websites, tenant workspaces, APIs, and related services operated by Vatengi Systems LLC for US supply-chain traceability."
+    >
+        <x-slot:breadcrumb>
+            Terms of Service
+        </x-slot:breadcrumb>
+        <x-slot:actions>
+            <a href="{{ route('marketing.privacy') }}">Privacy Policy →</a>
+            <a href="{{ route('marketing.contact') }}">Contact us →</a>
+        </x-slot:actions>
+    </x-marketing.page-hero>
+
+    <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+        <div class="mb-10 max-w-3xl text-sm leading-relaxed text-tp-muted">
+            <p>
+                <strong class="text-tp-ink">Effective date:</strong> {{ $effectiveDate }}
+                <span class="mx-2 text-tp-border">·</span>
+                <strong class="text-tp-ink">Version:</strong> {{ $version }}
+            </p>
+            <p class="mt-3">
+                Please read these Terms carefully before using TracePharma. The Service is provided by
+                <strong class="text-tp-ink">{{ \App\Support\Marketing\TermsOfService::legalEntityName() }}</strong>.
+                These Terms apply to evaluation tenants, production subscriptions, and marketing-site visitors who create accounts or submit demo requests where account provisioning occurs.
+            </p>
+        </div>
+
+        <div class="grid gap-12 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:gap-16">
+            <nav class="lg:sticky lg:top-24 lg:self-start" aria-label="Terms sections">
+                <h2 class="text-xs font-semibold uppercase tracking-wide text-tp-muted">On this page</h2>
+                <ol class="mt-4 space-y-2 text-sm">
+                    @foreach ($sections as $section)
+                        <li>
+                            <a
+                                href="#{{ $section['id'] }}"
+                                class="text-tp-muted transition hover:text-tp-link"
+                            >
+                                {{ $section['title'] }}
+                            </a>
+                        </li>
+                    @endforeach
+                </ol>
+            </nav>
+
+            <div class="min-w-0 space-y-12">
+                @foreach ($sections as $section)
+                    <article id="{{ $section['id'] }}" class="scroll-mt-24 border-b border-tp-border pb-12 last:border-b-0">
+                        <h2 class="text-lg font-semibold text-tp-ink">{{ $section['title'] }}</h2>
+
+                        <div class="mt-5 space-y-4 text-sm leading-relaxed text-tp-muted">
+                            @foreach ($section['paragraphs'] as $paragraph)
+                                <p>{{ $paragraph }}</p>
+                            @endforeach
+
+                            @if (! empty($section['bullets']))
+                                <ul class="mt-2 list-disc space-y-2 pl-5">
+                                    @foreach ($section['bullets'] as $bullet)
+                                        <li>{{ $bullet }}</li>
+                                    @endforeach
+                                </ul>
+                            @endif
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        </div>
+
+        <p class="mt-12 text-xs leading-relaxed text-tp-muted">
+            © {{ date('Y') }} {{ \App\Support\Marketing\TermsOfService::legalEntityName() }}.
+            TracePharma is a service of {{ \App\Support\Marketing\TermsOfService::legalEntityName() }}.
+            See also our <a href="{{ route('marketing.privacy') }}" class="text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">Privacy Policy</a>.
+        </p>
+    </section>
+@endsection

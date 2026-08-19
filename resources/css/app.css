@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+@import './design-tokens.css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../views/marketing/**/*.blade.php';
+@source '../views/components/marketing/**/*.blade.php';
+@source '../views/components/legal/**/*.blade.php';
+@source '../views/components/ui/**/*.blade.php';
+
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@plugin "daisyui" {
+    themes: false;
+}
+
+@import './daisyui/tracepharma-themes.css';

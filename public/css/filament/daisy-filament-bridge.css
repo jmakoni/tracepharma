@@ -1,0 +1,226 @@
+/**
+ * Flowbite-style Filament sidebar / main layout overrides.
+ * Plain CSS + daisyUI CSS variables (no hardcoded hex).
+ *
+ * Loaded via FilamentAsset (public/css/filament/daisy-filament-bridge.css).
+ * Keep this file and the public copy in sync — Tailwind v4 theme builds
+ * strip arbitrary CSS when imported into viteTheme entrypoints.
+ */
+
+/* Sidebar surface */
+.fi-sidebar {
+    background-color: var(--color-base-100);
+    border-inline-end: 1px solid var(--color-base-300);
+}
+
+.dark .fi-sidebar,
+html.dark .fi-sidebar {
+    background-color: var(--color-base-200);
+    border-inline-end-color: var(--color-base-300);
+}
+
+/* Main canvas + topbar — align with daisyUI base tokens */
+.fi-main,
+.fi-main-ctn {
+    background-color: var(--color-base-200);
+}
+
+.fi-topbar {
+    background-color: var(--color-base-100);
+    border-block-end: 1px solid var(--color-base-300);
+}
+
+.dark .fi-main,
+html.dark .fi-main,
+.dark .fi-main-ctn,
+html.dark .fi-main-ctn {
+    background-color: var(--color-base-100);
+}
+
+.dark .fi-topbar,
+html.dark .fi-topbar {
+    background-color: var(--color-base-200);
+    border-block-end-color: var(--color-base-300);
+}
+
+@media (min-width: 1024px) {
+    .fi-sidebar.fi-sidebar-open {
+        box-shadow: none;
+    }
+
+    /*
+     * Flowbite pattern: fixed w-64 sidebar + main content margin.
+     * Overrides Filament lg:sticky so content is not double-offset.
+     */
+    .fi-body:not(.fi-body-has-top-navigation) .fi-sidebar.fi-sidebar-open,
+    .fi-body:not(.fi-body-has-top-navigation):not(.fi-body-has-sidebar-collapsible-on-desktop):not(
+            .fi-body-has-sidebar-fully-collapsible-on-desktop
+        )
+        .fi-sidebar:not(.fi-sidebar-open) {
+        position: fixed !important;
+        inset-block: 0;
+        inset-inline-start: 0;
+        z-index: 20;
+        width: 16rem; /* w-64 */
+        height: 100dvh;
+        transform: translateX(0) !important;
+    }
+
+    .fi-body-has-topbar .fi-sidebar {
+        top: 0;
+        height: 100dvh;
+    }
+
+    .fi-body-has-navigation:not(.fi-body-has-top-navigation) .fi-main-ctn {
+        margin-inline-start: 16rem; /* lg:ms-64 */
+        min-width: 0;
+        flex: 1 1 0%;
+    }
+}
+
+/* Nav density (Flowbite ergonomics) */
+.fi-sidebar-nav {
+    padding: 1rem 0.75rem; /* py-4 px-3 */
+    row-gap: 1rem;
+}
+
+.fi-sidebar-nav-groups {
+    row-gap: 1rem;
+}
+
+.fi-sidebar-group,
+.fi-sidebar-group-items,
+.fi-sidebar-item.fi-active,
+.fi-sidebar-item.fi-sidebar-item-has-active-child-items {
+    row-gap: 0.25rem; /* gap-y-1 */
+}
+
+.fi-sidebar-item-btn {
+    border-radius: 0.5rem; /* rounded-lg */
+    padding: 0.5rem 0.75rem; /* py-2 px-3 */
+}
+
+.fi-sidebar-item-btn > .fi-icon,
+.fi-sidebar-item-grouped-border {
+    display: flex;
+    width: 1.5rem; /* w-6 */
+    height: 1.5rem; /* h-6 */
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+/*
+ * Solid primary buttons always use white label + icon.
+ * Covers Filament fi-btn and daisyUI btn-primary (Operations Hub, custom Blade).
+ */
+.btn.btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-link):not(.btn-soft) {
+    color: #fcfcfd;
+}
+
+.btn.btn-primary:not(.btn-outline):not(.btn-ghost):not(.btn-link):not(.btn-soft) svg {
+    color: #fcfcfd;
+}
+
+.fi-btn.fi-color-primary:not(.fi-outlined):not(label) {
+    --text: #ffffff;
+    --dark-text: #ffffff;
+    color: #ffffff;
+}
+
+.fi-btn.fi-color-primary:not(.fi-outlined):not(label) > .fi-icon,
+.fi-btn.fi-color-primary:not(.fi-outlined):not(label) .fi-icon {
+    color: #ffffff;
+}
+
+/* Table column titles — uppercase (incl. sortable sort-btn labels) */
+.fi-ta-header-cell,
+.fi-ta-header-cell .fi-ta-header-cell-sort-btn,
+.fi-ta-header-cell .fi-ta-header-cell-tooltip,
+.fi-ta-header-group-cell,
+.fi-ta-table-stacked-header-cell {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Site view slide-over: Edit sits in the sticky header, immediately before the close (X) */
+.tp-site-view-slideover .tp-site-view-header-edit {
+    position: absolute;
+    inset-inline-end: 3.5rem; /* left of close at end-6 */
+    top: 1.25rem; /* matches slide-over close top-5 */
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+}
+
+.tp-site-view-slideover.fi-modal-window-has-close-btn:not(.fi-modal-window-has-icon) .fi-modal-heading {
+    margin-inline-end: 5.5rem; /* room for Edit + close */
+}
+
+/* Regulatory compliance password gate — first thing users see in mutating modals */
+.tp-regulatory-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-block-end: 0.25rem;
+    border-inline-start-width: 4px;
+    border-inline-start-color: var(--color-warning);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+}
+
+.tp-regulatory-notice__icon {
+    margin-block-start: 0.125rem;
+    color: var(--color-warning-content, var(--color-warning));
+}
+
+.tp-regulatory-notice__label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-warning-content, inherit);
+}
+
+.tp-regulatory-notice__text {
+    margin: 0.35rem 0 0;
+    font-weight: 500;
+    color: inherit;
+}
+
+/* Keep Placeholder chrome from diluting the banner */
+.fi-fo-placeholder:has(.tp-regulatory-notice) .fi-fo-placeholder-content,
+.fi-fo-field-wrp:has(.tp-regulatory-notice) {
+    width: 100%;
+}
+
+/* Resource list tabs: Filament centers non-contained .fi-tabs with margin-inline:auto */
+.fi-sc-tabs.fi-tabs-align-start > .fi-tabs:not(.fi-contained) {
+    margin-inline: 0;
+}
+
+/* Trading partner create/edit: Address and Identity cards share one row height */
+.tp-equal-height-sections > .fi-sc > * {
+    display: flex;
+}
+
+.tp-equal-height-sections .fi-sc-component,
+.tp-equal-height-sections .fi-sc-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+}
+
+.tp-equal-height-sections .fi-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+}
+
+.tp-equal-height-sections .fi-section-content-ctn {
+    flex: 1 1 auto;
+}

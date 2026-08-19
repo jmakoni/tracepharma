@@ -1,0 +1,17 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/Admin/**/*';
+@source '../../../../resources/views/filament/**/*';
+@source '../../../../resources/views/components/**/*';
+@source '../../../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@plugin "daisyui" {
+    themes: false;
+}
+
+@import '../../daisyui/tracepharma-themes.css';
+
+.fi-topbar-item.tp-nav-icon-only .fi-topbar-item-label,
+.fi-sidebar-item.tp-nav-icon-only .fi-sidebar-item-label {
+    display: none;
+}

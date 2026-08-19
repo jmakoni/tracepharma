@@ -1,0 +1,100 @@
+/**
+ * TracePharma daisyUI themes — Coolors palette
+ * Brilliance / Little Dipper / Buffed Plum / Garish Green / Heavy Grey / Wall Street
+ * Imported after @plugin "daisyui" { themes: false; } in CSS entrypoints.
+ */
+
+@plugin "daisyui/theme" {
+    name: "tracepharma";
+    default: true;
+    color-scheme: light;
+
+    /* Brilliance / Little Dipper / Buffed Plum */
+    --color-base-100: #fcfcfd;
+    --color-base-200: #e3e5ea;
+    --color-base-300: #aeb2b9;
+    --color-base-content: #676c73;
+
+    /* Garish Green */
+    --color-primary: #51bc8f;
+    --color-primary-content: #fcfcfd;
+
+    /* Heavy Grey */
+    --color-secondary: #838589;
+    --color-secondary-content: #fcfcfd;
+
+    --color-accent: #51bc8f;
+    --color-accent-content: #fcfcfd;
+
+    /* Wall Street */
+    --color-neutral: #676c73;
+    --color-neutral-content: #fcfcfd;
+
+    --color-info: #838589;
+    --color-info-content: #fcfcfd;
+
+    --color-success: #51bc8f;
+    --color-success-content: #fcfcfd;
+
+    --color-warning: #ffab00;
+    --color-warning-content: #676c73;
+
+    --color-error: #ea4758;
+    --color-error-content: #fcfcfd;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.25rem;
+    --radius-box: 0.5rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+    name: "tracepharma-dark";
+    prefersdark: true;
+    color-scheme: dark;
+
+    /* Wall Street stack → Brilliance text */
+    --color-base-100: #2d3035;
+    --color-base-200: #676c73;
+    --color-base-300: #aeb2b9;
+    --color-base-content: #fcfcfd;
+
+    /* Garish Green — white label on solid primary buttons */
+    --color-primary: #51bc8f;
+    --color-primary-content: #fcfcfd;
+
+    /* Heavy Grey */
+    --color-secondary: #838589;
+    --color-secondary-content: #fcfcfd;
+
+    --color-accent: #51bc8f;
+    --color-accent-content: #fcfcfd;
+
+    --color-neutral: #838589;
+    --color-neutral-content: #fcfcfd;
+
+    --color-info: #aeb2b9;
+    --color-info-content: #2d3035;
+
+    --color-success: #51bc8f;
+    --color-success-content: #2d3035;
+
+    --color-warning: #ffab00;
+    --color-warning-content: #2d3035;
+
+    --color-error: #ea4758;
+    --color-error-content: #fcfcfd;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.25rem;
+    --radius-box: 0.5rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
