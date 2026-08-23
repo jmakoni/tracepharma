@@ -33,6 +33,8 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\OutboundConnection;
+use App\Models\Quarantine\QuarantineHold;
+use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
@@ -40,6 +42,7 @@ use App\Models\Site;
 use App\Models\SsccLabel;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
@@ -58,6 +61,7 @@ use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -206,6 +210,8 @@ class OutboundShippingSessionTest extends TestCase
         $tenant = $this->initializeWholesalerTenant();
 
         try {
+            $this->prepareFixtureReceivingState();
+
             $site = $this->createShipSite($tenant);
             $otherSite = Site::query()->create([
                 'name' => 'Other Site '.Str::random(6),
@@ -589,9 +595,16 @@ class OutboundShippingSessionTest extends TestCase
                 ->instance()
                 ->getAction('startCorrectiveShip');
 
-            $this->assertTrue(
+            $this->assertFalse(
                 $gated->isConfirmationRequired(),
-                'Opening a corrective ship order must pass the regulatory compliance gate.',
+                'The site/reason form must open without a password prompt.',
+            );
+
+            $submit = $gated->getModalSubmitAction();
+            $this->assertNotNull($submit);
+            $this->assertTrue(
+                $submit->isConfirmationRequired(),
+                'Submitting a corrective ship order must pass the regulatory compliance gate.',
             );
         } finally {
             $this->cleanup($tenant);
@@ -680,6 +693,22 @@ class OutboundShippingSessionTest extends TestCase
 
             $this->assertSame($site->gln, $shipping->read_point_gln);
             $this->assertSame($partner->gln, $shipping->biz_location_gln);
+
+            $authoredLocations = DB::table('event_locations')
+                ->where('event_id', $shipping->getKey())
+                ->get();
+            $this->assertCount(1, $authoredLocations);
+            $this->assertSame('readPoint', $authoredLocations[0]->location_type);
+            $this->assertSame($site->gln, $authoredLocations[0]->gln);
+            $this->assertSame((int) $site->getKey(), (int) $authoredLocations[0]->site_id);
+            $this->assertNotEmpty($authoredLocations[0]->gln_uri);
+            $this->assertSame(
+                0,
+                DB::table('event_locations')
+                    ->where('event_id', $shipping->getKey())
+                    ->where('location_type', 'bizLocation')
+                    ->count(),
+            );
 
             $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
             $xml = Storage::disk($document->payload_disk)->get($document->payload_path);
@@ -1143,6 +1172,39 @@ class OutboundShippingSessionTest extends TestCase
         }
     }
 
+    #[Test]
+    public function failed_first_ingest_outbound_shipping_is_not_prior_ship_evidence(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $partner = $this->ensureDemoPartner();
+            $epc = $this->createUnpackedItem();
+
+            $document = $this->createAuthoredShippingDocument($site, corrects: null);
+            $document->forceFill([
+                'status' => 'error',
+                'ingest_generation' => 1,
+                'processed_at' => null,
+            ])->save();
+            $this->attachShippingEvent($document, $epc, $site, $partner);
+
+            $this->assertFalse(
+                app(EpcCustodyGate::class)->hasPriorTenantShipEvidence($epc, (int) $site->getKey()),
+                'Never-validated outbound author events must not authorize corrective ship.',
+            );
+
+            $document->forceFill(['processed_at' => now()->subHour()])->save();
+            $this->assertTrue(
+                app(EpcCustodyGate::class)->hasPriorTenantShipEvidence($epc, (int) $site->getKey()),
+                'Last-good projection after failed reprocess must still count as prior ship evidence.',
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     /**
      * Pack a fresh item under $parent on the packing event the fixture already has,
      * so the pallet is three levels deep before it ships.
@@ -1293,6 +1355,12 @@ class OutboundShippingSessionTest extends TestCase
             $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
             $this->makeEpcShippableAtSite($site);
             $partner = $this->ensureDemoPartner();
+
+            $sgtinId = (int) Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id');
+            AggregationLink::query()
+                ->where('child_epc_id', $sgtinId)
+                ->whereNull('valid_to')
+                ->update(['valid_to' => now()]);
 
             $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
             $this->sessionIds[] = (int) $session->getKey();
@@ -1890,18 +1958,30 @@ class OutboundShippingSessionTest extends TestCase
             $this->makeEpcShippableAtSite($site);
 
             $customer = $this->createCustomerPartner('SGLN Withheld Customer');
+            $shipTo = $this->createCustomerSite($customer, '037020');
+            $license = AtpLicense::query()->create([
+                'site_id' => (int) $shipTo->getKey(),
+                'facility_type' => FacilityType::Wdd,
+                'license_number' => 'LIC-'.Str::random(8),
+                'license_state' => 'TX',
+                'license_expiration_date' => now()->addYear(),
+                'reporting_year' => (int) now()->year,
+            ]);
+            $this->atpLicenseIds[] = (int) $license->getKey();
             // Their company prefix is not ours, so nothing on record encodes their GLN.
             $customer->forceFill(['sgln' => null])->save();
+            $shipTo->forceFill(['sgln' => null])->save();
             $this->assertNull($customer->fresh()->sgln);
+            $this->assertNull($shipTo->fresh()->sgln);
 
-            $session = $this->readyToSendSession($site, $customer, 'ASN-SGLN-001', 'PO-SGLN-001');
+            $session = $this->readyToSendSession($site, $customer, 'ASN-SGLN-001', 'PO-SGLN-001', $shipTo);
 
             try {
                 app(CompleteOutboundShippingSession::class)->handle($session->fresh());
                 $this->fail('Expected the send to refuse a customer with no SGLN on record.');
             } catch (DomainException $e) {
                 $this->assertStringContainsString('no SGLN on record', $e->getMessage());
-                $this->assertStringContainsString((string) $customer->gln, $e->getMessage());
+                $this->assertStringContainsString((string) $shipTo->gln, $e->getMessage());
             }
 
             $session = $session->fresh();
@@ -1909,10 +1989,10 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertNull($session->epcis_document_id);
 
             // Once they state it, that exact SGLN is what the shipment carries.
-            $customerSgln = Sgln::toUrn((string) $customer->gln, 6);
-            $this->assertNotNull($customerSgln);
-            $customer->forceFill(['sgln' => $customerSgln])->save();
-            $this->assertSame($customerSgln, $customer->fresh()->sgln);
+            $shipToSgln = Sgln::toUrn((string) $shipTo->gln, 6);
+            $this->assertNotNull($shipToSgln);
+            $shipTo->forceFill(['sgln' => $shipToSgln])->save();
+            $this->assertSame($shipToSgln, $shipTo->fresh()->sgln);
 
             $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
             $this->assertSame('completed', $completed->status);
@@ -1923,7 +2003,131 @@ class OutboundShippingSessionTest extends TestCase
             $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
 
             $this->assertStringContainsString(
-                '<destination type="urn:epcglobal:cbv:sdt:location">'.$customerSgln.'</destination>',
+                '<destination type="urn:epcglobal:cbv:sdt:location">'.$shipToSgln.'</destination>',
+                $xml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function send_uses_inbound_event_party_sgln_when_customer_site_sgln_is_blank(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $customer = $this->createCustomerPartner('SGLN From Inbound Party');
+            $shipTo = $this->createCustomerSite($customer, '037021');
+            $license = AtpLicense::query()->create([
+                'site_id' => (int) $shipTo->getKey(),
+                'facility_type' => FacilityType::Wdd,
+                'license_number' => 'LIC-'.Str::random(8),
+                'license_state' => 'TX',
+                'license_expiration_date' => now()->addYear(),
+                'reporting_year' => (int) now()->year,
+            ]);
+            $this->atpLicenseIds[] = (int) $license->getKey();
+
+            $published = Sgln::toUrn((string) $shipTo->gln, 6);
+            $this->assertNotNull($published);
+
+            $customer->forceFill(['sgln' => null])->save();
+            $shipTo->forceFill(['sgln' => null])->save();
+            $this->assertNull($customer->fresh()->sgln);
+            $this->assertNull($shipTo->fresh()->sgln);
+
+            $inbound = $this->createAuthoredShippingDocument($site, null);
+            $inbound->forceFill(['direction' => 'inbound', 'authored_kind' => null])->save();
+            $eventAttributes = [
+                'document_id' => $inbound->getKey(),
+                'event_id' => 'urn:uuid:'.Str::uuid(),
+                'event_type' => 'ObjectEvent',
+                'event_time' => now(),
+                'record_time' => now(),
+                'event_timezone_offset' => '-05:00',
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+            ];
+            if (Schema::hasColumn('epcis_events', 'ingest_generation')) {
+                $eventAttributes['ingest_generation'] = 1;
+            }
+            $event = EpcisEvent::query()->create($eventAttributes);
+            DB::table('event_parties')->insert([
+                'event_id' => $event->getKey(),
+                'party_role' => 'destination',
+                'gln' => $shipTo->gln,
+                'gln_uri' => $published,
+                'trading_partner_id' => $customer->getKey(),
+                'site_id' => $shipTo->getKey(),
+                'extra_json' => json_encode(['source_dest_type' => 'location']),
+            ]);
+            DB::table('event_locations')->insert([
+                'event_id' => $event->getKey(),
+                'location_type' => 'readPoint',
+                'gln' => $shipTo->gln,
+                'gln_uri' => $published,
+                'site_id' => $shipTo->getKey(),
+            ]);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-SGLN-INBOUND-001', 'PO-SGLN-INBOUND-001', $shipTo);
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+
+            $this->assertSame('completed', $completed->status);
+            $this->assertNotNull($completed->epcis_document_id);
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertStringContainsString($published, $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function send_authors_destination_list_from_captured_site_sgln(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $customer = $this->createCustomerPartner('SGLN Captured On Site');
+            $shipTo = $this->createCustomerSite($customer, '037022');
+            $license = AtpLicense::query()->create([
+                'site_id' => (int) $shipTo->getKey(),
+                'facility_type' => FacilityType::Wdd,
+                'license_number' => 'LIC-'.Str::random(8),
+                'license_state' => 'TX',
+                'license_expiration_date' => now()->addYear(),
+                'reporting_year' => (int) now()->year,
+            ]);
+            $this->atpLicenseIds[] = (int) $license->getKey();
+
+            $published = Sgln::toUrn((string) $shipTo->gln, 6);
+            $this->assertNotNull($published);
+
+            $customer->forceFill(['sgln' => null])->save();
+            $shipTo->forceFill(['sgln' => $published])->save();
+            $this->assertNull($customer->fresh()->sgln);
+            $this->assertSame($published, $shipTo->fresh()->sgln);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-SGLN-SITE-001', 'PO-SGLN-SITE-001', $shipTo);
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+
+            $this->assertSame('completed', $completed->status);
+            $this->assertNotNull($completed->epcis_document_id);
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertStringContainsString(
+                '<destination type="urn:epcglobal:cbv:sdt:location">'.$published.'</destination>',
                 $xml,
             );
         } finally {
@@ -3543,7 +3747,9 @@ class OutboundShippingSessionTest extends TestCase
     {
         app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
 
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'email' => 'ship-session-'.uniqid('', true).'@example.test',
+        ]);
         $user->assignRole(TenantRole::Owner->value);
         $this->userIds[] = (int) $user->getKey();
 
@@ -3584,6 +3790,10 @@ class OutboundShippingSessionTest extends TestCase
         }
 
         tenancy()->initialize($tenant->fresh());
+
+        if (! $this->receivingStateCaptured) {
+            $this->setTenantReceivingState($tenant, 'TX');
+        }
 
         return $tenant;
     }
@@ -3631,8 +3841,11 @@ class OutboundShippingSessionTest extends TestCase
             $this->actingAs($this->createShippingUser());
         }
 
+        $this->prepareFixtureReceivingState();
+
         $document = $this->ingestMinimalFixture();
         $this->documentIds[] = (int) $document->getKey();
+        $this->assertSame('validated', $document->status, (string) $document->error_message);
 
         $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
         $this->receivingSessionIds[] = (int) $session->getKey();
@@ -3682,7 +3895,7 @@ class OutboundShippingSessionTest extends TestCase
                 'name' => '[LEGACY] Demo Downstream Pharmacy',
             ]);
 
-        return TradingPartner::query()->updateOrCreate(
+        $partner = TradingPartner::query()->updateOrCreate(
             ['gln' => self::DEMO_PARTNER_GLN],
             [
                 'name' => 'Demo Downstream Pharmacy',
@@ -3691,6 +3904,109 @@ class OutboundShippingSessionTest extends TestCase
                 'is_active' => true,
             ],
         );
+
+        $this->ensureDemoPartnerHasShipToSite($partner);
+
+        return $partner;
+    }
+
+    private function ensureDemoPartnerHasShipToSite(TradingPartner $partner): Site
+    {
+        $existing = Site::query()
+            ->where('trading_partner_id', (int) $partner->getKey())
+            ->where('is_active', true)
+            ->where('is_organization_facility', false)
+            ->first();
+
+        $site = $existing instanceof Site
+            ? $existing
+            : $this->createCustomerSite($partner, '061414');
+
+        if (! AtpLicense::query()
+            ->where('site_id', (int) $site->getKey())
+            ->where('license_state', 'TX')
+            ->exists()) {
+            $license = AtpLicense::query()->create([
+                'site_id' => (int) $site->getKey(),
+                'facility_type' => FacilityType::Wdd,
+                'license_number' => 'DEMO-'.Str::random(8),
+                'license_state' => 'TX',
+                'license_expiration_date' => now()->addYear(),
+                'reporting_year' => (int) now()->year,
+            ]);
+            $this->atpLicenseIds[] = (int) $license->getKey();
+        }
+
+        return $site;
+    }
+
+    /**
+     * Remove leftover receiving sessions for fixture EPCs so shared demo2 state
+     * does not pollute the next test run.
+     *
+     * @param  list<string>  $epcUris
+     */
+    private function prepareFixtureReceivingState(array $epcUris = [self::SSCC_URI, self::SGTIN_URI]): void
+    {
+        $epcIds = Epc::query()
+            ->whereIn('epc_uri', $epcUris)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        if ($epcIds === []) {
+            return;
+        }
+
+        $ssccId = Epc::query()->where('epc_uri', self::SSCC_URI)->value('id');
+        if ($ssccId !== null) {
+            AggregationLink::query()
+                ->where('child_epc_id', (int) $ssccId)
+                ->whereNull('valid_to')
+                ->update(['valid_to' => now()]);
+        }
+
+        foreach ($epcIds as $epcId) {
+            QuarantineHold::query()->where('epc_id', $epcId)->delete();
+        }
+
+        OutboundShippingScanLine::query()->whereIn('epc_id', $epcIds)->delete();
+        TransferringScanLine::query()->whereIn('epc_id', $epcIds)->delete();
+
+        $sessionIds = ReceivingScanLine::query()
+            ->whereIn('epc_id', $epcIds)
+            ->distinct()
+            ->pluck('receiving_session_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        foreach ($sessionIds as $sessionId) {
+            $session = ReceivingSession::query()->find($sessionId);
+            if ($session === null) {
+                continue;
+            }
+
+            if ($session->receiving_epcis_document_id !== null) {
+                EpcisDocument::query()->whereKey($session->receiving_epcis_document_id)->delete();
+            }
+
+            ReceivingScanLine::query()->where('receiving_session_id', $sessionId)->delete();
+            $session->delete();
+        }
+    }
+
+    #[Test]
+    public function desktop_blade_has_live_blur_and_enter_stage_scan_binding(): void
+    {
+        $blade = File::get(resource_path(
+            'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
+        ));
+
+        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
+        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
     private function ingestMinimalFixture(): EpcisDocument
@@ -3790,6 +4106,15 @@ class OutboundShippingSessionTest extends TestCase
             }
 
             if ($this->epcIds !== []) {
+                AggregationLink::query()
+                    ->where(function ($query): void {
+                        $query->whereIn('parent_epc_id', $this->epcIds)
+                            ->orWhereIn('child_epc_id', $this->epcIds);
+                    })
+                    ->delete();
+                if (Schema::hasTable('epc_ilmd')) {
+                    DB::table('epc_ilmd')->whereIn('epc_id', $this->epcIds)->delete();
+                }
                 Epc::query()->whereIn('id', $this->epcIds)->delete();
             }
 

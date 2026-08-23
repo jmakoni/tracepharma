@@ -11,14 +11,15 @@ use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Services\Custody\EpcCustodyGate;
 use App\Support\Epcis\OutboundEpcisFilename;
+use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\SbdhInstanceIdentifier;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Epcis\ShippingTiTsFragments;
 use App\Support\Gs1\Sgln;
 use App\Support\Gs1\SglnResolution;
-use App\Services\Custody\EpcCustodyGate;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\CorrectiveShipmentDocument;
 use App\Support\Shipping\ResolveShipFromSite;
@@ -66,6 +67,7 @@ final class GenerateShippingEpcisEvents
         private readonly SyncDocumentEpcsFromEvents $syncDocumentEpcsFromEvents,
         private readonly ScheduleOutboundEpcisTransmission $scheduleOutboundTransmission,
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
+        private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly EpcCustodyGate $custodyGate,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
     ) {}
@@ -162,6 +164,14 @@ final class GenerateShippingEpcisEvents
                 'biz_location_gln' => $shipTo['gln'],
                 'trading_partner_id' => $session->trading_partner_id,
             ]));
+            $this->persistAuthoredEventLocations->handle($shippingEvent, [
+                [
+                    'location_type' => 'readPoint',
+                    'gln' => $fromLocation['gln'],
+                    'gln_uri' => $fromLocation['sgln_urn'],
+                    'site_id' => (int) $session->site_id,
+                ],
+            ]);
             $this->attachEpcs($shippingEvent, $epcIds);
             $this->attachTransactionIdentity($shippingEvent, $tiTs);
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
@@ -256,20 +266,24 @@ final class GenerateShippingEpcisEvents
             return;
         }
 
-        $alreadyShippedElsewhere = OutboundShippingScanLine::query()
-            ->whereIn('epc_id', $epcIds)
-            ->where('status', 'confirmed')
-            ->whereHas('session', function ($query) use ($session): void {
-                $query
-                    ->whereKeyNot($session->getKey())
-                    ->whereNotNull('shipping_events_generated_at');
-            })
-            ->exists();
+        // Corrective orders re-author units that already left on the original
+        // shipment; the custody gate below is the one that checks prior ship evidence.
+        if (! $session->is_corrective) {
+            $alreadyShippedElsewhere = OutboundShippingScanLine::query()
+                ->whereIn('epc_id', $epcIds)
+                ->where('status', 'confirmed')
+                ->whereHas('session', function ($query) use ($session): void {
+                    $query
+                        ->whereKeyNot($session->getKey())
+                        ->whereNotNull('shipping_events_generated_at');
+                })
+                ->exists();
 
-        if ($alreadyShippedElsewhere) {
-            throw new DomainException(
-                'Cannot author shipping EPCIS: one or more confirmed units already have shipping events on another ship order.',
-            );
+            if ($alreadyShippedElsewhere) {
+                throw new DomainException(
+                    'Cannot author shipping EPCIS: one or more confirmed units already have shipping events on another ship order.',
+                );
+            }
         }
 
         try {
@@ -403,10 +417,60 @@ final class GenerateShippingEpcisEvents
      */
     private function shipToSglnCandidates(OutboundShippingSession $session): array
     {
-        return $this->sglnCandidates(
+        $fromMaster = $this->sglnCandidates(
             $session->shipToSite?->getAttribute('sgln'),
             $session->tradingPartner?->getAttribute('sgln'),
         );
+
+        $party = $this->resolveShipToParty($session);
+        if ($party['gln'] === null) {
+            return $fromMaster;
+        }
+
+        return array_values(array_unique([
+            ...$fromMaster,
+            ...$this->publishedSglnCandidatesForGln($party['gln']),
+        ]));
+    }
+
+    /**
+     * Partner-published SGLNs already on inbound event locations/parties for this GLN.
+     *
+     * @return list<string>
+     */
+    private function publishedSglnCandidatesForGln(string $gln): array
+    {
+        $fromLocations = [];
+        $fromParties = [];
+
+        if (Schema::hasTable('event_locations')) {
+            $fromLocations = DB::table('event_locations')
+                ->join('epcis_events', 'epcis_events.id', '=', 'event_locations.event_id')
+                ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
+                ->where('epcis_documents.direction', 'inbound')
+                ->where('event_locations.gln', $gln)
+                ->whereNotNull('event_locations.gln_uri')
+                ->where('event_locations.gln_uri', '!=', '')
+                ->pluck('event_locations.gln_uri')
+                ->all();
+        }
+
+        if (Schema::hasTable('event_parties')) {
+            $fromParties = DB::table('event_parties')
+                ->join('epcis_events', 'epcis_events.id', '=', 'event_parties.event_id')
+                ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
+                ->where('epcis_documents.direction', 'inbound')
+                ->where('event_parties.gln', $gln)
+                ->whereNotNull('event_parties.gln_uri')
+                ->where('event_parties.gln_uri', '!=', '')
+                ->pluck('event_parties.gln_uri')
+                ->all();
+        }
+
+        return array_values(array_filter(
+            [...$fromLocations, ...$fromParties],
+            static fn (mixed $uri): bool => is_string($uri) && $uri !== '',
+        ));
     }
 
     /**

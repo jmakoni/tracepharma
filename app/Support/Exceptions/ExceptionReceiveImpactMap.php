@@ -32,6 +32,7 @@ final class ExceptionReceiveImpactMap
         'SUSPECT_PRODUCT' => ExceptionReceiveImpact::HardBlocking,
         'VERIFICATION_FAILED' => ExceptionReceiveImpact::HardBlocking,
         'INGESTION_PARSE_ERROR' => ExceptionReceiveImpact::HardBlocking,
+        'FINDINGS_TRUNCATED' => ExceptionReceiveImpact::Warning,
 
         // Business rule / semantic — block until corrected
         'UNKNOWN_GTIN' => ExceptionReceiveImpact::BusinessRule,
@@ -86,7 +87,7 @@ final class ExceptionReceiveImpactMap
         'FILE_SIZE_EXCEEDED' => ExceptionReceiveImpact::Soft,
         'MISSING_SOURCE_DESTINATION' => ExceptionReceiveImpact::Soft,
         'MISSING_BIZ_TRANSACTION' => ExceptionReceiveImpact::Soft,
-        'MISSING_COMMISSIONING' => ExceptionReceiveImpact::Soft,
+        'MISSING_COMMISSIONING' => ExceptionReceiveImpact::HardBlocking,
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => ExceptionReceiveImpact::Soft,
         'RETURNS_NOT_LINKED' => ExceptionReceiveImpact::Soft,
         'OWNERSHIP_TRANSFER_UNCLEAR' => ExceptionReceiveImpact::Soft,

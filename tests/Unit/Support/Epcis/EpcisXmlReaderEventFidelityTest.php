@@ -140,15 +140,15 @@ XML;
             $streamed[] = $event;
         });
 
-        $this->assertSame(2, $header['events_streamed']);
-        $this->assertCount(2, $streamed);
+        $this->assertSame(3, $header['events_streamed']);
+        $this->assertCount(3, $streamed);
         $this->assertSame('11111111-2222-3333-4444-555555555555', $header['document_uuid']);
         $this->assertTrue($header['dscsa_affirm']);
         $this->assertSame([], $header['dropped_epc_uris']);
         $this->assertArrayNotHasKey('events', $header);
 
         $buffered = (new EpcisXmlReader)->parse($fixture);
-        $this->assertCount(2, $buffered['events']);
+        $this->assertCount(3, $buffered['events']);
         $this->assertSame($streamed[0]['event_type'], $buffered['events'][0]['event_type']);
         $this->assertArrayNotHasKey('events_streamed', $buffered);
     }

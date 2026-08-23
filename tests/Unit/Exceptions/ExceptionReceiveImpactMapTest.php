@@ -27,6 +27,7 @@ class ExceptionReceiveImpactMapTest extends TestCase
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('MIXED_PACKAGING_LEVELS'));
         $this->assertSame(ExceptionReceiveImpact::Soft, ExceptionReceiveImpactMap::forCode('MASTER_DATA_SYNC_LAG'));
         $this->assertSame(ExceptionReceiveImpact::Soft, ExceptionReceiveImpactMap::forCode('SERIAL_ALREADY_COMMISSIONED'));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('MISSING_COMMISSIONING'));
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('NOT_A_REAL_CODE'));
     }
 }

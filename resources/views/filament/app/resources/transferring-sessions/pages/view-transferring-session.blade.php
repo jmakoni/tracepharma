@@ -128,7 +128,7 @@
                     </div>
                 @else
                     <form
-                        wire:submit.prevent="mountAction('confirmScan')"
+                        wire:submit.prevent="stageScan"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
@@ -142,8 +142,9 @@
                                 <input
                                     id="scan-input"
                                     type="text"
-                                    wire:model="scan"
+                                    wire:model.live.blur="scan"
                                     x-ref="scanInput"
+                                    x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
                                     autocomplete="off"
                                     class="tp-scan-input min-h-14 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-base shadow-sm outline-none transition duration-75 placeholder:text-gray-400 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/20 dark:border-white/20 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500"
                                     placeholder="Scan SSCC or SGTIN"

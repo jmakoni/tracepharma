@@ -137,6 +137,15 @@ class TenantFeatures
     }
 
     /**
+     * Author ship sessions from Scan Out / Ship Order.
+     * Pharmacy desk expands this in Wave C.
+     */
+    public function canAuthorOutboundShipments(): bool
+    {
+        return $this->supportsOutboundIntegrations();
+    }
+
+    /**
      * SSCC pallet labeling — same outbound shipper profiles as outbound integrations
      * (Manufacturer already included).
      */

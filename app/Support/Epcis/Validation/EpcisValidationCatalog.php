@@ -94,6 +94,7 @@ final class EpcisValidationCatalog
         'MASTER_DATA_SYNC_LAG',
         'INGESTION_PARSE_ERROR',
         'INTERNAL_VALIDATION_FAILED',
+        'FINDINGS_TRUNCATED',
 
         // Fallback
         'UNCLASSIFIED',
