@@ -4,7 +4,9 @@ namespace App\Filament\App\Resources\TransferringSessions\Pages;
 
 use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Transferring\CancelTransferringSession;
+use App\Actions\Transferring\DeleteTransferringSession;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\App\Resources\TransferringSessions\Concerns\InteractsWithTransferringSessionHud;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Models\Transferring\TransferringSession;
@@ -132,6 +134,10 @@ class ViewTransferringSession extends ViewRecord
                         ->success()
                         ->send();
                 }),
+            UnsubmittedSessionDeleteAction::forTransfer(
+                fn (TransferringSession $record) => app(DeleteTransferringSession::class)->handle($record, auth()->id()),
+                TransferringSessionResource::getUrl(name: 'index', panel: 'app'),
+            ),
             Action::make('viewTransferDocument')
                 ->label('View transfer EPCIS')
                 ->icon(Heroicon::OutlinedDocumentText)

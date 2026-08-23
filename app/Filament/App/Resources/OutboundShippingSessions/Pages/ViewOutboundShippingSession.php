@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CancelOutboundShippingSession;
+use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\CompleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
@@ -12,6 +13,7 @@ use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOu
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
@@ -498,6 +500,10 @@ class ViewOutboundShippingSession extends ViewRecord
                         ->success()
                         ->send();
                 }),
+            UnsubmittedSessionDeleteAction::forShipping(
+                fn (OutboundShippingSession $record) => app(DeleteOutboundShippingSession::class)->handle($record, auth()->id()),
+                OutboundShippingSessionResource::getUrl(name: 'index', panel: 'app'),
+            ),
             Action::make('downloadShippingXml')
                 ->label('Download EPCIS')
                 ->icon(Heroicon::OutlinedArrowDownTray)
