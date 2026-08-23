@@ -115,6 +115,25 @@ class GenerateReceivingEpcisEventsTest extends TestCase
                     ->count(),
             );
 
+            $session->loadMissing('site');
+            $siteGln = Sgln::normalizeGln($session->site?->gln);
+            $this->assertNotNull($session->site_id);
+            $this->assertNotNull($siteGln);
+
+            $locations = DB::table('event_locations')
+                ->where('event_id', $event->getKey())
+                ->orderBy('location_type')
+                ->get();
+            $this->assertCount(2, $locations);
+            $this->assertSame(['bizLocation', 'readPoint'], $locations->pluck('location_type')->all());
+            foreach ($locations as $row) {
+                $this->assertSame($siteGln, $row->gln);
+                $this->assertSame((int) $session->site_id, (int) $row->site_id);
+                $this->assertNotEmpty($row->gln_uri);
+                $parsed = Sgln::fromUrn((string) $row->gln_uri);
+                $this->assertSame($siteGln, $parsed['gln'] ?? null);
+            }
+
             $again = app(GenerateReceivingEpcisEvents::class)->handle($session->fresh());
             $this->assertFalse($again['generated']);
             $this->assertSame($receivingDocument->getKey(), $again['document']?->getKey());

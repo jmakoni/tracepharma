@@ -82,7 +82,7 @@ final class RunProductVerification
         if ($epc !== null) {
             $hold = $this->receivingGate->epcBlockedByOpenHold($epc);
             if ($hold !== null) {
-                return $this->blockedByQuarantine($identity, $normalized, $hold, $actor, $lot, $expiry);
+                return $this->blockedByQuarantine($identity, $normalized, $hold, $actor, $lot, $expiry, $epc);
             }
         }
 
@@ -108,6 +108,7 @@ final class RunProductVerification
                 'serial' => $identity['serial'],
                 'lot' => $lot,
                 'expiry_yymmdd' => $expiry,
+                'site_id' => $this->resolveSiteIdForEpc($epc),
             ], fn ($value): bool => $value !== null && $value !== ''),
             'response_payload' => $result,
             'message' => $result['message'],
@@ -179,6 +180,7 @@ final class RunProductVerification
         ?User $actor,
         ?string $lot,
         ?string $expiry,
+        ?Epc $epc,
     ): array {
         $message = $this->quarantineBlockMessage($hold);
 
@@ -194,6 +196,7 @@ final class RunProductVerification
                 'serial' => $identity['serial'],
                 'lot' => $lot,
                 'expiry_yymmdd' => $expiry,
+                'site_id' => $this->resolveSiteIdForEpc($epc),
             ], fn ($value): bool => $value !== null && $value !== ''),
             'response_payload' => [
                 'blocked_by' => 'open_quarantine_hold',

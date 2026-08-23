@@ -90,6 +90,9 @@ class ScanFirstReceivingTest extends TestCase
 
     private ?string $epcUri = null;
 
+    /** @var list<string> */
+    private array $uniqueEpcUris = [];
+
     #[Test]
     public function scan_first_confirm_reconciles_expected_line_on_asn_session_with_null_site(): void
     {
@@ -318,7 +321,7 @@ class ScanFirstReceivingTest extends TestCase
             TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
             $tenant->save();
 
-            $document = $this->ingestMinimalFixture();
+            [$ssccUri, $document] = $this->ingestUniqueMinimalFixture();
             $this->sourceDocumentId = (int) $document->getKey();
 
             [$siteA, $siteB] = $this->createReceiveSites($tenant);
@@ -329,12 +332,13 @@ class ScanFirstReceivingTest extends TestCase
             );
             $this->asnSessionId = (int) $asnSession->getKey();
 
-            $parentEpcId = (int) Epc::query()->where('epc_uri', self::SSCC_URI)->value('id');
+            $parentEpcId = (int) Epc::query()->where('epc_uri', $ssccUri)->value('id');
+            $this->epcId = $parentEpcId;
 
             $scanFirst = app(OpenScanFirstReceivingSession::class)->handle((int) $siteB->getKey());
             $this->sessionId = (int) $scanFirst->getKey();
 
-            $confirm = app(ConfirmReceivingScan::class)->handle($scanFirst, self::SSCC_URI);
+            $confirm = app(ConfirmReceivingScan::class)->handle($scanFirst, $ssccUri);
             $this->assertTrue($confirm['ok']);
             $this->assertNull($confirm['reconciled_asn_session_id']);
 
@@ -773,6 +777,99 @@ class ScanFirstReceivingTest extends TestCase
 
             $this->assertSame('warn', $component->get('lastScanTone'));
             $this->assertStringContainsString('TI missing', (string) $component->get('lastScanMessage'));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function scan_context_ignores_unvalidated_inbound_events_as_ti(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            [$validEpc] = $this->createEpcWithShippingEvent();
+            $validContext = app(ResolveReceiveScanContext::class)->handle((string) $validEpc->epc_uri);
+            $this->assertTrue($validContext['has_ti']);
+            $this->assertSame($this->sourceDocumentId, $validContext['matched_inbound_document_id']);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.ER'.$suffix;
+            $this->epcUri = $uri;
+
+            $errorDocument = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now()->subHour(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'scan-first-error-ti.xml',
+                'payload_disk' => 'local',
+                'payload_path' => 'epcis/inbound/scan-first-error-ti-'.Str::uuid().'.xml',
+                'dscsa_affirm' => false,
+                'status' => 'error',
+                'ingest_generation' => 1,
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now()->subHour(),
+            ]);
+            $this->offManifestDocumentId = (int) $errorDocument->getKey();
+
+            $errorEpc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $errorEpc->getKey();
+
+            $shippingEvent = EpcisEvent::query()->create([
+                'document_id' => $errorDocument->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subMinutes(10),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+                'disposition' => 'urn:epcglobal:cbv:disp:in_transit',
+            ]);
+
+            DB::table('event_epcs')->insert([
+                'event_id' => $shippingEvent->getKey(),
+                'epc_id' => $errorEpc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $errorContext = app(ResolveReceiveScanContext::class)->handle($uri);
+            $this->assertFalse($errorContext['has_ti']);
+            $this->assertNull($errorContext['matched_inbound_document_id']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function scan_context_keeps_ti_after_failed_reprocess_of_validated_file(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            [$epc] = $this->createEpcWithShippingEvent();
+            $document = EpcisDocument::query()->findOrFail($this->sourceDocumentId);
+            $document->forceFill([
+                'ingest_generation' => 1,
+                'processed_at' => now()->subHour(),
+            ])->save();
+            EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->update(['ingest_generation' => 1]);
+
+            $before = app(ResolveReceiveScanContext::class)->handle((string) $epc->epc_uri);
+            $this->assertTrue($before['has_ti']);
+            $this->assertSame($document->getKey(), $before['matched_inbound_document_id']);
+
+            $document->forceFill([
+                'status' => 'error',
+                'error_message' => 'Forced reprocess validation failure.',
+            ])->save();
+
+            $after = app(ResolveReceiveScanContext::class)->handle((string) $epc->epc_uri);
+            $this->assertTrue($after['has_ti'], 'Last-good projection must still count as TI after failed reprocess.');
+            $this->assertSame($document->getKey(), $after['matched_inbound_document_id']);
         } finally {
             $this->cleanup($tenant);
         }
@@ -1493,6 +1590,50 @@ class ScanFirstReceivingTest extends TestCase
     }
 
     /**
+     * @return array{0: string, 1: EpcisDocument}
+     */
+    private function ingestUniqueMinimalFixture(): array
+    {
+        do {
+            $ssccUri = 'urn:epc:id:sscc:030116.0'.str_pad((string) random_int(0, 9_999_999_999), 10, '0', STR_PAD_LEFT);
+        } while (Epc::query()->where('epc_uri', $ssccUri)->exists());
+        do {
+            $sgtinUri = 'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999);
+        } while (Epc::query()->where('epc_uri', $sgtinUri)->exists());
+
+        $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_');
+        $this->assertNotFalse($tmp);
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace(
+            [
+                '11111111-2222-3333-4444-555555555555',
+                self::SSCC_URI,
+                'urn:epc:id:sgtin:030116.0200116.10000082001560',
+            ],
+            [(string) Str::uuid(), $ssccUri, $sgtinUri],
+            $xml,
+        );
+        file_put_contents($tmp, $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'minimal_object_shipping.xml',
+            ]);
+        } finally {
+            @unlink($tmp);
+        }
+
+        $this->uniqueEpcUris = [$ssccUri, $sgtinUri];
+
+        return [$ssccUri, $document];
+    }
+
+    /**
      * @return array{0: Epc, 1: string}
      */
     private function createEpcWithShippingEvent(): array
@@ -1745,13 +1886,35 @@ class ScanFirstReceivingTest extends TestCase
             $this->sourceDocumentId = null;
         }
 
-        if ($this->epcId !== null) {
-            DB::table('document_epcs')->where('epc_id', $this->epcId)->delete();
-            DB::table('event_epcs')->where('epc_id', $this->epcId)->delete();
-            ReceivingScanLine::query()->where('epc_id', $this->epcId)->delete();
-            Epc::query()->whereKey($this->epcId)->delete();
-            $this->epcId = null;
+        $epcIds = [];
+        if ($this->uniqueEpcUris !== []) {
+            $epcIds = Epc::query()->whereIn('epc_uri', $this->uniqueEpcUris)->pluck('id')->all();
         }
+        if ($this->epcId !== null) {
+            $epcIds[] = $this->epcId;
+        }
+        $epcIds = array_values(array_unique(array_map('intval', $epcIds)));
+
+        if ($epcIds !== []) {
+            DB::table('aggregation_links')
+                ->where(function ($query) use ($epcIds): void {
+                    $query->whereIn('parent_epc_id', $epcIds)
+                        ->orWhereIn('child_epc_id', $epcIds);
+                })
+                ->delete();
+            if (DB::getSchemaBuilder()->hasTable('epc_ilmd')) {
+                DB::table('epc_ilmd')->whereIn('epc_id', $epcIds)->delete();
+            }
+            if (DB::getSchemaBuilder()->hasTable('event_epc_ilmd')) {
+                DB::table('event_epc_ilmd')->whereIn('epc_id', $epcIds)->delete();
+            }
+            DB::table('document_epcs')->whereIn('epc_id', $epcIds)->delete();
+            DB::table('event_epcs')->whereIn('epc_id', $epcIds)->delete();
+            ReceivingScanLine::query()->whereIn('epc_id', $epcIds)->delete();
+            Epc::query()->whereIn('id', $epcIds)->delete();
+        }
+        $this->epcId = null;
+        $this->uniqueEpcUris = [];
 
         if ($this->epcUri !== null) {
             $epc = Epc::query()->where('epc_uri', $this->epcUri)->first();

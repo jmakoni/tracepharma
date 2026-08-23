@@ -63,12 +63,16 @@ class MobileViewReceivingSession extends ViewRecord
         return array_values(array_filter(
             $this->getReceivingSessionHudHeaderActions(),
             fn (Action $action): bool => in_array($action->getName(), [
+                'closeOpenTote',
+                'acceptRemaining',
                 'completeReceiving',
                 'closeTransferWithShortage',
                 'retryReceiveEpcis',
                 'resetScans',
                 'unpackHierarchy',
                 'cancelReceiving',
+                'deleteReceiving',
+                'attachInvoice',
             ], true),
         ));
     }

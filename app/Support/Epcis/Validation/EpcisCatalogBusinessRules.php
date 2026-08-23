@@ -27,12 +27,28 @@ final class EpcisCatalogBusinessRules
     private array $findingCounts = [];
 
     /**
+     * Dropped findings per type when {@see add()} hits the per-type cap.
+     *
+     * @var array<string, int>
+     */
+    private array $truncatedCounts = [];
+
+    /**
+     * EPC ids flagged MISSING_COMMISSIONING in this pass — suppresses COMMISSION_AFTER_SHIP dedupe.
+     *
+     * @var array<int, true>
+     */
+    private array $missingCommissioningEpcIds = [];
+
+    /**
      * @return list<EpcisValidationFinding>
      */
     public function validate(EpcisValidationContext $ctx, Collection $events): array
     {
         $this->maxFindingsPerType = (int) config('tracepharma.epcis.validation.max_findings_per_type', 50);
         $this->findingCounts = [];
+        $this->truncatedCounts = [];
+        $this->missingCommissioningEpcIds = [];
 
         $findings = [];
         $documentEpcIds = $this->documentEpcIds($ctx->document);
@@ -50,6 +66,7 @@ final class EpcisCatalogBusinessRules
         $this->checkOrphanSscc($ctx, $events, $findings);
         $this->checkHierarchyDepth($ctx, $documentEpcIds, $findings);
         $this->checkShipmentCommissioning($ctx, $events, $findings);
+        $this->checkMissingCommissioning($ctx, $events, $findings);
         $this->checkTimingSequenceAndReturns($ctx, $events, $findings);
         $this->checkMixedPackagingLevels($ctx, $events, $findings);
         $this->checkDropShipmentIndicator($ctx, $events, $findings);
@@ -58,6 +75,8 @@ final class EpcisCatalogBusinessRules
         $this->checkDuplicateTransmission($ctx, $findings);
         $this->checkEpcTypeAndPrefix($ctx, $documentEpcIds, $findings);
         $this->checkBrokenAggregation($ctx, $documentEpcIds, $findings);
+
+        $this->flushTruncatedFindings($ctx, $findings);
 
         return $findings;
     }
@@ -76,6 +95,8 @@ final class EpcisCatalogBusinessRules
     ): bool {
         $count = $this->findingCounts[$type] ?? 0;
         if ($count >= $this->maxFindingsPerType) {
+            $this->truncatedCounts[$type] = ($this->truncatedCounts[$type] ?? 0) + 1;
+
             return false;
         }
 
@@ -89,6 +110,40 @@ final class EpcisCatalogBusinessRules
         );
 
         return true;
+    }
+
+    /**
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function flushTruncatedFindings(EpcisValidationContext $ctx, array &$findings): void
+    {
+        foreach ($this->truncatedCounts as $type => $dropped) {
+            if ($dropped <= 0) {
+                continue;
+            }
+
+            $findings[] = new EpcisValidationFinding(
+                exceptionType: 'FINDINGS_TRUNCATED',
+                severity: EpcisValidationSeverityMap::severityFor('FINDINGS_TRUNCATED', $ctx),
+                description: $dropped.' additional '.$type.' finding(s) were omitted because the per-type cap ('.$this->maxFindingsPerType.') was reached.',
+                eventId: null,
+                epcId: null,
+            );
+        }
+    }
+
+    /**
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function recordMissingCommissioning(
+        array &$findings,
+        EpcisValidationContext $ctx,
+        int $eventId,
+        int $epcId,
+        string $description,
+    ): void {
+        $this->missingCommissioningEpcIds[$epcId] = true;
+        $this->add($findings, $ctx, 'MISSING_COMMISSIONING', $description, $eventId, $epcId);
     }
 
     /**
@@ -749,7 +804,7 @@ final class EpcisCatalogBusinessRules
     }
 
     /**
-     * SERIAL_SHIPPED_NOT_COMMISSIONED — shipped SGTINs with no commissioning event on file anywhere.
+     * SERIAL_SHIPPED_NOT_COMMISSIONED — shipped SGTINs and SSCCs with no commissioning event on file anywhere.
      * Emits one aggregated finding instead of many when the violation count would exceed the cap,
      * and bails out to a single aggregated finding entirely for very large documents to bound
      * query cost (mirrors the SERIAL_ALREADY_COMMISSIONED 2000-EPC bail below).
@@ -771,20 +826,20 @@ final class EpcisCatalogBusinessRules
             return;
         }
 
-        $shippedSgtinIds = $this->epcListEpcIds($shippingEventIds, 'sgtin');
-        if ($shippedSgtinIds === []) {
+        $shippedEpcIds = $this->epcListEpcIds($shippingEventIds);
+        if ($shippedEpcIds === []) {
             return;
         }
 
         $largeDocLimit = 5000;
         // Bound query cost on huge docs; do not emit SERIAL_SHIPPED_NOT_COMMISSIONED
         // without evidence (that would false-flag every large clean shipment).
-        if ((int) $ctx->document->epc_count > $largeDocLimit || count($shippedSgtinIds) > $largeDocLimit) {
+        if ((int) $ctx->document->epc_count > $largeDocLimit || count($shippedEpcIds) > $largeDocLimit) {
             return;
         }
 
         $commissionedAnywhere = [];
-        foreach (array_chunk($shippedSgtinIds, 1000) as $chunk) {
+        foreach (array_chunk($shippedEpcIds, 1000) as $chunk) {
             $rows = DB::table('event_epcs')
                 ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
                 ->whereIn('event_epcs.epc_id', $chunk)
@@ -800,7 +855,7 @@ final class EpcisCatalogBusinessRules
             }
         }
 
-        $violating = array_values(array_diff($shippedSgtinIds, array_keys($commissionedAnywhere)));
+        $violating = array_values(array_diff($shippedEpcIds, array_keys($commissionedAnywhere)));
         if ($violating === []) {
             return;
         }
@@ -810,7 +865,7 @@ final class EpcisCatalogBusinessRules
                 $findings,
                 $ctx,
                 'SERIAL_SHIPPED_NOT_COMMISSIONED',
-                count($violating).' shipped SGTINs have no commissioning event on file (aggregated due to volume).',
+                count($violating).' shipped serials/EPCs have no commissioning event on file (aggregated due to volume).',
             );
 
             return;
@@ -821,10 +876,115 @@ final class EpcisCatalogBusinessRules
                 $findings,
                 $ctx,
                 'SERIAL_SHIPPED_NOT_COMMISSIONED',
-                'Shipped SGTIN has no commissioning event on file.',
+                'Shipped serial/EPC has no commissioning event on file.',
                 null,
                 $epcId,
             );
+        }
+    }
+
+    /**
+     * MISSING_COMMISSIONING — TraceLink-style "operation on Reserved": packing, shipping,
+     * or receiving in this document when the EPC has no usable commissioning ADD in this document
+     * (missing entirely, or every in-doc commissioning ADD lacks readPoint).
+     *
+     * @param  Collection<int, mixed>  $events
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkMissingCommissioning(EpcisValidationContext $ctx, Collection $events, array &$findings): void
+    {
+        if (! Schema::hasTable('event_epcs')) {
+            return;
+        }
+
+        // Inbound partner files: reserved serials packed/shipped/received in the same
+        // document. Tenant-authored outbound (SSCC commission, then a later packing
+        // ADD) is a different document and is not this TraceLink Reserved check.
+        if ($ctx->direction !== 'inbound') {
+            return;
+        }
+
+        $eventsById = $events->keyBy(fn ($e) => (int) $e->getKey());
+
+        $shippingEventIds = $this->eventIds($events->filter(
+            fn ($e) => $e->event_type === 'ObjectEvent' && EpcisCbvAllowlist::isShipping($e->biz_step),
+        ));
+        $receivingEventIds = $this->eventIds($events->filter(
+            fn ($e) => $e->event_type === 'ObjectEvent' && EpcisCbvAllowlist::isReceiving($e->biz_step),
+        ));
+        $packingEventIds = $this->eventIds($events->filter(
+            fn ($e) => $e->event_type === 'AggregationEvent'
+                && strtoupper((string) $e->action) === 'ADD'
+                && EpcisCbvAllowlist::isPacking($e->biz_step),
+        ));
+
+        $downstreamRows = $this->epcListRows($shippingEventIds)
+            ->merge($this->epcListRows($receivingEventIds))
+            ->merge($this->packingEpcRows($packingEventIds));
+        if ($downstreamRows->isEmpty()) {
+            return;
+        }
+
+        $commissionRows = $this->epcListRows($this->eventIds($this->commissioningAddEvents($events)));
+
+        /** @var array<int, list<mixed>> $commissionEventsByEpc */
+        $commissionEventsByEpc = [];
+        foreach ($commissionRows as $row) {
+            $event = $eventsById->get((int) $row->event_id);
+            if ($event === null) {
+                continue;
+            }
+            $commissionEventsByEpc[(int) $row->epc_id][] = $event;
+        }
+
+        $earliestDownstreamByEpc = [];
+        foreach ($downstreamRows as $row) {
+            $event = $eventsById->get((int) $row->event_id);
+            if ($event === null || $event->event_time === null) {
+                continue;
+            }
+            $epcId = (int) $row->epc_id;
+            $time = $event->event_time;
+            if (! isset($earliestDownstreamByEpc[$epcId]) || $time->lessThan($earliestDownstreamByEpc[$epcId]['time'])) {
+                $earliestDownstreamByEpc[$epcId] = [
+                    'time' => $time,
+                    'event_id' => (int) $event->getKey(),
+                ];
+            }
+        }
+
+        foreach ($earliestDownstreamByEpc as $epcId => $downstream) {
+            $commissions = $commissionEventsByEpc[$epcId] ?? [];
+
+            if ($commissions === []) {
+                $this->recordMissingCommissioning(
+                    $findings,
+                    $ctx,
+                    $downstream['event_id'],
+                    $epcId,
+                    'EPC was packed, shipped, or received in this document while still reserved/uncommissioned (no commissioning ADD in this document).',
+                );
+
+                continue;
+            }
+
+            $allMissingReadPoint = true;
+            foreach ($commissions as $event) {
+                if (filled($event->read_point_gln)) {
+                    $allMissingReadPoint = false;
+                    break;
+                }
+            }
+
+            if ($allMissingReadPoint) {
+                $this->recordMissingCommissioning(
+                    $findings,
+                    $ctx,
+                    $downstream['event_id'],
+                    $epcId,
+                    'EPC was packed, shipped, or received in this document but commissioning in this document lacks readPoint (unusable commissioning).',
+                );
+            }
         }
     }
 
@@ -848,6 +1008,12 @@ final class EpcisCatalogBusinessRules
             fn ($e) => $e->event_type === 'ObjectEvent' && EpcisCbvAllowlist::isShipping($e->biz_step),
         );
         $shippingEventIds = $this->eventIds($shippingEvents);
+        $packingEvents = $events->filter(
+            fn ($e) => $e->event_type === 'AggregationEvent'
+                && strtoupper((string) $e->action) === 'ADD'
+                && EpcisCbvAllowlist::isPacking($e->biz_step),
+        );
+        $packingEventIds = $this->eventIds($packingEvents);
         $decommissionEventIds = $this->eventIds($events->filter(
             fn ($e) => $e->event_type === 'ObjectEvent' && $this->isDecommissionDisposition($e->disposition),
         ));
@@ -859,6 +1025,7 @@ final class EpcisCatalogBusinessRules
 
         $commissionRows = $this->epcListRows($commissioningEventIds);
         $shipRows = $this->epcListRows($shippingEventIds);
+        $packRows = $this->packingEpcRows($packingEventIds);
         $decommissionRows = $this->epcListRows($decommissionEventIds);
 
         $earliestByEpc = function (Collection $rows) use ($eventsById): array {
@@ -882,15 +1049,22 @@ final class EpcisCatalogBusinessRules
         $shipTimes = $earliestByEpc($shipRows);
         $decommissionTimes = $earliestByEpc($decommissionRows);
 
+        $downstreamBeforeCommissionRows = $shipRows->merge($packRows);
+        $downstreamBeforeCommissionTimes = $earliestByEpc($downstreamBeforeCommissionRows);
+
         foreach ($commissionTimes as $epcId => $commission) {
-            $ship = $shipTimes[$epcId] ?? null;
-            if ($ship !== null && $commission['time']->greaterThan($ship['time'])) {
+            if (isset($this->missingCommissioningEpcIds[$epcId])) {
+                continue;
+            }
+
+            $downstream = $downstreamBeforeCommissionTimes[$epcId] ?? null;
+            if ($downstream !== null && $commission['time']->greaterThan($downstream['time'])) {
                 $this->add(
                     $findings,
                     $ctx,
                     'COMMISSION_AFTER_SHIP',
-                    'Commissioning event time is after this EPC was shipped in this document.',
-                    $ship['event_id'],
+                    'Commissioning event time is after this EPC was shipped or packed in this document.',
+                    $downstream['event_id'],
                     $epcId,
                 );
             }
@@ -921,7 +1095,7 @@ final class EpcisCatalogBusinessRules
         }
 
         $timesByEpc = [];
-        foreach ($commissionRows->merge($shipRows)->merge($decommissionRows) as $row) {
+        foreach ($commissionRows->merge($shipRows)->merge($packRows)->merge($decommissionRows) as $row) {
             $event = $eventsById->get((int) $row->event_id);
             if ($event === null || $event->event_time === null) {
                 continue;
@@ -1254,6 +1428,34 @@ final class EpcisCatalogBusinessRules
     private function eventIds(Collection $events): array
     {
         return $events->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Packing AggregationEvent participants (childEPC + parentID).
+     *
+     * TraceLink flags any packing activity before commission; SGTINs may appear as
+     * either child or parent on AggregationEvent (see demo2 inbound #7309 parentID case).
+     *
+     * @param  list<int>  $eventIds
+     * @return Collection<int, mixed>
+     */
+    private function packingEpcRows(array $eventIds): Collection
+    {
+        $result = collect();
+        if ($eventIds === [] || ! Schema::hasTable('event_epcs')) {
+            return $result;
+        }
+
+        foreach (array_chunk($eventIds, 1000) as $chunk) {
+            $result = $result->merge(
+                DB::table('event_epcs')
+                    ->whereIn('event_id', $chunk)
+                    ->whereIn('role', ['childEPC', 'parentID'])
+                    ->get(['event_epcs.event_id', 'event_epcs.epc_id']),
+            );
+        }
+
+        return $result;
     }
 
     /**

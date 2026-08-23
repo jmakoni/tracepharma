@@ -157,6 +157,75 @@ class TenantSettingsTest extends TestCase
     }
 
     #[Test]
+    public function wms_receive_confirm_url_requires_https_and_rejects_private_hosts(): void
+    {
+        TenantSettings::assertWmsReceiveConfirmUrlWithoutUserinfo(null);
+        TenantSettings::assertWmsReceiveConfirmUrlWithoutUserinfo('');
+        TenantSettings::assertWmsReceiveConfirmUrlWithoutUserinfo('https://wms.example.test/receive-confirm');
+
+        $rejected = [
+            'http://wms.example.test/receive-confirm',
+            'https://user:secret@wms.example.test/receive-confirm',
+            'https://127.0.0.1/receive-confirm',
+            'https://localhost/receive-confirm',
+            'https://10.1.2.3/receive-confirm',
+            'https://172.16.0.8/receive-confirm',
+            'https://192.168.1.20/receive-confirm',
+            'https://169.254.169.254/latest/meta-data',
+            'https://[::1]/receive-confirm',
+            'https://metadata.google.internal/computeMetadata/v1/',
+        ];
+
+        foreach ($rejected as $url) {
+            try {
+                TenantSettings::assertWmsReceiveConfirmUrlWithoutUserinfo($url);
+                $this->fail('Expected WMS receive-confirm URL to be rejected: '.$url);
+            } catch (\InvalidArgumentException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
+    #[Test]
+    public function wms_receive_confirm_url_rejects_ipv4_mapped_loopback_literal(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        TenantSettings::assertWmsReceiveConfirmUrlWithoutUserinfo('https://[::ffff:127.0.0.1]/receive-confirm');
+    }
+
+    #[Test]
+    public function wms_resolved_addresses_deny_loopback_and_link_local_but_allow_rfc1918(): void
+    {
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.0.0.1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.1.2.3'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.169.254'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.1.1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('fe80::1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::ffff:127.0.0.1'));
+        $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('10.1.2.3'));
+        $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('172.16.0.8'));
+        $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('192.168.1.20'));
+        $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('8.8.8.8'));
+    }
+
+    #[Test]
+    public function wms_receive_confirm_url_save_rejects_http_loopback(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'wms_receive_confirm_url' => 'http://127.0.0.1/receive-confirm',
+            ]);
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
     public function save_organization_persists_company_prefix_column(): void
     {
         $tenant = $this->createCentralTenant();

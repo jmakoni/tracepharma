@@ -21,6 +21,7 @@ class ExceptionCorrectionProfileStubCodesTest extends TestCase
             'L3_TRANSMISSION_FAILURE',
             'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
+            // Superseded at runtime by SERIAL_SHIPPED_NOT_COMMISSIONED / MISSING_COMMISSIONING.
             'SHIP_BEFORE_COMMISSION',
         ], $codes);
 
@@ -48,5 +49,24 @@ class ExceptionCorrectionProfileStubCodesTest extends TestCase
         $this->assertTrue($profile->showsDocumentTools());
         $this->assertFalse($profile->showsWaive());
         $this->assertSame(ExceptionCorrectionProfile::ACTION_FIX_DOCUMENT, $profile->primaryActionKey());
+    }
+
+    #[Test]
+    public function extract_gtins_from_description_returns_every_gtin(): void
+    {
+        $this->assertSame(
+            ['00301161111114'],
+            ExceptionCorrectionProfile::extractGtinsFromDescription('GTIN not found in product master: 00301161111114'),
+        );
+        $this->assertSame(
+            ['00301161111114', '00301162222221'],
+            ExceptionCorrectionProfile::extractGtinsFromDescription(
+                'GTIN not found in product master: 00301161111114; GTIN not found in product master: 00301162222221',
+            ),
+        );
+        $this->assertSame('00301161111114', ExceptionCorrectionProfile::extractGtinFromDescription(
+            'GTIN not found in product master: 00301161111114; GTIN not found in product master: 00301162222221',
+        ));
+        $this->assertSame([], ExceptionCorrectionProfile::extractGtinsFromDescription('No identifiers here.'));
     }
 }

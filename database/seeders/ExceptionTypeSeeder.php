@@ -45,7 +45,7 @@ class ExceptionTypeSeeder extends Seeder
     public static function ensure(string $code): ?ExceptionType
     {
         $code = strtoupper(trim($code));
-        $seeder = new self();
+        $seeder = new self;
 
         foreach ($seeder->catalog() as $row) {
             if ($row['code'] !== $code) {
@@ -163,6 +163,7 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('MASTER_DATA_SYNC_LAG', 'Master Data Sync Lag', ExceptionTypeCategory::System, ExceptionSeverity::Medium, 'GTIN/GLN master data out of date', 'data_issues'),
             $this->row('INGESTION_PARSE_ERROR', 'Ingestion Parse Error', ExceptionTypeCategory::System, ExceptionSeverity::High, 'XML/JSON could not be parsed', 'data_issues'),
             $this->row('INTERNAL_VALIDATION_FAILED', 'Internal Business Rule Validation Failed', ExceptionTypeCategory::System, ExceptionSeverity::High, 'Failed platform-specific business rules', 'data_issues'),
+            $this->row('FINDINGS_TRUNCATED', 'Validation Findings Truncated', ExceptionTypeCategory::System, ExceptionSeverity::Medium, 'Additional findings of one type were omitted due to the per-type cap', 'data_issues'),
 
             // Fallback
             $this->row('UNCLASSIFIED', 'Unclassified', ExceptionTypeCategory::System, ExceptionSeverity::Medium, 'Fallback type for unmapped ingest signals', null),

@@ -25,7 +25,9 @@ use Database\Seeders\ExceptionTypeSeeder;
  * {@see RecordOperationalEpcisCatalogSignal} that no job/controller calls yet
  * (PARTNER_REJECTED_FILE, MISSING_MDN, LATE_MDN, L2_L3_RECONCILIATION_FAILURE,
  * L3_TRANSMISSION_FAILURE, AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
- * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator)
+ * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator;
+ * superseded for live detection by {@see EpcisCatalogBusinessRules} emitting
+ * SERIAL_SHIPPED_NOT_COMMISSIONED and MISSING_COMMISSIONING instead — keep stub-hidden, no new emitter)
  * intentionally fall through to the generic {@see self::FAMILY_FALLBACK} profile.
  */
 final class ExceptionCorrectionProfile
@@ -276,15 +278,25 @@ final class ExceptionCorrectionProfile
      */
     public static function extractGtinFromDescription(?string $description): ?string
     {
+        $gtins = self::extractGtinsFromDescription($description);
+
+        return $gtins[0] ?? null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function extractGtinsFromDescription(?string $description): array
+    {
         if ($description === null || $description === '') {
-            return null;
+            return [];
         }
 
-        if (preg_match('/\bGTIN[A-Za-z0-9\-]*\b[^0-9]*(\d{8}|\d{12,14})\b/i', $description, $matches) === 1) {
-            return $matches[1];
+        if (preg_match_all('/\bGTIN[A-Za-z0-9\-]*\b[^0-9]*(\d{8}|\d{12,14})\b/i', $description, $matches) < 1) {
+            return [];
         }
 
-        return null;
+        return array_values(array_unique($matches[1]));
     }
 
     /**
@@ -477,7 +489,7 @@ final class ExceptionCorrectionProfile
         'TIMING_INVERSION' => self::FAMILY_FALLBACK, // orphaned: catalogued/severity-mapped but never raised
         'COMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
         'EVENTS_OUT_OF_ORDER' => self::FAMILY_TIMING,
-        'SHIP_BEFORE_COMMISSION' => self::FAMILY_FALLBACK, // orphaned: catalogued/severity-mapped but never raised
+        'SHIP_BEFORE_COMMISSION' => self::FAMILY_FALLBACK, // orphaned/superseded by SERIAL_SHIPPED_NOT_COMMISSIONED + MISSING_COMMISSIONING
         'DECOMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
 
         // Transmission & Partner
@@ -491,7 +503,7 @@ final class ExceptionCorrectionProfile
         'MISSING_BIZ_TRANSACTION' => self::FAMILY_DOCUMENT,
 
         // Process & DSCSA Compliance
-        'MISSING_COMMISSIONING' => self::FAMILY_QUARANTINE, // not currently emitted; mapped by regulatory-risk category
+        'MISSING_COMMISSIONING' => self::FAMILY_QUARANTINE,
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => self::FAMILY_QUARANTINE,
         'DECOMMISSIONED_SERIAL_SHIPPED' => self::FAMILY_QUARANTINE,
         'SUSPECT_PRODUCT' => self::FAMILY_QUARANTINE,
@@ -507,6 +519,7 @@ final class ExceptionCorrectionProfile
         'MASTER_DATA_SYNC_LAG' => self::FAMILY_MASTER_DATA_PRODUCT,
         'INGESTION_PARSE_ERROR' => self::FAMILY_DOCUMENT,
         'INTERNAL_VALIDATION_FAILED' => self::FAMILY_DOCUMENT,
+        'FINDINGS_TRUNCATED' => self::FAMILY_DOCUMENT,
 
         // Fallback
         'UNCLASSIFIED' => self::FAMILY_FALLBACK,
@@ -546,7 +559,7 @@ final class ExceptionCorrectionProfile
             'blurb' => 'A trading partner verification (VRS) request failed for this product. Quarantine the affected units pending a successful re-verification or confirmed disposition.',
         ],
         'MISSING_COMMISSIONING' => [
-            'blurb' => 'A serial exists elsewhere in the supply chain with no commissioning event on file — high DSCSA regulatory risk. Quarantine the affected units and investigate where commissioning should have occurred.',
+            'blurb' => 'An EPC was packed or shipped in this document while still reserved (no usable commissioning in this document) — high DSCSA regulatory risk. Quarantine the affected units and investigate where commissioning should have occurred.',
         ],
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => [
             'blurb' => 'A serial was shipped but was never commissioned — high DSCSA regulatory risk. Quarantine the affected units and investigate the commissioning gap before releasing to distribution.',
@@ -661,6 +674,9 @@ final class ExceptionCorrectionProfile
         'INTERNAL_VALIDATION_FAILED' => [
             'blurb' => 'Platform business-rule validation failed for this document. Review the validation errors, correct or replace the file, and re-process. Waiver is not available for this signal.',
             'waive' => false,
+        ],
+        'FINDINGS_TRUNCATED' => [
+            'blurb' => 'Some findings of the same type were omitted because this document exceeded the per-type validation cap. Investigate the surfaced sample and request a corrected file if needed.',
         ],
     ];
 }

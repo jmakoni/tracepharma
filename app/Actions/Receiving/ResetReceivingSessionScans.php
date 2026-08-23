@@ -104,6 +104,8 @@ final class ResetReceivingSessionScans
                 'confirmed_parent_count' => 0,
                 'expected_child_count' => 0,
                 'confirmed_child_count' => 0,
+                'active_parent_epc_id' => null,
+                'short_closed_parent_epc_ids' => null,
                 'completed_at' => null,
                 'matched_epcis_document_id' => null,
             ])->save();
@@ -253,6 +255,8 @@ final class ResetReceivingSessionScans
                 'confirmed_parent_count' => 0,
                 'expected_child_count' => 0,
                 'confirmed_child_count' => 0,
+                'active_parent_epc_id' => null,
+                'short_closed_parent_epc_ids' => null,
                 'completed_at' => null,
             ])->save();
 

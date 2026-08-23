@@ -35,6 +35,11 @@
         @keydown.escape.window="if (cameraOn) { stopCamera() } else if (cartOpen) { closeCart() }"
     >
         <header class="tp-floor-receive__sticky-header">
+            <div class="flex min-w-0 flex-col gap-1">
+                <span class="badge badge-outline tp-floor-receive__mode-chip">{{ $this->edgeModeChipLabel() }}</span>
+                @if ($this->isScanFirst() && $this->attachedInvoiceFilename())
+                    <span class="text-xs opacity-70">Invoice: {{ $this->attachedInvoiceFilename() }}</span>
+                @endif
             <div
                 class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
                 aria-label="{{ $this->progressChipAriaLabel() }}"
@@ -48,6 +53,15 @@
                     <div class="stat">
                         <div class="stat-title">{{ $childTypeLabel }}</div>
                         <div class="stat-value text-2xl">{{ $this->childProgressQuantity() }}</div>
+                    </div>
+                @endif
+            </div>
+                @if ($lockedTote = $this->openToteLockedParentLabel())
+                    <div class="text-sm font-medium">
+                        Open tote {{ $lockedTote }}
+                        @if ($lockedProgress = $this->openToteLockedChildProgress())
+                            <span class="opacity-70"> · {{ $lockedProgress }} {{ $childTypeLabel }}</span>
+                        @endif
                     </div>
                 @endif
             </div>
@@ -84,6 +98,16 @@
                         role="menuitem"
                         onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
                     >Open desktop receive</a>
+
+                    @if ($this->canAttachInvoice())
+                        <button
+                            type="button"
+                            class="tp-floor-receive__menu-item"
+                            role="menuitem"
+                            wire:click="mountAction('attachInvoice')"
+                            @click="open = false"
+                        >Attach invoice</button>
+                    @endif
 
                     @if ($this->canResetScans())
                         <button
@@ -190,6 +214,43 @@
                 @endif
 
                 <x-staged-scan-panel :staged-scans="$this->stagedScans" />
+
+                @if ($this->canAttachInvoice())
+                    <button
+                        type="button"
+                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral min-h-14"
+                        wire:click="mountAction('attachInvoice')"
+                    >
+                        Attach invoice
+                    </button>
+                @endif
+
+                @if ($this->canCloseOpenTote())
+                    <button
+                        type="button"
+                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral min-h-14"
+                        wire:click="mountAction('closeOpenTote')"
+                        wire:loading.attr="disabled"
+                    >
+                        Close tote
+                    </button>
+                @endif
+
+                @if ($this->canAcceptRemaining())
+                    <button
+                        type="button"
+                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral min-h-14"
+                        @if ($this->acceptRemainingEnabled())
+                            wire:click="mountAction('acceptRemaining')"
+                        @else
+                            disabled
+                            aria-disabled="true"
+                        @endif
+                        wire:loading.attr="disabled"
+                    >
+                        Accept remaining
+                    </button>
+                @endif
 
                 @if ($canComplete)
                     <button
@@ -378,6 +439,17 @@
                             wire:loading.attr="disabled"
                         >
                             Cancel receive
+                        </button>
+                    @endif
+
+                    @if ($this->canHardDeleteReceiving())
+                        <button
+                            type="button"
+                            class="tp-floor-receive__cancel-session-btn"
+                            wire:click="mountAction('deleteReceiving')"
+                            wire:loading.attr="disabled"
+                        >
+                            Delete receive
                         </button>
                     @endif
 

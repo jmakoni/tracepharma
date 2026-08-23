@@ -98,6 +98,9 @@ final class EpcisValidationSeverityMap
         'INGESTION_PARSE_ERROR' => 'error',
         'INTERNAL_VALIDATION_FAILED' => 'error',
 
+        // Validation cap overflow
+        'FINDINGS_TRUNCATED' => 'warning',
+
         // Fallback
         'UNCLASSIFIED' => 'warning',
     ];
@@ -113,7 +116,6 @@ final class EpcisValidationSeverityMap
         // are visible but must not block receiving until partner choreography is clean.
         'SHIP_BEFORE_COMMISSION' => 'warning',
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => 'warning',
-        'MISSING_COMMISSIONING' => 'warning',
         'SERIAL_ALREADY_COMMISSIONED' => 'warning',
         'BROKEN_AGGREGATION' => 'warning',
         'MISSING_SOURCE_DESTINATION' => 'warning',

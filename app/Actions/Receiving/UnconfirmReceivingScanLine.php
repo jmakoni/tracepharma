@@ -26,8 +26,11 @@ final class UnconfirmReceivingScanLine
         private readonly CompensateTransferReceiveLine $compensateTransferReceiveLine,
     ) {}
 
-    public function handle(ReceivingScanLine $line, ?int $actorId = null): ReceivingSession
-    {
+    public function handle(
+        ReceivingScanLine $line,
+        ?int $actorId = null,
+        bool $allowChildUnderConfirmedParent = false,
+    ): ReceivingSession {
         if (! JobRoleAccess::allows(Permissions::NavReceive)) {
             throw new DomainException('Receiving is not authorized for your job role.');
         }
@@ -42,7 +45,7 @@ final class UnconfirmReceivingScanLine
 
         $lineId = (int) $line->getKey();
 
-        $result = DB::transaction(function () use ($line): ReceivingSession {
+        $result = DB::transaction(function () use ($line, $allowChildUnderConfirmedParent): ReceivingSession {
             $line = ReceivingScanLine::query()
                 ->whereKey($line->getKey())
                 ->lockForUpdate()
@@ -79,7 +82,7 @@ final class UnconfirmReceivingScanLine
                         ->where('status', 'confirmed')
                         ->exists();
 
-                    if ($parentConfirmed) {
+                    if ($parentConfirmed && ! $allowChildUnderConfirmedParent) {
                         throw new DomainException('Cannot remove scan: unconfirm the parent pallet first.');
                     }
                 }

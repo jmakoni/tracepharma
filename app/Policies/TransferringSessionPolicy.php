@@ -32,6 +32,20 @@ class TransferringSessionPolicy
             && $this->canAccessEitherSite($user, $session);
     }
 
+    public function delete(User $user, TransferringSession $session): bool
+    {
+        if (! JobRoleAccess::allows(Permissions::NavShip, $user)) {
+            return false;
+        }
+
+        $fromSiteId = $session->from_site_id;
+        if ($fromSiteId === null) {
+            return false;
+        }
+
+        return SiteAccess::canAccessSite($user, (int) $fromSiteId);
+    }
+
     private function canAccessEitherSite(User $user, TransferringSession $session): bool
     {
         $fromSiteId = $session->from_site_id;

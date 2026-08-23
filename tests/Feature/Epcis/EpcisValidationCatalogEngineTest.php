@@ -15,7 +15,7 @@ class EpcisValidationCatalogEngineTest extends TestCase
     #[Test]
     public function catalog_lists_all_seeded_codes_and_clearable_subset(): void
     {
-        $this->assertCount(65, EpcisValidationCatalog::all());
+        $this->assertCount(66, EpcisValidationCatalog::all());
         $this->assertTrue(EpcisValidationCatalog::isOwned('MISSING_SOURCE_DESTINATION'));
         $this->assertTrue(EpcisValidationCatalog::isOwned('PARTNER_REJECTED_FILE'));
         $this->assertNotContains('PARTNER_REJECTED_FILE', EpcisValidationCatalog::clearableCodes());
@@ -43,6 +43,7 @@ class EpcisValidationCatalogEngineTest extends TestCase
         // structural errors like MISSING_MANDATORY_FIELD, so the severity map keeps it at
         // 'warning' rather than escalating it to 'error'.
         $this->assertSame('warning', EpcisValidationSeverityMap::severityFor('INVALID_BIZSTEP', $ctx));
+        $this->assertSame('critical', EpcisValidationSeverityMap::severityFor('MISSING_COMMISSIONING', $ctx));
     }
 
     #[Test]

@@ -3,6 +3,7 @@
 namespace App\Actions\Shipping;
 
 use App\Enums\SiteAtpReadinessStatus;
+use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
@@ -11,9 +12,11 @@ use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpReadinessGate;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\MasterData\TenantReceivingState;
+use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 /**
  * Return human-readable blockers before sending a ship order.
@@ -24,6 +27,7 @@ final class ValidateOutboundShippingSend
 {
     public function __construct(
         private readonly DetectOpenParentHierarchyOnShip $openParentHierarchyOnShip,
+        private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
     ) {}
 
     public function handle(OutboundShippingSession $session): array
@@ -70,8 +74,41 @@ final class ValidateOutboundShippingSend
             $blockers[] = $openParentBlocker;
         }
 
+        foreach ($this->emptyPlateBlockers($session) as $emptyPlateBlocker) {
+            $blockers[] = $emptyPlateBlocker;
+        }
+
         if (($atpBlocker = $this->atpBlocker($session)) !== null) {
             $blockers[] = $atpBlocker;
+        }
+
+        return $blockers;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function emptyPlateBlockers(OutboundShippingSession $session): array
+    {
+        $epcIds = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->pluck('epc_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($epcIds === []) {
+            return [];
+        }
+
+        $blockers = [];
+
+        foreach (Epc::query()->whereIn('id', $epcIds)->get() as $epc) {
+            try {
+                $this->assertOutermostSsccHasChildren->handle($epc);
+            } catch (InvalidArgumentException $exception) {
+                $blockers[] = $exception->getMessage();
+            }
         }
 
         return $blockers;

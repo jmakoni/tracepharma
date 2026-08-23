@@ -3,8 +3,11 @@
 namespace App\Filament\App\Resources\ReceivingSessions\Tables;
 
 use App\Actions\Receiving\CancelReceivingSession;
+use App\Actions\Receiving\DeleteReceivingSession;
 use App\Enums\ReceivingSessionKind;
+use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Receiving\ReceivingSession;
 use App\Support\Auth\CurrentSite;
@@ -217,6 +220,10 @@ class ReceivingSessionsTable
                         }),
                     'receiving_cancel',
                     requireReason: true,
+                ),
+                UnsubmittedSessionDeleteAction::forReceiving(
+                    fn (ReceivingSession $record) => app(DeleteReceivingSession::class)->handle($record, auth()->id()),
+                    '',
                 ),
             ]);
     }

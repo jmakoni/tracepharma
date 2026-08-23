@@ -16,6 +16,8 @@ use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -23,8 +25,6 @@ use App\Support\Labeling\PreviewNextSsccLabels;
 use App\Support\Packing\AcquirePackChildLocks;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
@@ -79,7 +79,7 @@ class PackWorkstation extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsPacking())
+        return TenantFeatures::forTenant(tenant())->supportsPacking()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
@@ -812,13 +812,7 @@ class PackWorkstation extends Page
 
     public function boundParentChildCount(): int
     {
-        if ($this->parentLabelId === null) {
-            return 0;
-        }
-
-        return SsccLabelChild::query()
-            ->where('sscc_label_id', $this->parentLabelId)
-            ->count();
+        return count($this->boundParentOpenChildEpcIds());
     }
 
     /**
@@ -826,34 +820,13 @@ class PackWorkstation extends Page
      */
     public function packContentSummary(): array
     {
-        $urns = [];
-        $ids = $this->childIds();
+        $ids = array_values(array_unique([...$this->childIds(), ...$this->boundParentOpenChildEpcIds()]));
 
-        if ($this->parentLabelId !== null) {
-            $urns = SsccLabelChild::query()
-                ->where('sscc_label_id', $this->parentLabelId)
-                ->pluck('child_epc')
-                ->filter()
-                ->map(fn (mixed $urn): string => (string) $urn)
-                ->all();
-        }
-
-        $query = Epc::query()->with('ilmd');
-        $query->where(function ($match) use ($ids, $urns): void {
-            if ($ids !== []) {
-                $match->orWhereIn('id', $ids);
-            }
-
-            if ($urns !== []) {
-                $match->orWhereIn('epc_uri', $urns);
-            }
-        });
-
-        if ($ids === [] && $urns === []) {
+        if ($ids === []) {
             return ['lot_count' => 0, 'gtin_count' => 0, 'is_mixed' => false];
         }
 
-        $epcs = $query->get(['id', 'epc_uri', 'gtin14']);
+        $epcs = Epc::query()->with('ilmd')->whereIn('id', $ids)->get(['id', 'epc_uri', 'gtin14']);
         $lots = [];
         $gtins = [];
 
@@ -1066,19 +1039,26 @@ class PackWorkstation extends Page
         }
 
         $openLink = $this->openParentLinkForChild((int) $epc->getKey());
-        if ($openLink !== null && $this->openLinkIsBoundParent($openLink)) {
-            return true;
+
+        return $openLink !== null && $this->openLinkIsBoundParent($openLink);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function boundParentOpenChildEpcIds(): array
+    {
+        $parent = $this->boundParentEpc();
+        if ($parent === null) {
+            return [];
         }
 
-        $uri = trim((string) $epc->epc_uri);
-        if ($uri === '') {
-            return false;
-        }
-
-        return SsccLabelChild::query()
-            ->where('sscc_label_id', $this->parentLabelId)
-            ->where('child_epc', $uri)
-            ->exists();
+        return AggregationLink::query()
+            ->open()
+            ->where('parent_epc_id', $parent->getKey())
+            ->pluck('child_epc_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
     }
 
     private function openLinkIsBoundParent(AggregationLink $link): bool
