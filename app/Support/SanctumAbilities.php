@@ -18,6 +18,8 @@ class SanctumAbilities
 
     public const VRS_DISPENSE_CHECK = 'vrs:dispense-check';
 
+    public const WMS_SHIP_CONFIRM = 'wms:ship-confirm';
+
     /**
      * @return array<string, string>
      */
@@ -28,6 +30,7 @@ class SanctumAbilities
             self::EPCIS_VIEW => 'List inbound EPCIS documents',
             self::EPCIS_TRANSMIT => 'Transmit outbound EPCIS XML',
             self::VRS_DISPENSE_CHECK => 'Dispense-check (VRS verification gate)',
+            self::WMS_SHIP_CONFIRM => 'WMS ship-confirm (Connector)',
         ];
     }
 

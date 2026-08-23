@@ -106,6 +106,21 @@ class InboundConnection extends Model
         return IntegrationEndpointUrl::inboundWebhook($tenantId, (int) $this->getKey());
     }
 
+    public function as2Url(?string $tenantId = null): ?string
+    {
+        if ($this->transport !== InboundTransport::As2) {
+            return null;
+        }
+
+        $tenantId ??= tenant()?->getKey();
+
+        if ($tenantId === null) {
+            return null;
+        }
+
+        return IntegrationEndpointUrl::inboundAs2($tenantId, (int) $this->getKey());
+    }
+
     public function hubUrl(): ?string
     {
         if ($this->transport !== InboundTransport::Https || ! $this->serialization_provider->supportsHubRouting()) {

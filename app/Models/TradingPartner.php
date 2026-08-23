@@ -28,6 +28,7 @@ class TradingPartner extends Model
 
     /** @use HasFactory<TradingPartnerFactory> */
     use HasFactory;
+
     use LogsActivity;
     use TenantSearchable;
 
@@ -80,9 +81,8 @@ class TradingPartner extends Model
     }
 
     /**
-     * `portal_share_uuid` is intentionally absent: the supplier portal token is only issued,
-     * rotated and revoked through SupplierPortalService, so no form or import can hand an
-     * outside party access to this partner's exception cases.
+     * `portal_share_uuid` and `customer_portal_uuid` are intentionally absent: portal
+     * tokens are issued only through SupplierPortalService / CustomerPortalService.
      */
     protected $fillable = [
         'fda_organization_id',

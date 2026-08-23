@@ -11,6 +11,16 @@ class IntegrationEndpointUrl
         return self::build('/api/webhooks/epcis/'.$tenantId.'/'.$connectionId);
     }
 
+    public static function inboundAs2(string $tenantId, int $connectionId): string
+    {
+        return self::build('/api/webhooks/as2/'.$tenantId.'/'.$connectionId);
+    }
+
+    public static function vrsResponder(string $tenantId): string
+    {
+        return self::build('/api/webhooks/vrs/'.$tenantId);
+    }
+
     public static function inboundHub(string $provider, ?string $environment = null): string
     {
         $environment ??= tenant()?->inbound_environment;

@@ -28,7 +28,7 @@ final class CompleteOutboundShippingSession
 
     public function handle(OutboundShippingSession $session, ?int $actorId = null): OutboundShippingSession
     {
-        if (! TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()) {
+        if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
         }
 

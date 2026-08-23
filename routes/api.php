@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\V1\DispenseCheckController;
 use App\Http\Controllers\Api\V1\EpcisDocumentsController;
 use App\Http\Controllers\Api\V1\EpcisInboundController;
 use App\Http\Controllers\Api\V1\EpcisOutboundController;
+use App\Http\Controllers\Api\V1\WmsShipConfirmController;
+use App\Http\Controllers\Webhooks\As2InboundWebhookController;
 use App\Http\Controllers\Webhooks\As2MdnWebhookController;
 use App\Http\Controllers\Webhooks\EpcisHubInboundWebhookController;
 use App\Http\Controllers\Webhooks\EpcisInboundWebhookController;
@@ -26,12 +28,19 @@ Route::middleware('throttle:webhooks')->group(function (): void {
 
     Route::post('webhooks/as2/mdn/{tenantId}/{connectionId}', [As2MdnWebhookController::class, 'handle'])
         ->name('webhooks.as2.mdn');
+
+    Route::post('webhooks/as2/{tenantId}/{connectionId}', [As2InboundWebhookController::class, 'handle'])
+        ->name('webhooks.as2.inbound');
 });
 
 Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v1')->group(function (): void {
     Route::post('dispense-check', DispenseCheckController::class)
         ->middleware('abilities:vrs:dispense-check')
         ->name('api.v1.dispense-check');
+
+    Route::post('wms/ship-confirm', WmsShipConfirmController::class)
+        ->middleware('abilities:wms:ship-confirm')
+        ->name('api.v1.wms.ship-confirm');
 
     Route::post('epcis/inbound', EpcisInboundController::class)
         ->middleware('abilities:epcis:upload')

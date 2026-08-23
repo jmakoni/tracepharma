@@ -168,6 +168,14 @@ return [
     ],
 
     /*
+    | Buyer-facing outbound ASN/EPCIS portal. Separate uuid from the supplier
+    | exception portal. Listed documents follow epcis.retention_years.
+    */
+    'customer_portal' => [
+        'link_ttl_days' => (int) env('TRACEPHARMA_CUSTOMER_PORTAL_LINK_TTL_DAYS', 30),
+    ],
+
+    /*
     | Partner acknowledgment links embedded in recall broadcast emails. Temporary
     | signed URLs tied to each tracing_request_notifications.ack_share_uuid row.
     */

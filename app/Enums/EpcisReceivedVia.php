@@ -14,6 +14,7 @@ enum EpcisReceivedVia: string
     case FilamentUpload = 'filament_upload';
     case HttpsWebhookHub = 'https_webhook_hub';
     case HttpsWebhook = 'https_webhook';
+    case As2Webhook = 'as2_webhook';
     case SftpPoll = 'sftp_poll';
     case Api = 'api';
     case Cli = 'cli';
@@ -24,6 +25,7 @@ enum EpcisReceivedVia: string
             self::FilamentUpload => 'Upload EPCIS',
             self::HttpsWebhookHub => 'Inbound hub',
             self::HttpsWebhook => 'HTTPS webhook',
+            self::As2Webhook => 'AS2 webhook',
             self::SftpPoll => 'SFTP poll',
             self::Api => 'REST API',
             self::Cli => 'CLI / internal',
@@ -42,6 +44,7 @@ enum EpcisReceivedVia: string
             self::FilamentUpload->value,
             self::HttpsWebhookHub->value,
             self::HttpsWebhook->value,
+            self::As2Webhook->value,
             self::SftpPoll->value,
             self::Api->value,
         ];
@@ -59,6 +62,7 @@ enum EpcisReceivedVia: string
         return match ($notes) {
             'Received via https_webhook_hub' => self::HttpsWebhookHub,
             'Received via https_webhook' => self::HttpsWebhook,
+            'Received via as2_webhook' => self::As2Webhook,
             'Received via sftp_poll' => self::SftpPoll,
             default => null,
         };

@@ -31,6 +31,27 @@ class TradingPartnerPortalShareTest extends TestCase
     }
 
     #[Test]
+    public function the_customer_portal_uuid_is_not_mass_assignable(): void
+    {
+        $partner = new TradingPartner;
+
+        $this->assertFalse($partner->isFillable('customer_portal_uuid'));
+    }
+
+    #[Test]
+    public function filling_a_partner_cannot_set_a_customer_portal_uuid(): void
+    {
+        $partner = new TradingPartner;
+        $partner->fill([
+            'name' => 'Buyer Portal Partner',
+            'customer_portal_uuid' => 'aa11bb22-cccc-dddd-eeee-ff0011223344',
+        ]);
+
+        $this->assertSame('Buyer Portal Partner', $partner->name);
+        $this->assertNull($partner->customer_portal_uuid);
+    }
+
+    #[Test]
     public function the_portal_index_route_is_signed_and_throttled(): void
     {
         $middleware = Route::getRoutes()
@@ -39,5 +60,16 @@ class TradingPartnerPortalShareTest extends TestCase
 
         $this->assertContains('signed', $middleware);
         $this->assertContains('throttle:20,1', $middleware);
+    }
+
+    #[Test]
+    public function the_customer_portal_routes_are_signed_and_throttled(): void
+    {
+        foreach (['tenant.customer-portal.index', 'tenant.customer-portal.download'] as $name) {
+            $middleware = Route::getRoutes()->getByName($name)->gatherMiddleware();
+
+            $this->assertContains('signed', $middleware);
+            $this->assertContains('throttle:20,1', $middleware);
+        }
     }
 }

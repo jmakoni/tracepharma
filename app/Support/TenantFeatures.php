@@ -137,6 +137,23 @@ class TenantFeatures
     }
 
     /**
+     * Low-volume pharmacy TI desk. Does not unlock Ship Order / Scan Out / WMS.
+     */
+    public function supportsPharmacyOutboundDesk(): bool
+    {
+        return $this->profile === TenantProfile::Pharmacy;
+    }
+
+    /**
+     * Author ship sessions from Scan Out / Ship Order / pharmacy desk.
+     * WMS ship-confirm stays on supportsOutboundIntegrations() only.
+     */
+    public function canAuthorOutboundShipments(): bool
+    {
+        return $this->supportsOutboundIntegrations() || $this->supportsPharmacyOutboundDesk();
+    }
+
+    /**
      * SSCC pallet labeling — same outbound shipper profiles as outbound integrations
      * (Manufacturer already included).
      */

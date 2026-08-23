@@ -69,5 +69,16 @@ class SanctumAbilitiesTest extends TestCase
         $this->assertArrayNotHasKey('update', $options);
         $this->assertArrayNotHasKey('delete', $options);
         $this->assertArrayHasKey(SanctumAbilities::EPCIS_UPLOAD, $options);
+        $this->assertArrayHasKey(SanctumAbilities::WMS_SHIP_CONFIRM, $options);
+    }
+
+    #[Test]
+    public function validate_for_token_creation_accepts_wms_ship_confirm(): void
+    {
+        $abilities = SanctumAbilities::validateForTokenCreation([
+            SanctumAbilities::WMS_SHIP_CONFIRM,
+        ]);
+
+        $this->assertSame([SanctumAbilities::WMS_SHIP_CONFIRM], $abilities);
     }
 }

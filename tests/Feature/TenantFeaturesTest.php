@@ -51,6 +51,8 @@ class TenantFeaturesTest extends TestCase
 
         $this->assertTrue($f->supportsPacking());
         $this->assertFalse($f->supportsOutboundIntegrations());
+        $this->assertTrue($f->supportsPharmacyOutboundDesk());
+        $this->assertTrue($f->canAuthorOutboundShipments());
         $this->assertFalse($f->supportsSsccLabeling());
     }
 
