@@ -55,7 +55,7 @@ class IngestEpcisXmlDocumentTest extends TestCase
 
             $this->assertSame('validated', $document->status);
             $this->assertSame($uuid, $document->document_uuid);
-            $this->assertSame(2, $document->event_count);
+            $this->assertSame(3, $document->event_count);
             $this->assertSame(2, $document->epc_count);
             $this->assertTrue($document->dscsa_affirm);
             $this->assertStringContainsString('FDCA', (string) $document->legal_notice);
@@ -64,7 +64,7 @@ class IngestEpcisXmlDocumentTest extends TestCase
                 $this->assertSame('0096295000009', $document->receiver_gln);
             }
 
-            $this->assertSame(2, EpcisEvent::query()->where('document_id', $document->id)->count());
+            $this->assertSame(3, EpcisEvent::query()->where('document_id', $document->id)->count());
             $this->assertTrue(Epc::query()->where('epc_uri', 'urn:epc:id:sgtin:030116.0200116.10000082001560')->exists());
             $this->assertTrue(Epc::query()->where('epc_uri', 'urn:epc:id:sscc:030116.01001227052')->exists());
 
@@ -79,7 +79,7 @@ class IngestEpcisXmlDocumentTest extends TestCase
             $this->assertSame(1, AggregationLink::query()->whereIn('established_by_event_id', $eventIds)->count());
             $this->assertSame(1, DB::table('event_epcs')->whereIn('event_id', $eventIds)->where('role', 'parentID')->count());
             $this->assertSame(1, DB::table('event_epcs')->whereIn('event_id', $eventIds)->where('role', 'childEPC')->count());
-            $this->assertSame(1, DB::table('event_epcs')->whereIn('event_id', $eventIds)->where('role', 'epcList')->count());
+            $this->assertSame(2, DB::table('event_epcs')->whereIn('event_id', $eventIds)->where('role', 'epcList')->count());
 
             @unlink($tmp);
         } finally {

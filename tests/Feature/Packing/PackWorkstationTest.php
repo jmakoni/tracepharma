@@ -6,6 +6,7 @@ use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Actions\Shipping\ValidateOutboundShippingSend;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\OpenTransferringSession;
 use App\Enums\EpcisAuthoredKind;
@@ -31,6 +32,7 @@ use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Services\Labeling\SsccBuilder;
+use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
@@ -765,7 +767,7 @@ class PackWorkstationTest extends TestCase
             $other = $this->generateEmptySscc($site);
             $child = $this->createReceivedChild($site, 'LOT-A');
 
-            \Illuminate\Support\Facades\DB::table('sscc_label_children')->insert([
+            DB::table('sscc_label_children')->insert([
                 'sscc_label_id' => $other->getKey(),
                 'child_epc' => $child->epc_uri,
                 'created_at' => now(),
@@ -825,7 +827,7 @@ class PackWorkstationTest extends TestCase
 
             $this->assertStringContainsString('already shipped', strtolower((string) $shipped->get('lastMessage')));
 
-            $foreignBuilt = app(\App\Services\Labeling\SsccBuilder::class)->build(
+            $foreignBuilt = app(SsccBuilder::class)->build(
                 '030116',
                 $this->uniqueSerialBase(),
                 0,
@@ -941,6 +943,227 @@ class PackWorkstationTest extends TestCase
             $moved = app(ConfirmTransferringScan::class)->handle($transfer, (string) $label->sscc_18);
             $this->assertTrue($moved['ok'], $moved['message']);
             $this->assertSame('confirmed', $moved['effect']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function unpack_after_pack_blocks_ship_and_transfer_of_empty_tenant_sscc(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            $toSite = $this->createCommissionSite($tenant);
+            TenantSettings::forTenant($tenant)->setDefaultShipFromSiteId((int) $site->id);
+            $user = $this->actingAsWithSiteAccess($site);
+            $user->syncSites([(int) $site->id, (int) $toSite->id], (int) $site->id);
+            $this->prepareSerialPool($this->uniqueSerialBase());
+
+            [$case, $bottle] = $this->seedOpenHierarchy($site);
+            $this->assignLot($bottle, 'LOT-A');
+            $unpacked = app(UnpackReceivingHierarchy::class)->handleParent($case, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $unpacked['document']->getKey();
+
+            $label = $this->generateEmptySscc($site);
+            Livewire::test(PackWorkstation::class)
+                ->set('scan', (string) $label->sscc_18)
+                ->call('processScan')
+                ->set('scan', (string) $bottle->epc_uri)
+                ->call('processScan')
+                ->callAction('confirmPack')
+                ->assertSet('lastTone', 'ok');
+
+            $parent = Epc::query()->where('sscc18', $label->sscc_18)->first();
+            $this->assertNotNull($parent);
+            $this->assertTrue(
+                AggregationLink::query()
+                    ->open()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->exists(),
+            );
+
+            $broke = app(UnpackReceivingHierarchy::class)->handleParent($parent, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $broke['document']->getKey();
+
+            $this->assertFalse(
+                AggregationLink::query()
+                    ->open()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->exists(),
+            );
+            $this->assertGreaterThan(0, $label->fresh()->children()->count());
+
+            $shipSession = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->shippingSessionIds[] = (int) $shipSession->getKey();
+            $ship = app(ConfirmOutboundShippingScan::class)->handle($shipSession, (string) $label->sscc_urn);
+            $this->assertFalse($ship['ok']);
+            $this->assertStringContainsString('no packed children', strtolower((string) $ship['message']));
+
+            $transfer = app(OpenTransferringSession::class)->handle(
+                fromSiteId: (int) $site->getKey(),
+                toSiteId: (int) $toSite->getKey(),
+            );
+            $this->transferSessionIds[] = (int) $transfer->getKey();
+            $moved = app(ConfirmTransferringScan::class)->handle($transfer, (string) $label->sscc_18);
+            $this->assertFalse($moved['ok']);
+            $this->assertStringContainsString('no packed children', strtolower((string) $moved['message']));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function send_blocks_tenant_sscc_confirmed_then_unpacked(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            TenantSettings::forTenant($tenant)->setDefaultShipFromSiteId((int) $site->id);
+            $this->actingAsWithSiteAccess($site);
+            $this->prepareSerialPool($this->uniqueSerialBase());
+
+            [$case, $bottle] = $this->seedOpenHierarchy($site);
+            $this->assignLot($bottle, 'LOT-A');
+            $unpacked = app(UnpackReceivingHierarchy::class)->handleParent($case, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $unpacked['document']->getKey();
+
+            $label = $this->generateEmptySscc($site);
+            Livewire::test(PackWorkstation::class)
+                ->set('scan', (string) $label->sscc_18)
+                ->call('processScan')
+                ->set('scan', (string) $bottle->epc_uri)
+                ->call('processScan')
+                ->callAction('confirmPack')
+                ->assertSet('lastTone', 'ok');
+
+            $parent = Epc::query()->where('sscc18', $label->sscc_18)->firstOrFail();
+
+            $shipSession = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->shippingSessionIds[] = (int) $shipSession->getKey();
+            $ship = app(ConfirmOutboundShippingScan::class)->handle($shipSession, (string) $label->sscc_urn);
+            $this->assertTrue($ship['ok'], (string) ($ship['message'] ?? ''));
+
+            $broke = app(UnpackReceivingHierarchy::class)->handleParent($parent, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $broke['document']->getKey();
+            $this->assertGreaterThan(0, $label->fresh()->children()->count());
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($shipSession->fresh() ?? $shipSession);
+            $this->assertTrue(
+                collect($blockers)->contains(
+                    fn (string $blocker): bool => str_contains(strtolower($blocker), 'no packed children'),
+                ),
+                'Send-time empty-plate gate must block a confirmed SSCC unpacked before send. Blockers: '.implode(' | ', $blockers),
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function unpack_then_rebind_same_sscc_allows_readd_and_clears_hud(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            TenantSettings::forTenant($tenant)->setDefaultShipFromSiteId((int) $site->id);
+            $this->actingAsWithSiteAccess($site);
+            $this->prepareSerialPool($this->uniqueSerialBase());
+
+            [$case, $bottle] = $this->seedOpenHierarchy($site);
+            $this->assignLot($bottle, 'LOT-A');
+            $unpacked = app(UnpackReceivingHierarchy::class)->handleParent($case, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $unpacked['document']->getKey();
+
+            $label = $this->generateEmptySscc($site);
+            $component = Livewire::test(PackWorkstation::class)
+                ->set('scan', (string) $label->sscc_18)
+                ->call('processScan')
+                ->set('scan', (string) $bottle->epc_uri)
+                ->call('processScan')
+                ->callAction('confirmPack')
+                ->assertSet('lastTone', 'ok')
+                ->assertSet('parentLabelId', (int) $label->getKey());
+
+            $parent = Epc::query()->where('sscc18', $label->sscc_18)->firstOrFail();
+            $broke = app(UnpackReceivingHierarchy::class)->handleParent($parent, [(int) $bottle->getKey()], $site);
+            $this->documentIds[] = (int) $broke['document']->getKey();
+            $this->assertGreaterThan(0, $label->fresh()->children()->count());
+
+            $this->assertSame(0, $component->instance()->boundParentChildCount());
+            $this->assertSame(
+                ['lot_count' => 0, 'gtin_count' => 0, 'is_mixed' => false],
+                $component->instance()->packContentSummary(),
+            );
+
+            $component
+                ->set('scan', (string) $bottle->epc_uri)
+                ->call('processScan')
+                ->assertCount('children', 1)
+                ->assertSet('lastTone', 'ok')
+                ->callAction('confirmPack')
+                ->assertSet('lastTone', 'ok');
+
+            $this->assertTrue(
+                AggregationLink::query()
+                    ->open()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->where('child_epc_id', $bottle->getKey())
+                    ->exists(),
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function inbound_manufacturer_sscc_without_label_is_not_blocked_by_empty_plate_gate(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $parentUri = 'urn:epc:id:sscc:030116.0'.str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
+            $parent = Epc::query()->create(Epc::materializeAttributesFromUri($parentUri));
+            $this->epcIds[] = (int) $parent->getKey();
+
+            $this->assertFalse(
+                SsccLabel::query()
+                    ->where('sscc_urn', $parent->epc_uri)
+                    ->orWhere('sscc_18', $parent->sscc18)
+                    ->exists(),
+            );
+
+            app(AssertOutermostSsccHasChildren::class)->handle($parent);
         } finally {
             $this->cleanup($tenant);
         }

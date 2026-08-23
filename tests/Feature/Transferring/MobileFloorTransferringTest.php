@@ -161,6 +161,20 @@ class MobileFloorTransferringTest extends TestCase
     }
 
     #[Test]
+    public function desktop_blade_has_live_blur_and_enter_stage_scan_binding(): void
+    {
+        $blade = File::get(resource_path(
+            'views/filament/app/resources/transferring-sessions/pages/view-transferring-session.blade.php',
+        ));
+
+        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
+        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
+    }
+
+    #[Test]
     public function floor_hardware_scan_enter_confirms_dom_value_without_wire_property(): void
     {
         $tenant = $this->initializeDemo2Tenant();

@@ -17,6 +17,7 @@ use App\Support\Gs1\ElementString;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
+use App\Support\Shipping\EpcOnOpenShippingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -52,7 +53,7 @@ final class ConfirmOutboundShippingScan
         string $scan,
         ?int $userId = null,
     ): array {
-        if (! TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()) {
+        if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
         }
 
@@ -213,16 +214,16 @@ final class ConfirmOutboundShippingScan
                         'effect' => 'not_shippable',
                     ];
                 }
-            }
 
-            if ($this->openParentHierarchyOnShip->unexpectedParentForEpc($session, $epc) !== null) {
-                return [
-                    'ok' => false,
-                    'message' => 'This unit is packed under a container that is not on this ship order — scan the outermost SSCC instead.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'open_parent_hierarchy',
-                ];
+                if ($this->openParentHierarchyOnShip->unexpectedParentForEpc($session, $epc) !== null) {
+                    return [
+                        'ok' => false,
+                        'message' => 'This unit is packed under a container that is not on this ship order — scan the outermost SSCC instead.',
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => 'open_parent_hierarchy',
+                    ];
+                }
             }
 
             $line = OutboundShippingScanLine::query()->create([
@@ -254,7 +255,7 @@ final class ConfirmOutboundShippingScan
 
     private function onAnotherOpenShipSession(OutboundShippingSession $session, Epc $epc): bool
     {
-        return app(\App\Support\Shipping\EpcOnOpenShippingSession::class)->exists($epc, $session);
+        return app(EpcOnOpenShippingSession::class)->exists($epc, $session);
     }
 
     private function onOpenTransferSession(Epc $epc): bool

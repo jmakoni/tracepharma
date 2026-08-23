@@ -77,12 +77,12 @@ class EpcisIngestionPipelineTest extends TestCase
             $processed = app(EpcisIngestionService::class)->process($document);
 
             $this->assertSame('validated', $processed->status);
-            $this->assertSame(2, $processed->event_count);
+            $this->assertSame(3, $processed->event_count);
             $this->assertSame(2, $processed->epc_count);
             $this->assertNotNull($processed->processed_at);
             $this->assertNotNull($processed->last_processed_at);
             $this->assertNull($processed->error_message);
-            $this->assertSame(2, EpcisEvent::query()->where('document_id', $processed->id)->count());
+            $this->assertSame(3, EpcisEvent::query()->where('document_id', $processed->id)->count());
 
             @unlink($tmp);
         } finally {
@@ -171,6 +171,102 @@ class EpcisIngestionPipelineTest extends TestCase
             $this->documentIds[] = (int) $retry->getKey();
             $this->assertNotSame((int) $document->getKey(), (int) $retry->getKey());
             $this->assertSame('received', $retry->status);
+
+            @unlink($tmp);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function reprocess_dispatch_failure_marks_document_error_not_received(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        config([
+            'tracepharma.epcis_jobs.enabled' => true,
+            'queue.default' => 'redis',
+        ]);
+
+        try {
+            [$tmp] = $this->uniqueFixture('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $document = app(ReceiveEpcisUpload::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'reprocess-enqueue-fail.xml',
+                'dispatch' => false,
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+            $this->assertSame('received', $document->status);
+
+            Bus::shouldReceive('dispatch')
+                ->once()
+                ->andThrow(new RuntimeException('queue unavailable'));
+
+            try {
+                app(ReprocessEpcisDocument::class)->handle(
+                    $document,
+                    sync: false,
+                    force: true,
+                    authorizeExceptionsRole: false,
+                );
+                $this->fail('Expected reprocess enqueue failure to rethrow.');
+            } catch (RuntimeException $e) {
+                $this->assertSame('queue unavailable', $e->getMessage());
+            }
+
+            $document->refresh();
+            $this->assertSame('error', $document->status);
+            $this->assertStringContainsString('queue unavailable', (string) $document->error_message);
+
+            @unlink($tmp);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function outbound_reprocess_dispatch_failure_marks_transmission_failed_and_restores_status(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        config([
+            'tracepharma.epcis_jobs.enabled' => true,
+            'queue.default' => 'redis',
+        ]);
+
+        try {
+            [$tmp] = $this->uniqueFixture('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $document = app(ReceiveEpcisUpload::class)->handle($tmp, [
+                'direction' => 'outbound',
+                'original_filename' => 'reprocess-outbound-enqueue-fail.xml',
+                'dispatch' => false,
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+            $document->forceFill([
+                'status' => 'validated',
+                'transmission_status' => 'pending',
+            ])->save();
+
+            Bus::shouldReceive('dispatch')
+                ->once()
+                ->andThrow(new RuntimeException('queue unavailable'));
+
+            try {
+                app(ReprocessEpcisDocument::class)->handle(
+                    $document,
+                    sync: false,
+                    force: true,
+                    authorizeExceptionsRole: false,
+                );
+                $this->fail('Expected reprocess enqueue failure to rethrow.');
+            } catch (RuntimeException $e) {
+                $this->assertSame('queue unavailable', $e->getMessage());
+            }
+
+            $document->refresh();
+            $this->assertSame('validated', $document->status);
+            $this->assertSame('failed', $document->transmission_status);
+            $this->assertStringContainsString('queue unavailable', (string) $document->error_message);
 
             @unlink($tmp);
         } finally {
