@@ -33,16 +33,21 @@ class HubHealthWidget extends Widget
     protected function getViewData(): array
     {
         $metrics = AdminDashboardMetrics::make()->hubHealth();
+        $drift = $metrics['aggregation_link_fk_drift'];
+        $driftCount = $drift['count'] ?? 0;
+        $checkedAt = $drift['checked_at'] ?? null;
+        $neverChecked = $checkedAt === null;
         $empty = $metrics['environments'] === [] && $metrics['active_routes'] === 0
-            && ($metrics['aggregation_link_fk_drift']['count'] ?? 0) === 0;
+            && $driftCount === 0 && ! $neverChecked;
 
         return [
             'environments' => $metrics['environments'],
             'activeRoutes' => $metrics['active_routes'],
-            'aggregationLinkFkDriftCount' => $metrics['aggregation_link_fk_drift']['count'],
-            'aggregationLinkFkCheckedAt' => $metrics['aggregation_link_fk_drift']['checked_at']
+            'aggregationLinkFkDriftCount' => $driftCount,
+            'aggregationLinkFkCheckedAt' => $checkedAt
                 ?->timezone(config('app.timezone'))
                 ->format('g:i A'),
+            'aggregationLinkFkNeverChecked' => $neverChecked,
             'empty' => $empty,
             'asOf' => $metrics['as_of']->timezone(config('app.timezone'))->format('g:i A'),
             'hubUrl' => AdminDashboardLinks::pageUrl(EpcisHubSettings::class),
