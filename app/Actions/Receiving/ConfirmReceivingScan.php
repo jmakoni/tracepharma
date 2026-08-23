@@ -23,6 +23,8 @@ use App\Support\Gs1\ElementString;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\FindOpenAsnSessionExpectingEpc;
 use App\Support\Receiving\FindOpenTransferReceiveSessionExpectingEpc;
+use App\Support\Receiving\ReceivingEdgeMode;
+use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
@@ -204,223 +206,223 @@ final class ConfirmReceivingScan
                 $actor,
                 $alreadyConfirmedOnSession,
             ): array {
-            $session = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
+                $session = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
-            if (in_array($session->status, ['completed', 'cancelled'], true)) {
-                return [
-                    'ok' => false,
-                    'message' => 'This receiving session is already closed.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'not_in_session',
-                    'has_ti' => $hasTi,
-                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
-                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
-                    'ti_warning' => $tiWarning,
-                    'reconciled_asn_session_id' => null,
-                ];
-            }
+                if (in_array($session->status, ['completed', 'cancelled'], true)) {
+                    return [
+                        'ok' => false,
+                        'message' => 'This receiving session is already closed.',
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => 'not_in_session',
+                        'has_ti' => $hasTi,
+                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                        'ti_warning' => $tiWarning,
+                        'reconciled_asn_session_id' => null,
+                    ];
+                }
 
-            $line = ReceivingScanLine::query()
-                ->where('receiving_session_id', $session->getKey())
-                ->where('epc_id', $epc->getKey())
-                ->lockForUpdate()
-                ->first();
+                $line = ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('epc_id', $epc->getKey())
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($line !== null && $line->status === 'confirmed') {
-                $transferReconcile = [
-                    'session_id' => null,
-                    'warning' => null,
-                    'needs_completion' => false,
-                ];
-                if ($session->isScanFirst()) {
-                    $transferReconcile = $this->reconcileScanFirstToTransferReceive(
+                if ($line !== null && $line->status === 'confirmed') {
+                    $transferReconcile = [
+                        'session_id' => null,
+                        'warning' => null,
+                        'needs_completion' => false,
+                    ];
+                    if ($session->isScanFirst()) {
+                        $transferReconcile = $this->reconcileScanFirstToTransferReceive(
+                            $session,
+                            $line,
+                            $epc,
+                            $userId,
+                        );
+                    }
+
+                    return [
+                        'ok' => true,
+                        'message' => 'Already confirmed.',
+                        'line' => $line,
+                        'epc' => $epc,
+                        'effect' => 'already_confirmed',
+                        'has_ti' => $hasTi,
+                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                        'ti_warning' => $tiWarning,
+                        'reconciled_asn_session_id' => null,
+                        'reconciled_transfer_receive_session_id' => $transferReconcile['session_id'],
+                        'transfer_reconcile_warning' => $transferReconcile['warning'],
+                        'transfer_needs_completion' => $transferReconcile['needs_completion'],
+                    ];
+                }
+
+                // Inside the transaction: a hold opened after the barcode resolved must still
+                // block the line, and the session row is already locked against a racing scan.
+                $hold = $this->receivingGate->epcBlockedByOpenHold($epc);
+                if ($hold !== null) {
+                    $caseId = $hold->exception_id;
+                    $suffix = $caseId !== null ? " (exception #{$caseId})" : '';
+
+                    return [
+                        'ok' => false,
+                        'message' => 'Under quarantine'.$suffix.'. Clear or release quarantine before receiving.',
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => 'quarantined',
+                        'has_ti' => $hasTi,
+                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                        'ti_warning' => null,
+                        'reconciled_asn_session_id' => null,
+                    ];
+                }
+
+                if (! $alreadyConfirmedOnSession) {
+                    $custodyBlock = $this->scanFirstReceiveCustodyBlock($session, $epc, $context, $hasTi, $tiWarning);
+                    if ($custodyBlock !== null) {
+                        return $custodyBlock;
+                    }
+                }
+
+                if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
+                    return [
+                        'ok' => false,
+                        'message' => 'Already confirmed on another open receive session.',
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => 'double_receive',
+                        'has_ti' => $hasTi,
+                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                        'ti_warning' => $tiWarning,
+                        'reconciled_asn_session_id' => null,
+                    ];
+                }
+
+                $lineRole = $epc->epc_type === 'sscc' ? 'parent' : 'child';
+                $now = now();
+
+                if ($line === null) {
+                    $line = ReceivingScanLine::query()->create([
+                        'receiving_session_id' => $session->getKey(),
+                        'epc_id' => $epc->getKey(),
+                        'parent_epc_id' => null,
+                        'line_role' => $lineRole,
+                        'status' => 'confirmed',
+                        'scan_raw' => $scan,
+                        'confirmed_at' => $now,
+                        'confirmed_by' => $userId,
+                        'ilmd_mismatch_json' => $mismatch,
+                    ]);
+
+                    $session->forceFill([
+                        'status' => 'in_progress',
+                        'expected_parent_count' => (int) $session->expected_parent_count + ($lineRole === 'parent' ? 1 : 0),
+                        'confirmed_parent_count' => (int) $session->confirmed_parent_count + ($lineRole === 'parent' ? 1 : 0),
+                        'expected_child_count' => (int) $session->expected_child_count + ($lineRole === 'child' ? 1 : 0),
+                        'confirmed_child_count' => (int) $session->confirmed_child_count + ($lineRole === 'child' ? 1 : 0),
+                    ])->save();
+                } else {
+                    $line->forceFill([
+                        'status' => 'confirmed',
+                        'scan_raw' => $scan,
+                        'confirmed_at' => $now,
+                        'confirmed_by' => $userId,
+                        'ilmd_mismatch_json' => $mismatch,
+                    ])->save();
+
+                    $session->forceFill([
+                        'status' => $session->status === 'open' ? 'in_progress' : $session->status,
+                        'confirmed_parent_count' => (int) $session->confirmed_parent_count + ($line->line_role === 'parent' ? 1 : 0),
+                        'confirmed_child_count' => (int) $session->confirmed_child_count + ($line->line_role === 'child' ? 1 : 0),
+                    ])->save();
+                }
+
+                $matchedAsnId = $context['matched_inbound_document_id'];
+                if (
+                    $session->matched_epcis_document_id === null
+                    && $matchedAsnId !== null
+                ) {
+                    $session->forceFill([
+                        'matched_epcis_document_id' => $matchedAsnId,
+                    ])->save();
+                }
+
+                $confirmedChildren = 0;
+                if ($lineRole === 'parent') {
+                    $documentIdForChildren = $matchedAsnId ?? $session->matched_epcis_document_id;
+
+                    $confirmedChildren = $this->seedAndConfirmChildrenForParent(
                         $session,
-                        $line,
                         $epc,
+                        $documentIdForChildren !== null ? (int) $documentIdForChildren : null,
+                        $userId,
+                        $autoConfirmChildren,
+                        $now,
+                    );
+                }
+
+                // Scan-first never auto-completes — operator must Complete manually.
+
+                $reconciledAsnSessionId = null;
+                $asnNeedsCompletion = false;
+                $asnSession = $this->findOpenAsnSessionExpectingEpc->handle(
+                    $epc,
+                    $session,
+                    $session->site_id,
+                    $actor,
+                );
+
+                if ($asnSession !== null) {
+                    $this->assertCanAccessReconciledSessionSite($actor, $asnSession);
+
+                    $reconcile = $this->confirmExpectedScanLineOnSession->handle(
+                        $asnSession,
+                        $line->fresh(),
                         $userId,
                     );
+
+                    if ($reconcile['ok']) {
+                        $reconciledAsnSessionId = (int) $asnSession->getKey();
+                        $asnNeedsCompletion = (bool) ($reconcile['needs_completion'] ?? false);
+                    }
+                }
+
+                $transferReconcile = $this->reconcileScanFirstToTransferReceive(
+                    $session,
+                    $line->fresh(),
+                    $epc,
+                    $userId,
+                );
+
+                $message = 'Unit confirmed.';
+                if ($lineRole === 'parent') {
+                    $message = $confirmedChildren > 0
+                        ? sprintf('Pallet confirmed · %d units', $confirmedChildren)
+                        : 'Pallet confirmed.';
                 }
 
                 return [
                     'ok' => true,
-                    'message' => 'Already confirmed.',
-                    'line' => $line,
+                    'message' => $message,
+                    'line' => $line->refresh(),
                     'epc' => $epc,
-                    'effect' => 'already_confirmed',
+                    'effect' => $lineRole === 'parent' ? 'parent_confirmed' : 'child_confirmed',
                     'has_ti' => $hasTi,
-                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                    'matched_asn_document_id' => $matchedAsnId,
                     'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
                     'ti_warning' => $tiWarning,
-                    'reconciled_asn_session_id' => null,
+                    'reconciled_asn_session_id' => $reconciledAsnSessionId,
                     'reconciled_transfer_receive_session_id' => $transferReconcile['session_id'],
                     'transfer_reconcile_warning' => $transferReconcile['warning'],
                     'transfer_needs_completion' => $transferReconcile['needs_completion'],
+                    'asn_needs_completion' => $asnNeedsCompletion,
                 ];
-            }
-
-            // Inside the transaction: a hold opened after the barcode resolved must still
-            // block the line, and the session row is already locked against a racing scan.
-            $hold = $this->receivingGate->epcBlockedByOpenHold($epc);
-            if ($hold !== null) {
-                $caseId = $hold->exception_id;
-                $suffix = $caseId !== null ? " (exception #{$caseId})" : '';
-
-                return [
-                    'ok' => false,
-                    'message' => 'Under quarantine'.$suffix.'. Clear or release quarantine before receiving.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'quarantined',
-                    'has_ti' => $hasTi,
-                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
-                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
-                    'ti_warning' => null,
-                    'reconciled_asn_session_id' => null,
-                ];
-            }
-
-            if (! $alreadyConfirmedOnSession) {
-                $custodyBlock = $this->scanFirstReceiveCustodyBlock($session, $epc, $context, $hasTi, $tiWarning);
-                if ($custodyBlock !== null) {
-                    return $custodyBlock;
-                }
-            }
-
-            if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on another open receive session.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_receive',
-                    'has_ti' => $hasTi,
-                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
-                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
-                    'ti_warning' => $tiWarning,
-                    'reconciled_asn_session_id' => null,
-                ];
-            }
-
-            $lineRole = $epc->epc_type === 'sscc' ? 'parent' : 'child';
-            $now = now();
-
-            if ($line === null) {
-                $line = ReceivingScanLine::query()->create([
-                    'receiving_session_id' => $session->getKey(),
-                    'epc_id' => $epc->getKey(),
-                    'parent_epc_id' => null,
-                    'line_role' => $lineRole,
-                    'status' => 'confirmed',
-                    'scan_raw' => $scan,
-                    'confirmed_at' => $now,
-                    'confirmed_by' => $userId,
-                    'ilmd_mismatch_json' => $mismatch,
-                ]);
-
-                $session->forceFill([
-                    'status' => 'in_progress',
-                    'expected_parent_count' => (int) $session->expected_parent_count + ($lineRole === 'parent' ? 1 : 0),
-                    'confirmed_parent_count' => (int) $session->confirmed_parent_count + ($lineRole === 'parent' ? 1 : 0),
-                    'expected_child_count' => (int) $session->expected_child_count + ($lineRole === 'child' ? 1 : 0),
-                    'confirmed_child_count' => (int) $session->confirmed_child_count + ($lineRole === 'child' ? 1 : 0),
-                ])->save();
-            } else {
-                $line->forceFill([
-                    'status' => 'confirmed',
-                    'scan_raw' => $scan,
-                    'confirmed_at' => $now,
-                    'confirmed_by' => $userId,
-                    'ilmd_mismatch_json' => $mismatch,
-                ])->save();
-
-                $session->forceFill([
-                    'status' => $session->status === 'open' ? 'in_progress' : $session->status,
-                    'confirmed_parent_count' => (int) $session->confirmed_parent_count + ($line->line_role === 'parent' ? 1 : 0),
-                    'confirmed_child_count' => (int) $session->confirmed_child_count + ($line->line_role === 'child' ? 1 : 0),
-                ])->save();
-            }
-
-            $matchedAsnId = $context['matched_inbound_document_id'];
-            if (
-                $session->matched_epcis_document_id === null
-                && $matchedAsnId !== null
-            ) {
-                $session->forceFill([
-                    'matched_epcis_document_id' => $matchedAsnId,
-                ])->save();
-            }
-
-            $confirmedChildren = 0;
-            if ($lineRole === 'parent') {
-                $documentIdForChildren = $matchedAsnId ?? $session->matched_epcis_document_id;
-
-                $confirmedChildren = $this->seedAndConfirmChildrenForParent(
-                    $session,
-                    $epc,
-                    $documentIdForChildren !== null ? (int) $documentIdForChildren : null,
-                    $userId,
-                    $autoConfirmChildren,
-                    $now,
-                );
-            }
-
-            // Scan-first never auto-completes — operator must Complete manually.
-
-            $reconciledAsnSessionId = null;
-            $asnNeedsCompletion = false;
-            $asnSession = $this->findOpenAsnSessionExpectingEpc->handle(
-                $epc,
-                $session,
-                $session->site_id,
-                $actor,
-            );
-
-            if ($asnSession !== null) {
-                $this->assertCanAccessReconciledSessionSite($actor, $asnSession);
-
-                $reconcile = $this->confirmExpectedScanLineOnSession->handle(
-                    $asnSession,
-                    $line->fresh(),
-                    $userId,
-                );
-
-                if ($reconcile['ok']) {
-                    $reconciledAsnSessionId = (int) $asnSession->getKey();
-                    $asnNeedsCompletion = (bool) ($reconcile['needs_completion'] ?? false);
-                }
-            }
-
-            $transferReconcile = $this->reconcileScanFirstToTransferReceive(
-                $session,
-                $line->fresh(),
-                $epc,
-                $userId,
-            );
-
-            $message = 'Unit confirmed.';
-            if ($lineRole === 'parent') {
-                $message = $confirmedChildren > 0
-                    ? sprintf('Pallet confirmed · %d units', $confirmedChildren)
-                    : 'Pallet confirmed.';
-            }
-
-            return [
-                'ok' => true,
-                'message' => $message,
-                'line' => $line->refresh(),
-                'epc' => $epc,
-                'effect' => $lineRole === 'parent' ? 'parent_confirmed' : 'child_confirmed',
-                'has_ti' => $hasTi,
-                'matched_asn_document_id' => $matchedAsnId,
-                'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
-                'ti_warning' => $tiWarning,
-                'reconciled_asn_session_id' => $reconciledAsnSessionId,
-                'reconciled_transfer_receive_session_id' => $transferReconcile['session_id'],
-                'transfer_reconcile_warning' => $transferReconcile['warning'],
-                'transfer_needs_completion' => $transferReconcile['needs_completion'],
-                'asn_needs_completion' => $asnNeedsCompletion,
-            ];
             });
         } catch (DomainException $e) {
             return [
@@ -1036,7 +1038,7 @@ final class ConfirmReceivingScan
             'epc' => $epc,
             'effect' => $sessionCompleted ? 'completed' : 'child_confirmed',
             'session_completed' => $sessionCompleted,
-            ...( $completionError !== null ? ['completion_error' => $completionError] : []),
+            ...($completionError !== null ? ['completion_error' => $completionError] : []),
         ];
     }
 
@@ -1219,6 +1221,11 @@ final class ConfirmReceivingScan
                 ->lockForUpdate()
                 ->first();
 
+            $openToteRejection = $this->openToteScanRejection($session, $line, $epc);
+            if ($openToteRejection !== null) {
+                return $openToteRejection;
+            }
+
             if ($line === null) {
                 $line = ReceivingScanLine::query()->create([
                     'receiving_session_id' => $session->getKey(),
@@ -1334,12 +1341,18 @@ final class ConfirmReceivingScan
         $confirmedChildren = $seeded['confirmed_children'];
         $skippedQuarantined = $seeded['skipped_quarantined'];
 
-        $session->forceFill([
+        $sessionUpdates = [
             'status' => 'in_progress',
             'confirmed_parent_count' => (int) $session->confirmed_parent_count + 1,
             'expected_child_count' => $seeded['expected_child_count'],
             'confirmed_child_count' => (int) $session->confirmed_child_count + $confirmedChildren,
-        ])->save();
+        ];
+
+        if (ReceivingPolicy::forTenant(tenant())->edgeMode() === ReceivingEdgeMode::OpenTote) {
+            $sessionUpdates['active_parent_epc_id'] = $epc->getKey();
+        }
+
+        $session->forceFill($sessionUpdates)->save();
 
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
@@ -1412,6 +1425,81 @@ final class ConfirmReceivingScan
         ];
     }
 
+    /**
+     * @return array{ok: false, message: string, line: ?ReceivingScanLine, epc: Epc, effect: string}|null
+     */
+    private function openToteScanRejection(ReceivingSession $session, ?ReceivingScanLine $line, Epc $epc): ?array
+    {
+        if (ReceivingPolicy::forTenant(tenant())->edgeMode() !== ReceivingEdgeMode::OpenTote) {
+            return null;
+        }
+
+        $activeParentId = $session->active_parent_epc_id;
+        if ($activeParentId === null) {
+            if ($line === null) {
+                return null;
+            }
+
+            if ($line->line_role === 'parent' && $line->status === 'expected') {
+                return null;
+            }
+
+            if (in_array($line->status, ['confirmed', 'unexpected'], true)) {
+                return null;
+            }
+
+            return [
+                'ok' => false,
+                'message' => 'Scan an expected tote first.',
+                'line' => $line,
+                'epc' => $epc,
+                'effect' => 'not_in_session',
+            ];
+        }
+
+        $activeParentId = (int) $activeParentId;
+
+        if ($line === null) {
+            return null;
+        }
+
+        if (in_array($line->status, ['confirmed', 'unexpected'], true)) {
+            return null;
+        }
+
+        if ($line->line_role === 'parent' && (int) $line->epc_id !== $activeParentId) {
+            $lockedParent = Epc::query()->find($activeParentId);
+
+            return [
+                'ok' => false,
+                'message' => 'Close tote '.$session->openToteLabel($lockedParent instanceof Epc ? $lockedParent : null).' first',
+                'line' => $line,
+                'epc' => $epc,
+                'effect' => 'not_in_session',
+            ];
+        }
+
+        if ($line->line_role === 'child' && (int) $line->parent_epc_id !== $activeParentId) {
+            $mismatch = is_array($line->ilmd_mismatch_json) ? $line->ilmd_mismatch_json : [];
+            $mismatch['comingling'] = [
+                'scanned_while_parent_epc_id' => $activeParentId,
+                'line_parent_epc_id' => (int) $line->parent_epc_id,
+                'at' => now()->toIso8601String(),
+            ];
+            $line->forceFill(['ilmd_mismatch_json' => $mismatch])->save();
+
+            return [
+                'ok' => false,
+                'message' => 'Unit belongs to another tote — not confirmed.',
+                'line' => $line->fresh(),
+                'epc' => $epc,
+                'effect' => 'comingling',
+            ];
+        }
+
+        return null;
+    }
+
     private function isParentConfirmed(ReceivingSession $session, ReceivingScanLine $childLine): bool
     {
         if ($childLine->parent_epc_id === null) {
@@ -1441,23 +1529,14 @@ final class ConfirmReceivingScan
             return false;
         }
 
-        $allParentsConfirmed = (int) $session->confirmed_parent_count >= (int) $session->expected_parent_count
-            && (int) $session->expected_parent_count > 0;
-
-        if ((int) $session->expected_parent_count === 0) {
-            $allParentsConfirmed = true;
-        }
-
-        $childrenDone = (int) $session->expected_child_count === 0
-            || (int) $session->confirmed_child_count >= (int) $session->expected_child_count;
-
-        if (! ($allParentsConfirmed && $childrenDone)) {
+        if (! $session->isReadyToCompleteInboundAsn()) {
             return false;
         }
 
         $session->forceFill([
             'status' => 'completed',
             'completed_at' => now(),
+            'active_parent_epc_id' => null,
         ])->save();
 
         return true;

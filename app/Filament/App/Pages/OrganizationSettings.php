@@ -5,7 +5,6 @@ namespace App\Filament\App\Pages;
 use App\Enums\ClientPrintBridge;
 use App\Enums\SsccAllocationMode;
 use App\Enums\TenantProfile;
-use App\Enums\TenantRole;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
 use App\Models\Site;
@@ -18,6 +17,8 @@ use App\Support\Gs1\GlnRules;
 use App\Support\Gs1\Sgln;
 use App\Support\Places\UsState;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingEdgeMode;
+use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use App\Support\TenantSsccSettings;
@@ -99,6 +100,7 @@ class OrganizationSettings extends Page
             'default_receive_site_id' => $settings->defaultReceiveSiteId(),
             'default_ship_from_site_id' => $settings->defaultShipFromSiteId(),
             'require_ti_for_scan_first' => $settings->requireTiForScanFirst(),
+            'receiving_edge_mode' => ReceivingPolicy::forTenant($tenant)->edgeMode()->value,
             'job_roles_enabled' => $settings->jobRolesEnabled(),
             'compliance_contact_name' => $settings->complianceContactName(),
             'compliance_contact_email' => $settings->complianceContactEmail(),
@@ -116,6 +118,7 @@ class OrganizationSettings extends Page
             'l3_endpoint_url' => $settings->l3EndpointUrl(),
             'l3_api_key' => null,
             'wms_bridge_api_key' => null,
+            'wms_receive_confirm_url' => $settings->wmsReceiveConfirmUrl(),
             'dashboard_allow_user_customize' => $settings->dashboardAllowUserCustomize(),
             'dashboard_allowed' => array_keys(array_filter($settings->dashboardAllowed())),
             'dashboard_defaults' => array_keys(array_filter($settings->dashboardDefaults())),
@@ -228,8 +231,13 @@ class OrganizationSettings extends Page
                         Toggle::make('require_ti_for_scan_first')
                             ->label('Require TI for scan-first receive')
                             ->helperText('When on, block scan-first confirms that lack shipping/commissioning TI in the repository. Off = soft warn (default).')
-                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
-                            ->columnSpanFull(),
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Select::make('receiving_edge_mode')
+                            ->label('Receive SOP')
+                            ->options(ReceivingEdgeMode::options())
+                            ->native(false)
+                            ->helperText('Overrides the profile default for sealed vs open-count receive.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
                     ]),
                 Section::make('Access')
                     ->compact()
@@ -392,7 +400,7 @@ class OrganizationSettings extends Page
                     ]),
                 Section::make('WMS ship-confirm bridge')
                     ->compact()
-                    ->visible(fn (): bool => $this->showsShipFromSite())
+                    ->visible(fn (): bool => $this->showsWmsBridgeSection())
                     ->description('Per-tenant API key for warehouse ship-confirm webhooks (X-Wms-Api-Key).')
                     ->schema([
                         TextInput::make('wms_bridge_api_key')
@@ -405,6 +413,14 @@ class OrganizationSettings extends Page
                                 ? '••••••••••••'
                                 : '')
                             ->helperText('Write-only. Leave blank to keep the current key.')
+                            ->columnSpanFull(),
+                        TextInput::make('wms_receive_confirm_url')
+                            ->label('WMS receive-confirm URL')
+                            ->url()
+                            ->maxLength(2048)
+                            ->nullable()
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->helperText('Optional HTTPS endpoint. After inbound ASN or scan-first receive complete, TracePharma POSTs a receive-confirm payload. Leave blank to disable.')
                             ->columnSpanFull(),
                     ]),
             ]);
@@ -438,6 +454,7 @@ class OrganizationSettings extends Page
 
         if (TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             $organization['require_ti_for_scan_first'] = (bool) ($data['require_ti_for_scan_first'] ?? false);
+            $organization['receiving_edge_mode'] = $data['receiving_edge_mode'] ?? null;
         }
 
         $settings = TenantSettings::forTenant(tenant());
@@ -464,8 +481,12 @@ class OrganizationSettings extends Page
             }
         }
 
-        if ($this->showsShipFromSite() && filled($data['wms_bridge_api_key'] ?? null)) {
+        if ($this->showsWmsBridgeSection() && filled($data['wms_bridge_api_key'] ?? null)) {
             $organization['wms_bridge_api_key'] = $data['wms_bridge_api_key'];
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsReceiving()) {
+            $organization['wms_receive_confirm_url'] = $data['wms_receive_confirm_url'] ?? null;
         }
 
         if (JobRoleAccess::isOwner()) {
@@ -481,9 +502,11 @@ class OrganizationSettings extends Page
                 'data.'.$e->field => $e->getMessage(),
             ]);
         } catch (\InvalidArgumentException $e) {
-            $field = str_contains($e->getMessage(), 'L3 endpoint URL')
-                ? 'data.l3_endpoint_url'
-                : 'data.company_prefix';
+            $field = match (true) {
+                str_contains($e->getMessage(), 'L3 endpoint URL') => 'data.l3_endpoint_url',
+                str_contains($e->getMessage(), 'WMS receive-confirm URL') => 'data.wms_receive_confirm_url',
+                default => 'data.company_prefix',
+            };
 
             throw ValidationException::withMessages([
                 $field => $e->getMessage(),
@@ -647,6 +670,13 @@ class OrganizationSettings extends Page
         return TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations();
     }
 
+    private function showsWmsBridgeSection(): bool
+    {
+        $features = TenantFeatures::forTenant(tenant());
+
+        return $features->supportsOutboundIntegrations() || $features->supportsReceiving();
+    }
+
     /**
      * @return array<string, string>
      */
@@ -712,7 +742,6 @@ class OrganizationSettings extends Page
     }
 
     /**
-     * @param  mixed  $selected
      * @return array<string, bool>
      */
     private function dashboardCheckboxListToFlags(mixed $selected): array

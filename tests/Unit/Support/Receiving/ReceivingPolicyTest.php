@@ -3,6 +3,7 @@
 namespace Tests\Unit\Support\Receiving;
 
 use App\Enums\TenantProfile;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingScanLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -59,11 +60,30 @@ class ReceivingPolicyTest extends TestCase
     {
         $copy = ReceivingPolicy::forProfile(TenantProfile::Pharmacy)->promptCopy();
 
-        $this->assertSame('Scan SSCC or Case barcode', $copy['scanHelper']);
+        $this->assertSame('Sealed tote — Edge-style. Scan SSCC or Case barcode', $copy['scanHelper']);
+        $this->assertStringStartsWith('Sealed tote — Edge-style. ', $copy['kindHelper']);
         $this->assertStringContainsString('tote/case', strtolower($copy['sealedPalletLabel']));
         $this->assertSame('Applies to the next tote/case scan.', $copy['sealedPalletHelper']);
         $this->assertSame('Confirm tote/case + units', $copy['confirmLabelSealed']);
         $this->assertSame('Confirm', $copy['confirmLabel']);
+    }
+
+    #[Test]
+    public function edge_mode_chip_labels_use_edge_style_suffix(): void
+    {
+        $this->assertSame('Sealed parent — Edge-style', ReceivingEdgeMode::SealedParent->chipLabel());
+        $this->assertSame('Sealed tote — Edge-style', ReceivingEdgeMode::ToteLpn->chipLabel());
+        $this->assertSame('Open count — Edge-style', ReceivingEdgeMode::OpenCount->chipLabel());
+        $this->assertSame('Open tote — Edge-style', ReceivingEdgeMode::OpenTote->chipLabel());
+    }
+
+    #[Test]
+    public function prompt_copy_names_explicit_open_tote_sop(): void
+    {
+        $copy = (new ReceivingPolicy(TenantProfile::Pharmacy, ReceivingEdgeMode::OpenTote))->promptCopy();
+
+        $this->assertSame('Open tote — Edge-style. Scan SSCC or Case barcode', $copy['scanHelper']);
+        $this->assertStringStartsWith('Open tote — Edge-style. ', $copy['kindHelper']);
     }
 
     #[Test]

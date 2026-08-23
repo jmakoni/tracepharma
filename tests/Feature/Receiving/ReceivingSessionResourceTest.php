@@ -20,9 +20,11 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -126,7 +128,7 @@ class ReceivingSessionResourceTest extends TestCase
 
             $component->assertSee('Scan barcode');
             $component->assertSee('ADD');
-            $component->assertDontSee('Camera');
+            $component->assertDontSeeHtml('tp-floor-receive__camera-btn-label');
             $component->assertDontSee('Sealed tote/case');
             $component->assertDontSee('Receiving complete');
             $this->assertTrue($component->instance()->autoConfirmChildren);
@@ -135,12 +137,12 @@ class ReceivingSessionResourceTest extends TestCase
             // and the infolist's own status/pallets/units entries are gone.
             $this->assertNull($component->instance()->getSubheading());
 
-            $desktopBlade = \Illuminate\Support\Facades\File::get(resource_path(
+            $desktopBlade = File::get(resource_path(
                 'views/filament/app/resources/receiving-sessions/pages/view-receiving-session.blade.php',
             ));
             $this->assertStringContainsString('scan-field', $desktopBlade);
             $this->assertStringContainsString('show-camera="false"', $desktopBlade);
-            $this->assertStringContainsString("submit-action=\"confirmScan\"", $desktopBlade);
+            $this->assertStringContainsString('submit-action="confirmScan"', $desktopBlade);
             $this->assertStringNotContainsString('stageScan', $desktopBlade);
         } finally {
             $this->cleanup();
@@ -247,6 +249,8 @@ class ReceivingSessionResourceTest extends TestCase
 
             Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSee('Scan-first')
+                ->assertSee(ReceivingPolicy::forTenant(tenant())->edgeMode()->chipLabel())
+                ->assertSee('Attach invoice')
                 ->assertSee('ADD')
                 ->assertDontSee('Not on this ASN — do not put away')
                 ->assertSee('no ASN required');
