@@ -152,6 +152,18 @@
         · {{ $case->type?->name ?? 'Exception' }}
         · {{ $case->tradingPartner?->name ?? 'Trading partner' }}
         · Available until this exception is resolved
+        @if (isset($signalGroups) && $signalGroups->isNotEmpty())
+            @php
+                $countLabels = $signalGroups
+                    ->pluck('gtin_display')
+                    ->filter(fn ($label) => filled($label) && $label !== '—')
+                    ->unique()
+                    ->values();
+            @endphp
+            @if ($countLabels->isNotEmpty())
+                · {{ $countLabels->implode(' · ') }}
+            @endif
+        @endif
     </p>
 
     @if (session('status'))
@@ -295,6 +307,22 @@
             @endif
         @endif
     </div>
+
+    @if (! empty($canUploadCorrectedEpcis) && ! empty($uploadUrl))
+        <div class="card">
+            <h2 style="margin:0 0 0.75rem;font-size:1.05rem;">Upload corrected EPCIS</h2>
+            <p class="meta">Submit a replacement EPCIS 1.2 or 1.3 XML file. EPCIS 1.0 is not accepted.</p>
+            <form method="post" action="{{ $uploadUrl }}" enctype="multipart/form-data">
+                @csrf
+                <label for="file">EPCIS 1.2 / 1.3 XML</label>
+                <input id="file" name="file" type="file" accept=".xml,text/xml,application/xml" required>
+                @error('file')
+                    <p style="color:var(--danger);margin-top:-0.5rem;">{{ $message }}</p>
+                @enderror
+                <button type="submit">Upload corrected EPCIS</button>
+            </form>
+        </div>
+    @endif
 
     <div class="card">
         <h2 style="margin:0 0 0.75rem;font-size:1.05rem;">Supplier response</h2>

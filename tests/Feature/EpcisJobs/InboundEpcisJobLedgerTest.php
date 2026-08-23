@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\EpcisJobs;
 
+use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\EpcisJobs\CancelEpcisJob;
 use App\Actions\EpcisJobs\EnqueueInboundEpcisJob;
 use App\Actions\EpcisJobs\ForceFailEpcisJob;
@@ -11,7 +12,9 @@ use App\Actions\EpcisJobs\RequeueEpcisJob;
 use App\Enums\EpcisJobKind;
 use App\Enums\EpcisJobStatus;
 use App\Jobs\ProcessEpcisDocumentJob;
+use App\Jobs\ValidateAndCommitEpcisDocumentJob;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisException;
 use App\Models\EpcisJob;
 use App\Models\Tenant;
 use App\Services\Epcis\EpcisIngestionService;
@@ -56,6 +59,7 @@ class InboundEpcisJobLedgerTest extends TestCase
                 });
             }
             if ($this->documentIds !== []) {
+                EpcisException::query()->whereIn('document_id', $this->documentIds)->delete();
                 EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();
             }
             tenancy()->end();
@@ -259,7 +263,7 @@ class InboundEpcisJobLedgerTest extends TestCase
         ]);
         $this->jobIds[] = (int) $job->getKey();
 
-        app(\App\Actions\Epcis\ReprocessEpcisDocument::class)->handle($document->fresh() ?? $document, sync: true);
+        app(ReprocessEpcisDocument::class)->handle($document->fresh() ?? $document, sync: true);
 
         $job = $job->fresh();
         $this->assertNotNull($job?->archived_at);
@@ -285,7 +289,7 @@ class InboundEpcisJobLedgerTest extends TestCase
         ]);
         $this->jobIds[] = (int) $job->getKey();
 
-        app(\App\Actions\Epcis\ReprocessEpcisDocument::class)->handle($document->fresh() ?? $document, sync: true);
+        app(ReprocessEpcisDocument::class)->handle($document->fresh() ?? $document, sync: true);
 
         $job = $job->fresh();
         $this->assertSame(EpcisJobStatus::Cancelled, $job?->status);
@@ -396,6 +400,135 @@ class InboundEpcisJobLedgerTest extends TestCase
         $this->jobIds[] = (int) $newJob->getKey();
 
         $this->assertNotSame($job->receipt, $newJob->receipt);
+    }
+
+    #[Test]
+    public function job_failed_while_inbound_received_marks_document_error(): void
+    {
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+        $this->assertSame('received', $document->status);
+
+        $job = EpcisJob::query()->create([
+            'receipt' => str_replace('-', '', (string) Str::uuid()),
+            'kind' => EpcisJobKind::InboundProcess,
+            'status' => EpcisJobStatus::Queued,
+            'epcis_document_id' => $document->getKey(),
+            'original_filename' => $document->original_filename,
+            'received_at' => now(),
+            'attempt_count' => 0,
+        ]);
+        $this->jobIds[] = (int) $job->getKey();
+
+        (new ProcessEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('worker died before parse'));
+
+        $document->refresh();
+        $this->assertSame('error', $document->status);
+        $this->assertStringContainsString('worker died before parse', (string) $document->error_message);
+        $this->assertSame(EpcisJobStatus::Error, $job->fresh()->status);
+    }
+
+    #[Test]
+    public function force_fail_while_document_received_sets_error(): void
+    {
+        $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+        $this->assertSame('received', $document->status);
+
+        $job = EpcisJob::query()->create([
+            'receipt' => str_replace('-', '', (string) Str::uuid()),
+            'kind' => EpcisJobKind::InboundProcess,
+            'status' => EpcisJobStatus::Processing,
+            'epcis_document_id' => $document->getKey(),
+            'original_filename' => $document->original_filename,
+            'received_at' => now(),
+            'started_at' => now()->subSeconds(700),
+            'attempt_count' => 1,
+        ]);
+        $this->jobIds[] = (int) $job->getKey();
+
+        app(ForceFailEpcisJob::class)->handle($job);
+
+        $document->refresh();
+        $this->assertSame('error', $document->status);
+        $this->assertSame('Force-failed after worker timeout exceeded.', $document->error_message);
+    }
+
+    #[Test]
+    public function job_failed_after_cancel_does_not_mark_inbound_received_as_error(): void
+    {
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+
+        $job = EpcisJob::query()->create([
+            'receipt' => str_replace('-', '', (string) Str::uuid()),
+            'kind' => EpcisJobKind::InboundProcess,
+            'status' => EpcisJobStatus::Queued,
+            'epcis_document_id' => $document->getKey(),
+            'original_filename' => $document->original_filename,
+            'received_at' => now(),
+            'attempt_count' => 0,
+        ]);
+        $this->jobIds[] = (int) $job->getKey();
+
+        app(CancelEpcisJob::class)->handle($job);
+
+        (new ProcessEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('worker died after cancel'));
+
+        $document->refresh();
+        $this->assertSame('received', $document->status);
+        $this->assertSame(EpcisJobStatus::Cancelled, $job->fresh()->status);
+        $this->assertSame(0, EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->where('exception_type', 'INGESTION_PARSE_ERROR')
+            ->count());
+    }
+
+    #[Test]
+    public function job_failed_while_outbound_parsing_marks_document_error(): void
+    {
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+        $document->forceFill([
+            'direction' => 'outbound',
+            'status' => 'parsing',
+        ])->save();
+
+        (new ProcessEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('worker died mid-parse'));
+
+        $document->refresh();
+        $this->assertSame('error', $document->status);
+        $this->assertStringContainsString('worker died mid-parse', (string) $document->error_message);
+    }
+
+    #[Test]
+    public function validate_and_commit_failed_while_inbound_received_marks_document_error(): void
+    {
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+        $this->assertSame('received', $document->status);
+
+        $job = EpcisJob::query()->create([
+            'receipt' => str_replace('-', '', (string) Str::uuid()),
+            'kind' => EpcisJobKind::InboundProcess,
+            'status' => EpcisJobStatus::Queued,
+            'epcis_document_id' => $document->getKey(),
+            'original_filename' => $document->original_filename,
+            'received_at' => now(),
+            'attempt_count' => 0,
+        ]);
+        $this->jobIds[] = (int) $job->getKey();
+
+        (new ValidateAndCommitEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('validate-commit worker died before parse'));
+
+        $document->refresh();
+        $this->assertSame('error', $document->status);
+        $this->assertStringContainsString('validate-commit worker died before parse', (string) $document->error_message);
+        $this->assertSame(EpcisJobStatus::Error, $job->fresh()->status);
     }
 
     private function initializeDemo2(): Tenant

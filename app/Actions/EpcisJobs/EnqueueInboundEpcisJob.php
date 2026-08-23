@@ -11,10 +11,10 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\EpcisJob;
 use App\Models\Tenant;
 use App\Services\Epcis\EpcisIngestionService;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\EpcisJobs\EpcisJobLogger;
 use App\Support\EpcisJobs\EpcisJobSla;
 use App\Support\EpcisJobs\ReleaseEpcisJobUniqueLock;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -43,7 +43,7 @@ final class EnqueueInboundEpcisJob
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
         $lockKey = 'epcis-enqueue:'.$tenantId.':'.$document->getKey();
 
-        return Cache::store('file')->lock($lockKey, 30)->block(10, function () use ($document, $sync, $requestedBy): EpcisJob {
+        return EpcisCacheLock::store()->lock($lockKey, 30)->block(10, function () use ($document, $sync, $requestedBy): EpcisJob {
             $created = false;
 
             $job = DB::transaction(function () use ($document, $requestedBy, &$created): EpcisJob {
@@ -106,7 +106,7 @@ final class EnqueueInboundEpcisJob
             if ($runSync) {
                 // Calling handle() directly skips WithoutOverlapping middleware; mirror
                 // ReceiveEpcisUpload so sync ingest cannot race a concurrent process.
-                Cache::store('file')->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
+                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
                     $processJob->handle(app(EpcisIngestionService::class));
                 });
             } else {
@@ -143,7 +143,7 @@ final class EnqueueInboundEpcisJob
             ])->save();
 
             if ($runSync) {
-                Cache::store('file')->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
+                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
                     $processJob->handle(app(EpcisIngestionService::class));
                 });
             } else {

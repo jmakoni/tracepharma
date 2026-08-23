@@ -261,6 +261,51 @@ class BuildAssetTraceTest extends TestCase
     }
 
     #[Test]
+    public function events_query_excludes_never_validated_error_ingest_but_keeps_last_good(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.TR'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->save();
+            $this->epcId = (int) $epc->getKey();
+
+            $errorDocument = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'error',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subHour(),
+                'received_at' => now()->subHour(),
+            ]);
+            $this->documentId = (int) $errorDocument->getKey();
+
+            $errorEvent = EpcisEvent::query()->create([
+                'document_id' => $errorDocument->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subMinutes(10),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $errorEvent->getKey(),
+                'epc_id' => $epc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $this->assertSame(0, app(BuildAssetTrace::class)->eventsQuery($epc)->count());
+
+            $errorDocument->forceFill(['processed_at' => now()->subHour()])->save();
+            $this->assertSame(1, app(BuildAssetTrace::class)->eventsQuery($epc)->count());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function it_implies_parent_sscc_shipping_disposition_on_child_display(): void
     {
         $this->initializeDemo2Tenant();

@@ -61,6 +61,9 @@ final class ProcessEpcisDocument
 
     private ?int $documentLocationLookupGeneration = null;
 
+    /** @var list<int> */
+    private array $closedDuringAttemptLinkIds = [];
+
     public function __construct(
         private readonly EpcisXmlParser $parser,
         private readonly MaterializeEpcKeys $materializeEpcKeys,
@@ -90,10 +93,12 @@ final class ProcessEpcisDocument
         $this->documentLocationLookup = null;
         $this->documentLocationLookupDocumentId = null;
         $this->documentLocationLookupGeneration = null;
+        $this->closedDuringAttemptLinkIds = [];
 
         $scoutIndexGeneration = null;
         $scoutShouldIndex = false;
         $previousIngestGeneration = null;
+        $generation = null;
         /** @var list<int> */
         $priorGenerationOpenLinkIds = [];
 
@@ -213,8 +218,11 @@ final class ProcessEpcisDocument
             $document->refresh();
 
             if ($document->status === 'error') {
-                DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds): void {
-                    $this->restorePriorGenerationAggregationLinksClosedDuringAttempt($priorGenerationOpenLinkIds);
+                DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds, $generation): void {
+                    $this->restorePriorGenerationAggregationLinksClosedDuringAttempt(
+                        array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
+                    );
+                    $this->closeThisAttemptOpenAggregationLinks($document, $generation);
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 });
             } else {
@@ -238,8 +246,11 @@ final class ProcessEpcisDocument
 
             return $document->refresh();
         } catch (Throwable $e) {
-            DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds): void {
-                $this->restorePriorGenerationAggregationLinksClosedDuringAttempt($priorGenerationOpenLinkIds);
+            DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds, $generation): void {
+                $this->restorePriorGenerationAggregationLinksClosedDuringAttempt(
+                    array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
+                );
+                $this->closeThisAttemptOpenAggregationLinks($document, $generation);
                 if ($previousIngestGeneration !== null) {
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 }
@@ -439,6 +450,77 @@ final class ProcessEpcisDocument
             ->pluck('id')
             ->map(static fn (mixed $id): int => (int) $id)
             ->all();
+    }
+
+    /**
+     * Close open links matching $constraints and remember their IDs so a failed
+     * ingest can restore packing / other-document links this attempt closed.
+     *
+     * @param  array{parent_epc_id?: int, child_epc_id?: list<int>}  $constraints
+     */
+    private function closeOpenAggregationLinksDuringAttempt(array $constraints, string $validTo): void
+    {
+        if (! Schema::hasTable('aggregation_links') || ! Schema::hasColumn('aggregation_links', 'valid_to')) {
+            return;
+        }
+
+        $query = DB::table('aggregation_links')
+            ->whereNull('valid_to')
+            ->where('valid_from', '<=', $validTo);
+
+        if (isset($constraints['parent_epc_id'])) {
+            $query->where('parent_epc_id', $constraints['parent_epc_id']);
+        }
+
+        if (isset($constraints['child_epc_id'])) {
+            $query->whereIn('child_epc_id', $constraints['child_epc_id']);
+        }
+
+        $ids = $query->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($ids === []) {
+            return;
+        }
+
+        $this->closedDuringAttemptLinkIds = array_values(array_unique([
+            ...$this->closedDuringAttemptLinkIds,
+            ...$ids,
+        ]));
+
+        DB::table('aggregation_links')
+            ->whereIn('id', $ids)
+            ->update(['valid_to' => $validTo]);
+    }
+
+    /**
+     * Close open aggregation_links established by this ingest attempt's events.
+     * Failed first ingest keeps events for the document UI but must not leave
+     * shipping/custody walking open links from an invalid document.
+     */
+    private function closeThisAttemptOpenAggregationLinks(EpcisDocument $document, ?int $generation): void
+    {
+        if (
+            $generation === null
+            || ! Schema::hasTable('aggregation_links')
+            || ! Schema::hasColumn('aggregation_links', 'valid_to')
+        ) {
+            return;
+        }
+
+        $eventIds = DB::table('epcis_events')
+            ->select('id')
+            ->where('document_id', $document->getKey());
+
+        if (Schema::hasColumn('epcis_events', 'ingest_generation')) {
+            $eventIds->where('ingest_generation', $generation);
+        }
+
+        DB::table('aggregation_links')
+            ->whereNull('valid_to')
+            ->whereIn('established_by_event_id', $eventIds)
+            ->update(['valid_to' => now()]);
     }
 
     /**
@@ -939,11 +1021,10 @@ final class ProcessEpcisDocument
             }
 
             foreach (array_chunk($childEpcIds, 1000) as $chunk) {
-                DB::table('aggregation_links')
-                    ->whereIn('child_epc_id', $chunk)
-                    ->whereNull('valid_to')
-                    ->where('valid_from', '<=', $validFrom)
-                    ->update(['valid_to' => $validFrom]);
+                $this->closeOpenAggregationLinksDuringAttempt(
+                    ['child_epc_id' => $chunk],
+                    $validFrom,
+                );
             }
 
             $linkRows = [];
@@ -968,21 +1049,21 @@ final class ProcessEpcisDocument
             // Close open (parent, child) links regardless of which document established them.
             // Never invert a newer open link with an older DELETE's event_time.
             foreach (array_chunk($childEpcIds, 1000) as $chunk) {
-                DB::table('aggregation_links')
-                    ->where('parent_epc_id', $parentEpcId)
-                    ->whereIn('child_epc_id', $chunk)
-                    ->whereNull('valid_to')
-                    ->where('valid_from', '<=', $validFrom)
-                    ->update(['valid_to' => $validFrom]);
+                $this->closeOpenAggregationLinksDuringAttempt(
+                    [
+                        'parent_epc_id' => $parentEpcId,
+                        'child_epc_id' => $chunk,
+                    ],
+                    $validFrom,
+                );
             }
         } elseif ($action === 'DELETE' && $parentEpcId !== null && $childEpcIds === []) {
             // Empty childEPCs on a DELETE means disaggregate-all: close every open link
             // under this parent, subject to the same no-inversion rule as above.
-            DB::table('aggregation_links')
-                ->where('parent_epc_id', $parentEpcId)
-                ->whereNull('valid_to')
-                ->where('valid_from', '<=', $validFrom)
-                ->update(['valid_to' => $validFrom]);
+            $this->closeOpenAggregationLinksDuringAttempt(
+                ['parent_epc_id' => $parentEpcId],
+                $validFrom,
+            );
         }
 
         $this->persistLocationsAndParties($document, $eventId, $eventData, $generation);
@@ -1080,6 +1161,31 @@ final class ProcessEpcisDocument
 
         if ($partyRows !== []) {
             DB::table('event_parties')->insert($partyRows);
+        }
+
+        $this->recordPublishedPartnerSglns($locationRows, $partyRows);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $locationRows
+     * @param  list<array<string, mixed>>  $partyRows
+     */
+    private function recordPublishedPartnerSglns(array $locationRows, array $partyRows): void
+    {
+        $seen = [];
+
+        foreach ([...$locationRows, ...$partyRows] as $row) {
+            $gln = $row['gln'] ?? null;
+            $urn = $row['gln_uri'] ?? null;
+            if (! is_string($gln) || $gln === '' || ! is_string($urn) || $urn === '') {
+                continue;
+            }
+            $key = $gln."\0".$urn;
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            app(RecordPublishedSglnOnPartner::class)->handle($gln, $urn);
         }
     }
 

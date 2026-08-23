@@ -12,6 +12,7 @@ use App\Models\Epcis\EventLocation;
 use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Custody\EpcCustodyGate;
+use App\Support\Epcis\LastGoodIngestProjection;
 use App\Support\Gs1\Ndc;
 use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\BizTransactionLabel;
@@ -175,6 +176,10 @@ final class BuildAssetTrace
                     ->from('epcis_documents')
                     ->whereColumn('epcis_documents.id', 'epcis_events.document_id')
                     ->whereColumn('epcis_events.ingest_generation', 'epcis_documents.ingest_generation');
+                LastGoodIngestProjection::constrainDocuments(
+                    $exists,
+                    successfulStatuses: ['parsed', 'validated', 'received', 'generated'],
+                );
             });
         }
 

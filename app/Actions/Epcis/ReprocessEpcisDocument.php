@@ -8,14 +8,16 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisUnmatchedGln;
 use App\Models\Receiving\ReceivingSession;
 use App\Services\Epcis\EpcisIngestionService;
-use App\Support\EpcisJobs\SyncInboundEpcisJobFromDocument;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\EpcisCacheLock;
+use App\Support\EpcisJobs\SyncInboundEpcisJobFromDocument;
 use DomainException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Queue re-ingestion; on success ProcessEpcisDocument writes a new ingest_generation
@@ -73,6 +75,8 @@ final class ReprocessEpcisDocument
             EpcisUnmatchedGln::query()->where('document_id', $document->getKey())->delete();
         }
 
+        $previousStatus = $document->status;
+
         $document->forceFill([
             'status' => 'received',
             'error_message' => null,
@@ -90,30 +94,49 @@ final class ReprocessEpcisDocument
                 ->log('epcis_document_reprocessed');
         }
 
-        $tenant = tenant();
-        if ($tenant === null) {
-            throw new \RuntimeException('ReprocessEpcisDocument requires an initialized tenant.');
-        }
+        try {
+            $tenant = tenant();
+            if ($tenant === null) {
+                throw new \RuntimeException('ReprocessEpcisDocument requires an initialized tenant.');
+            }
 
-        $runSync = $sync || Queue::getDefaultDriver() === 'sync';
+            $runSync = $sync || Queue::getDefaultDriver() === 'sync';
 
-        if (config('tracepharma.epcis_jobs.enabled') && $document->direction === 'inbound') {
-            app(EnqueueInboundEpcisJob::class)->handle($document, $runSync);
+            if (config('tracepharma.epcis_jobs.enabled') && $document->direction === 'inbound') {
+                app(EnqueueInboundEpcisJob::class)->handle($document, $runSync);
 
-            return $document->refresh();
-        }
+                return $document->refresh();
+            }
 
-        $job = new ProcessEpcisDocumentJob($tenant, (int) $document->getKey());
+            $job = new ProcessEpcisDocumentJob($tenant, (int) $document->getKey());
 
-        if ($runSync) {
-            // Calling handle() directly skips the job's WithoutOverlapping queue
-            // middleware, so an equivalent lock is taken here to keep a concurrent
-            // reprocess of the same document from racing this synchronous run.
-            Cache::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
-                $job->handle(app(EpcisIngestionService::class));
-            });
-        } else {
-            ProcessEpcisDocumentJob::dispatch($tenant, (int) $document->getKey());
+            if ($runSync) {
+                // Calling handle() directly skips the job's WithoutOverlapping queue
+                // middleware, so an equivalent lock is taken here to keep a concurrent
+                // reprocess of the same document from racing this synchronous run.
+                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
+                    $job->handle(app(EpcisIngestionService::class));
+                });
+            } else {
+                ProcessEpcisDocumentJob::dispatch($tenant, (int) $document->getKey());
+            }
+        } catch (Throwable $e) {
+            $message = Str::limit($e->getMessage(), 2000);
+
+            if ($document->direction === 'outbound') {
+                $document->forceFill([
+                    'status' => $previousStatus,
+                    'transmission_status' => 'failed',
+                    'error_message' => $message,
+                ])->save();
+            } else {
+                $document->forceFill([
+                    'status' => 'error',
+                    'error_message' => $message,
+                ])->save();
+            }
+
+            throw $e;
         }
 
         return $document->refresh();

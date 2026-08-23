@@ -8,8 +8,9 @@ use App\Exceptions\DuplicateEpcisUploadException;
 use App\Jobs\ProcessEpcisDocumentJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Services\Epcis\EpcisIngestionService;
+use App\Support\Epcis\EpcisCacheLock;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisStoragePath;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -67,9 +68,9 @@ final class ReceiveEpcisUpload
         // Serialize the duplicate check + insert per hash: without this lock, two
         // concurrent uploads of the same file can both pass the "no existing document"
         // check and each persist their own EpcisDocument row.
-        // File store: Stancl tags Cache::__call under tenancy (database store cannot
-        // tag), and tenant DBs have no cache_locks table.
-        $document = Cache::store('file')->lock($this->epcisUploadHashLockKey($direction, $sha256), 60)->block(10, function () use (
+        // Named store (not Cache::__call): Stancl tags __call under tenancy.
+        // Never the file store — php-fpm cannot write artisan-created SHA1 shards.
+        $document = EpcisCacheLock::store()->lock($this->epcisUploadHashLockKey($direction, $sha256), 60)->block(10, function () use (
             $sha256,
             $disk,
             $direction,
@@ -97,7 +98,7 @@ final class ReceiveEpcisUpload
 
             return EpcisDocument::query()->create([
                 'document_uuid' => (string) Str::uuid(),
-                'schema_version' => '1.2',
+                'schema_version' => EpcisSchemaVersion::peekFile($absolutePath) ?? EpcisSchemaVersion::V12,
                 'creation_date' => now(),
                 'direction' => $direction,
                 'trading_partner_id' => $tradingPartnerId,
@@ -236,7 +237,7 @@ final class ReceiveEpcisUpload
             // Calling handle() directly skips the job's WithoutOverlapping queue
             // middleware, so an equivalent lock is taken here to keep a concurrent
             // reprocess of the same document from racing this synchronous run.
-            Cache::store('file')->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
+            EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
                 $job->handle(app(EpcisIngestionService::class));
             });
 

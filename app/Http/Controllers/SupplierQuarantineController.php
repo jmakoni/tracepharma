@@ -2,17 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Epcis\ReceiveEpcisUpload;
+use App\Enums\EpcisReceivedVia;
 use App\Enums\ExceptionActivityKind;
 use App\Enums\ExceptionActivityVisibility;
+use App\Exceptions\DuplicateEpcisUploadException;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\TradingPartner;
 use App\Services\Quarantine\QuarantineService;
 use App\Services\Quarantine\SupplierQuarantineTableBuilder;
+use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\Exceptions\GroupDocumentExceptionSignals;
+use App\Support\Exceptions\ExceptionReceiveImpactMap;
+use App\Support\Filesystem\SafeFilename;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Throwable;
 
 class SupplierQuarantineController extends Controller
 {
@@ -25,9 +34,9 @@ class SupplierQuarantineController extends Controller
         $case = ExceptionCase::query()
             ->where('share_uuid', $shareUuid)
             ->with([
-                'type:id,name,code',
+                'type:id,name,code,receive_impact',
                 'tradingPartner:id,name,is_active,portal_share_uuid',
-                'document:id,customer_po,asn_number,ingest_generation',
+                'document:id,customer_po,asn_number,ingest_generation,event_count,epc_count',
                 'quarantineHolds.epc.product:id,name,ndc,package_ndc,ndc11',
                 'quarantineHolds.epc.ilmd',
                 'quarantineHolds.document:id,customer_po',
@@ -77,6 +86,12 @@ class SupplierQuarantineController extends Controller
         );
         $identifierRows->withQueryString();
 
+        $canUploadCorrectedEpcis = $this->allowsCorrectedEpcisUpload($case);
+        $signalGroups = collect();
+        if ($case->document !== null) {
+            $signalGroups = app(GroupDocumentExceptionSignals::class)->handle($case->document);
+        }
+
         return view('supplier-quarantine.show', [
             'case' => $case,
             'openHoldCount' => $openHoldCount,
@@ -84,6 +99,11 @@ class SupplierQuarantineController extends Controller
             'identifierRows' => $identifierRows,
             'summaryRows' => $summaryRows,
             'commentUrl' => app(QuarantineService::class)->signedSupplierCommentUrl($case),
+            'uploadUrl' => $canUploadCorrectedEpcis
+                ? app(QuarantineService::class)->signedSupplierUploadUrl($case)
+                : null,
+            'canUploadCorrectedEpcis' => $canUploadCorrectedEpcis,
+            'signalGroups' => $signalGroups,
             'documentScoped' => $documentScoped,
             'shipmentRef' => $shipmentRef,
             'perPage' => $perPage,
@@ -122,6 +142,123 @@ class SupplierQuarantineController extends Controller
         return redirect()
             ->to(app(QuarantineService::class)->signedSupplierUrl($case))
             ->with('status', 'Your response was recorded.');
+    }
+
+    public function upload(Request $request, string $shareUuid): RedirectResponse
+    {
+        abort_unless($request->hasValidSignature(), 403);
+
+        $case = ExceptionCase::query()
+            ->where('share_uuid', $shareUuid)
+            ->with(['type:id,name,code,receive_impact', 'tradingPartner:id,is_active,portal_share_uuid', 'epcs', 'quarantineHolds'])
+            ->firstOrFail();
+
+        $this->assertSupplierCollaborationAccess($case);
+        abort_unless($this->allowsCorrectedEpcisUpload($case), 403, 'Corrected EPCIS cannot be uploaded for this case.');
+
+        $request->validate([
+            'file' => ['required', 'file', 'max:51200'],
+        ]);
+
+        $file = $request->file('file');
+        $originalFilename = SafeFilename::forUpload($file?->getClientOriginalName(), 'supplier-correction.xml');
+        $extension = strtolower((string) $file?->getClientOriginalExtension());
+        if ($extension !== 'xml') {
+            return redirect()
+                ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+                ->withErrors(['file' => 'Upload must be an EPCIS .xml file.']);
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_supplier_');
+        if ($tmp === false) {
+            return redirect()
+                ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+                ->withErrors(['file' => 'Unable to store the uploaded EPCIS file.']);
+        }
+
+        $absolutePath = $tmp.'.xml';
+        rename($tmp, $absolutePath);
+        file_put_contents($absolutePath, (string) $file->get());
+
+        try {
+            $this->assertEpcis12Schema($absolutePath);
+
+            $document = app(ReceiveEpcisUpload::class)->handle($absolutePath, [
+                'direction' => 'inbound',
+                'received_via' => EpcisReceivedVia::FilamentUpload,
+                'trading_partner_id' => $case->trading_partner_id,
+                'notes' => 'Supplier portal correction',
+                'original_filename' => $originalFilename,
+                'dispatch' => true,
+            ]);
+        } catch (DuplicateEpcisUploadException $e) {
+            return redirect()
+                ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+                ->withErrors(['file' => 'This file was already received. Upload a different corrected EPCIS file.']);
+        } catch (Throwable $e) {
+            if ($e instanceof HttpException) {
+                throw $e;
+            }
+
+            report($e);
+
+            return redirect()
+                ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+                ->withErrors(['file' => 'Unable to receive this file. Upload a valid EPCIS 1.2 XML file and try again.']);
+        } finally {
+            @unlink($absolutePath);
+        }
+
+        $case->logActivity(
+            ExceptionActivityKind::Comment,
+            null,
+            '[Supplier] Uploaded corrected EPCIS: '.$originalFilename,
+            ExceptionActivityVisibility::Partner,
+            [
+                'source' => 'supplier_quarantine_page',
+                'epcis_document_id' => $document->getKey(),
+            ],
+        );
+
+        return redirect()
+            ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+            ->with('status', 'Corrected EPCIS was received and queued for processing.');
+    }
+
+    private function allowsCorrectedEpcisUpload(ExceptionCase $case): bool
+    {
+        if (! $case->isDocumentScoped()) {
+            return false;
+        }
+
+        $type = $case->relationLoaded('type')
+            ? $case->type
+            : $case->type()->first(['id', 'code', 'receive_impact']);
+
+        if ($type === null) {
+            return false;
+        }
+
+        if ($type->receive_impact !== null) {
+            return $type->blocksReceiving();
+        }
+
+        return ExceptionReceiveImpactMap::forCode((string) $type->code)->blocksReceiving();
+    }
+
+    private function assertEpcis12Schema(string $absolutePath): void
+    {
+        $handle = fopen($absolutePath, 'rb');
+        $head = $handle === false ? '' : (string) fread($handle, 8192);
+        if (is_resource($handle)) {
+            fclose($handle);
+        }
+
+        if (EpcisSchemaVersion::isAccepted(EpcisSchemaVersion::peek($head))) {
+            return;
+        }
+
+        abort(422, 'EPCIS 1.2 or 1.3 is required. EPCIS 1.0 (or a file missing schemaVersion 1.2/1.3) is not accepted.');
     }
 
     private function assertSupplierCollaborationAccess(ExceptionCase $case): void

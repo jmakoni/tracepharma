@@ -12,6 +12,7 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Epcis\LastGoodIngestProjection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -125,35 +126,46 @@ final class ResolveReceiveScanContext
 
         $epcIds = array_values(array_unique($epcIds));
 
-        return EpcisEvent::query()
+        $events = EpcisEvent::query()
+            ->select('epcis_events.id')
+            ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id');
+        LastGoodIngestProjection::constrainDocuments($events);
+        $events
+            ->whereColumn('epcis_events.ingest_generation', 'epcis_documents.ingest_generation')
             ->where(function ($query): void {
-                $query->whereRaw("LOWER(biz_step) LIKE '%shipping%'")
-                    ->orWhereRaw("LOWER(biz_step) LIKE '%commissioning%'");
+                $query->whereRaw("LOWER(epcis_events.biz_step) LIKE '%shipping%'")
+                    ->orWhereRaw("LOWER(epcis_events.biz_step) LIKE '%commissioning%'");
             })
             ->whereExists(function ($query) use ($epcIds): void {
                 $query->select(DB::raw(1))
                     ->from('event_epcs')
                     ->whereColumn('event_epcs.event_id', 'epcis_events.id')
                     ->whereIn('event_epcs.epc_id', $epcIds);
-            })
-            ->exists();
+            });
+
+        return $events->exists();
     }
 
     private function findUnmatchedInboundDocument(Epc $epc): ?EpcisDocument
     {
-        return EpcisDocument::query()
-            ->where('direction', 'inbound')
+        $documents = EpcisDocument::query()
+            ->where('direction', 'inbound');
+        LastGoodIngestProjection::constrainDocuments($documents);
+        $documents
             ->whereIn('id', function ($query) use ($epc): void {
                 $query->select('epcis_events.document_id')
                     ->from('event_epcs')
                     ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+                    ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
+                    ->whereColumn('epcis_events.ingest_generation', 'epcis_documents.ingest_generation')
                     ->where('event_epcs.epc_id', $epc->getKey());
             })
             ->whereDoesntHave('receivingSession', function ($query): void {
                 $query->whereIn('status', ['open', 'in_progress', 'completed']);
             })
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
+
+        return $documents->first();
     }
 
     private function findInTransitTransfer(Epc $epc): ?TransferringSession

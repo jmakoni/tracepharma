@@ -122,8 +122,17 @@ class ValidateAndCommitEpcisDocumentJob implements ShouldBeUnique, ShouldQueue
     public function failed(?Throwable $e): void
     {
         $this->tenant->run(function () use ($e): void {
+            $ledgerSync = app(SyncInboundEpcisJobFromDocument::class);
+            if ($ledgerSync->shouldSkipCancelled($this->documentId)) {
+                return;
+            }
+
             $document = EpcisDocument::query()->find($this->documentId);
-            if ($document === null || $document->status !== 'parsing') {
+            $shouldMarkDocumentError = $document !== null && (
+                $document->status === 'parsing'
+                || ($document->direction === 'inbound' && $document->status === 'received')
+            );
+            if ($document === null || ! $shouldMarkDocumentError) {
                 $ledger = app(SyncInboundEpcisJobFromDocument::class)->findActive($this->documentId);
                 if ($ledger !== null) {
                     app(SyncInboundEpcisJobFromDocument::class)->markFailed(
