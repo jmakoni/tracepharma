@@ -2,7 +2,9 @@
 
 namespace App\Filament\App\Resources\OutboundShippingSessions\Tables;
 
+use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\Shipping\ShipLayout;
 use Filament\Actions\ViewAction;
@@ -59,6 +61,10 @@ class OutboundShippingSessionsTable
             ->recordActions([
                 ViewAction::make()
                     ->url(fn (OutboundShippingSession $record): string => ShipLayout::sessionUrl($record)),
+                UnsubmittedSessionDeleteAction::forShipping(
+                    fn (OutboundShippingSession $record) => app(DeleteOutboundShippingSession::class)->handle($record, auth()->id()),
+                    '',
+                ),
             ]);
     }
 }

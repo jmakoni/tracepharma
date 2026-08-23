@@ -31,4 +31,9 @@ class OutboundShippingSessionPolicy
         return JobRoleAccess::allows(Permissions::NavShip, $user)
             && SiteAccess::canAccessSite($user, (int) $session->site_id);
     }
+
+    public function delete(User $user, OutboundShippingSession $session): bool
+    {
+        return $this->update($user, $session);
+    }
 }

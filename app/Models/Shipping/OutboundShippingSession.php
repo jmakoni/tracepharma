@@ -7,6 +7,7 @@ use App\Models\OutboundConnection;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Support\Floor\UnsubmittedSessionDelete;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -140,6 +141,11 @@ class OutboundShippingSession extends Model
     public function canCancel(): bool
     {
         return $this->isActive() && $this->epcis_document_id === null;
+    }
+
+    public function canHardDelete(): bool
+    {
+        return UnsubmittedSessionDelete::canHardDeleteShipping($this);
     }
 
     public function canUnconfirmScanLines(): bool

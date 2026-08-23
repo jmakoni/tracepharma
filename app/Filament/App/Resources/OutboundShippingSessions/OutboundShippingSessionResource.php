@@ -60,7 +60,15 @@ class OutboundShippingSessionResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
-        return false;
+        if (! $record instanceof OutboundShippingSession) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        return $record->canHardDelete()
+            && $user !== null
+            && $user->can('delete', $record);
     }
 
     public static function canView(Model $record): bool

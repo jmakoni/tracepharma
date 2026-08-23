@@ -32,6 +32,11 @@ class ReceivingSessionPolicy
             && $this->canAccessSessionSite($user, $session);
     }
 
+    public function delete(User $user, ReceivingSession $session): bool
+    {
+        return $this->update($user, $session);
+    }
+
     private function canAccessSessionSite(User $user, ReceivingSession $session): bool
     {
         $siteId = $session->site_id;
