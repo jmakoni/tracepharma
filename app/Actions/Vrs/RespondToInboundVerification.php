@@ -6,12 +6,14 @@ use App\Models\Epcis\Epc;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Verification;
 use App\Services\Receiving\ReceivingGate;
+use App\Services\Vrs\Contracts\VrsClient;
+use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 
 /**
  * Local custody lookup for inbound partner VRS requests (tenant-as-responder).
- * Does not call outbound {@see \App\Services\Vrs\Contracts\VrsClient} — that is for
+ * Does not call outbound {@see VrsClient} — that is for
  * workstation / dispense-check verify against an external router.
  */
 final class RespondToInboundVerification
@@ -114,13 +116,14 @@ final class RespondToInboundVerification
             'status' => $status,
             'scanned_barcode' => null,
             'verified_by' => null,
-            'request_payload' => array_merge($requestPayload, [
+            'request_payload' => array_merge($requestPayload, array_filter([
                 'gtin14' => $gtin14,
                 'serial' => $serial,
                 'lot' => $lot,
                 'expiry_yymmdd' => $expiryYymmdd,
                 'source' => 'responder',
-            ]),
+                'site_id' => $this->resolveSiteIdForEpc($epc),
+            ], fn ($value): bool => $value !== null && $value !== '')),
             'response_payload' => $response,
             'message' => $message,
             'verified_at' => $found ? now() : null,
@@ -174,13 +177,14 @@ final class RespondToInboundVerification
             'status' => $status,
             'scanned_barcode' => null,
             'verified_by' => null,
-            'request_payload' => array_merge($requestPayload, [
+            'request_payload' => array_merge($requestPayload, array_filter([
                 'gtin14' => $gtin14,
                 'serial' => $serial,
                 'lot' => $lot,
                 'expiry_yymmdd' => $expiryYymmdd,
                 'source' => 'responder',
-            ]),
+                'site_id' => $this->resolveSiteIdForEpc($epc),
+            ], fn ($value): bool => $value !== null && $value !== '')),
             'response_payload' => $response,
             'message' => $message,
             'exception_id' => $exceptionId,
@@ -193,6 +197,15 @@ final class RespondToInboundVerification
             'message' => $message,
             'found' => true,
         ];
+    }
+
+    private function resolveSiteIdForEpc(?Epc $epc): ?int
+    {
+        if ($epc === null) {
+            return null;
+        }
+
+        return SiteAccess::organizationSiteIdForGln($this->lastKnownGln->forEpc($epc));
     }
 
     private function quarantineBlockMessage(QuarantineHold $hold): string

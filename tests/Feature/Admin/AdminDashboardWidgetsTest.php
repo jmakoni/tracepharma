@@ -14,6 +14,7 @@ use App\Filament\Admin\Widgets\RegistryCensusWidget;
 use App\Filament\Admin\Widgets\RegistryExceptionsWidget;
 use App\Filament\Admin\Widgets\TenantCensusWidget;
 use App\Models\Admin;
+use App\Support\AggregationLinkForeignKeyDoctor;
 use App\Support\Auth\AdminRoleSeeder;
 use App\Support\Auth\Permissions;
 use App\Support\Dashboard\AdminDashboardMetrics;
@@ -21,6 +22,7 @@ use App\Support\Dashboard\ResolveAdminDashboardWidgets;
 use App\Support\PlatformSettings;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -143,6 +145,21 @@ class AdminDashboardWidgetsTest extends TestCase
         $this->assertArrayHasKey('licenses', $registryCensus);
         $this->assertArrayHasKey('products', $registryCensus);
         $this->assertArrayHasKey('as_of', $registryCensus);
+    }
+
+    #[Test]
+    public function hub_health_surfaces_never_checked_when_doctor_audit_cache_is_empty(): void
+    {
+        Cache::forget(AggregationLinkForeignKeyDoctor::LAST_AUDIT_CACHE_KEY);
+
+        $drift = AdminDashboardMetrics::make()->aggregationLinkFkDrift();
+        $this->assertTrue($drift['never_checked']);
+        $this->assertNull($drift['checked_at']);
+
+        Livewire::test(HubHealthWidget::class)
+            ->assertOk()
+            ->assertSee('has not been checked yet')
+            ->assertSee('Check aggregation FK drift');
     }
 
     #[Test]

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
-use App\Rules\RejectTenantDomainHost;
 use App\Models\Admin;
+use App\Rules\RejectTenantDomainHost;
 use App\Support\Auth\Permissions;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\PlatformSettings;
@@ -23,6 +23,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Artisan;
 use UnitEnum;
 
 /**
@@ -62,6 +63,30 @@ class EpcisHubSettings extends Page
     public function getSubheading(): string|Htmlable|null
     {
         return 'Configure demo, stage, and prod hub edges: tokens, enabled providers, and optional host overrides.';
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('runAggregationLinkFkDoctor')
+                ->label('Check aggregation FK drift')
+                ->icon(Heroicon::OutlinedHeart)
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Check aggregation link FK drift')
+                ->modalDescription('Run detect-only doctor across all tenants (no --fix). Results appear on the admin Hub health widget.')
+                ->action(function (): void {
+                    Artisan::call('tracepharma:doctor-aggregation-link-fk');
+
+                    $output = trim(Artisan::output());
+
+                    Notification::make()
+                        ->title('Aggregation link FK doctor finished')
+                        ->body($output !== '' ? $output : 'Inspect complete. See Hub health on the dashboard.')
+                        ->success()
+                        ->send();
+                }),
+        ];
     }
 
     protected function fillForm(): void

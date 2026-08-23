@@ -12,9 +12,9 @@ use App\Models\Fda\FdaImportRun;
 use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaOrganizationMatchReview;
 use App\Models\Fda\FdaProduct;
+use App\Models\Fda\FdaWdd3plUnmatched;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\Fda\FdaWddLicense;
-use App\Models\Fda\FdaWdd3plUnmatched;
 use App\Models\Tenant;
 use App\Support\AggregationLinkForeignKeyDoctor;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
@@ -28,7 +28,7 @@ final class AdminDashboardMetrics
 {
     public static function make(): self
     {
-        return new self();
+        return new self;
     }
 
     /**
@@ -269,7 +269,7 @@ final class AdminDashboardMetrics
     }
 
     /**
-     * @return array{count: int, checked_at: Carbon|null}
+     * @return array{count: int, checked_at: Carbon|null, never_checked: bool}
      */
     public function aggregationLinkFkDrift(): array
     {
@@ -279,16 +279,19 @@ final class AdminDashboardMetrics
             return [
                 'count' => 0,
                 'checked_at' => null,
+                'never_checked' => true,
             ];
         }
 
         $issues = $cached['issues'] ?? [];
+        $checkedAt = isset($cached['checked_at']) && is_string($cached['checked_at'])
+            ? Carbon::parse($cached['checked_at'])
+            : null;
 
         return [
             'count' => is_array($issues) ? count($issues) : 0,
-            'checked_at' => isset($cached['checked_at']) && is_string($cached['checked_at'])
-                ? Carbon::parse($cached['checked_at'])
-                : null,
+            'checked_at' => $checkedAt,
+            'never_checked' => $checkedAt === null,
         ];
     }
 

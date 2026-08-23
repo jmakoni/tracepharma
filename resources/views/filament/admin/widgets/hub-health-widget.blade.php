@@ -17,6 +17,12 @@
                         Run <code>php artisan tracepharma:doctor-aggregation-link-fk --fix</code> after review.
                     </span>
                 </div>
+            @elseif ($aggregationLinkFkNeverChecked)
+                <p class="text-sm opacity-80">
+                    Aggregation link FK drift has not been checked yet. The nightly doctor job
+                    records results here after the first run, or use
+                    <strong>Check aggregation FK drift</strong> on the EPCIS Hub settings page.
+                </p>
             @endif
 
             @if ($empty)

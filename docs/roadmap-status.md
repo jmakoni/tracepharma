@@ -70,6 +70,9 @@ Living gap summary vs the greenfield build plan and the selective port from the 
 | 8 (slice) | Bug-hunt #7 Wave 2: Verification history + Analytics `vrsRates` SiteAccess (own or site exception); floor mobile receive live.blur + Enter DOM scan |
 | 8 (slice) | Bug-hunt #8 Wave 1: floor ship/transfer mobile live.blur + Enter DOM `stageScan`; outbound kill honest ship complete UX (failed/pending transmit, not false sent); AS2 MDN webhook `OUTBOUND_EPCIS` kill gate |
 | 8 (slice) | Bug-hunt #8 Wave 2: VerifyProduct today list SiteAccess; Analytics `vrsRates` site-filter actor-owned unlinked; Integration Health legacy SFTP deactivate + badge; aggregation FK doctor daily schedule + alert + Hub drift badge (BH8-8 stretch AS2 inbound skipped) |
+| 8 (slice) | Bug-hunt #9 Wave 1: `FINDINGS_TRUNCATED` overflow when per-type cap drops hits; `MISSING_COMMISSIONING` HardBlocking + critical receive impact; same-doc receiving-before-usable-commission gate; CAS/`MISSING_COMMISSIONING` dedupe on same EPC |
+| 8 (slice) | Bug-hunt #9 Wave 2: desktop ship/transfer `live.blur` + Enter DOM `stageScan`; Hub aggregation FK doctor never-checked surfacing; `OutboundShippingSessionTest` demo fixtures (56/62; remaining corrective-ship edge cases deferred); `SHIP_BEFORE_COMMISSION` documented as superseded orphan (BH9 stretch AS2 inbound skipped) |
+| 8 (slice) | Delete-session hardening: hard-delete guardrails (empty/open/in-progress only; block completed/cancelled/authored EPCIS) + SiteAccess/job-role gates + invoice blob cleanup + transfer-receive mark revert + confirm-phrase UI gate across Receiving/Shipping/Transferring |
 | 8 (slice) | Demo `--unpack` / `--pack` / `--return` hierarchy choreography flags |
 | 8 (slice) | Supplier portal token UX on Trading Partners (portal badge, copy/rotate/revoke link) |
 | 8 (slice) | Lean multi-partner outbound routing (`is_default` per partner on Ship Order) |
