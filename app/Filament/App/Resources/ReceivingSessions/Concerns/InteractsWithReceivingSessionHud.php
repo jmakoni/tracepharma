@@ -2,20 +2,25 @@
 
 namespace App\Filament\App\Resources\ReceivingSessions\Concerns;
 
-use App\Actions\Vrs\QueueProductVerificationFromReceive;
+use App\Actions\Receiving\AttachReceivingSessionInvoice;
 use App\Actions\Receiving\CancelReceivingSession;
+use App\Actions\Receiving\DeleteReceivingSession;
+use App\Actions\Receiving\CloseOpenToteReceiving;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\ConfirmRemainingExpectedReceivingLines;
 use App\Actions\Receiving\CopyConfirmedReceivingScansToSession;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\PropagateScanFirstConfirmsToAsnSession;
 use App\Actions\Receiving\ResetReceivingSessionScans;
 use App\Actions\Receiving\SeedOnDocumentConfirmedEpcsOntoAsnSession;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
+use App\Actions\Vrs\QueueProductVerificationFromReceive;
 use App\Enums\ReceivingSessionKind;
 use App\Filament\App\Pages\ReceivingIssues;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\ReceivingSessions\RelationManagers\ScanLinesRelationManager;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Jobs\GenerateReceivingLpnLabelJob;
 use App\Models\Epcis\Epc;
@@ -25,6 +30,7 @@ use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ReceiveLayout;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingScanLevel;
 use App\Support\Receiving\ReceivingSessionStatus;
@@ -37,14 +43,17 @@ use App\Support\Tracing\EpcContextLinks;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Throwable;
 
 trait InteractsWithReceivingSessionHud
@@ -92,7 +101,7 @@ trait InteractsWithReceivingSessionHud
     {
         parent::mount($record);
 
-        $this->getRecord()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+        $this->getRecord()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
         if ($this->getRecord()->status !== 'completed') {
             $this->autoConfirmChildren = $this->receivingPolicy()->defaultAutoConfirmChildren();
@@ -130,7 +139,7 @@ trait InteractsWithReceivingSessionHud
             if ($record->site_id === null && $record->document !== null) {
                 $resolvedSiteId = app(ResolveReceivingSite::class)->handle($record->document);
                 $record->forceFill(['site_id' => $resolvedSiteId])->save();
-                $record->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                $record->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
             }
         } catch (DomainException) {
             // Best-effort site backfill on view.
@@ -140,7 +149,7 @@ trait InteractsWithReceivingSessionHud
     #[On('receiving-session-hud-refresh')]
     public function refreshReceivingHud(): void
     {
-        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
         $this->highlightUnexpected = false;
         $this->hydrateChipsFromSession();
     }
@@ -160,7 +169,85 @@ trait InteractsWithReceivingSessionHud
      */
     public function promptCopy(): array
     {
-        return $this->receivingPolicy()->promptCopy($this->getRecord());
+        $copy = $this->receivingPolicy()->promptCopy($this->getRecord());
+
+        if ($this->hasOpenToteLock()) {
+            $copy['scanHelper'] = 'Scan unit in open tote';
+        }
+
+        return $copy;
+    }
+
+    public function isOpenToteMode(): bool
+    {
+        return $this->receivingPolicy()->edgeMode() === ReceivingEdgeMode::OpenTote;
+    }
+
+    public function hasOpenToteLock(): bool
+    {
+        return $this->isOpenToteMode() && $this->getRecord()->active_parent_epc_id !== null;
+    }
+
+    public function openToteLockedParentLabel(): ?string
+    {
+        if (! $this->hasOpenToteLock()) {
+            return null;
+        }
+
+        $label = $this->getRecord()->openToteLabel();
+
+        return filled($label) ? $label : null;
+    }
+
+    public function openToteLockedChildProgress(): ?string
+    {
+        if (! $this->hasOpenToteLock()) {
+            return null;
+        }
+
+        /** @var ReceivingSession $record */
+        $record = $this->getRecord();
+        $parentId = (int) $record->active_parent_epc_id;
+
+        $counts = ReceivingScanLine::query()
+            ->where('receiving_session_id', $record->getKey())
+            ->where('line_role', 'child')
+            ->where('parent_epc_id', $parentId)
+            ->selectRaw("sum(status = 'confirmed') as confirmed_count, count(*) as expected_count")
+            ->first();
+
+        return ((int) ($counts?->confirmed_count ?? 0)).'/'.((int) ($counts?->expected_count ?? 0));
+    }
+
+    public function canCloseOpenTote(): bool
+    {
+        if ($this->isCompleted() || ! $this->hasOpenToteLock()) {
+            return false;
+        }
+
+        return $this->getRecord()->isInboundAsn();
+    }
+
+    public function canAcceptRemaining(): bool
+    {
+        if ($this->isCompleted() || ! $this->getRecord()->isInboundAsn()) {
+            return false;
+        }
+
+        return in_array($this->getRecord()->status, ['open', 'in_progress'], true);
+    }
+
+    public function acceptRemainingEnabled(): bool
+    {
+        if (! $this->canAcceptRemaining()) {
+            return false;
+        }
+
+        if ($this->isOpenToteMode()) {
+            return $this->hasOpenToteLock();
+        }
+
+        return true;
     }
 
     public function getHeading(): string|Htmlable|null
@@ -211,6 +298,23 @@ trait InteractsWithReceivingSessionHud
     public function kindBadgeLabel(): string
     {
         return $this->sessionKind()->badgeLabel();
+    }
+
+    public function edgeModeChipLabel(): string
+    {
+        return $this->receivingPolicy()->edgeMode()->chipLabel();
+    }
+
+    public function attachedInvoiceFilename(): ?string
+    {
+        $filename = $this->getRecord()->invoice_original_filename;
+
+        return filled($filename) ? (string) $filename : null;
+    }
+
+    public function canAttachInvoice(): bool
+    {
+        return $this->isScanFirst() && ! $this->isCompleted();
     }
 
     public function isCompleted(): bool
@@ -582,98 +686,106 @@ trait InteractsWithReceivingSessionHud
         }
 
         $this->confirmStagedInFlight = true;
+        $this->highlightUnexpected = false;
 
         try {
             $this->autoConfirmChildren = $this->receivingPolicy()->defaultAutoConfirmChildren();
 
-        /** @var list<array{scan: string, message: string}> $failures */
-        $failures = [];
-        $okCount = 0;
-        /** @var array<string, mixed>|null $lastResult */
-        $lastResult = null;
-        $lastScan = null;
+            /** @var list<array{scan: string, message: string}> $failures */
+            $failures = [];
+            $okCount = 0;
+            /** @var array<string, mixed>|null $lastResult */
+            $lastResult = null;
+            $lastScan = null;
 
-        foreach ($this->stagedScans as $scan) {
-            try {
-                $result = app(ConfirmReceivingScan::class)->handle(
-                    $session,
-                    $scan,
-                    auth()->id(),
-                    $this->autoConfirmChildren,
-                    unpack: $this->unpackOnComplete && $this->receivingPolicy()->canUnpackAtReceive(),
+            foreach ($this->stagedScans as $scan) {
+                try {
+                    $result = app(ConfirmReceivingScan::class)->handle(
+                        $session,
+                        $scan,
+                        auth()->id(),
+                        $this->autoConfirmChildren,
+                        unpack: $this->unpackOnComplete && $this->receivingPolicy()->canUnpackAtReceive(),
+                    );
+                } catch (InvalidArgumentException|DomainException $e) {
+                    $failures[] = ['scan' => $scan, 'message' => $e->getMessage()];
+                    $lastResult = [
+                        'ok' => false,
+                        'effect' => 'not_in_session',
+                        'message' => $e->getMessage(),
+                    ];
+                    $lastScan = $scan;
+
+                    continue;
+                }
+
+                $lastResult = $result;
+                $lastScan = $scan;
+
+                if (($result['ok'] ?? false) !== true) {
+                    $failures[] = [
+                        'scan' => $scan,
+                        'message' => (string) ($result['message'] ?? 'Confirm failed.'),
+                    ];
+
+                    continue;
+                }
+
+                $okCount++;
+                app(QueueProductVerificationFromReceive::class)->handle($result, $scan, auth()->id());
+                $session = $session->fresh() ?? $session;
+            }
+
+            $this->stagedScans = array_column($failures, 'scan');
+            $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
+
+            if ($lastResult !== null && $lastScan !== null) {
+                $this->applyConfirmContext($lastResult, $lastScan);
+
+                $effect = (string) ($lastResult['effect'] ?? '');
+                $this->highlightUnexpected = $effect === 'unexpected'
+                    && $this->sessionKind() !== ReceivingSessionKind::ScanFirst;
+            }
+
+            if ($failures !== []) {
+                $message = $okCount > 0
+                    ? sprintf('Confirmed %d; %d failed.', $okCount, count($failures))
+                    : (string) ($lastResult['message'] ?? sprintf('%d scan(s) failed.', count($failures)));
+                $tone = 'error';
+            } else {
+                $message = sprintf('Confirmed %d scan(s).', $okCount);
+                $tone = 'ok';
+            }
+
+            $this->setLastScan($tone, $message);
+
+            $notification = Notification::make()->title($message);
+
+            match ($tone) {
+                'ok' => $notification->success(),
+                'warn' => $notification->warning(),
+                default => $notification->danger(),
+            };
+
+            if ($failures !== []) {
+                $failureLines = array_map(
+                    fn (array $failure): string => sprintf(
+                        '%s — %s',
+                        $failure['scan'],
+                        $failure['message'],
+                    ),
+                    $failures,
                 );
-            } catch (InvalidArgumentException|DomainException $e) {
-                $failures[] = ['scan' => $scan, 'message' => $e->getMessage()];
-
-                continue;
+                $notification->body(implode("\n", $failureLines));
             }
 
-            if (($result['ok'] ?? false) !== true) {
-                $failures[] = [
-                    'scan' => $scan,
-                    'message' => (string) ($result['message'] ?? 'Confirm failed.'),
-                ];
+            $notification->send();
 
-                continue;
-            }
-
-            $okCount++;
-            app(QueueProductVerificationFromReceive::class)->handle($result, $scan, auth()->id());
-            $lastResult = $result;
-            $lastScan = $scan;
-            $session = $session->fresh() ?? $session;
-        }
-
-        $this->stagedScans = array_column($failures, 'scan');
-        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
-
-        if ($lastResult !== null && $lastScan !== null) {
-            $this->applyConfirmContext($lastResult, $lastScan);
-
-            $effect = (string) ($lastResult['effect'] ?? '');
-            $this->highlightUnexpected = in_array($effect, ['unexpected', 'not_in_session'], true)
-                && $this->sessionKind() !== ReceivingSessionKind::ScanFirst;
-        }
-
-        if ($failures !== []) {
-            $message = $okCount > 0
-                ? sprintf('Confirmed %d; %d failed.', $okCount, count($failures))
-                : sprintf('%d scan(s) failed.', count($failures));
-            $tone = 'error';
-        } else {
-            $message = sprintf('Confirmed %d scan(s).', $okCount);
-            $tone = 'ok';
-        }
-
-        $this->setLastScan($tone, $message);
-
-        $notification = Notification::make()->title($message);
-
-        match ($tone) {
-            'ok' => $notification->success(),
-            'warn' => $notification->warning(),
-            default => $notification->danger(),
-        };
-
-        if ($failures !== []) {
-            $failureLines = array_map(
-                fn (array $failure): string => sprintf(
-                    '%s — %s',
-                    $failure['scan'],
-                    $failure['message'],
-                ),
-                $failures,
-            );
-            $notification->body(implode("\n", $failureLines));
-        }
-
-        $notification->send();
-
-        $this->scan = '';
-        $this->dispatch('focus-scan');
-        $this->dispatch('scan-result', tone: $tone);
-        $this->dispatch('receiving-scan-lines-updated')
-            ->to(ScanLinesRelationManager::class);
+            $this->scan = '';
+            $this->dispatch('focus-scan');
+            $this->dispatch('scan-result', tone: $tone);
+            $this->dispatch('receiving-scan-lines-updated')
+                ->to(ScanLinesRelationManager::class);
         } finally {
             $this->confirmStagedInFlight = false;
         }
@@ -747,14 +859,14 @@ trait InteractsWithReceivingSessionHud
                         ->danger()
                         ->send();
 
-                    $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                    $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
                     $this->dispatch('scan-result', tone: 'error');
 
                     return;
                 }
 
                 $this->scan = '';
-                $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
                 $this->applyConfirmContext($result, $scan);
 
@@ -784,7 +896,7 @@ trait InteractsWithReceivingSessionHud
                 }
 
                 $effect = (string) ($result['effect'] ?? '');
-                $this->highlightUnexpected = in_array($effect, ['unexpected', 'not_in_session'], true)
+                $this->highlightUnexpected = $effect === 'unexpected'
                     && $this->sessionKind() !== ReceivingSessionKind::ScanFirst;
 
                 $message = (string) ($result['message'] ?? 'Scan processed.');
@@ -967,6 +1079,14 @@ trait InteractsWithReceivingSessionHud
         $record = $this->getRecord();
 
         return $record->canCancel();
+    }
+
+    public function canHardDeleteReceiving(): bool
+    {
+        /** @var ReceivingSession $record */
+        $record = $this->getRecord();
+
+        return $record->canHardDelete();
     }
 
     public function canResetScans(): bool
@@ -1170,6 +1290,158 @@ trait InteractsWithReceivingSessionHud
 
                     $this->redirect(ReceiveLayout::sessionUrl($asnSession));
                 }),
+            Action::make('attachInvoice')
+                ->label('Attach invoice')
+                ->icon(Heroicon::OutlinedPaperClip)
+                ->color('gray')
+                ->visible(fn (): bool => $this->canAttachInvoice())
+                ->modalHeading('Attach paper invoice')
+                ->modalDescription('Stores a copy for audit. The file is not parsed as TI, EPCIS, or ASN.')
+                ->modalSubmitActionLabel('Attach')
+                ->schema([
+                    FileUpload::make('file')
+                        ->label('Invoice or packing slip')
+                        ->acceptedFileTypes([
+                            'application/pdf',
+                            'image/jpeg',
+                            'image/png',
+                            'image/webp',
+                            'application/octet-stream',
+                        ])
+                        ->rules(['file', 'max:10240'])
+                        ->maxSize(10240)
+                        ->required()
+                        ->storeFiles(false),
+                ])
+                ->action(function (array $data): void {
+                    $file = $data['file'] ?? null;
+                    if (is_array($file)) {
+                        $file = $file[0] ?? null;
+                    }
+
+                    if (! $file instanceof TemporaryUploadedFile) {
+                        Notification::make()
+                            ->title('Attach failed')
+                            ->body('No invoice file was received.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $absolutePath = $file->getRealPath();
+                    if (! is_string($absolutePath) || $absolutePath === '' || ! is_file($absolutePath)) {
+                        Notification::make()
+                            ->title('Attach failed')
+                            ->body('Invoice file is missing or unreadable.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    try {
+                        app(AttachReceivingSessionInvoice::class)->handle(
+                            $this->getRecord(),
+                            $absolutePath,
+                            $file->getClientOriginalName(),
+                            auth()->id(),
+                        );
+                    } catch (DomainException|AuthorizationException $e) {
+                        Notification::make()
+                            ->title('Could not attach invoice')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $this->getRecord()->refresh();
+
+                    Notification::make()
+                        ->title('Invoice attached')
+                        ->body((string) $this->attachedInvoiceFilename())
+                        ->success()
+                        ->send();
+                }),
+            Action::make('closeOpenTote')
+                ->label('Close tote')
+                ->icon(Heroicon::OutlinedArchiveBoxXMark)
+                ->color('warning')
+                ->visible(fn (): bool => $this->canCloseOpenTote())
+                ->action(function (): void {
+                    try {
+                        $result = app(CloseOpenToteReceiving::class)->handle(
+                            $this->getRecord()->fresh(),
+                            auth()->id(),
+                            unpack: $this->unpackOnComplete && $this->receivingPolicy()->canUnpackAtReceive(),
+                        );
+                    } catch (InvalidArgumentException|DomainException|AuthorizationException $e) {
+                        Notification::make()
+                            ->title('Close tote blocked')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
+
+                    Notification::make()
+                        ->title($result['short_closed'] ? 'Tote closed with shortage' : 'Tote closed')
+                        ->success()
+                        ->send();
+
+                    $this->dispatch('focus-scan');
+                    $this->dispatch('receiving-scan-lines-updated')
+                        ->to(ScanLinesRelationManager::class);
+                }),
+            Action::make('acceptRemaining')
+                ->label('Accept remaining')
+                ->icon(Heroicon::OutlinedCheck)
+                ->color('primary')
+                ->visible(fn (): bool => $this->canAcceptRemaining())
+                ->disabled(fn (): bool => ! $this->acceptRemainingEnabled())
+                ->action(function (): void {
+                    try {
+                        $result = app(ConfirmRemainingExpectedReceivingLines::class)->handle(
+                            $this->getRecord()->fresh(),
+                            auth()->id(),
+                            unpack: $this->unpackOnComplete && $this->receivingPolicy()->canUnpackAtReceive(),
+                        );
+                    } catch (InvalidArgumentException|DomainException|AuthorizationException $e) {
+                        Notification::make()
+                            ->title('Accept remaining blocked')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
+
+                    $confirmed = (int) ($result['confirmed'] ?? 0);
+                    $skipped = (int) ($result['skipped'] ?? 0);
+                    $blockers = array_values(array_filter((array) ($result['blockers'] ?? [])));
+
+                    $notification = Notification::make()
+                        ->title(sprintf('Accepted remaining (%d confirmed, %d skipped)', $confirmed, $skipped));
+
+                    if ($blockers !== []) {
+                        $notification->body(implode("\n", array_slice($blockers, 0, 5)))->warning();
+                    } else {
+                        $notification->success();
+                    }
+
+                    $notification->send();
+
+                    $this->dispatch('focus-scan');
+                    $this->dispatch('receiving-scan-lines-updated')
+                        ->to(ScanLinesRelationManager::class);
+                }),
             RegulatoryCompliance::apply(
                 Action::make('completeReceiving')
                     ->label('Complete receive')
@@ -1207,7 +1479,7 @@ trait InteractsWithReceivingSessionHud
                             return;
                         }
 
-                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
                         Notification::make()
                             ->title('Receiving complete')
@@ -1250,7 +1522,7 @@ trait InteractsWithReceivingSessionHud
                             return;
                         }
 
-                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
                         Notification::make()
                             ->title('Transfer receive closed')
@@ -1290,7 +1562,7 @@ trait InteractsWithReceivingSessionHud
                             return;
                         }
 
-                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
                         $transfer = $this->getRecord()->transferringSession;
                         if ($transfer !== null && $transfer->receive_events_generated_at !== null) {
@@ -1358,7 +1630,7 @@ trait InteractsWithReceivingSessionHud
                             return;
                         }
 
-                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
 
                         if (! ($result['generated'] ?? false)) {
                             Notification::make()
@@ -1407,7 +1679,7 @@ trait InteractsWithReceivingSessionHud
                             return;
                         }
 
-                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession']);
+                        $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
                         $this->scan = '';
                         $this->lastScanMessage = null;
                         $this->lastScanTone = null;
@@ -1472,6 +1744,16 @@ trait InteractsWithReceivingSessionHud
                     }),
                 'receiving_cancel',
                 requireReason: true,
+            ),
+            UnsubmittedSessionDeleteAction::forReceivingHud(
+                fn (): bool => $this->canHardDeleteReceiving(),
+                fn (): int => $this->confirmedCount(),
+                function (): void {
+                    /** @var ReceivingSession $session */
+                    $session = $this->getRecord();
+                    app(DeleteReceivingSession::class)->handle($session, auth()->id());
+                },
+                ReceivingSessionResource::getUrl(name: 'index', panel: 'app'),
             ),
             Action::make('printLpnLabel')
                 ->label('Print LPN label')

@@ -23,6 +23,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                     <div class="flex flex-wrap items-center gap-1.5">
                         <span class="badge badge-outline">{{ $this->kindBadgeLabel() }}</span>
+                        <span class="badge badge-outline">{{ $this->edgeModeChipLabel() }}</span>
                         @if ($this->isScanFirst())
                             <span>{{ $this->getRecord()->site?->name ?? 'Receive site' }}</span>
                         @elseif ($this->isTransferReceive())
@@ -68,6 +69,10 @@
                     @if ($this->chipTransferSessionId)
                         <span class="badge badge-warning badge-outline">Transfer #{{ $this->chipTransferSessionId }}</span>
                     @endif
+
+                    @if ($this->isScanFirst() && $this->attachedInvoiceFilename())
+                        <span class="badge badge-ghost">Invoice: {{ $this->attachedInvoiceFilename() }}</span>
+                    @endif
                 </div>
 
                 <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
@@ -86,6 +91,15 @@
                         </div>
                     @endif
                 </div>
+
+                @if ($lockedTote = $this->openToteLockedParentLabel())
+                    <div class="rounded-lg border border-base-300 bg-base-200/60 px-3 py-2 text-sm font-medium">
+                        Open tote {{ $lockedTote }}
+                        @if ($lockedProgress = $this->openToteLockedChildProgress())
+                            <span class="opacity-70"> · {{ $lockedProgress }} {{ $this->childTypeLabel() }}</span>
+                        @endif
+                    </div>
+                @endif
 
                 @if ($this->highlightUnexpected)
                     <div role="alert" class="alert alert-error">
@@ -151,6 +165,51 @@
                             :confirm-label="$this->promptCopy()['confirmButton']"
                             submit-action="confirmScan"
                         />
+
+                        @if ($this->canAttachInvoice())
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <button
+                                    type="button"
+                                    class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral btn btn-outline min-h-14"
+                                    wire:click="mountAction('attachInvoice')"
+                                >
+                                    Attach invoice
+                                </button>
+                                @if ($this->attachedInvoiceFilename())
+                                    <span class="text-sm opacity-70">{{ $this->attachedInvoiceFilename() }}</span>
+                                @endif
+                            </div>
+                        @endif
+
+                        @if ($this->canCloseOpenTote() || $this->canAcceptRemaining())
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                @if ($this->canCloseOpenTote())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral btn btn-outline min-h-14"
+                                        wire:click="mountAction('closeOpenTote')"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Close tote
+                                    </button>
+                                @endif
+                                @if ($this->canAcceptRemaining())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral btn btn-outline min-h-14"
+                                        @if ($this->acceptRemainingEnabled())
+                                            wire:click="mountAction('acceptRemaining')"
+                                        @else
+                                            disabled
+                                            aria-disabled="true"
+                                        @endif
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Accept remaining
+                                    </button>
+                                @endif
+                            </div>
+                        @endif
 
                         @if ($this->canShowUnpackOnComplete())
                             <label class="label cursor-pointer justify-start gap-3 min-h-14 rounded-lg border border-base-300 bg-base-200/60 px-3">

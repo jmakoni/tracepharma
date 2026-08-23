@@ -7,6 +7,7 @@ use App\Enums\TenantProfile;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 
 /**
  * Profile-aware receiving behavior: which unit level a tenant scans first,
@@ -16,16 +17,39 @@ use App\Support\TenantFeatures;
  */
 final class ReceivingPolicy
 {
-    public function __construct(private readonly TenantProfile $profile) {}
+    public function __construct(
+        private readonly TenantProfile $profile,
+        private readonly ?ReceivingEdgeMode $edgeModeOverride = null,
+    ) {}
 
     public static function forTenant(?Tenant $tenant): self
     {
-        return new self($tenant?->profile ?? TenantProfile::Pharmacy);
+        $profile = $tenant?->profile ?? TenantProfile::Pharmacy;
+        $override = $tenant !== null
+            ? TenantSettings::forTenant($tenant)->receivingEdgeMode()
+            : null;
+
+        return new self($profile, $override);
     }
 
     public static function forProfile(TenantProfile $profile): self
     {
         return new self($profile);
+    }
+
+    public function edgeMode(): ReceivingEdgeMode
+    {
+        if ($this->edgeModeOverride !== null) {
+            return $this->edgeModeOverride;
+        }
+
+        if ($this->profileDefaultAutoConfirmChildren()) {
+            return $this->profilePreferredScanLevel() === ReceivingScanLevel::ToteOrCase
+                ? ReceivingEdgeMode::ToteLpn
+                : ReceivingEdgeMode::SealedParent;
+        }
+
+        return ReceivingEdgeMode::OpenCount;
     }
 
     public function resolveKind(?ReceivingSession $session): ReceivingSessionKind
@@ -43,9 +67,9 @@ final class ReceivingPolicy
      */
     public function preferredScanLevel(): ReceivingScanLevel
     {
-        return match ($this->profile) {
-            TenantProfile::Pharmacy => ReceivingScanLevel::ToteOrCase,
-            default => ReceivingScanLevel::Pallet,
+        return match ($this->edgeMode()) {
+            ReceivingEdgeMode::ToteLpn => ReceivingScanLevel::ToteOrCase,
+            default => $this->profilePreferredScanLevel(),
         };
     }
 
@@ -53,6 +77,22 @@ final class ReceivingPolicy
      * Whether the "sealed pallet" checkbox defaults to checked for this profile.
      */
     public function defaultAutoConfirmChildren(): bool
+    {
+        return match ($this->edgeMode()) {
+            ReceivingEdgeMode::SealedParent, ReceivingEdgeMode::ToteLpn => true,
+            ReceivingEdgeMode::OpenCount, ReceivingEdgeMode::OpenTote => false,
+        };
+    }
+
+    private function profilePreferredScanLevel(): ReceivingScanLevel
+    {
+        return match ($this->profile) {
+            TenantProfile::Pharmacy => ReceivingScanLevel::ToteOrCase,
+            default => ReceivingScanLevel::Pallet,
+        };
+    }
+
+    private function profileDefaultAutoConfirmChildren(): bool
     {
         return match ($this->profile) {
             TenantProfile::Pharmacy,
@@ -125,11 +165,16 @@ final class ReceivingPolicy
         };
 
         $kind = $this->resolveKind($session);
-
-        return [
+        $sop = $this->edgeMode()->chipLabel();
+        $copy = [
             ...$base,
             ...$this->kindHudCopy($kind, $base['scanHelper']),
         ];
+
+        $copy['scanHelper'] = $sop.'. '.$copy['scanHelper'];
+        $copy['kindHelper'] = $sop.'. '.$copy['kindHelper'];
+
+        return $copy;
     }
 
     /**

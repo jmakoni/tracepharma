@@ -113,6 +113,9 @@ class MobileFloorReceivingTest extends TestCase
                 ->assertSee($this->expectedParentProgressLabel())
                 ->assertSee($this->expectedChildProgressLabel())
                 ->assertDontSeeHtml('tp-floor-receive__site-chip')
+                ->assertSeeHtml('tp-floor-receive__mode-chip')
+                ->assertSee(ReceivingPolicy::forTenant(tenant())->edgeMode()->chipLabel())
+                ->assertSee('Attach invoice')
                 ->assertDontSee('0/0')
                 ->assertSee('Complete Receive')
                 ->assertSee('Scan at least one item to complete')
@@ -190,6 +193,8 @@ class MobileFloorReceivingTest extends TestCase
             $this->assertStringContainsString('tp-floor-receive__cart-fab', $blade);
             $this->assertStringContainsString('tp-floor-receive__progress-stats', $blade);
             $this->assertStringNotContainsString('tp-floor-receive__site-chip', $blade);
+            $this->assertStringContainsString('tp-floor-receive__mode-chip', $blade);
+            $this->assertStringContainsString('Attach invoice', $blade);
             $this->assertStringContainsString('tp-floor-receive__sheet', $blade);
             $this->assertStringContainsString('tp-floor-receive__camera-overlay', $blade);
             $this->assertStringContainsString('tpFloorReceive(', $blade);

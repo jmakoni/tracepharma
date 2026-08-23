@@ -3,6 +3,7 @@
 namespace App\Actions\Receiving;
 
 use App\Actions\Transferring\GenerateTransferringReceiveEpcisEvents;
+use App\Jobs\Receiving\NotifyWmsReceiveConfirm;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -14,10 +15,12 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\OutboundShipmentInTransit;
+use App\Support\Logging\RedactsUrls;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -46,8 +49,7 @@ final class CompleteReceivingSession
         ?int $actorId = null,
         bool $unpack = false,
         bool $shortClose = false,
-    ): ReceivingSession
-    {
+    ): ReceivingSession {
         $session = $session->fresh() ?? $session;
 
         if (! JobRoleAccess::allows(Permissions::NavReceive)) {
@@ -62,6 +64,9 @@ final class CompleteReceivingSession
         try {
             $this->assertDocumentNotBlockedByOpenException($session);
             $this->assertScanFirstTiWhenRequired($session);
+            if (! $shortClose) {
+                $this->assertOpenToteMayComplete($session);
+            }
         } catch (DomainException $e) {
             if (
                 $session->status === 'completed'
@@ -78,7 +83,10 @@ final class CompleteReceivingSession
             return $this->completeTransferReceive($session, $actorId, $shortClose);
         }
 
-        if ($session->isScanFirst() && $session->status !== 'completed') {
+        if ($session->status !== 'completed' && ($session->isScanFirst() || ($shortClose && $session->isInboundAsn()))) {
+            // Scan-first always marks complete here. Inbound ASN uses the same
+            // path only for Scan In short-close (confirmed cases only). HUD
+            // complete leaves shortClose false and still requires a full tote.
             // Locked, mirroring the transfer-receive branch: a concurrent complete
             // call (e.g. the last confirm auto-triggering completion while the
             // operator also taps "Complete") must not race this status transition.
@@ -112,14 +120,54 @@ final class CompleteReceivingSession
         }
 
         try {
-            $this->generateReceivingEpcisEvents->handle($session, $actorId, $unpack);
+            $generated = $this->generateReceivingEpcisEvents->handle($session, $actorId, $unpack);
         } catch (Throwable $e) {
             $this->revertIncompleteCompletion($session);
 
             throw $e;
         }
 
+        if ($generated['generated']) {
+            $this->dispatchWmsReceiveConfirm($session->refresh());
+        }
+
         return $session->refresh();
+    }
+
+    /**
+     * Optional WMS receive-confirm. Fail-soft: never revert a completed session.
+     */
+    private function dispatchWmsReceiveConfirm(ReceivingSession $session): void
+    {
+        if ($session->isTransferReceive()) {
+            return;
+        }
+
+        $settings = TenantSettings::forTenant(tenant());
+        if ($settings->wmsWebhooksKilled()) {
+            return;
+        }
+
+        $endpoint = $settings->wmsReceiveConfirmUrl();
+        if (blank($endpoint)) {
+            return;
+        }
+
+        $tenant = tenant();
+        if ($tenant === null) {
+            return;
+        }
+
+        try {
+            NotifyWmsReceiveConfirm::dispatch((string) $tenant->getKey(), (int) $session->getKey());
+        } catch (Throwable $e) {
+            Log::warning('WMS receive-confirm dispatch failed.', [
+                'tenant_id' => (string) $tenant->getKey(),
+                'session_id' => (int) $session->getKey(),
+                'endpoint' => RedactsUrls::redactUrl($endpoint),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function assertDocumentNotBlockedByOpenException(ReceivingSession $session): void
@@ -143,6 +191,29 @@ final class CompleteReceivingSession
         throw new DomainException(
             "Cannot complete receiving: open document-wide exception #{$blockingCase->getKey()} ({$type}) blocks this file until resolved.",
         );
+    }
+
+    private function assertOpenToteMayComplete(ReceivingSession $session): void
+    {
+        if (! $session->isInboundAsn()) {
+            return;
+        }
+
+        if ($session->openToteLockBlocksComplete()) {
+            $label = $session->openToteLabel();
+
+            throw new DomainException(
+                filled($label)
+                    ? 'Close tote '.$label.' first before completing.'
+                    : 'Close tote first before completing.',
+            );
+        }
+
+        if ($session->hasUnclosedExpectedChildrenOfConfirmedParents()) {
+            throw new DomainException(
+                'Close tote or record shortage — expected units remain on a confirmed tote.',
+            );
+        }
     }
 
     private function assertScanFirstTiWhenRequired(ReceivingSession $session): void

@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Tenancy\TenantKillSwitches;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
@@ -173,6 +174,32 @@ class TenantSettings
 
         $settings = $this->settingsBag();
         data_set($settings, 'receiving.require_ti_for_scan_first', $require);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function receivingEdgeMode(): ?ReceivingEdgeMode
+    {
+        $value = data_get($this->settingsBag(), 'receiving.edge_mode');
+
+        return is_string($value) ? ReceivingEdgeMode::tryFrom($value) : null;
+    }
+
+    public function setReceivingEdgeMode(?ReceivingEdgeMode $mode): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+
+        if ($mode === null) {
+            data_forget($settings, 'receiving.edge_mode');
+        } else {
+            data_set($settings, 'receiving.edge_mode', $mode->value);
+        }
+
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
@@ -437,6 +464,174 @@ class TenantSettings
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
+    }
+
+    public function wmsReceiveConfirmUrl(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'integrations.wms_receive_confirm_url');
+
+        return blank($value) ? null : (string) $value;
+    }
+
+    public function setWmsReceiveConfirmUrl(?string $url): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $normalized = blank($url) ? null : trim($url);
+        self::assertWmsReceiveConfirmUrlWithoutUserinfo($normalized);
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'integrations.wms_receive_confirm_url', $normalized);
+
+        if (data_get($settings, 'integrations') === []) {
+            unset($settings['integrations']);
+        }
+
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * @throws \InvalidArgumentException
+     */
+    public static function assertWmsReceiveConfirmUrlWithoutUserinfo(?string $url): void
+    {
+        if ($url === null || $url === '') {
+            return;
+        }
+
+        $parsed = parse_url($url);
+
+        if ($parsed === false || ! is_array($parsed)) {
+            throw new \InvalidArgumentException('WMS receive-confirm URL is not valid.');
+        }
+
+        if (isset($parsed['user']) || isset($parsed['pass'])) {
+            throw new \InvalidArgumentException(
+                'WMS receive-confirm URL must not include credentials. Use the WMS bridge API key field instead.',
+            );
+        }
+
+        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
+        if ($scheme !== 'https') {
+            throw new \InvalidArgumentException('WMS receive-confirm URL must use HTTPS.');
+        }
+
+        $host = self::unwrapIpv4MappedAddress((string) ($parsed['host'] ?? ''));
+        if ($host === '') {
+            throw new \InvalidArgumentException('WMS receive-confirm URL is not valid.');
+        }
+
+        if ($host === 'localhost' || str_ends_with($host, '.localhost') || $host === 'metadata.google.internal' || $host === 'metadata.goog') {
+            throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            $public = filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+            if ($public === false) {
+                throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
+            }
+        }
+    }
+
+    /**
+     * Re-check the URL at connect time: resolve hostnames and deny loopback /
+     * link-local / metadata addresses. RFC1918 remains allowed for on-prem WMS.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function assertWmsReceiveConfirmHostAtConnect(?string $url): void
+    {
+        self::assertWmsReceiveConfirmUrlWithoutUserinfo($url);
+
+        if ($url === null || $url === '') {
+            return;
+        }
+
+        $host = self::unwrapIpv4MappedAddress((string) (parse_url($url, PHP_URL_HOST) ?? ''));
+        if ($host === '') {
+            throw new \InvalidArgumentException('WMS receive-confirm URL is not valid.');
+        }
+
+        $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false
+            ? [$host]
+            : self::resolveWmsHostAddresses($host);
+
+        foreach ($addresses as $address) {
+            if (self::isDeniedWmsResolvedAddress($address)) {
+                throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
+            }
+        }
+    }
+
+    public static function unwrapIpv4MappedAddress(string $host): string
+    {
+        $host = strtolower(trim($host, '[]'));
+        if (str_starts_with($host, '::ffff:')) {
+            $mapped = substr($host, 7);
+            if (filter_var($mapped, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                return $mapped;
+            }
+        }
+
+        return $host;
+    }
+
+    public static function isDeniedWmsResolvedAddress(string $ip): bool
+    {
+        $ip = self::unwrapIpv4MappedAddress($ip);
+        if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+            return true;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            $octets = array_map('intval', explode('.', $ip));
+            if (($octets[0] ?? null) === 127) {
+                return true;
+            }
+
+            return ($octets[0] ?? null) === 169 && ($octets[1] ?? null) === 254;
+        }
+
+        if ($ip === '::1') {
+            return true;
+        }
+
+        $packed = inet_pton($ip);
+        $fe80 = inet_pton('fe80::');
+        if ($packed !== false && $fe80 !== false) {
+            return (ord($packed[0]) === 0xFE) && ((ord($packed[1]) & 0xC0) === 0x80);
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function resolveWmsHostAddresses(string $host): array
+    {
+        $addresses = [];
+        $v4 = @gethostbynamel($host);
+        if (is_array($v4)) {
+            $addresses = [...$addresses, ...$v4];
+        }
+
+        if (function_exists('dns_get_record')) {
+            $aaaa = @dns_get_record($host, DNS_AAAA);
+            if (is_array($aaaa)) {
+                foreach ($aaaa as $row) {
+                    if (isset($row['ipv6'])) {
+                        $addresses[] = (string) $row['ipv6'];
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($addresses));
     }
 
     /**
@@ -868,6 +1063,7 @@ class TenantSettings
      *     serialization_contact_name?: string|null,
      *     serialization_contact_email?: string|null,
      *     require_ti_for_scan_first?: bool|null,
+     *     receiving_edge_mode?: string|ReceivingEdgeMode|null,
      *     job_roles_enabled?: bool|null,
      *     client_print_bridge?: string|null,
      *     l3_enabled?: bool|null,
@@ -875,6 +1071,7 @@ class TenantSettings
      *     l3_endpoint_url?: string|null,
      *     l3_api_key?: string|null,
      *     wms_bridge_api_key?: string|null,
+     *     wms_receive_confirm_url?: string|null,
      *     dashboard_allow_user_customize?: bool|null,
      *     dashboard_defaults?: array<string, bool>|null,
      *     dashboard_allowed?: array<string, bool>|null,
@@ -928,6 +1125,7 @@ class TenantSettings
             'serialization_contact_name',
             'serialization_contact_email',
             'require_ti_for_scan_first',
+            'receiving_edge_mode',
             'job_roles_enabled',
             'client_print_bridge',
             'l3_enabled',
@@ -935,6 +1133,7 @@ class TenantSettings
             'l3_endpoint_url',
             'l3_api_key',
             'wms_bridge_api_key',
+            'wms_receive_confirm_url',
             'dashboard_allow_user_customize',
             'dashboard_defaults',
             'dashboard_allowed',
@@ -987,6 +1186,7 @@ class TenantSettings
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
                 'require_ti_for_scan_first' => $this->setRequireTiForScanFirst((bool) $data[$key]),
+                'receiving_edge_mode' => $this->setReceivingEdgeMode($this->normalizeReceivingEdgeMode($data[$key])),
                 'job_roles_enabled' => $this->setJobRolesEnabled((bool) $data[$key]),
                 'client_print_bridge' => $this->setClientPrintBridge(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
@@ -1002,6 +1202,9 @@ class TenantSettings
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
                 'wms_bridge_api_key' => $this->setWmsBridgeApiKey(
+                    is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
+                ),
+                'wms_receive_confirm_url' => $this->setWmsReceiveConfirmUrl(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
                 'dashboard_allow_user_customize' => $this->setDashboardAllowUserCustomize((bool) $data[$key]),
@@ -1063,6 +1266,15 @@ class TenantSettings
         $settings = $this->settingsBag();
 
         return $settings[$key] ?? null;
+    }
+
+    private function normalizeReceivingEdgeMode(mixed $value): ?ReceivingEdgeMode
+    {
+        if ($value instanceof ReceivingEdgeMode) {
+            return $value;
+        }
+
+        return is_string($value) && $value !== '' ? ReceivingEdgeMode::tryFrom($value) : null;
     }
 
     private function putSetting(string $key, mixed $value): self
