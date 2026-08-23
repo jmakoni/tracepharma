@@ -31,7 +31,7 @@ final class OpenOutboundShippingSession
         ?string $correctiveReason = null,
         ?int $correctsEpcisDocumentId = null,
     ): OutboundShippingSession {
-        if (! TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()) {
+        if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
         }
 

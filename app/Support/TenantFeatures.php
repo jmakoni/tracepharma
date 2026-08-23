@@ -137,12 +137,20 @@ class TenantFeatures
     }
 
     /**
-     * Author ship sessions from Scan Out / Ship Order.
-     * Pharmacy desk expands this in Wave C.
+     * Low-volume pharmacy TI desk. Does not unlock Ship Order / Scan Out / WMS.
+     */
+    public function supportsPharmacyOutboundDesk(): bool
+    {
+        return $this->profile === TenantProfile::Pharmacy;
+    }
+
+    /**
+     * Author ship sessions from Scan Out / Ship Order / pharmacy desk.
+     * WMS ship-confirm stays on supportsOutboundIntegrations() only.
      */
     public function canAuthorOutboundShipments(): bool
     {
-        return $this->supportsOutboundIntegrations();
+        return $this->supportsOutboundIntegrations() || $this->supportsPharmacyOutboundDesk();
     }
 
     /**

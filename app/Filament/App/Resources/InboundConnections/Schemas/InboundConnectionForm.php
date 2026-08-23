@@ -41,7 +41,7 @@ class InboundConnectionForm
                                 }
                             }),
                         Select::make('transport')
-                            ->options(collect(InboundTransport::cases())->mapWithKeys(
+                            ->options(collect(InboundTransport::operatorSelectable())->mapWithKeys(
                                 fn (InboundTransport $transport): array => [$transport->value => $transport->label()]
                             ))
                             ->required()
