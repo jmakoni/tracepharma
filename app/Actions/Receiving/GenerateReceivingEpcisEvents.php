@@ -14,6 +14,7 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Gs1\Sgln;
@@ -22,11 +23,11 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Support\Carbon;
-use InvalidArgumentException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -56,6 +57,7 @@ final class GenerateReceivingEpcisEvents
         private readonly SyncDocumentEpcsFromEvents $syncDocumentEpcsFromEvents,
         private readonly ScheduleOutboundEpcisTransmission $scheduleOutboundTransmission,
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
+        private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly UnpackReceivingHierarchy $unpackReceivingHierarchy,
         private readonly AssertAuthoredObjectEventCandidate $assertObjectEventCandidate,
         private readonly AssertAuthoredAggregationCandidate $assertAggregationCandidate,
@@ -151,6 +153,21 @@ final class GenerateReceivingEpcisEvents
                 'biz_location_gln' => $gln,
                 'trading_partner_id' => $session->trading_partner_id,
             ]));
+
+            $this->persistAuthoredEventLocations->handle($event, [
+                [
+                    'location_type' => 'readPoint',
+                    'gln' => $gln,
+                    'gln_uri' => $sglnUrn,
+                    'site_id' => $session->site_id,
+                ],
+                [
+                    'location_type' => 'bizLocation',
+                    'gln' => $gln,
+                    'gln_uri' => $sglnUrn,
+                    'site_id' => $session->site_id,
+                ],
+            ]);
 
             $this->attachEpcs($event, $epcIds, 'epcList');
             $bizTransactions = $this->copyInboundBizTransactions($session, $event);
