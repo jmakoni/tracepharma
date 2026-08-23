@@ -436,6 +436,7 @@ final class EnsureCatalogPartiesFromEpcisLocations
                 $stats['tenant_sites_filled']++;
             }
 
+            $this->recordPublishedSgln($siteGln, $location);
             $this->stampSite($existingSite->fresh() ?? $existingSite, $establishment, $facility);
 
             return;
@@ -467,6 +468,7 @@ final class EnsureCatalogPartiesFromEpcisLocations
         }
 
         $site = Site::query()->create($attributes);
+        $this->recordPublishedSgln($siteGln, $location);
         $this->stampSite($site, $establishment, $facility);
 
         if ($facility !== null) {
@@ -556,5 +558,18 @@ final class EnsureCatalogPartiesFromEpcisLocations
         $normalized = preg_replace('/\D+/', '', (string) $gln) ?? '';
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $location
+     */
+    private function recordPublishedSgln(string $siteGln, array $location): void
+    {
+        $urn = $location['gln_uri'] ?? null;
+        if (! is_string($urn) || $urn === '') {
+            return;
+        }
+
+        app(RecordPublishedSglnOnPartner::class)->handle($siteGln, $urn);
     }
 }

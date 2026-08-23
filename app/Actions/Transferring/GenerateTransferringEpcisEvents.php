@@ -12,16 +12,17 @@ use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ResolveSiteLocationGlns;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use DomainException;
-use InvalidArgumentException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -46,6 +47,7 @@ final class GenerateTransferringEpcisEvents
         private readonly SyncDocumentEpcsFromEvents $syncDocumentEpcsFromEvents,
         private readonly ScheduleOutboundEpcisTransmission $scheduleOutboundTransmission,
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
+        private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly ReceivingGate $receivingGate,
         private readonly EpcCustodyGate $custodyGate,
     ) {}
@@ -145,6 +147,20 @@ final class GenerateTransferringEpcisEvents
                 'read_point_gln' => $fromLocation['gln'],
                 'biz_location_gln' => $fromLocation['gln'],
             ]));
+            $this->persistAuthoredEventLocations->handle($shippingEvent, [
+                [
+                    'location_type' => 'readPoint',
+                    'gln' => $fromLocation['gln'],
+                    'gln_uri' => $fromLocation['sgln_urn'],
+                    'site_id' => $fromLocation['site_id'],
+                ],
+                [
+                    'location_type' => 'bizLocation',
+                    'gln' => $fromLocation['gln'],
+                    'gln_uri' => $fromLocation['sgln_urn'],
+                    'site_id' => $fromLocation['site_id'],
+                ],
+            ]);
             $this->attachEpcs($shippingEvent, $epcIds);
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 

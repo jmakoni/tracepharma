@@ -11,18 +11,19 @@ use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ResolveSiteLocationGlns;
 use App\Support\Epcis\SbdhInstanceIdentifier;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Gs1\Sgln;
 use DomainException;
-use InvalidArgumentException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -55,6 +56,7 @@ final class GenerateTransferringReceiveEpcisEvents
         private readonly SyncDocumentEpcsFromEvents $syncDocumentEpcsFromEvents,
         private readonly ScheduleOutboundEpcisTransmission $scheduleOutboundTransmission,
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
+        private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly ReceivingGate $receivingGate,
         private readonly EpcCustodyGate $custodyGate,
     ) {}
@@ -183,6 +185,20 @@ final class GenerateTransferringReceiveEpcisEvents
                 'read_point_gln' => $toLocation['gln'],
                 'biz_location_gln' => $toLocation['gln'],
             ]));
+            $this->persistAuthoredEventLocations->handle($receivingEvent, [
+                [
+                    'location_type' => 'readPoint',
+                    'gln' => $toLocation['gln'],
+                    'gln_uri' => $toLocation['sgln_urn'],
+                    'site_id' => $toLocation['site_id'],
+                ],
+                [
+                    'location_type' => 'bizLocation',
+                    'gln' => $toLocation['gln'],
+                    'gln_uri' => $toLocation['sgln_urn'],
+                    'site_id' => $toLocation['site_id'],
+                ],
+            ]);
             $this->attachEpcs($receivingEvent, $epcIds);
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 
@@ -328,7 +344,7 @@ final class GenerateTransferringReceiveEpcisEvents
      * site is consulted only for an SGLN it has on file, or when the ship leg recorded
      * no GLN at all.
      *
-     * @return array{gln: string, sgln_urn: string}
+     * @return array{gln: string, sgln_urn: string, site_id: int}
      *
      * @throws DomainException when no SGLN can be resolved for the ship-leg GLN
      */
@@ -357,6 +373,7 @@ final class GenerateTransferringReceiveEpcisEvents
         return [
             'gln' => $gln,
             'sgln_urn' => $sglnUrn,
+            'site_id' => $fromSiteId,
         ];
     }
 
@@ -375,7 +392,7 @@ final class GenerateTransferringReceiveEpcisEvents
     }
 
     /**
-     * @return array{gln: string, sgln_urn: string}
+     * @return array{gln: string, sgln_urn: string, site_id: int}
      *
      * @throws DomainException when the site has no GLN, or no SGLN can be resolved for it
      */
@@ -386,6 +403,7 @@ final class GenerateTransferringReceiveEpcisEvents
         return [
             'gln' => $resolved['gln'],
             'sgln_urn' => $resolved['sgln_urn'],
+            'site_id' => $resolved['site_id'],
         ];
     }
 
