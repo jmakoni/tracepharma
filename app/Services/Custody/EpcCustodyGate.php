@@ -14,6 +14,7 @@ use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TenantGlnSet;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Custody\UnreceivedPartnerShipment;
+use App\Support\Epcis\LastGoodIngestProjection;
 use App\Support\Shipping\CorrectiveShipmentDocument;
 use App\Support\Tracing\Gs1DualDisplay;
 use Illuminate\Database\Eloquent\Builder;
@@ -352,13 +353,24 @@ final class EpcCustodyGate
             return true;
         }
 
-        return DB::table('event_epcs as ee')
+        $evidence = DB::table('event_epcs as ee')
             ->join('epcis_events as ev', 'ev.id', '=', 'ee.event_id')
             ->join('epcis_documents as doc', 'doc.id', '=', 'ev.document_id')
             ->where('ee.epc_id', $epc->getKey())
             ->where('ev.event_type', 'ObjectEvent')
             ->where('ev.biz_step', 'like', '%shipping%')
-            ->where('doc.direction', 'outbound')
+            ->where('doc.direction', 'outbound');
+        LastGoodIngestProjection::constrainDocuments(
+            $evidence,
+            'doc',
+            ['generated', 'parsed', 'validated'],
+        );
+
+        return $evidence
+            ->where(function ($generation) {
+                $generation->whereColumn('ev.ingest_generation', 'doc.ingest_generation')
+                    ->orWhereNull('doc.ingest_generation');
+            })
             ->when(
                 $shipFromSiteId !== null,
                 fn ($query) => $query->where('doc.ship_from_site_id', $shipFromSiteId),
@@ -517,11 +529,22 @@ final class EpcCustodyGate
             return false;
         }
 
-        return DB::table('event_epcs as ee')
+        $carries = DB::table('event_epcs as ee')
             ->join('epcis_events as ev', 'ev.id', '=', 'ee.event_id')
+            ->join('epcis_documents as doc', 'doc.id', '=', 'ev.document_id')
             ->where('ev.document_id', $documentId)
             ->whereIn('ee.epc_id', $epcIds)
-            ->exists();
+            ->where(function ($generation) {
+                $generation->whereColumn('ev.ingest_generation', 'doc.ingest_generation')
+                    ->orWhereNull('doc.ingest_generation');
+            });
+        LastGoodIngestProjection::constrainDocuments(
+            $carries,
+            'doc',
+            ['generated', 'parsed', 'validated'],
+        );
+
+        return $carries->exists();
     }
 
     /**

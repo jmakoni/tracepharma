@@ -51,7 +51,7 @@ final class ForceFailEpcisJob
                     'transmission_status' => 'failed',
                     'error_message' => $message,
                 ])->save();
-            } elseif ($document->direction === 'inbound' && $document->status === 'parsing') {
+            } elseif ($document->direction === 'inbound' && in_array($document->status, ['received', 'parsing'], true)) {
                 $document->forceFill([
                     'status' => 'error',
                     'error_message' => $message,

@@ -19,6 +19,7 @@ use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -125,6 +126,139 @@ final class ExceptionService
     }
 
     /**
+     * Promote every open signal of one document type + status to a single case,
+     * attaching failed serials (item-level) or one representative EPC per
+     * distinct GTIN/SSCC (file-level).
+     */
+    public function createFromGroupedSignals(
+        EpcisDocument $document,
+        string $exceptionType,
+        string $status,
+        ?User $actor = null,
+    ): ExceptionCase {
+        $signals = EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->where('exception_type', $exceptionType)
+            ->where('status', $status)
+            ->orderBy('id')
+            ->get();
+
+        if ($signals->isEmpty()) {
+            throw new InvalidArgumentException('No exception signals match this document group.');
+        }
+
+        $existingCaseId = $signals->pluck('case_id')->filter()->first();
+        if ($existingCaseId !== null) {
+            $case = ExceptionCase::query()->findOrFail((int) $existingCaseId);
+            $this->syncGroupEpcs($case, $document, $signals);
+            $this->linkSignalsToCase($case, $signals);
+
+            return $case->fresh(['type', 'epcs']) ?? $case;
+        }
+
+        $case = $this->createFromSignal($signals->first(), actor: $actor);
+        $this->syncGroupEpcs($case, $document, $signals);
+        $this->linkSignalsToCase($case, $signals);
+
+        return $case->fresh(['type', 'epcs', 'activities']) ?? $case;
+    }
+
+    /**
+     * Replace case EPCs with the grouped type's affected identifiers.
+     *
+     * @param  Collection<int, EpcisException>  $signals
+     */
+    public function syncGroupEpcs(ExceptionCase $case, EpcisDocument $document, Collection $signals): void
+    {
+        $epcIds = $this->resolveGroupEpcIds($document, $signals);
+        $case->epcs()->sync($epcIds);
+        $case->forceFill(['serials_affected' => $case->epcs()->count()])->save();
+        app(QuarantineService::class)->refreshSerialsAffected($case);
+    }
+
+    /**
+     * @param  Collection<int, EpcisException>  $signals
+     */
+    private function linkSignalsToCase(ExceptionCase $case, Collection $signals): void
+    {
+        $ids = $signals->modelKeys();
+        if ($ids === []) {
+            return;
+        }
+
+        EpcisException::query()
+            ->whereIn('id', $ids)
+            ->where(function ($query) use ($case): void {
+                $query->whereNull('case_id')
+                    ->orWhere('case_id', $case->getKey());
+            })
+            ->update(['case_id' => $case->getKey()]);
+    }
+
+    /**
+     * @param  Collection<int, EpcisException>  $signals
+     * @return list<int>
+     */
+    public function resolveGroupEpcIds(EpcisDocument $document, Collection $signals): array
+    {
+        $itemLevel = $signals->contains(fn (EpcisException $signal): bool => $signal->epc_id !== null || $signal->event_id !== null);
+
+        if ($itemLevel) {
+            $ids = [];
+            foreach ($signals as $signal) {
+                if ($signal->epc_id !== null) {
+                    $ids[] = (int) $signal->epc_id;
+                    $gtin = (string) (Epc::query()->whereKey((int) $signal->epc_id)->value('gtin14') ?? '');
+                    if ($gtin !== '') {
+                        $ids = [...$ids, ...$this->resolveDocumentEpcIdsByGtin((int) $document->getKey(), $gtin)];
+                    }
+                }
+                if ($signal->event_id !== null) {
+                    $ids = [...$ids, ...$this->resolveEventEpcListIds((int) $signal->event_id)];
+                }
+            }
+
+            return array_values(array_unique(array_filter($ids, fn (int $id): bool => $id > 0)));
+        }
+
+        $descriptionGtinIds = $this->resolveDescriptionGtinEpcIds($document, $signals);
+        if ($descriptionGtinIds !== []) {
+            return $descriptionGtinIds;
+        }
+
+        return $this->resolveCompactFileIdentifierEpcIds($document);
+    }
+
+    /**
+     * One representative EPC per distinct GTIN and SSCC in the file.
+     *
+     * @return list<int>
+     */
+    private function resolveCompactFileIdentifierEpcIds(EpcisDocument $document): array
+    {
+        $rows = $document->epcsQuery()->get(['epcs.id', 'epcs.gtin14', 'epcs.sscc18']);
+
+        $byGtin = [];
+        $bySscc = [];
+        foreach ($rows as $row) {
+            $gtin = (string) ($row->gtin14 ?? '');
+            if ($gtin !== '' && ! isset($byGtin[$gtin])) {
+                $byGtin[$gtin] = (int) $row->id;
+            }
+
+            $sscc = (string) ($row->sscc18 ?? '');
+            if ($sscc !== '' && ! isset($bySscc[$sscc])) {
+                $bySscc[$sscc] = (int) $row->id;
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            [...array_values($byGtin), ...array_values($bySscc)],
+            fn (int $id): bool => $id > 0,
+        )));
+    }
+
+    /**
      * Attach EPCs implied by an ingest signal (idempotent).
      */
     public function syncSignalEpcs(ExceptionCase $case, EpcisException $signal): void
@@ -166,9 +300,8 @@ final class ExceptionService
         // UNKNOWN_GTIN findings are one-per-GTIN without epc_id/event_id — attach matching
         // document SGTINs so "Affected EPCs" is not empty after promote.
         if ($ids === [] && $signal->document_id !== null) {
-            $gtin = ExceptionCorrectionProfile::extractGtinFromDescription($signal->description);
-            if ($gtin !== null) {
-                $ids = $this->resolveDocumentEpcIdsByGtin((int) $signal->document_id, $gtin);
+            foreach (ExceptionCorrectionProfile::extractGtinsFromDescription($signal->description) as $gtin) {
+                $ids = [...$ids, ...$this->resolveDocumentEpcIdsByGtin((int) $signal->document_id, $gtin)];
             }
         }
 
@@ -186,13 +319,37 @@ final class ExceptionService
 
         return DB::table('event_epcs')
             ->where('event_id', $eventId)
-            ->where('role', 'epcList')
+            ->whereIn('role', ['epcList', 'childEPC', 'parentID'])
             ->pluck('epc_id')
             ->map(fn ($id): int => (int) $id)
             ->filter(fn (int $id): bool => $id > 0)
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, EpcisException>  $signals
+     * @return list<int>
+     */
+    private function resolveDescriptionGtinEpcIds(EpcisDocument $document, Collection $signals): array
+    {
+        $gtins = [];
+        foreach ($signals as $signal) {
+            $gtins = [...$gtins, ...ExceptionCorrectionProfile::extractGtinsFromDescription($signal->description)];
+        }
+
+        $gtins = array_values(array_unique($gtins));
+        if ($gtins === []) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($gtins as $gtin) {
+            $ids = [...$ids, ...$this->resolveDocumentEpcIdsByGtin((int) $document->getKey(), $gtin)];
+        }
+
+        return array_values(array_unique(array_filter($ids, fn (int $id): bool => $id > 0)));
     }
 
     /**

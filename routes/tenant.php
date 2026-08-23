@@ -12,12 +12,13 @@ declare(strict_types=1);
 |
 */
 
+use App\Http\Controllers\CustomerPortalController;
 use App\Http\Controllers\Labeling\ClientLabelPrintController;
-use App\Http\Controllers\Tenant\ImpersonateController;
 use App\Http\Controllers\RecallBroadcastAckPortalController;
 use App\Http\Controllers\SetCurrentSiteController;
 use App\Http\Controllers\SupplierExceptionPortalController;
 use App\Http\Controllers\SupplierQuarantineController;
+use App\Http\Controllers\Tenant\ImpersonateController;
 use App\Http\Middleware\EnsureTenantIsActive;
 use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -71,6 +72,15 @@ Route::middleware([
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-exceptions.index');
 
+    Route::get('/customer-portal/{customerPortalUuid}', [CustomerPortalController::class, 'index'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->name('tenant.customer-portal.index');
+
+    Route::get('/customer-portal/{customerPortalUuid}/documents/{document}', [CustomerPortalController::class, 'download'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->whereNumber('document')
+        ->name('tenant.customer-portal.download');
+
     Route::get('/supplier-quarantine/{shareUuid}', [SupplierQuarantineController::class, 'show'])
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-quarantine.show');
@@ -78,4 +88,8 @@ Route::middleware([
     Route::post('/supplier-quarantine/{shareUuid}/comment', [SupplierQuarantineController::class, 'comment'])
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-quarantine.comment');
+
+    Route::post('/supplier-quarantine/{shareUuid}/upload', [SupplierQuarantineController::class, 'upload'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->name('tenant.supplier-quarantine.upload');
 });

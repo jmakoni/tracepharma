@@ -51,7 +51,6 @@ class EpcisSchemaFiltersTest extends TestCase
 
             foreach ([
                 'status',
-                'direction',
                 'trading_partner_id',
                 'ship_to_partner_id',
                 'ship_from_gln',
@@ -261,6 +260,8 @@ class EpcisSchemaFiltersTest extends TestCase
         // Type filter is searchable and sourced from the live ExceptionType catalog
         // (falling back to the static validation catalog), not a hardcoded flat list.
         $this->assertStringContainsString("SelectFilter::make('exception_type')", $source);
+        $this->assertStringContainsString('GroupDocumentExceptionSignals', $source);
+        $this->assertStringContainsString('gtin_display', $source);
         $this->assertStringContainsString('->searchable()', $source);
         $this->assertStringContainsString('ExceptionType::query()', $source);
         $this->assertStringContainsString('EpcisValidationCatalog::all()', $source);

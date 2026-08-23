@@ -2,6 +2,10 @@
 
 namespace App\Actions\Epcis;
 
+use App\Domain\Gs1\CheckDigit;
+use App\Domain\Gs1\SgtinUri;
+use App\Domain\Gs1\Sscc18;
+use App\Domain\Gs1\SsccUri;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
@@ -14,15 +18,11 @@ use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Epcis\Validation\EpcisValidationProfileResolver;
 use App\Support\Epcis\Validation\EpcisValidationSeverityMap;
 use App\Support\Epcis\Validation\EpcisXsdValidator;
-use App\Domain\Gs1\CheckDigit;
-use App\Domain\Gs1\Sscc18;
-use App\Domain\Gs1\SgtinUri;
-use App\Domain\Gs1\SsccUri;
-use InvalidArgumentException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /**
  * Aggressive EPCIS 1.2 post-parse validation: XSD + DB business rules.
@@ -682,17 +682,80 @@ final class ValidateEpcis12Document
      */
     private function persistFindings(EpcisDocument $document, array $findings): void
     {
+        $grouped = [];
         foreach ($findings as $finding) {
-            EpcisException::query()->create([
-                'document_id' => $document->getKey(),
-                'event_id' => $finding->eventId,
-                'epc_id' => $finding->epcId,
-                'exception_type' => $finding->exceptionType,
-                'severity' => $finding->severity,
-                'description' => $finding->description,
-                'status' => 'open',
-            ]);
+            $type = $finding->exceptionType;
+            if (! isset($grouped[$type])) {
+                $grouped[$type] = [
+                    'severity' => $finding->severity,
+                    'descriptions' => [],
+                    'event_ids' => [],
+                    'epc_ids' => [],
+                ];
+            }
+
+            $grouped[$type]['severity'] = $this->worseSeverity(
+                $grouped[$type]['severity'],
+                $finding->severity,
+            );
+            $grouped[$type]['descriptions'][$finding->description] = $finding->description;
+            if ($finding->eventId !== null) {
+                $grouped[$type]['event_ids'][$finding->eventId] = $finding->eventId;
+            }
+            if ($finding->epcId !== null) {
+                $grouped[$type]['epc_ids'][$finding->epcId] = $finding->epcId;
+            }
         }
+
+        foreach ($grouped as $type => $bundle) {
+            $eventIds = array_values($bundle['event_ids']);
+            $epcIds = array_values($bundle['epc_ids']);
+            $description = Str::limit(implode('; ', array_values($bundle['descriptions'])), 2000);
+            $eventId = count($eventIds) === 1 ? $eventIds[0] : null;
+
+            if ($epcIds === []) {
+                $persistEventIds = count($eventIds) > 1 ? $eventIds : [$eventId];
+                foreach ($persistEventIds as $persistEventId) {
+                    EpcisException::query()->create([
+                        'document_id' => $document->getKey(),
+                        'event_id' => $persistEventId,
+                        'epc_id' => null,
+                        'exception_type' => $type,
+                        'severity' => $bundle['severity'],
+                        'description' => $description,
+                        'status' => 'open',
+                    ]);
+                }
+
+                continue;
+            }
+
+            $gtinByEpc = DB::table('epcs')->whereIn('id', $epcIds)->pluck('gtin14', 'id');
+            $epcByGtin = [];
+            foreach ($epcIds as $epcId) {
+                $gtin = (string) ($gtinByEpc[$epcId] ?? 'epc:'.$epcId);
+                $epcByGtin[$gtin] ??= $epcId;
+            }
+
+            foreach ($epcByGtin as $epcId) {
+                EpcisException::query()->create([
+                    'document_id' => $document->getKey(),
+                    'event_id' => $eventId,
+                    'epc_id' => $epcId,
+                    'exception_type' => $type,
+                    'severity' => $bundle['severity'],
+                    'description' => $description,
+                    'status' => 'open',
+                ]);
+            }
+        }
+    }
+
+    private function worseSeverity(string $current, string $candidate): string
+    {
+        $rank = ['critical' => 4, 'error' => 3, 'warning' => 2, 'info' => 1];
+
+        return ($rank[$candidate] ?? 0) > ($rank[$current] ?? 0) ? $candidate : $current;
     }
 
     /**

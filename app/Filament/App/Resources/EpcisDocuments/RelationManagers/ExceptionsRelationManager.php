@@ -5,10 +5,13 @@ namespace App\Filament\App\Resources\EpcisDocuments\RelationManagers;
 use App\Enums\ExceptionTypeCategory;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\Support\RecordActionGroup;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
+use App\Models\Epcis\EpcisExceptionGroup;
 use App\Models\Exceptions\ExceptionType;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Epcis\Exceptions\GroupDocumentExceptionSignals;
 use App\Support\Epcis\Validation\EpcisValidationCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use Filament\Actions\Action;
@@ -20,6 +23,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Throwable;
 
 class ExceptionsRelationManager extends RelationManager
@@ -28,14 +33,51 @@ class ExceptionsRelationManager extends RelationManager
 
     protected static ?string $title = 'Exceptions';
 
+    protected static bool $isBadgeDeferred = true;
+
     public function isReadOnly(): bool
     {
         return true;
     }
 
+    public static function getBadge(Model $ownerRecord, string $pageClass): ?string
+    {
+        $count = (int) EpcisException::query()
+            ->where('document_id', $ownerRecord->getKey())
+            ->selectRaw('COUNT(DISTINCT CONCAT(exception_type, \'|\', COALESCE(status, \'\'))) as c')
+            ->value('c');
+
+        return $count > 0 ? number_format($count) : null;
+    }
+
     public function table(Table $table): Table
     {
+        /** @var EpcisDocument $document */
+        $document = $this->getOwnerRecord();
+
         return $table
+            ->records(function (?array $filters = null) use ($document): Collection {
+                $rows = app(GroupDocumentExceptionSignals::class)->handle($document);
+
+                $status = data_get($filters, 'status.value');
+                if (filled($status)) {
+                    $rows = $rows->where('status', $status)->values();
+                }
+
+                $severity = data_get($filters, 'severity.value');
+                if (filled($severity)) {
+                    $rows = $rows->where('severity', $severity)->values();
+                }
+
+                $type = data_get($filters, 'exception_type.value');
+                if (filled($type)) {
+                    $rows = $rows->where('exception_type', $type)->values();
+                }
+
+                return $rows->mapWithKeys(
+                    fn (EpcisExceptionGroup $row): array => [(string) $row->getKey() => $row],
+                );
+            })
             ->columns([
                 TextColumn::make('created_at')
                     ->label('When')
@@ -44,10 +86,10 @@ class ExceptionsRelationManager extends RelationManager
                 TextColumn::make('case_id')
                     ->label('Case')
                     ->formatStateUsing(fn (?int $state): string => $state ? '#'.$state : '—')
-                    ->url(fn (EpcisException $record): ?string => $record->case_id
+                    ->url(fn (EpcisExceptionGroup $record): ?string => $record->case_id
                         ? ExceptionResource::getUrl('view', ['record' => $record->case_id], panel: 'app')
                         : null)
-                    ->color(fn (EpcisException $record): ?string => $record->case_id ? 'primary' : null)
+                    ->color(fn (EpcisExceptionGroup $record): ?string => $record->case_id ? 'primary' : null)
                     ->placeholder('—'),
                 TextColumn::make('exception_type')
                     ->label('Type')
@@ -64,6 +106,13 @@ class ExceptionsRelationManager extends RelationManager
                 TextColumn::make('status')
                     ->badge()
                     ->placeholder('—'),
+                TextColumn::make('scope_display')
+                    ->label('Scope')
+                    ->wrap(),
+                TextColumn::make('gtin_display')
+                    ->label('GTINs / SSCCs')
+                    ->wrap()
+                    ->tooltip(fn (EpcisExceptionGroup $record): ?string => $record->gtin_label),
                 TextColumn::make('description')
                     ->limit(60)
                     ->tooltip(fn (?string $state): ?string => $state)
@@ -101,13 +150,18 @@ class ExceptionsRelationManager extends RelationManager
                 Action::make('openCase')
                     ->label('Open case')
                     ->icon(Heroicon::OutlinedFolderOpen)
-                    ->visible(fn (EpcisException $record): bool => $record->case_id === null)
-                    ->action(function (EpcisException $record) {
+                    ->visible(fn (EpcisExceptionGroup $record): bool => $record->case_id === null && filled($record->exception_type))
+                    ->action(function (EpcisExceptionGroup $record) {
                         /** @var User|null $actor */
                         $actor = auth()->user();
 
                         try {
-                            $case = app(ExceptionService::class)->createFromSignal($record, actor: $actor);
+                            $case = app(ExceptionService::class)->createFromGroupedSignals(
+                                $document,
+                                (string) $record->exception_type,
+                                (string) $record->status,
+                                $actor,
+                            );
                         } catch (Throwable $e) {
                             Notification::make()
                                 ->title('Could not open case')
@@ -129,8 +183,8 @@ class ExceptionsRelationManager extends RelationManager
                 Action::make('viewCase')
                     ->label('View case')
                     ->icon(Heroicon::OutlinedEye)
-                    ->visible(fn (EpcisException $record): bool => $record->case_id !== null)
-                    ->url(fn (EpcisException $record): string => ExceptionResource::getUrl(
+                    ->visible(fn (EpcisExceptionGroup $record): bool => $record->case_id !== null)
+                    ->url(fn (EpcisExceptionGroup $record): string => ExceptionResource::getUrl(
                         'view',
                         ['record' => $record->case_id],
                         panel: 'app',
