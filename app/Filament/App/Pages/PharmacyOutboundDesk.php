@@ -191,6 +191,37 @@ class PharmacyOutboundDesk extends Page
         $this->destSgln = '';
     }
 
+    public function updatedShipToSiteId(mixed $value): void
+    {
+        $this->shipToSiteId = $value !== null && $value !== '' ? (int) $value : null;
+
+        if ($this->shipToSiteId === null) {
+            $this->destGln = '';
+            $this->destSgln = '';
+
+            return;
+        }
+
+        $site = Site::query()
+            ->whereKey($this->shipToSiteId)
+            ->when(
+                $this->tradingPartnerId !== null,
+                fn (Builder $query): Builder => $query->where('trading_partner_id', $this->tradingPartnerId),
+            )
+            ->first();
+
+        if ($site === null) {
+            $this->shipToSiteId = null;
+            $this->destGln = '';
+            $this->destSgln = '';
+
+            return;
+        }
+
+        $this->destGln = (string) ($site->gln ?: '');
+        $this->destSgln = (string) ($site->sgln ?: '');
+    }
+
     public function saveRefsAction(): Action
     {
         return Action::make('saveRefs')

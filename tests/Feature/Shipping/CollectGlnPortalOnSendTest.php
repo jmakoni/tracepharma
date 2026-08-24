@@ -62,6 +62,10 @@ class CollectGlnPortalOnSendTest extends TestCase
 
     private bool $receivingStateCaptured = false;
 
+    private mixed $priorAtpOutboundGate = null;
+
+    private bool $atpOutboundGateCaptured = false;
+
     /** @var list<int> */
     private array $sessionIds = [];
 
@@ -209,7 +213,7 @@ class CollectGlnPortalOnSendTest extends TestCase
         $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
-            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $this->overrideAtpOutboundGate(false);
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwner(TenantProfile::Pharmacy));
@@ -326,12 +330,9 @@ class CollectGlnPortalOnSendTest extends TestCase
                 $this->assertStringContainsString('Paste both the customer GLN and the SGLN', $e->getMessage());
             }
 
-            $invented = Site::query()
+            $this->assertSame(0, Site::query()
                 ->where('trading_partner_id', (int) $partner->getKey())
-                ->whereNotNull('sgln')
-                ->where('sgln', '!=', '')
-                ->count();
-            $this->assertSame(0, $invented);
+                ->count());
         } finally {
             $this->cleanup();
         }
@@ -343,7 +344,7 @@ class CollectGlnPortalOnSendTest extends TestCase
         $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
-            config(['tracepharma.epcis.enforce_atp_outbound_gate' => true]);
+            $this->overrideAtpOutboundGate(true);
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwner(TenantProfile::Pharmacy));
@@ -386,6 +387,86 @@ class CollectGlnPortalOnSendTest extends TestCase
 
             $session = OutboundShippingSession::query()->findOrFail($sessionId);
             $this->assertNotSame('completed', $session->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function desk_rehydrates_dest_identity_when_ship_to_site_changes(): void
+    {
+        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwner(TenantProfile::Pharmacy));
+            $this->createShipSite($tenant);
+
+            $partner = TradingPartner::query()->create([
+                'name' => 'Two Site Dispenser '.Str::random(6),
+                'partner_type' => PartnerType::Pharmacy,
+                'country_code' => 'US',
+                'is_active' => true,
+                'gln' => null,
+                'sgln' => null,
+            ]);
+            $this->partnerIds[] = (int) $partner->getKey();
+
+            $siteAGln = $this->uniqueGln('037090');
+            $siteASgln = Sgln::toUrn($siteAGln, 6);
+            $siteBGln = $this->uniqueGln('037091');
+            $siteBSgln = Sgln::toUrn($siteBGln, 6);
+            $this->assertNotNull($siteASgln);
+            $this->assertNotNull($siteBSgln);
+
+            $siteA = Site::query()->create([
+                'trading_partner_id' => (int) $partner->getKey(),
+                'name' => 'Site A '.Str::random(4),
+                'gln' => $siteAGln,
+                'sgln' => $siteASgln,
+                'is_active' => true,
+                'is_organization_facility' => false,
+            ]);
+            $siteB = Site::query()->create([
+                'trading_partner_id' => (int) $partner->getKey(),
+                'name' => 'Site B '.Str::random(4),
+                'gln' => $siteBGln,
+                'sgln' => $siteBSgln,
+                'is_active' => true,
+                'is_organization_facility' => false,
+            ]);
+            $this->siteIds[] = (int) $siteA->getKey();
+            $this->siteIds[] = (int) $siteB->getKey();
+
+            $component = Livewire::test(PharmacyOutboundDesk::class)
+                ->assertSuccessful()
+                ->callAction('startShipOrder')
+                ->assertHasNoActionErrors();
+
+            $sessionId = (int) $component->get('sessionId');
+            $this->assertGreaterThan(0, $sessionId);
+            $this->sessionIds[] = $sessionId;
+
+            $component
+                ->set('tradingPartnerId', (int) $partner->getKey())
+                ->set('shipToSiteId', (int) $siteA->getKey())
+                ->assertSet('destGln', $siteAGln)
+                ->assertSet('destSgln', $siteASgln)
+                ->set('shipToSiteId', (int) $siteB->getKey())
+                ->assertSet('destGln', $siteBGln)
+                ->assertSet('destSgln', $siteBSgln)
+                ->set('asn', 'ASN-SITE-B')
+                ->set('po', 'PO-SITE-B')
+                ->set('dscsaAffirm', true)
+                ->callAction('saveRefs')
+                ->assertHasNoActionErrors();
+
+            $siteA = $siteA->fresh();
+            $siteB = $siteB->fresh();
+            $this->assertSame($siteAGln, Sgln::normalizeGln($siteA?->gln));
+            $this->assertSame($siteASgln, $siteA?->sgln);
+            $this->assertSame($siteBGln, Sgln::normalizeGln($siteB?->gln));
+            $this->assertSame($siteBSgln, $siteB?->sgln);
         } finally {
             $this->cleanup();
         }
@@ -784,6 +865,22 @@ class CollectGlnPortalOnSendTest extends TestCase
             $this->priorProfile = null;
         }
 
+        if ($this->atpOutboundGateCaptured) {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => $this->priorAtpOutboundGate]);
+            $this->atpOutboundGateCaptured = false;
+            $this->priorAtpOutboundGate = null;
+        }
+
         tenancy()->end();
+    }
+
+    private function overrideAtpOutboundGate(bool $enabled): void
+    {
+        if (! $this->atpOutboundGateCaptured) {
+            $this->priorAtpOutboundGate = config('tracepharma.epcis.enforce_atp_outbound_gate');
+            $this->atpOutboundGateCaptured = true;
+        }
+
+        config(['tracepharma.epcis.enforce_atp_outbound_gate' => $enabled]);
     }
 }
