@@ -22,6 +22,7 @@ use App\Support\Gs1\Sgln;
 use App\Support\Gs1\SglnResolution;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\CorrectiveShipmentDocument;
+use App\Support\Shipping\ResolveOutboundShipToSgln;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
@@ -70,6 +71,7 @@ final class GenerateShippingEpcisEvents
         private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly EpcCustodyGate $custodyGate,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
+        private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
     ) {}
 
     /**
@@ -348,7 +350,7 @@ final class GenerateShippingEpcisEvents
      */
     private function resolveShipTo(OutboundShippingSession $session): array
     {
-        $party = $this->resolveShipToParty($session);
+        $party = $this->resolveOutboundShipToSgln->destParty($session);
 
         if ($party['gln'] === null) {
             throw new DomainException(
@@ -356,7 +358,7 @@ final class GenerateShippingEpcisEvents
             );
         }
 
-        $sglnUrn = $this->resolveSglnUrnForGln($party['gln'], $this->shipToSglnCandidates($session));
+        $sglnUrn = $this->resolveOutboundShipToSgln->resolve($session);
 
         if ($sglnUrn === null) {
             throw new DomainException(
@@ -371,106 +373,6 @@ final class GenerateShippingEpcisEvents
             'site_id' => $party['site_id'],
             'sgln_urn' => $sglnUrn,
         ];
-    }
-
-    /**
-     * @return array{gln: ?string, site_id: ?int}
-     */
-    private function resolveShipToParty(OutboundShippingSession $session): array
-    {
-        // A ship-to GLN that will not normalize is worse than none: fall through to the
-        // site and partner on the session rather than author a half-formed destination.
-        if (filled($session->ship_to_gln)) {
-            $gln = Sgln::normalizeGln((string) $session->ship_to_gln);
-
-            if ($gln !== null) {
-                return [
-                    'gln' => $gln,
-                    'site_id' => $session->ship_to_site_id !== null ? (int) $session->ship_to_site_id : null,
-                ];
-            }
-        }
-
-        if ($session->ship_to_site_id !== null && filled($session->shipToSite?->gln)) {
-            return [
-                'gln' => Sgln::normalizeGln((string) $session->shipToSite->gln),
-                'site_id' => (int) $session->ship_to_site_id,
-            ];
-        }
-
-        if (filled($session->tradingPartner?->gln)) {
-            return [
-                'gln' => Sgln::normalizeGln((string) $session->tradingPartner->gln),
-                'site_id' => null,
-            ];
-        }
-
-        return ['gln' => null, 'site_id' => null];
-    }
-
-    /**
-     * SGLNs on record for the customer. Sgln::resolveUrn keeps only a candidate
-     * that encodes the ship-to GLN, so offering both the site's and the partner's
-     * is safe when the session names one but not the other.
-     *
-     * @return list<string>
-     */
-    private function shipToSglnCandidates(OutboundShippingSession $session): array
-    {
-        $fromMaster = $this->sglnCandidates(
-            $session->shipToSite?->getAttribute('sgln'),
-            $session->tradingPartner?->getAttribute('sgln'),
-        );
-
-        $party = $this->resolveShipToParty($session);
-        if ($party['gln'] === null) {
-            return $fromMaster;
-        }
-
-        return array_values(array_unique([
-            ...$fromMaster,
-            ...$this->publishedSglnCandidatesForGln($party['gln']),
-        ]));
-    }
-
-    /**
-     * Partner-published SGLNs already on inbound event locations/parties for this GLN.
-     *
-     * @return list<string>
-     */
-    private function publishedSglnCandidatesForGln(string $gln): array
-    {
-        $fromLocations = [];
-        $fromParties = [];
-
-        if (Schema::hasTable('event_locations')) {
-            $fromLocations = DB::table('event_locations')
-                ->join('epcis_events', 'epcis_events.id', '=', 'event_locations.event_id')
-                ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
-                ->where('epcis_documents.direction', 'inbound')
-                ->where('event_locations.gln', $gln)
-                ->whereNotNull('event_locations.gln_uri')
-                ->where('event_locations.gln_uri', '!=', '')
-                ->pluck('event_locations.gln_uri')
-                ->all();
-        }
-
-        if (Schema::hasTable('event_parties')) {
-            $fromParties = DB::table('event_parties')
-                ->join('epcis_events', 'epcis_events.id', '=', 'event_parties.event_id')
-                ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
-                ->where('epcis_documents.direction', 'inbound')
-                ->where('event_parties.gln', $gln)
-                ->whereNotNull('event_parties.gln_uri')
-                ->where('event_parties.gln_uri', '!=', '')
-                ->pluck('event_parties.gln_uri')
-                ->all();
-        }
-
-        return array_values(array_filter(
-            [...$fromLocations, ...$fromParties],
-            static fn (mixed $uri): bool => is_string($uri) && $uri !== '',
-        ));
     }
 
     /**
@@ -594,7 +496,7 @@ final class GenerateShippingEpcisEvents
             $party['receiver_gln'],
             $shipTo['gln'],
             $destLocationSgln,
-            $this->shipToSglnCandidates($session),
+            $this->resolveOutboundShipToSgln->candidates($session),
         );
 
         $partnerId = $session->trading_partner_id !== null ? (int) $session->trading_partner_id : null;

@@ -37,12 +37,29 @@
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="form-control gap-1">
                             <span class="label-text text-sm">Customer</span>
-                            <select wire:model="tradingPartnerId" class="select select-bordered">
+                            <select wire:model.live="tradingPartnerId" class="select select-bordered">
                                 <option value="">Select partner</option>
                                 @foreach ($this->partnerOptions() as $id => $name)
                                     <option value="{{ $id }}">{{ $name }}</option>
                                 @endforeach
                             </select>
+                        </label>
+                        <label class="form-control gap-1">
+                            <span class="label-text text-sm">Destination site</span>
+                            <select wire:model="shipToSiteId" class="select select-bordered">
+                                <option value="">{{ $this->destSiteOptions() === [] ? 'Save TI / refs to create a site' : 'Select dest site' }}</option>
+                                @foreach ($this->destSiteOptions() as $id => $name)
+                                    <option value="{{ $id }}">{{ $name }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label class="form-control gap-1">
+                            <span class="label-text text-sm">Dest GLN</span>
+                            <input type="text" wire:model="destGln" class="input input-bordered font-mono" placeholder="13-digit GLN" />
+                        </label>
+                        <label class="form-control gap-1">
+                            <span class="label-text text-sm">Dest SGLN</span>
+                            <input type="text" wire:model="destSgln" class="input input-bordered font-mono" placeholder="urn:epc:id:sgln:…" />
                         </label>
                         <label class="form-control gap-1">
                             <span class="label-text text-sm">ASN</span>
@@ -60,6 +77,16 @@
                     <button type="button" class="btn btn-outline min-h-12 self-start" wire:click="mountAction('saveRefs')">
                         Save TI / refs
                     </button>
+                    @if ($this->sendBlockers() !== [])
+                        <div role="alert" class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                            <div class="text-sm font-semibold">Send TI is blocked</div>
+                            <ul class="mt-2 list-disc pl-5 text-sm">
+                                @foreach ($this->sendBlockers() as $blocker)
+                                    <li>{{ $blocker }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
                     @else
                     <div class="rounded-lg border border-success/30 bg-success/10 p-4">
                         <div class="text-lg font-semibold">Outbound sent</div>

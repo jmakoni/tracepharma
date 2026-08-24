@@ -1980,7 +1980,7 @@ class OutboundShippingSessionTest extends TestCase
                 app(CompleteOutboundShippingSession::class)->handle($session->fresh());
                 $this->fail('Expected the send to refuse a customer with no SGLN on record.');
             } catch (DomainException $e) {
-                $this->assertStringContainsString('no SGLN on record', $e->getMessage());
+                $this->assertStringContainsString('not ours to guess', $e->getMessage());
                 $this->assertStringContainsString((string) $shipTo->gln, $e->getMessage());
             }
 

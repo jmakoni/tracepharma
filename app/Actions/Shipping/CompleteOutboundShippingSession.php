@@ -4,14 +4,17 @@ namespace App\Actions\Shipping;
 
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Models\TradingPartner;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
+use App\Services\Outbound\CustomerPortalService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
 
@@ -24,6 +27,7 @@ final class CompleteOutboundShippingSession
         private readonly ValidateOutboundShippingSend $validateOutboundShippingSend,
         private readonly GenerateShippingEpcisEvents $generateShippingEpcisEvents,
         private readonly EpcCustodyGate $custodyGate,
+        private readonly CustomerPortalService $customerPortalService,
     ) {}
 
     public function handle(OutboundShippingSession $session, ?int $actorId = null): OutboundShippingSession
@@ -126,7 +130,36 @@ final class CompleteOutboundShippingSession
             }
         }
 
+        $session = $session->refresh();
+        $this->issueCustomerPortalLink($session);
+
         return $session->refresh();
+    }
+
+    /**
+     * Portal pickup is access, not identity. A link failure must not undo a send
+     * that already authored transaction information.
+     */
+    private function issueCustomerPortalLink(OutboundShippingSession $session): void
+    {
+        $partner = $session->tradingPartner
+            ?? ($session->trading_partner_id !== null
+                ? TradingPartner::query()->find($session->trading_partner_id)
+                : null);
+
+        if (! $partner instanceof TradingPartner || ! $partner->is_active) {
+            return;
+        }
+
+        try {
+            $this->customerPortalService->ensureCustomerPortalLink($partner);
+        } catch (Throwable $e) {
+            Log::warning('Customer portal link was not issued after outbound send.', [
+                'outbound_shipping_session_id' => $session->getKey(),
+                'trading_partner_id' => $partner->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -15,6 +15,7 @@ use App\Support\MasterData\TenantReceivingState;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
+use App\Support\Shipping\ResolveOutboundShipToSgln;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -28,6 +29,7 @@ final class ValidateOutboundShippingSend
     public function __construct(
         private readonly DetectOpenParentHierarchyOnShip $openParentHierarchyOnShip,
         private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
+        private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
     ) {}
 
     public function handle(OutboundShippingSession $session): array
@@ -52,6 +54,8 @@ final class ValidateOutboundShippingSend
 
         if (! $this->hasShipTo($session)) {
             $blockers[] = 'Provide a ship-to GLN or partner site.';
+        } elseif (($destSglnBlocker = $this->destSglnBlocker($session)) !== null) {
+            $blockers[] = $destSglnBlocker;
         }
 
         if (blank($session->asn_number)) {
@@ -120,6 +124,23 @@ final class ValidateOutboundShippingSend
             ->where('outbound_shipping_session_id', $session->getKey())
             ->where('status', 'confirmed')
             ->exists();
+    }
+
+    private function destSglnBlocker(OutboundShippingSession $session): ?string
+    {
+        $party = $this->resolveOutboundShipToSgln->destParty($session);
+        if ($party['gln'] === null) {
+            return null;
+        }
+
+        if ($this->resolveOutboundShipToSgln->resolve($session) !== null) {
+            return null;
+        }
+
+        return sprintf(
+            'Record the customer\'s SGLN on the trading partner or ship-to site for GLN %s. A partner\'s GS1 company prefix is theirs to state, not ours to guess.',
+            $party['gln'],
+        );
     }
 
     private function hasShipTo(OutboundShippingSession $session): bool
@@ -207,7 +228,7 @@ final class ValidateOutboundShippingSend
      * address the customer has on record stand in.
      *
      * ship_to_gln is checked before shipToSite, mirroring
-     * {@see GenerateShippingEpcisEvents::resolveShipToParty()}: it is
+     * {@see ResolveOutboundShipToSgln::destParty()}: it is
      * the destination that gets authored onto the shipping event, and it can name a
      * different address than the saved ship-to site (e.g. a specific dock/sub-location for
      * the same partner). Judging the site instead would pass ATP against a location the

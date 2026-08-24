@@ -4,8 +4,8 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CancelOutboundShippingSession;
-use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\CompleteOutboundShippingSession;
+use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Shipping\AtpGateBypass;
+use App\Support\Shipping\OutboundPortalPickupNotice;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\Shipping\SearchShipToCustomers;
 use DomainException;
@@ -453,9 +454,14 @@ class ViewOutboundShippingSession extends ViewRecord
                         $this->wizardStep = 3;
 
                         $copy = $this->shipCompleteCopy();
+                        $portalUrl = OutboundPortalPickupNotice::signedUrl($this->getRecord());
+                        $body = $copy['body'];
+                        if ($portalUrl !== null) {
+                            $body .= "\n\nCustomer portal: ".$portalUrl;
+                        }
                         $notification = Notification::make()
                             ->title($copy['title'])
-                            ->body($copy['body']);
+                            ->body($body);
 
                         match ($copy['tone']) {
                             'success' => $notification->success(),

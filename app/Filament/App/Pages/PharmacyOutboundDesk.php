@@ -6,13 +6,14 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Shipping\CompleteOutboundShippingSession;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
-use App\Actions\Shipping\UpdateOutboundShippingParty;
+use App\Actions\Shipping\RecordOutboundDestIdentity;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Actions\Shipping\ValidateOutboundShippingSend;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
@@ -20,6 +21,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
+use App\Support\Shipping\OutboundPortalPickupNotice;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -61,6 +63,12 @@ class PharmacyOutboundDesk extends Page
     public ?string $lastScanTone = null;
 
     public ?int $tradingPartnerId = null;
+
+    public ?int $shipToSiteId = null;
+
+    public string $destGln = '';
+
+    public string $destSgln = '';
 
     public string $asn = '';
 
@@ -158,6 +166,31 @@ class PharmacyOutboundDesk extends Page
             ->all();
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public function destSiteOptions(): array
+    {
+        if ($this->tradingPartnerId === null) {
+            return [];
+        }
+
+        return Site::query()
+            ->where('trading_partner_id', $this->tradingPartnerId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->all();
+    }
+
+    public function updatedTradingPartnerId(mixed $value): void
+    {
+        $this->tradingPartnerId = $value !== null && $value !== '' ? (int) $value : null;
+        $this->shipToSiteId = null;
+        $this->destGln = '';
+        $this->destSgln = '';
+    }
+
     public function saveRefsAction(): Action
     {
         return Action::make('saveRefs')
@@ -169,14 +202,18 @@ class PharmacyOutboundDesk extends Page
                 }
 
                 try {
-                    app(UpdateOutboundShippingParty::class)->handle($session, [
+                    $session = app(RecordOutboundDestIdentity::class)->handle($session, [
                         'trading_partner_id' => $this->tradingPartnerId,
+                        'ship_to_site_id' => $this->shipToSiteId,
+                        'dest_gln' => $this->destGln !== '' ? $this->destGln : null,
+                        'dest_sgln' => $this->destSgln !== '' ? $this->destSgln : null,
                     ]);
                     app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
                         'asn_number' => $this->asn !== '' ? $this->asn : null,
                         'customer_po' => $this->po !== '' ? $this->po : null,
                         'dscsa_affirm' => $this->dscsaAffirm,
                     ]);
+                    $this->hydrateRefs($session->fresh(['shipToSite', 'tradingPartner']) ?? $session);
                 } catch (DomainException $e) {
                     Notification::make()->title('Could not save')->body($e->getMessage())->danger()->send();
 
@@ -309,8 +346,14 @@ class PharmacyOutboundDesk extends Page
                             return;
                         }
 
+                        $session = $session->fresh() ?? $session;
+                        $portalUrl = OutboundPortalPickupNotice::signedUrl($session);
                         $this->flashScan('ok', 'Shipment sent');
-                        Notification::make()->title('Shipment sent')->success()->send();
+                        Notification::make()
+                            ->title('Shipment sent')
+                            ->body($portalUrl !== null ? 'Customer portal: '.$portalUrl : null)
+                            ->success()
+                            ->send();
                     }),
                 'outbound_shipping_send',
                 requireReason: false,
@@ -318,14 +361,22 @@ class PharmacyOutboundDesk extends Page
         ];
     }
 
-    private function sendIsMissingRequiredRefs(): bool
+    /**
+     * @return list<string>
+     */
+    public function sendBlockers(): array
     {
         $session = $this->session();
         if ($session === null || ! in_array($session->status, ['open', 'in_progress'], true)) {
-            return true;
+            return [];
         }
 
-        return app(ValidateOutboundShippingSend::class)->handle($session) !== [];
+        return app(ValidateOutboundShippingSend::class)->handle($session);
+    }
+
+    private function sendIsMissingRequiredRefs(): bool
+    {
+        return $this->sendBlockers() !== [];
     }
 
     private function loadSession(int $sessionId): void
@@ -349,6 +400,11 @@ class PharmacyOutboundDesk extends Page
         $this->tradingPartnerId = $session->trading_partner_id !== null
             ? (int) $session->trading_partner_id
             : null;
+        $this->shipToSiteId = $session->ship_to_site_id !== null
+            ? (int) $session->ship_to_site_id
+            : null;
+        $this->destGln = (string) ($session->ship_to_gln ?: $session->shipToSite?->gln ?: '');
+        $this->destSgln = (string) ($session->shipToSite?->sgln ?: '');
         $this->asn = (string) ($session->asn_number ?? '');
         $this->po = (string) ($session->customer_po ?? '');
         $this->dscsaAffirm = (bool) $session->dscsa_affirm;
@@ -361,6 +417,9 @@ class PharmacyOutboundDesk extends Page
         $this->lastScanMessage = null;
         $this->lastScanTone = null;
         $this->tradingPartnerId = null;
+        $this->shipToSiteId = null;
+        $this->destGln = '';
+        $this->destSgln = '';
         $this->asn = '';
         $this->po = '';
         $this->dscsaAffirm = false;
