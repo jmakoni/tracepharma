@@ -15,6 +15,7 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Collection;
 
 final class ConfirmRemainingExpectedReceivingLines
 {
@@ -77,7 +78,80 @@ final class ConfirmRemainingExpectedReceivingLines
             ->orderBy('id')
             ->get();
 
-        if ($parents->isEmpty()) {
+        $autoConfirmChildren = ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren();
+        $parentResult = $this->confirmExpectedLines(
+            $session,
+            $parents,
+            $userId,
+            $unpack,
+            $autoConfirmChildren,
+            'Skipped parent line(s) under open quarantine hold.',
+        );
+
+        // Open-count parent confirm does not auto-confirm units. Accept remaining
+        // still has to take leftover expected children or the session cannot complete
+        // and a second click finds no expected parents.
+        $children = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('line_role', 'child')
+            ->where('status', 'expected')
+            ->with('epc')
+            ->orderBy('id')
+            ->get();
+
+        $childResult = $this->confirmExpectedLines(
+            $session,
+            $children,
+            $userId,
+            $unpack,
+            false,
+            'Skipped child line(s) under open quarantine hold.',
+        );
+
+        return [
+            'confirmed' => $parentResult['confirmed'] + $childResult['confirmed'],
+            'skipped' => $parentResult['skipped'] + $childResult['skipped'],
+            'blockers' => [...$parentResult['blockers'], ...$childResult['blockers']],
+        ];
+    }
+
+    /**
+     * @return array{confirmed: int, skipped: int, blockers: list<string>}
+     */
+    private function confirmRemainingChildrenOfActiveParent(ReceivingSession $session, ?int $userId, bool $unpack = false): array
+    {
+        $children = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('line_role', 'child')
+            ->where('parent_epc_id', $session->active_parent_epc_id)
+            ->where('status', 'expected')
+            ->with('epc')
+            ->orderBy('id')
+            ->get();
+
+        return $this->confirmExpectedLines(
+            $session,
+            $children,
+            $userId,
+            $unpack,
+            false,
+            'Skipped child line(s) under open quarantine hold.',
+        );
+    }
+
+    /**
+     * @param  Collection<int, ReceivingScanLine>  $lines
+     * @return array{confirmed: int, skipped: int, blockers: list<string>}
+     */
+    private function confirmExpectedLines(
+        ReceivingSession $session,
+        Collection $lines,
+        ?int $userId,
+        bool $unpack,
+        bool $autoConfirmChildren,
+        string $quarantineBlocker,
+    ): array {
+        if ($lines->isEmpty()) {
             return [
                 'confirmed' => 0,
                 'skipped' => 0,
@@ -86,16 +160,15 @@ final class ConfirmRemainingExpectedReceivingLines
         }
 
         $blockedEpcIds = $this->receivingGate->epcIdsBlockedByOpenHold(
-            $parents->pluck('epc_id')->map(fn ($id): int => (int) $id)->all(),
+            $lines->pluck('epc_id')->map(fn ($id): int => (int) $id)->all(),
         );
         $blockedSet = array_flip($blockedEpcIds);
 
-        $autoConfirmChildren = ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren();
         $confirmed = 0;
         $skipped = 0;
         $blockers = [];
 
-        foreach ($parents as $line) {
+        foreach ($lines as $line) {
             $epcId = (int) $line->epc_id;
             if (isset($blockedSet[$epcId])) {
                 $skipped++;
@@ -131,84 +204,7 @@ final class ConfirmRemainingExpectedReceivingLines
         }
 
         if ($skipped > 0 && $blockedEpcIds !== []) {
-            $blockers[] = 'Skipped parent line(s) under open quarantine hold.';
-        }
-
-        return [
-            'confirmed' => $confirmed,
-            'skipped' => $skipped,
-            'blockers' => $blockers,
-        ];
-    }
-
-    /**
-     * @return array{confirmed: int, skipped: int, blockers: list<string>}
-     */
-    private function confirmRemainingChildrenOfActiveParent(ReceivingSession $session, ?int $userId, bool $unpack = false): array
-    {
-        $children = ReceivingScanLine::query()
-            ->where('receiving_session_id', $session->getKey())
-            ->where('line_role', 'child')
-            ->where('parent_epc_id', $session->active_parent_epc_id)
-            ->where('status', 'expected')
-            ->with('epc')
-            ->orderBy('id')
-            ->get();
-
-        if ($children->isEmpty()) {
-            return [
-                'confirmed' => 0,
-                'skipped' => 0,
-                'blockers' => [],
-            ];
-        }
-
-        $blockedEpcIds = $this->receivingGate->epcIdsBlockedByOpenHold(
-            $children->pluck('epc_id')->map(fn ($id): int => (int) $id)->all(),
-        );
-        $blockedSet = array_flip($blockedEpcIds);
-
-        $confirmed = 0;
-        $skipped = 0;
-        $blockers = [];
-
-        foreach ($children as $line) {
-            $epcId = (int) $line->epc_id;
-            if (isset($blockedSet[$epcId])) {
-                $skipped++;
-
-                continue;
-            }
-
-            $scan = $line->epc?->epc_uri ?? $line->scan_raw;
-            if (! is_string($scan) || $scan === '') {
-                $skipped++;
-
-                continue;
-            }
-
-            $result = $this->confirmReceivingScan->handle(
-                $session->fresh() ?? $session,
-                $scan,
-                $userId,
-                false,
-                unpack: $unpack,
-            );
-
-            if ($result['ok'] ?? false) {
-                $confirmed++;
-
-                continue;
-            }
-
-            $skipped++;
-            if (filled($result['message'] ?? null)) {
-                $blockers[] = (string) $result['message'];
-            }
-        }
-
-        if ($skipped > 0 && $blockedEpcIds !== []) {
-            $blockers[] = 'Skipped child line(s) under open quarantine hold.';
+            $blockers[] = $quarantineBlocker;
         }
 
         return [

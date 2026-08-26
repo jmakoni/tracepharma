@@ -4,12 +4,12 @@ namespace App\Filament\App\Resources\ReceivingSessions\Concerns;
 
 use App\Actions\Receiving\AttachReceivingSessionInvoice;
 use App\Actions\Receiving\CancelReceivingSession;
-use App\Actions\Receiving\DeleteReceivingSession;
 use App\Actions\Receiving\CloseOpenToteReceiving;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\ConfirmRemainingExpectedReceivingLines;
 use App\Actions\Receiving\CopyConfirmedReceivingScansToSession;
+use App\Actions\Receiving\DeleteReceivingSession;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\PropagateScanFirstConfirmsToAsnSession;
 use App\Actions\Receiving\ResetReceivingSessionScans;
@@ -247,7 +247,13 @@ trait InteractsWithReceivingSessionHud
             return $this->hasOpenToteLock();
         }
 
-        return true;
+        $sessionId = $this->getRecord()->getKey();
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $sessionId)
+            ->whereIn('line_role', ['parent', 'child'])
+            ->where('status', 'expected')
+            ->exists();
     }
 
     public function getHeading(): string|Htmlable|null
