@@ -76,15 +76,24 @@ class EpcisHubSettings extends Page
                 ->modalHeading('Check aggregation link FK drift')
                 ->modalDescription('Run detect-only doctor across all tenants (no --fix). Results appear on the admin Hub health widget.')
                 ->action(function (): void {
-                    Artisan::call('tracepharma:doctor-aggregation-link-fk');
+                    $exitCode = Artisan::call('tracepharma:doctor-aggregation-link-fk');
 
                     $output = trim(Artisan::output());
 
-                    Notification::make()
-                        ->title('Aggregation link FK doctor finished')
-                        ->body($output !== '' ? $output : 'Inspect complete. See Hub health on the dashboard.')
-                        ->success()
-                        ->send();
+                    $notification = Notification::make()
+                        ->body($output !== '' ? $output : 'Inspect complete. See Hub health on the dashboard.');
+
+                    if ($exitCode !== 0) {
+                        $notification
+                            ->title('Aggregation link FK doctor found drift')
+                            ->warning();
+                    } else {
+                        $notification
+                            ->title('Aggregation link FK doctor finished')
+                            ->success();
+                    }
+
+                    $notification->send();
                 }),
         ];
     }

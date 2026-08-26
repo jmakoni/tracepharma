@@ -7,7 +7,8 @@ use Carbon\CarbonInterface;
 
 /**
  * DSCSA 72-hour supplier-correction clock for the Investigator SLA page.
- * Internal exception due_at may be tighter; the earlier deadline wins.
+ * After a successful supplier email, due_at is the running deadline.
+ * Until then, display overlays created_at plus 72 hours.
  */
 final class InvestigatorSlaClock
 {
@@ -15,14 +16,13 @@ final class InvestigatorSlaClock
 
     public function deadline(ExceptionCase $case): CarbonInterface
     {
-        $created = $case->created_at ?? now();
-        $dscsa = $created->copy()->addHours(self::HOURS);
-
-        if ($case->due_at !== null && $case->due_at->lt($dscsa)) {
+        if ($case->due_at !== null) {
             return $case->due_at;
         }
 
-        return $dscsa;
+        $created = $case->created_at ?? now();
+
+        return $created->copy()->addHours(self::HOURS);
     }
 
     public function isBreached(ExceptionCase $case): bool

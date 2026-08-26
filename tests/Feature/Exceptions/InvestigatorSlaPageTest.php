@@ -17,6 +17,7 @@ use App\Models\TradingPartner;
 use App\Models\User;
 use App\Notifications\DscsaExceptionSupplierMail;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Exceptions\InvestigatorSlaClock;
 use App\Support\TenantFeatures;
 use Database\Seeders\ExceptionTypeSeeder;
 use Filament\Facades\Filament;
@@ -127,6 +128,59 @@ class InvestigatorSlaPageTest extends TestCase
                 fn (DscsaExceptionSupplierMail $mail): bool => $mail->case->is($case)
                     && str_contains($mail->portalUrl, 'supplier-exceptions'),
             );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function emailing_an_old_case_starts_a_fresh_72_hour_clock(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $type = ExceptionType::query()->where('code', 'INGESTION_PARSE_ERROR')->first();
+            if ($type === null) {
+                (new ExceptionTypeSeeder)->run();
+                $type = ExceptionType::query()->where('code', 'INGESTION_PARSE_ERROR')->first();
+            }
+            $this->assertNotNull($type);
+
+            $partner = TradingPartner::factory()->create([
+                'email' => 'investigator-old@example.test',
+                'is_active' => true,
+            ]);
+            $this->partnerIds[] = (int) $partner->getKey();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'trading_partner_id' => $partner->getKey(),
+                'title' => 'Old investigator case',
+                'status' => ExceptionStatus::New,
+                'severity' => ExceptionSeverity::High,
+                'due_at' => null,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+            $case->forceFill(['created_at' => now()->subHours(80)])->save();
+
+            $clock = new InvestigatorSlaClock;
+            $this->assertTrue($clock->isBreached($case->fresh()));
+
+            Notification::fake();
+            $result = app(StartInvestigatorSla::class)->handle($case->fresh(), $user);
+            $this->assertTrue($result['sent'], $result['error'] ?? 'email failed');
+
+            $case = $case->fresh();
+            $this->assertNotNull($case->due_at);
+            $this->assertTrue($case->due_at->greaterThan(now()->addHours(70)));
+            $this->assertFalse($clock->isBreached($case));
+            $this->assertStringStartsNotWith('Breached', $clock->remainingLabel($case));
         } finally {
             $this->cleanup();
         }
