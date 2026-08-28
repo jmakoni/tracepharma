@@ -138,7 +138,7 @@ class SitesTable
     {
         return $table
             // atpLicenses: the ATP readiness column is summarized per row.
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['tradingPartner', 'atpLicenses']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['tradingPartner', 'atpLicenses', 'principal']))
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
@@ -267,6 +267,12 @@ class SitesTable
                             SiteAtpReadinessStatus::from((string) $value),
                         );
                     }),
+                SelectFilter::make('principal_id')
+                    ->label('Principal')
+                    ->relationship('principal', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
             ])
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)

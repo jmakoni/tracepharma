@@ -22,6 +22,7 @@ use App\Support\Tracing\VerifyUrlParams;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -68,6 +69,17 @@ final class BuildAssetTrace
      *   children: list<array>,
      *   transactions: list<array{name: string, urn: string, value: string}>,
      *   verify_url_params: ?array{barcode: string, gtin: ?string, serial: ?string},
+     *   transformation_links: list<array{
+     *     role: string,
+     *     counterpart_role: string,
+     *     counterpart_epc_id: int,
+     *     counterpart_urn: ?string,
+     *     counterpart_primary: ?string,
+     *     event_id: int,
+     *     transformation_id: ?string,
+     *     event_time: ?string,
+     *     url: ?string,
+     *   }>,
      * }
      */
     public function handle(string $scan): array
@@ -153,6 +165,7 @@ final class BuildAssetTrace
             'children' => $this->buildChildrenPreview($epc),
             'transactions' => $this->buildTransactions($displayEvents),
             'verify_url_params' => $this->verifyUrlParams($epc),
+            'transformation_links' => $this->buildTransformationLinks($epc),
         ];
     }
 
@@ -279,7 +292,119 @@ final class BuildAssetTrace
             'children' => [],
             'transactions' => [],
             'verify_url_params' => null,
+            'transformation_links' => [],
         ];
+    }
+
+    /**
+     * TransformationEvent input↔output edges for this EPC (repack lineage).
+     * Does not alter aggregation ancestor merge behavior.
+     *
+     * @return list<array{
+     *   role: string,
+     *   counterpart_role: string,
+     *   counterpart_epc_id: int,
+     *   counterpart_urn: ?string,
+     *   counterpart_primary: ?string,
+     *   event_id: int,
+     *   transformation_id: ?string,
+     *   event_time: ?string,
+     *   url: ?string,
+     * }>
+     */
+    private function buildTransformationLinks(Epc $epc): array
+    {
+        $epcId = (int) $epc->getKey();
+
+        $participation = DB::table('event_epcs as ee')
+            ->join('epcis_events as ev', 'ev.id', '=', 'ee.event_id')
+            ->where('ee.epc_id', $epcId)
+            ->whereIn('ee.role', ['inputEPC', 'outputEPC'])
+            ->where('ev.event_type', 'TransformationEvent')
+            ->select(['ee.event_id', 'ee.role', 'ev.event_time', 'ev.extension_json'])
+            ->orderBy('ev.event_time')
+            ->orderBy('ee.event_id')
+            ->get();
+
+        if ($participation->isEmpty()) {
+            return [];
+        }
+
+        if (Schema::hasColumn('epcis_events', 'ingest_generation')
+            && Schema::hasTable('epcis_documents')
+            && Schema::hasColumn('epcis_documents', 'ingest_generation')) {
+            $validEventIds = $this->eventsQuery($epc)
+                ->where('event_type', 'TransformationEvent')
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            $validSet = array_fill_keys($validEventIds, true);
+            $participation = $participation->filter(
+                fn ($row): bool => isset($validSet[(int) $row->event_id]),
+            );
+        }
+
+        if ($participation->isEmpty()) {
+            return [];
+        }
+
+        $eventIds = $participation->pluck('event_id')->map(fn ($id): int => (int) $id)->unique()->values()->all();
+
+        $counterparts = DB::table('event_epcs')
+            ->whereIn('event_id', $eventIds)
+            ->whereIn('role', ['inputEPC', 'outputEPC'])
+            ->where('epc_id', '!=', $epcId)
+            ->get(['event_id', 'epc_id', 'role']);
+
+        $counterpartEpcIds = $counterparts->pluck('epc_id')->map(fn ($id): int => (int) $id)->unique()->all();
+        $counterpartEpcs = $counterpartEpcIds === []
+            ? collect()
+            : Epc::query()->whereIn('id', $counterpartEpcIds)->get()->keyBy(fn (Epc $e): int => (int) $e->getKey());
+
+        $linksByEvent = [];
+        foreach ($counterparts as $row) {
+            $linksByEvent[(int) $row->event_id][] = $row;
+        }
+
+        $result = [];
+        foreach ($participation as $row) {
+            $eventId = (int) $row->event_id;
+            $role = (string) $row->role;
+            $counterpartRole = $role === 'inputEPC' ? 'outputEPC' : 'inputEPC';
+            $extension = is_string($row->extension_json ?? null)
+                ? (json_decode($row->extension_json, true) ?: [])
+                : (is_array($row->extension_json ?? null) ? $row->extension_json : []);
+            $transformationId = filled($extension['transformation_id'] ?? null)
+                ? (string) $extension['transformation_id']
+                : null;
+            $eventTime = $row->event_time !== null
+                ? Carbon::parse($row->event_time)->toIso8601String()
+                : null;
+
+            foreach ($linksByEvent[$eventId] ?? [] as $counterpart) {
+                if ((string) $counterpart->role !== $counterpartRole) {
+                    continue;
+                }
+
+                $otherId = (int) $counterpart->epc_id;
+                $other = $counterpartEpcs->get($otherId);
+                $display = $other instanceof Epc ? Gs1DualDisplay::forEpc($other) : null;
+
+                $result[] = [
+                    'role' => $role,
+                    'counterpart_role' => $counterpartRole,
+                    'counterpart_epc_id' => $otherId,
+                    'counterpart_urn' => $other?->epc_uri,
+                    'counterpart_primary' => $display['primary'] ?? null,
+                    'event_id' => $eventId,
+                    'transformation_id' => $transformationId,
+                    'event_time' => $eventTime,
+                    'url' => $other instanceof Epc ? AssetTrackingUrl::forEpc($other) : null,
+                ];
+            }
+        }
+
+        return $result;
     }
 
     /**

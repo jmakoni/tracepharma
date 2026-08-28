@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\App\Resources\EpcisSubscriptions\Tables;
 
 use App\Models\Epcis\EpcisSubscription;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class EpcisSubscriptionsTable
@@ -45,7 +45,7 @@ class EpcisSubscriptionsTable
                     ->label('Test ping')
                     ->action(function (EpcisSubscription $record): void {
                         try {
-                            \App\Support\Epcis\EpcisSubscriptionUrl::assertSafeAtConnect((string) $record->target_url);
+                            $targetUrl = (string) $record->target_url;
                             $body = json_encode([
                                 'ping' => true,
                                 'subscription_id' => $record->getKey(),
@@ -53,15 +53,14 @@ class EpcisSubscriptionsTable
                             ], JSON_THROW_ON_ERROR);
                             $timestamp = (string) now()->timestamp;
                             $signature = hash_hmac('sha256', $timestamp.'.'.$body, (string) $record->secret);
-                            $response = Http::timeout(10)
-                                ->withoutRedirecting()
+                            $response = EpcisSubscriptionUrl::httpClient($targetUrl, 10)
                                 ->withHeaders([
                                     'Content-Type' => 'application/json',
                                     'X-TracePharma-Signature' => 't='.$timestamp.',v1='.$signature,
                                     'X-TracePharma-Trigger' => 'ping',
                                 ])
                                 ->withBody($body, 'application/json')
-                                ->post((string) $record->target_url);
+                                ->post($targetUrl);
 
                             if ($response->redirect()) {
                                 Notification::make()

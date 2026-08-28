@@ -4,6 +4,26 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.4.0] — 2026-08-28
+
+Wave 3 — Role expansion MVPs (buying-group roster, 3PL principals, L3 forward log, prepack transform) plus subscription delivery hardening.
+
+### Added
+
+- Buying group **Member roster** (link/status only; health/matrix/APIs deferred)
+- 3PL **Principal** registry + soft site/ship tag/filter (not EPC custody isolation)
+- Manufacturer **L3 forward log** with retry (not allocation / Guardian / reconcile)
+- Prepackager **Repack transform** (TransformationEvent) + Asset Trace transformation edges
+
+### Changed
+
+- Marketing softened remaining principal-scoped / member-network overclaims where still present
+
+### Fixed
+
+- Outbound EPCIS subscriptions only dispatch on `sent` (not `validated`) so hooks do not fire before transmit
+- Subscription delivery and Test ping pin DNS via `CURLOPT_RESOLVE` after SSRF allowlisting (closes DNS-rebinding TOCTOU)
+
 ## [1.3.0] — 2026-08-28
 
 Wave 2 — Trust / certification evidence (honest internal packs; not TraceReady / Pulse-listed / Gateway Certified).
@@ -83,6 +103,7 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.4.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.4.0
 [1.3.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.1.0

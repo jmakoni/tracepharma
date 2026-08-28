@@ -101,6 +101,7 @@ class Site extends Model
         'fda_establishment_id',
         'fda_wdd_facility_id',
         'trading_partner_id',
+        'principal_id',
         'name',
         'code',
         'is_headquarters',
@@ -164,6 +165,11 @@ class Site extends Model
     public function tradingPartner(): BelongsTo
     {
         return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function fdaEstablishment(): BelongsTo

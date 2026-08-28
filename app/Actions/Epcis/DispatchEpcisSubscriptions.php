@@ -11,7 +11,9 @@ use App\Models\Tenant;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Queue HTTPS subscription deliveries when a document reaches validated or outbound sent.
+ * Queue HTTPS subscription deliveries when a document reaches validated (inbound)
+ * or outbound sent. Trigger must match document direction so outbound hooks do
+ * not fire on validate-time for documents that still need transmit.
  *
  * Not a GS1 Query Control scheduler: `schedule` / `query_params` on the subscription
  * row are not executed here (except bizStep matching already stored on the row).
@@ -30,6 +32,16 @@ final class DispatchEpcisSubscriptions
         }
 
         $direction = (string) $document->direction;
+        $expectedTrigger = match ($direction) {
+            'inbound' => 'validated',
+            'outbound' => 'sent',
+            default => null,
+        };
+
+        if ($expectedTrigger === null || $trigger !== $expectedTrigger) {
+            return;
+        }
+
         $bizSteps = $this->documentBizSteps($document);
 
         $subscriptions = EpcisSubscription::query()

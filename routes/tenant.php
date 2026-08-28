@@ -95,6 +95,10 @@ Route::middleware([
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-quarantine.comment');
 
+    Route::post('/supplier-quarantine/{shareUuid}/apply', [SupplierQuarantineController::class, 'apply'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->name('tenant.supplier-quarantine.apply');
+
     Route::post('/supplier-quarantine/{shareUuid}/upload', [SupplierQuarantineController::class, 'upload'])
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-quarantine.upload');

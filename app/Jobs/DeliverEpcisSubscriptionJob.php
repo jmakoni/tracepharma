@@ -11,7 +11,6 @@ use App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20;
 use App\Support\Epcis\EpcisSubscriptionUrl;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
@@ -55,25 +54,14 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                 return;
             }
 
-            try {
-                EpcisSubscriptionUrl::assertSafeAtConnect((string) $subscription->target_url);
-            } catch (\InvalidArgumentException $exception) {
-                $subscription->forceFill([
-                    'last_error_at' => now(),
-                    'last_error' => Str::limit($exception->getMessage(), 2000),
-                ])->save();
-
-                return;
-            }
-
             $payload = $this->buildPayload($subscription, $document, $projector);
             $body = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
             $timestamp = (string) now()->timestamp;
             $signature = hash_hmac('sha256', $timestamp.'.'.$body, (string) $subscription->secret);
+            $targetUrl = (string) $subscription->target_url;
 
             try {
-                $response = Http::timeout(20)
-                    ->withoutRedirecting()
+                $response = EpcisSubscriptionUrl::httpClient($targetUrl, 20)
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                         'Accept' => 'application/json',
@@ -82,7 +70,7 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                         'User-Agent' => 'TracePharma-EpcisSubscription/1.0',
                     ])
                     ->withBody($body, 'application/json')
-                    ->post((string) $subscription->target_url);
+                    ->post($targetUrl);
 
                 if ($response->redirect()) {
                     throw new \RuntimeException(
@@ -100,6 +88,11 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                     'last_delivered_at' => now(),
                     'last_error_at' => null,
                     'last_error' => null,
+                ])->save();
+            } catch (\InvalidArgumentException $exception) {
+                $subscription->forceFill([
+                    'last_error_at' => now(),
+                    'last_error' => Str::limit($exception->getMessage(), 2000),
                 ])->save();
             } catch (Throwable $exception) {
                 $subscription->forceFill([

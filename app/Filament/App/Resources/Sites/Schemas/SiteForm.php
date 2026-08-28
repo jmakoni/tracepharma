@@ -6,6 +6,7 @@ use App\Filament\App\Support\FdaPicker;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
 use App\Support\Gs1\SglnRules;
+use App\Support\TenantFeatures;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -35,6 +36,19 @@ class SiteForm
                             ->searchDebounce(500)
                             ->nullable()
                             ->helperText('Leave blank for your organization\'s own site. Set a partner for that partner\'s location.'),
+                        Select::make('principal_id')
+                            ->label('Principal')
+                            ->relationship(
+                                'principal',
+                                'name',
+                                fn ($query) => $query->where('is_active', true)->orderBy('name'),
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->searchDebounce(500)
+                            ->nullable()
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals())
+                            ->helperText('Optional soft label for 3PL client tagging — not custody isolation.'),
                     ]),
                 Section::make('Identity')
                     ->compact()

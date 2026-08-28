@@ -34,6 +34,88 @@ class EpcisSubscriptionDeliveryTest extends TestCase
     private array $subscriptionIds = [];
 
     #[Test]
+    public function validated_outbound_does_not_dispatch_outbound_subscription(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Queue::fake();
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Outbound sent hook',
+                'target_url' => 'https://hooks.example.com/epcis-out',
+                'secret' => 'test-secret-value-32chars-minimum!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_OUTBOUND,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'outbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            app(DispatchEpcisSubscriptions::class)->handle($document, 'validated');
+
+            Queue::assertNothingPushed();
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function sent_outbound_dispatches_outbound_subscription(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Queue::fake();
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Outbound sent hook',
+                'target_url' => 'https://hooks.example.com/epcis-out',
+                'secret' => 'test-secret-value-32chars-minimum!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_OUTBOUND,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'outbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            app(DispatchEpcisSubscriptions::class)->handle($document, 'sent');
+
+            Queue::assertPushed(DeliverEpcisSubscriptionJob::class, function (DeliverEpcisSubscriptionJob $job) use ($subscription, $document): bool {
+                return $job->subscriptionId === (int) $subscription->getKey()
+                    && $job->documentId === (int) $document->getKey()
+                    && $job->trigger === 'sent';
+            });
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function validated_inbound_dispatches_active_subscription_job(): void
     {
         $tenant = $this->initializeDemo2Tenant();

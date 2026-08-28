@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Support\Epcis;
 
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
+
 /**
  * SSRF guards for EPCIS subscription webhook target URLs.
  * HTTPS only; deny loopback / link-local / metadata / private ranges.
+ * Outbound HTTP pins DNS via CURLOPT_RESOLVE to close check-vs-connect rebinding.
  */
 final class EpcisSubscriptionUrl
 {
@@ -62,6 +66,18 @@ final class EpcisSubscriptionUrl
      */
     public static function assertSafeAtConnect(string $url): void
     {
+        self::resolveSafeAddresses($url);
+    }
+
+    /**
+     * Assert URL safety, resolve the host, and return only non-denied addresses.
+     *
+     * @return non-empty-list<string>
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function resolveSafeAddresses(string $url): array
+    {
         self::assertSafeTargetUrl($url);
 
         $host = self::unwrapIpv4MappedAddress((string) (parse_url($url, PHP_URL_HOST) ?? ''));
@@ -78,6 +94,69 @@ final class EpcisSubscriptionUrl
                 throw new \InvalidArgumentException('Subscription target URL must not target a private or metadata host.');
             }
         }
+
+        return array_values($addresses);
+    }
+
+    /**
+     * Guzzle/Laravel curl options that pin HOST:PORT to the vetted address set.
+     * Empty when the URL host is already a literal IP (no second DNS lookup).
+     *
+     * @param  list<string>  $addresses
+     * @return array{curl?: array<int, list<string>>}
+     */
+    public static function pinnedCurlOptions(string $url, array $addresses): array
+    {
+        if ($addresses === []) {
+            throw new \InvalidArgumentException('Subscription target URL host could not be resolved.');
+        }
+
+        $host = self::unwrapIpv4MappedAddress((string) (parse_url($url, PHP_URL_HOST) ?? ''));
+        if ($host === '') {
+            throw new \InvalidArgumentException('Subscription target URL is not valid.');
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return [];
+        }
+
+        $port = parse_url($url, PHP_URL_PORT);
+        $port = is_int($port) || (is_string($port) && ctype_digit($port))
+            ? (int) $port
+            : 443;
+
+        $formatted = [];
+        foreach ($addresses as $address) {
+            $formatted[] = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+                ? '['.$address.']'
+                : $address;
+        }
+
+        return [
+            'curl' => [
+                CURLOPT_RESOLVE => [
+                    sprintf('%s:%d:%s', $host, $port, implode(',', $formatted)),
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Pending HTTP client that has already resolved + pinned the target URL.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function httpClient(string $url, int $timeoutSeconds = 20): PendingRequest
+    {
+        $addresses = self::resolveSafeAddresses($url);
+        $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+        $options = self::pinnedCurlOptions($url, $addresses);
+
+        if ($options !== []) {
+            $pending = $pending->withOptions($options);
+        }
+
+        return $pending;
     }
 
     public static function unwrapIpv4MappedAddress(string $host): string
