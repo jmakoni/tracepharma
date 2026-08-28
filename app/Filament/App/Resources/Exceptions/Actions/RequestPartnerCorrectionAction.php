@@ -2,7 +2,7 @@
 
 namespace App\Filament\App\Resources\Exceptions\Actions;
 
-use App\Actions\Exceptions\SendDscsaExceptionEmail;
+use App\Actions\Exceptions\StartInvestigatorSla;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
@@ -92,9 +92,10 @@ final class RequestPartnerCorrectionAction
 
                 $emailBody = null;
                 if (($data['email_supplier'] ?? false) === true) {
-                    $result = app(SendDscsaExceptionEmail::class)->execute($record->fresh() ?? $record, $actor);
+                    // Same path as Investigator SLA desk: send portal email and start/refresh the 72h due_at overlay.
+                    $result = app(StartInvestigatorSla::class)->handle($record->fresh() ?? $record, $actor);
                     $emailBody = ($result['sent'] ?? false)
-                        ? 'Supplier portal email sent.'
+                        ? 'Supplier portal email sent. 72-hour investigator clock is running.'
                         : ('Partner note saved; email not sent: '.($result['error'] ?? 'unable to send.'));
                 }
 
