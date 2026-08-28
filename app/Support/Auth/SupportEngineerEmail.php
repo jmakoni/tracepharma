@@ -6,6 +6,9 @@ final class SupportEngineerEmail
 {
     public const DOMAIN = 'tracepharma.io';
 
+    /** TracePharma ops inbox when a tenant has no Support Engineer users. */
+    public const OPS_INBOX = 'support@tracepharma.io';
+
     public static function isAllowed(?string $email): bool
     {
         $email = strtolower(trim((string) $email));

@@ -30,7 +30,7 @@ class AtpPartnerReadiness extends Page
 
     public static function canAccess(): bool
     {
-        return TenantFeatures::forTenant(tenant())->supportsMasterData()
+        return TenantFeatures::forTenant(tenant())->supportsPartnerReadiness()
             && JobRoleAccess::allows(Permissions::NavCompliance);
     }
 

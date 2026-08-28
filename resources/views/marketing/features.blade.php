@@ -7,7 +7,7 @@
     <x-marketing.page-hero
         eyebrow="Platform features"
         title="One L4 workspace — seven operating profiles"
-        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL principals, and dispenser verification."
+        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL soft principal tags, and dispenser verification."
     >
         <x-slot:actions>
             <a href="{{ route('marketing.demo') }}">Request a demo →</a>

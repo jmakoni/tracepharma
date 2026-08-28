@@ -6,9 +6,11 @@ namespace App\Console\Commands;
 
 use App\Enums\TenantRole;
 use App\Filament\App\Pages\ComplianceAlertCenter;
+use App\Filament\App\Pages\IntegrationHealth;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
+use App\Support\Auth\SupportEngineerEmail;
 use App\Support\Compliance\ComplianceAlertMetrics;
 use App\Support\TenantSettings;
 use Illuminate\Console\Command;
@@ -24,7 +26,7 @@ class SendComplianceAlertCenterDigestCommand extends Command
                             {--dry-run : Report matches without sending mail}
                             {--force : Ignore frequency (daily/weekly) gate}';
 
-    protected $description = 'Email compliance/IT contacts a digest of Compliance Alert Center signals';
+    protected $description = 'Email compliance contacts ATP/exception digests and Support Engineers integration failures';
 
     public function handle(): int
     {
@@ -64,54 +66,48 @@ class SendComplianceAlertCenterDigestCommand extends Command
                         return;
                     }
 
-                    $alerts = app(ComplianceAlertMetrics::class)->alerts(null);
+                    $metrics = app(ComplianceAlertMetrics::class);
+                    $complianceAlerts = $metrics->alertsForAudience(ComplianceAlertMetrics::AUDIENCE_COMPLIANCE);
+                    $integrationAlerts = $metrics->alertsForAudience(ComplianceAlertMetrics::AUDIENCE_INTEGRATION);
 
-                    if ($alerts === []) {
+                    if ($complianceAlerts === [] && $integrationAlerts === []) {
                         $this->line(sprintf('%s%s: no active alerts', $dryRun ? '[dry-run] ' : '', $tenant->name));
 
                         return;
                     }
 
-                    $recipients = $this->recipientEmails($settings);
-                    $lines = array_map(
-                        fn (array $alert): string => sprintf(
-                            '[%s] %s — %s',
-                            strtoupper((string) $alert['severity']),
-                            $alert['title'],
-                            $alert['detail'],
-                        ),
-                        $alerts,
-                    );
+                    $sentAny = false;
 
-                    $this->line(sprintf(
-                        '%s%s: alerts=%d recipients=%d',
-                        $dryRun ? '[dry-run] ' : '',
-                        $tenant->name,
-                        count($alerts),
-                        count($recipients),
-                    ));
-
-                    if ($dryRun || $recipients === []) {
-                        return;
+                    if ($complianceAlerts !== []) {
+                        $recipients = $this->complianceRecipientEmails($settings);
+                        $sentAny = $this->sendDigest(
+                            $tenant,
+                            $recipients,
+                            $complianceAlerts,
+                            sprintf('%d compliance alert(s) need attention', count($complianceAlerts)),
+                            '/'.ltrim(ComplianceAlertCenter::getSlug(), '/'),
+                            $dryRun,
+                            'compliance',
+                        ) || $sentAny;
                     }
 
-                    $actionPath = '/'.ltrim(ComplianceAlertCenter::getSlug(), '/');
-                    $notification = new ComplianceAlertNotification(
-                        sprintf('%d compliance alert(s) need attention', count($alerts)),
-                        implode("\n", $lines),
-                        $actionPath,
-                        (string) $tenant->id,
-                        count($alerts),
-                    );
-
-                    foreach ($recipients as $email) {
-                        (new AnonymousNotifiable)
-                            ->route('mail', $email)
-                            ->notify($notification);
+                    if ($integrationAlerts !== []) {
+                        $recipients = $this->integrationRecipientEmails();
+                        $sentAny = $this->sendDigest(
+                            $tenant,
+                            $recipients,
+                            $integrationAlerts,
+                            sprintf('%d integration alert(s) need attention', count($integrationAlerts)),
+                            '/'.ltrim(IntegrationHealth::getSlug(), '/'),
+                            $dryRun,
+                            'integration',
+                        ) || $sentAny;
                     }
 
-                    $settings->setAlertDigestLastSentAt(now())->saveQuietly();
-                    $notified++;
+                    if ($sentAny && ! $dryRun) {
+                        $settings->setAlertDigestLastSentAt(now())->saveQuietly();
+                        $notified++;
+                    }
                 });
             } catch (Throwable $exception) {
                 $failed++;
@@ -134,6 +130,59 @@ class SendComplianceAlertCenterDigestCommand extends Command
         return $failed > 0 ? SymfonyCommand::FAILURE : SymfonyCommand::SUCCESS;
     }
 
+    /**
+     * @param  list<array{severity: string, title: string, detail: string, audience?: string, href?: string}>  $alerts
+     * @param  list<string>  $recipients
+     */
+    private function sendDigest(
+        Tenant $tenant,
+        array $recipients,
+        array $alerts,
+        string $subject,
+        string $actionPath,
+        bool $dryRun,
+        string $audienceLabel,
+    ): bool {
+        $this->line(sprintf(
+            '%s%s: %s alerts=%d recipients=%d',
+            $dryRun ? '[dry-run] ' : '',
+            $tenant->name,
+            $audienceLabel,
+            count($alerts),
+            count($recipients),
+        ));
+
+        if ($dryRun || $recipients === []) {
+            return false;
+        }
+
+        $lines = array_map(
+            fn (array $alert): string => sprintf(
+                '[%s] %s — %s',
+                strtoupper((string) $alert['severity']),
+                $alert['title'],
+                $alert['detail'],
+            ),
+            $alerts,
+        );
+
+        $notification = new ComplianceAlertNotification(
+            $subject,
+            implode("\n", $lines),
+            $actionPath,
+            (string) $tenant->id,
+            count($alerts),
+        );
+
+        foreach ($recipients as $email) {
+            (new AnonymousNotifiable)
+                ->route('mail', $email)
+                ->notify($notification);
+        }
+
+        return true;
+    }
+
     private function shouldRunForFrequency(string $frequency): bool
     {
         if ($frequency === 'weekly') {
@@ -146,11 +195,10 @@ class SendComplianceAlertCenterDigestCommand extends Command
     /**
      * @return list<string>
      */
-    private function recipientEmails(TenantSettings $settings): array
+    private function complianceRecipientEmails(TenantSettings $settings): array
     {
         $emails = array_values(array_unique(array_filter([
             $settings->complianceContactEmail(),
-            $settings->itContactEmail(),
         ])));
 
         if ($emails !== []) {
@@ -168,5 +216,32 @@ class SendComplianceAlertCenterDigestCommand extends Command
         } catch (RoleDoesNotExist) {
             return [];
         }
+    }
+
+    /**
+     * Support Engineers on the tenant, else TracePharma ops inbox.
+     *
+     * @return list<string>
+     */
+    private function integrationRecipientEmails(): array
+    {
+        try {
+            $emails = User::role(TenantRole::SupportEngineer->value)
+                ->whereNotNull('email')
+                ->pluck('email')
+                ->filter(fn (mixed $email): bool => is_string($email) && filled($email))
+                ->map(fn (string $email): string => strtolower(trim($email)))
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($emails !== []) {
+                return $emails;
+            }
+        } catch (RoleDoesNotExist) {
+            // fall through to ops inbox
+        }
+
+        return [SupportEngineerEmail::OPS_INBOX];
     }
 }

@@ -7,6 +7,8 @@ use App\Enums\PartnerType;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Models\AtpLicense;
 use App\Models\Site;
+use App\Models\TradingPartner;
+use App\Support\Fda\FdaTenantLink;
 use App\Support\Places\UsState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -89,6 +91,14 @@ final class SiteAtpReadiness
         }
 
         if (AtpLicenseRelevance::isManufacturerHeadquarters($site)) {
+            $partner = $site->relationLoaded('tradingPartner')
+                ? $site->tradingPartner
+                : $site->tradingPartner()->first();
+
+            $status = $partner instanceof TradingPartner && FdaTenantLink::organizationId($partner) !== null
+                ? SiteAtpReadinessStatus::FdaRegistered
+                : SiteAtpReadinessStatus::NotMonitored;
+
             return [
                 'total' => 0,
                 'expired_total' => 0,
@@ -97,7 +107,7 @@ final class SiteAtpReadiness
                 'relevant_expiring_within_90_days' => 0,
                 'relevant_unknown_expiry' => 0,
                 'tenant_state' => $tenantState,
-                'status' => SiteAtpReadinessStatus::NotMonitored,
+                'status' => $status,
                 'facility_types' => collect(),
             ];
         }
@@ -249,7 +259,10 @@ final class SiteAtpReadiness
     public static function applyStatusFilter(Builder $query, SiteAtpReadinessStatus $status): Builder
     {
         if ($status === SiteAtpReadinessStatus::FdaRegistered) {
-            $ids = ManufacturerDecrsAuthorization::siteIds($query);
+            $ids = array_values(array_unique(array_merge(
+                ManufacturerDecrsAuthorization::siteIds($query),
+                self::manufacturerHeadquartersWithFdaOrgIds($query),
+            )));
 
             return $ids === []
                 ? $query->whereRaw('0 = 1')
@@ -261,7 +274,8 @@ final class SiteAtpReadiness
                 ->where('is_headquarters', true)
                 ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
                     ->where('partner_type', PartnerType::Manufacturer->value))
-                ->whereNotIn('id', ManufacturerDecrsAuthorization::siteIds($query) ?: [0]);
+                ->whereNotIn('id', ManufacturerDecrsAuthorization::siteIds($query) ?: [0])
+                ->whereNotIn('id', self::manufacturerHeadquartersWithFdaOrgIds($query) ?: [0]);
         }
 
         $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
@@ -426,6 +440,24 @@ final class SiteAtpReadiness
             ->where('is_headquarters', true)
             ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
                 ->where('partner_type', PartnerType::Manufacturer->value))
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Manufacturer HQ sites linked to an FDA organization (national authorization).
+     *
+     * @param  Builder<Site>  $query
+     * @return list<int>
+     */
+    private static function manufacturerHeadquartersWithFdaOrgIds(Builder $query): array
+    {
+        return (clone $query)
+            ->where('is_headquarters', true)
+            ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
+                ->where('partner_type', PartnerType::Manufacturer->value)
+                ->whereNotNull('fda_organization_id'))
             ->pluck('id')
             ->map(fn (mixed $id): int => (int) $id)
             ->all();

@@ -198,6 +198,37 @@ final class AtpLicenseRelevance
     }
 
     /**
+     * Partner sites counted in Compliance Alert Center ATP signals.
+     *
+     * Manufacturer HQ and FDA-registered plants are excluded. Other manufacturer
+     * sites enter scope only after inbound ship-from evidence exists.
+     */
+    public static function siteInComplianceAlertScope(Site $site): bool
+    {
+        if ($site->trading_partner_id === null) {
+            return false;
+        }
+
+        if (ManufacturerDecrsAuthorization::matches($site)) {
+            return false;
+        }
+
+        if (self::isManufacturerHeadquarters($site)) {
+            return false;
+        }
+
+        $partner = $site->relationLoaded('tradingPartner')
+            ? $site->tradingPartner
+            : $site->tradingPartner()->first();
+
+        if ($partner !== null && $partner->partner_type === PartnerType::Manufacturer) {
+            return PartnerSiteHasInboundShipFrom::exists((int) $site->getKey());
+        }
+
+        return true;
+    }
+
+    /**
      * @param  Collection<int, AtpLicense>  $licenses
      * @param  list<string>|null  $footprintKeys
      * @return Collection<int, AtpLicense>

@@ -138,8 +138,8 @@
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">3PL</p>
-                <p class="mt-3 font-semibold text-tp-ink">Principal-scoped ops</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Receive per principal, cross-dock between facilities, and ship lot-level or serialized outbound with isolated reporting.</p>
+                <p class="mt-3 font-semibold text-tp-ink">3PL floor + soft principal tags</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Same receive → ship spine as wholesalers, with optional principal labels on sites and ship orders for filtering — not custody-isolated inventory partitions.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Dispenser</p>

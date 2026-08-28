@@ -414,6 +414,7 @@ class SiteAtpReadinessTest extends TestCase
         try {
             $partner = TradingPartner::factory()->create([
                 'partner_type' => PartnerType::Manufacturer,
+                'fda_organization_id' => null,
             ]);
             $this->tenantPartnerIds[] = (int) $partner->getKey();
 
@@ -435,6 +436,37 @@ class SiteAtpReadinessTest extends TestCase
 
             $this->assertSame(SiteAtpReadinessStatus::NotMonitored, $stats['status']);
             $this->assertSame('N/A', SiteAtpReadiness::badgeLabel($hq));
+        } finally {
+            $this->cleanupTenantFixtures();
+        }
+    }
+
+    #[Test]
+    public function manufacturer_headquarters_with_fda_org_shows_fda_registered(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = TradingPartner::factory()->create([
+                'partner_type' => PartnerType::Manufacturer,
+                'fda_organization_id' => 5092,
+            ]);
+            $this->tenantPartnerIds[] = (int) $partner->getKey();
+
+            $hq = Site::factory()->create([
+                'trading_partner_id' => $partner->id,
+                'is_headquarters' => true,
+                'name' => 'Mfr HQ FDA Registered',
+                'state' => 'IL',
+            ]);
+            $this->tenantSiteIds[] = (int) $hq->getKey();
+
+            SiteAtpReadiness::forget($hq);
+            $stats = SiteAtpReadiness::summarize($hq->fresh(['tradingPartner']));
+
+            $this->assertSame(SiteAtpReadinessStatus::FdaRegistered, $stats['status']);
+            $this->assertSame('Ready', SiteAtpReadiness::badgeLabel($hq));
+            $this->assertSame('FDA registered · all states', SiteAtpReadiness::badgeDescription($hq));
         } finally {
             $this->cleanupTenantFixtures();
         }

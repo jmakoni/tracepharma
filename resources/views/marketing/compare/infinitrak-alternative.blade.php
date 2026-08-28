@@ -1,7 +1,7 @@
 @php
     $infinitrakFaqs = [
         ['question' => 'Is InfiniTrak a good fit for independent pharmacies?', 'answer' => 'Yes, for many independents. InfiniTrak offers turnkey DSCSA onboarding, PMS partnerships, and guided wholesaler connectivity—ideal when you want minimal IT involvement and verify-focused workflows.'],
-        ['question' => 'When should a pharmacy consider TracePharma instead?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exception workflows, multi-site reporting, or buying-group infrastructure—not just dispense-time verification.'],
+        ['question' => 'When should a pharmacy consider TracePharma instead?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exception workflows, multi-site reporting, or buying-group control-plane visibility—not just dispense-time verification.'],
         ['question' => 'Can TracePharma connect to the same wholesalers as InfiniTrak?', 'answer' => 'TracePharma connects trading partners directly via AS2, SFTP, and HTTPS per tenant. Cutover typically involves re-pointing EPCIS delivery to your TracePharma endpoints after partner credential setup.'],
     ];
 @endphp
@@ -32,7 +32,7 @@
                 Pharmacy owners often hear "use InfiniTrak" from wholesalers or buying groups. That advice fits teams who want <strong class="text-tp-ink">guided dispenser cutover</strong> with minimal IT involvement. Teams look at TracePharma when they also run—or plan to run—<strong class="text-tp-ink">EPCIS receiving, exception investigation, and multi-site compliance reporting</strong> at wholesaler depth.
             </p>
             <p>
-                This page is intentionally honest. InfiniTrak wins on pharmacy market familiarity and turnkey onboarding. TracePharma wins on EPCIS 1.2 GA with opt-in 2.0 repository (read-only event-store trace for dispensers), structured exceptions, buying-group dashboards, and a single L4 platform if you outgrow verify-only workflows.
+                This page is intentionally honest. InfiniTrak wins on pharmacy market familiarity and turnkey onboarding. TracePharma wins on EPCIS 1.2 GA with opt-in 2.0 repository (read-only event-store trace for dispensers), structured exceptions, buying-group control-plane visibility (partner ATP readiness / alert center; member network product on the roadmap), and a single L4 platform if you outgrow verify-only workflows.
             </p>
         </div>
     </section>

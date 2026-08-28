@@ -74,16 +74,16 @@
                     'Single Sanctum endpoint: POST /api/v1/dispense-check—PMS middleware calls TracePharma before completing a fill.',
                     'Named per-vendor PMS adapter routes (e.g. POST /api/v1/pms/{vendor}/dispense) are not GA; use the unified dispense-check API.',
                     'Dispense outcomes feed the dispenser scorecard and verification audit trail for inspection-ready evidence.',
-                    'GET /api/v1/compliance/dispenser-scorecard for BI and compliance reporting.',
+                    'Dedicated GET /api/v1/compliance/* scorecard routes are not GA — use in-app scorecards and verification history for BI today.',
                 ]"
             />
             <x-marketing.detail-section
                 title="WMS ship-confirm bridge"
                 :items="[
-                    'POST /api/webhooks/wms/{tenantId}/{vendor}/ship-confirm for Manhattan Active WM and Körber (HighJump).',
+                    'POST /api/webhooks/wms/{tenantId} (tenant webhook) and Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic, not a per-vendor URL path.',
                     'Normalizes ship-confirm JSON into outbound EPCIS shipment drafts with optional auto-queue.',
-                    'wms_ship_confirm_events audit trail with Filament list/view and 30-day blocked-reason trends on the operations scorecard.',
-                    'GET /api/v1/compliance/operations-scorecard embeds wms_ship_confirm_blocked_reason_trends; standalone GET /api/v1/compliance/wms-ship-confirm-trends for BI.',
+                    'wms_ship_confirm_events audit trail with Filament list/view and blocked-reason trends on in-app operations scorecards.',
+                    'Standalone GET /api/v1/compliance/wms-ship-confirm-trends is not GA; use in-app operations scorecards meanwhile.',
                 ]"
             />
         </div>

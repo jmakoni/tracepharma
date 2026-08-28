@@ -30,7 +30,7 @@ class ComplianceAlertCenter extends Page
 
     public static function canAccess(): bool
     {
-        return TenantFeatures::forTenant(tenant())->supportsComplianceCases()
+        return TenantFeatures::forTenant(tenant())->supportsComplianceAlertCenter()
             && JobRoleAccess::allowsAny(
                 Permissions::NavExceptions,
                 Permissions::NavCompliance,
@@ -44,7 +44,7 @@ class ComplianceAlertCenter extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Integration failures, exception backlog, ATP expiry, and stale inbound queue.';
+        return 'ATP/expiry and exception signals for compliance; integration failures for Support Engineers.';
     }
 
     /**

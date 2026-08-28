@@ -2,6 +2,23 @@
 
 All notable releases of TracePharma are documented here.
 
+## Unreleased
+
+## [1.1.0] — 2026-08-28
+
+Wave 0 — Buying group control-plane unlock and marketing honesty.
+
+### Added
+
+- Product docs for profile navigation and buying-group network control-plane scope (`docs/product/`)
+- Profile navigation matrix unit coverage for Buying Group ATP readiness + Alert center without floor ops
+
+### Changed
+
+- Buying group control-plane unlock: Partner ATP readiness + Compliance Alert Center without floor/master/inbound
+- Marketing softened buying-group / 3PL / WMS overclaims where still present
+- Roadmap no longer marks buying groups as do-not-port
+
 ## [1.0.0] — 2026-08-27
 
 First GA snapshot of the multi-tenant US DSCSA / EPCIS L4 platform (pharmacy + wholesaler ICP).
@@ -27,13 +44,17 @@ First GA snapshot of the multi-tenant US DSCSA / EPCIS L4 platform (pharmacy + w
 
 ### Known limitations
 
-Documented for the next competitive backlog (not fixed in 1.0.0):
+Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several of these):
 
-- Buying group profile is an empty control-plane shell
-- Outbound SFTP transmit is stubbed; drop-ship/T2 and POET-style email-reply workspaces are not shipped
+- Buying group was a **control-plane shell** at GA (1.1.0 unlocks readiness + alert center; 1.4.0 adds member roster). Floor/master/inbound stay off for Buying Group.
 - Dual-stack **ship** authoring (JSON-LD 2.0) is not productized; `Xml20Writer` is a retag stub and is not selected
-- No Gateway Checker–class TraceReady conformance export; no OCI/NABP Pulse ATP token integration
-- Named per-vendor PMS adapters and 3PL multi-principal custody are not shipped
+- No Gateway Checker–class TraceReady conformance export; no live OCI/NABP Pulse ATP API (1.3.0 adds internal evidence exports + manual Pulse/OCI attestation sources)
+- Certified per-vendor PMS HTTP adapters are not shipped (1.2.0 adds runbooks on unified dispense-check)
+- 3PL multi-principal **custody isolation** is not shipped (1.4.0 adds principal registry + soft tags only)
+- Full email-reply / POET multienterprise workspace and TraceLink-style multi-party T2 network remain deferred
 - AS2 inbound webhook exists but is not operator-selectable on the Inbound Connections form
+- Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
+- Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.1.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.0.0

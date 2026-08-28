@@ -161,7 +161,7 @@ class DashboardWidgetsTest extends TestCase
 
             $component = Livewire::test(Dashboard::class)
                 ->assertOk()
-                ->assertSee('Limited app for buying groups')
+                ->assertSee('Buying group control plane')
                 ->assertDontSee('Floor queue')
                 ->assertDontSee('Today’s activity')
                 ->assertDontSee('Primary actions');

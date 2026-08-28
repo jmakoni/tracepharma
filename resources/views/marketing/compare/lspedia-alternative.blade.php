@@ -55,7 +55,7 @@
                     ['capability' => 'Exception investigation', 'them' => 'Investigator module', 'us' => 'Structured exceptions + supplier correction loop'],
                     ['capability' => 'Partner connectivity', 'them' => 'Exchange network (LSPedia publishes large connection counts)', 'us' => 'Direct AS2, SFTP, HTTPS per tenant'],
                     ['capability' => 'L3 commissioning forward', 'them' => 'Via partners / modules', 'us' => 'Org settings L3 URL + idempotent commissioning POST'],
-                    ['capability' => '3PL principal ops', 'them' => 'Edge / enterprise logistics', 'us' => 'Principal-scoped receive, cross-dock, lot-level ship'],
+                    ['capability' => '3PL principal ops', 'them' => 'Edge / enterprise logistics', 'us' => 'Soft principal registry + site/ship filters; custody isolation roadmap'],
                     ['capability' => 'Global regulation (EU FMD, L5 hubs)', 'them' => 'Core strength', 'us' => 'US DSCSA only — deliberate scope'],
                     ['capability' => 'Enterprise analytics (OneData/Vault)', 'them' => 'Dedicated data platform', 'us' => 'Scorecards + compliance export API'],
                     ['capability' => 'Implementation model', 'them' => 'Often consultant-configured', 'us' => 'Self-serve cutover + persona UX'],
@@ -104,7 +104,7 @@
                 </div>
                 <div class="tp-card p-6">
                     <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">3PL / logistics</p>
-                    <p class="mt-2 text-sm leading-relaxed text-tp-muted">LSPedia Edge targets enterprise principal management. TracePharma delivers principal isolation, cross-dock audit, and lot-level ship for mid-market 3PLs.</p>
+                    <p class="mt-2 text-sm leading-relaxed text-tp-muted">LSPedia Edge targets enterprise principal management. TracePharma ships soft principal labels/filters on a wholesaler-class floor; EPC custody isolation remains roadmap for mid-market 3PLs.</p>
                     <a href="{{ route('marketing.solutions.3pl') }}" class="mt-4 inline-flex text-sm font-semibold text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">3PL solution →</a>
                 </div>
                 <div class="tp-card p-6">

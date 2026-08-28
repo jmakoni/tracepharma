@@ -1,7 +1,7 @@
 @php
     $tracktracerxFaqs = [
         ['question' => 'Is TrackTraceRx a good fit for pharmacy networks?', 'answer' => 'Yes, when you need rapid dispenser rollout with partner location directory scale and onboarding economics. TrackTraceRx emphasizes network enrollment and pharmacy-first workflows.'],
-        ['question' => 'When should a pharmacy network choose TracePharma over TrackTraceRx?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exceptions, buying-group dashboards, or wholesaler-grade receiving—not just verify-only network enrollment.'],
+        ['question' => 'When should a pharmacy network choose TracePharma over TrackTraceRx?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exceptions, buying-group control-plane visibility (partner ATP readiness / alert center), or wholesaler-grade receiving—not just verify-only network enrollment.'],
         ['question' => 'Does TracePharma interoperate with TrackTraceRx paths?', 'answer' => 'Yes. TracePharma supports HTTPS webhook preset (tracktracerx) for inbound scenarios while you run full L4 workflows on TracePharma.'],
     ];
 @endphp
@@ -29,7 +29,7 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <div class="max-w-3xl space-y-5 leading-relaxed text-tp-muted">
             <p>
-                TrackTraceRx (TrackRX / RapidRX) is a Pulse-listed pharmacy platform emphasizing partner location directories and onboarding economics. TracePharma fits networks that outgrow verify-only enrollment and need <strong class="text-tp-ink">serial-level receiving audit trails, exception investigation, and buying-group reporting</strong> on one L4 hub.
+                TrackTraceRx (TrackRX / RapidRX) is a Pulse-listed pharmacy platform emphasizing partner location directories and onboarding economics. TracePharma fits networks that outgrow verify-only enrollment and need <strong class="text-tp-ink">serial-level receiving audit trails, exception investigation, and buying-group control-plane visibility</strong> on one L4 hub.
             </p>
         </div>
     </section>

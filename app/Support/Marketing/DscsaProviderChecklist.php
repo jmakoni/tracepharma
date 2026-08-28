@@ -32,7 +32,7 @@ class DscsaProviderChecklist
                 'Can inventory and outbound be scoped per principal brand owner?',
                 'Is cross-dock transfer between facilities auditable with scan verification?',
                 'Can lot-level and serialized lines ship on the same outbound order?',
-                'Are principal filters available on operations scorecards and dashboards?',
+                'Are principal filters available on operations scorecards and dashboards (soft site/ship filters today; custody-isolated scorecards roadmap)?',
             ],
             'Verification & dispensing' => [
                 'Do you log every VRS request with GTIN, serial, lot, expiry, outcome, and timestamp?',

@@ -17,7 +17,7 @@ return [
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.0.0'),
+    'app_version' => env('APP_VERSION', '1.1.0'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))
@@ -186,6 +186,16 @@ return [
     'supplier_exception_notify' => [
         'aging_days' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_AGING_DAYS', 3),
         'cooldown_hours' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_NOTIFY_COOLDOWN_HOURS', 72),
+    ],
+
+    /*
+    | AS2 outbound MDN SLAs for catalog signals (MISSING_MDN / LATE_MDN).
+    | Pending transmission_mdns past missing (but before late) → MISSING_MDN;
+    | past late → LATE_MDN only. De-duped per document + exception_type.
+    */
+    'as2_mdn' => [
+        'missing_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_MISSING_HOURS', 24),
+        'late_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_LATE_HOURS', 72),
     ],
 
     /*

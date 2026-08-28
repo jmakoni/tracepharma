@@ -7,16 +7,16 @@ class MarketingPlatformIntegrations
     /**
      * Marketing-only vendor catalogs. Product PMS/WMS config classes are not in this app.
      *
-     * @return array<string, array{label: string, header_name: string}>
+     * @return array<string, array{label: string, header_name: string, runbook?: string}>
      */
     private static function pmsVendors(): array
     {
         return [
-            'pioneerrx' => ['label' => 'PioneerRx', 'header_name' => 'X-PioneerRx-Secret'],
-            'bestrx' => ['label' => 'BestRx', 'header_name' => 'X-BestRx-Secret'],
-            'primerx' => ['label' => 'PrimeRx', 'header_name' => 'X-PrimeRx-Secret'],
-            'liberty' => ['label' => 'Liberty / Rx30', 'header_name' => 'X-Liberty-Secret'],
-            'qs1' => ['label' => 'QS/1', 'header_name' => 'X-QS1-Secret'],
+            'pioneerrx' => ['label' => 'PioneerRx', 'header_name' => 'X-PioneerRx-Secret', 'runbook' => 'docs/integrations/pms/pioneerrx.md'],
+            'bestrx' => ['label' => 'BestRx', 'header_name' => 'X-BestRx-Secret', 'runbook' => 'docs/integrations/pms/bestrx.md'],
+            'primerx' => ['label' => 'PrimeRx', 'header_name' => 'X-PrimeRx-Secret', 'runbook' => 'docs/integrations/pms/primerx.md'],
+            'liberty' => ['label' => 'Liberty / Rx30', 'header_name' => 'X-Liberty-Secret', 'runbook' => 'docs/integrations/pms/liberty-rx30.md'],
+            'qs1' => ['label' => 'QS/1', 'header_name' => 'X-QS1-Secret', 'runbook' => 'docs/integrations/pms/qs1.md'],
             'enterpriserx' => ['label' => 'EnterpriseRx', 'header_name' => 'X-EnterpriseRx-Secret'],
             'scriptpro' => ['label' => 'ScriptPro', 'header_name' => 'X-ScriptPro-Secret'],
         ];
@@ -101,6 +101,7 @@ class MarketingPlatformIntegrations
             ],
         ];
     }
+
     /**
      * @return list<string>
      */
@@ -141,6 +142,7 @@ class MarketingPlatformIntegrations
                 'pulse_listed' => false,
                 'preset' => $key,
                 'transports' => ['HTTPS REST'],
+                'runbook' => $vendor['runbook'] ?? null,
                 'meta_description' => "Connect {$label} to TracePharma for DSCSA dispense-check—block fills until VRS verification passes via POST /api/v1/dispense-check.",
                 'hero_description' => "TracePharma exposes a single dispense-check API that {$label} middleware can call before completing a fill. Named per-vendor PMS adapter routes are not GA; unverified or failed serials block dispense with a logged reason.",
                 'summary' => "{$label} remains your pharmacy system of record. TracePharma is the L4 traceability hub—receiving wholesaler EPCIS, running VRS verification, and gating dispense through POST /api/v1/dispense-check (not a per-vendor /api/v1/pms/{$key}/dispense route).",
@@ -151,15 +153,18 @@ class MarketingPlatformIntegrations
                 ],
                 'outbound' => [
                     'Dispense outcomes feed the dispenser scorecard and verification audit trail.',
-                    'Dispenser scorecard with blocked-reason trends for compliance review.',
-                    'GET /api/v1/compliance/dispenser-scorecard for BI.',
+                    'Dispenser scorecard with blocked-reason trends for compliance review (in-app).',
+                    'BI export via existing verification history — dedicated GET /api/v1/compliance/* scorecard routes are not GA.',
                 ],
-                'cutover' => [
+                'cutover' => array_values(array_filter([
                     'Enable dispense-check integration and issue a Sanctum token with vrs:dispense-check.',
                     "Point {$label} middleware at POST /api/v1/dispense-check on your tenant domain.",
                     'Named per-vendor PMS adapters are not GA—use the unified dispense-check endpoint.',
+                    isset($vendor['runbook'])
+                        ? "Operator runbook (repo path): {$vendor['runbook']} — map {$label} fields to the unified payload; complete in-app Integrations → PMS integration."
+                        : null,
                     'Test with a verified GTIN+serial before production fills.',
-                ],
+                ])),
                 'best_for' => [
                     "Independent and small-chain pharmacies on {$label}.",
                     'Teams requiring dispense-time DSCSA gates without replacing the PMS.',
@@ -206,7 +211,7 @@ class MarketingPlatformIntegrations
                 'hero_description' => "TracePharma receives ship-confirm callbacks from {$label} and normalizes them into outbound EPCIS shipment drafts—without replacing your WMS.",
                 'summary' => "{$label} continues to drive pick/pack/ship. TracePharma is your L4 hub. Ship-confirm webhooks trigger EPCIS generation, ACK monitoring, and exception workflows when customer GLNs or serial data are missing.",
                 'inbound' => [
-                    "POST /api/webhooks/wms/{tenantId}/{$key}/ship-confirm with ship-confirm JSON payload.",
+                    'POST /api/webhooks/wms/{tenantId} (tenant webhook) or Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic path; configure middleware for '.$label.'.',
                     "Optional {$vendor['header_name']} shared-secret authentication.",
                     'Payload customer GLN matched to authorized trading partners before queue.',
                 ],
