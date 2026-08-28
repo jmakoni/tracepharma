@@ -19,6 +19,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
+use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
@@ -76,6 +77,8 @@ class ViewOutboundShippingSession extends ViewRecord
 
     public bool $dscsa_affirm = false;
 
+    public bool $is_drop_shipment = false;
+
     public function mount(int|string $record): void
     {
         $this->mountOutboundShippingSessionHud($record);
@@ -118,7 +121,37 @@ class ViewOutboundShippingSession extends ViewRecord
             return [];
         }
 
-        return app(OutboundShipReadiness::class)->badges($record);
+        // Draft customer fields on the Livewire form before Save — otherwise badges
+        // still say "Ship-to GLN or site required" after autocomplete selection.
+        $draft = $record->replicate();
+        $draft->setRelation('tradingPartner', $record->tradingPartner);
+        $draft->setRelation('shipToSite', $record->shipToSite);
+        $draft->forceFill([
+            'trading_partner_id' => $this->trading_partner_id,
+            'ship_to_site_id' => $this->ship_to_site_id,
+            'ship_to_gln' => $this->ship_to_gln,
+            'outbound_connection_id' => $this->outbound_connection_id,
+            'asn_number' => $this->asn_number ?? $record->asn_number,
+            'customer_po' => $this->customer_po ?? $record->customer_po,
+            'invoice_number' => $this->invoice_number ?? $record->invoice_number,
+            'dscsa_affirm' => $this->dscsa_affirm ?? $record->dscsa_affirm,
+        ]);
+
+        if ($this->ship_to_site_id !== null) {
+            $draft->setRelation(
+                'shipToSite',
+                Site::query()->with('tradingPartner')->find($this->ship_to_site_id),
+            );
+        }
+
+        if ($this->trading_partner_id !== null) {
+            $draft->setRelation(
+                'tradingPartner',
+                TradingPartner::query()->find($this->trading_partner_id),
+            );
+        }
+
+        return app(OutboundShipReadiness::class)->badges($draft);
     }
 
     public function statusLabel(): string
@@ -229,6 +262,7 @@ class ViewOutboundShippingSession extends ViewRecord
                         'invoice_number' => $this->invoice_number,
                         'shipment_reference' => $this->shipment_reference,
                         'dscsa_affirm' => $this->dscsa_affirm,
+                        'is_drop_shipment' => $this->is_drop_shipment,
                     ]);
                 } catch (DomainException $e) {
                     Notification::make()
@@ -444,6 +478,7 @@ class ViewOutboundShippingSession extends ViewRecord
                                 'invoice_number' => $this->invoice_number,
                                 'shipment_reference' => $this->shipment_reference,
                                 'dscsa_affirm' => $this->dscsa_affirm,
+                                'is_drop_shipment' => $this->is_drop_shipment,
                             ]);
                             app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
                                 'trading_partner_id' => $this->trading_partner_id,
@@ -662,6 +697,7 @@ class ViewOutboundShippingSession extends ViewRecord
         $this->invoice_number = $record->invoice_number;
         $this->shipment_reference = $record->shipment_reference;
         $this->dscsa_affirm = (bool) $record->dscsa_affirm;
+        $this->is_drop_shipment = (bool) $record->is_drop_shipment;
 
         $summary = $this->selectedShipToSummary();
         $this->customerSearch = $summary['company']

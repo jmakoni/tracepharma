@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Epcis;
 
+use DomainException;
+
 /**
  * DSCSA TI/TS fragments for outbound shipping EPCIS: business transaction
  * references, source/destination parties, the transaction statement, and the
@@ -119,6 +121,39 @@ final class ShippingTiTsFragments
             "      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
             '      <gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
             "    </gs1ushc:dscsaTransactionStatement>\n";
+    }
+
+    /**
+     * GS1 US HC drop-shipment indicator. Inbound catalog rule
+     * {@see \App\Support\Epcis\Validation\EpcisCatalogBusinessRules} string-scans
+     * for `dropShipment`; emit only when the ship order is flagged.
+     *
+     * Empty string when unflagged so the header omits the element.
+     */
+    public static function dropShipmentIndicatorXml(bool $isDropShipment): string
+    {
+        if (! $isDropShipment) {
+            return '';
+        }
+
+        return "    <gs1ushc:dropShipment>true</gs1ushc:dropShipment>\n";
+    }
+
+    /**
+     * Fail closed when a drop-ship ship order's payload lacks the indicator
+     * inbound validation would accept (stripos for `dropShipment`).
+     */
+    public static function assertDropShipmentEmitted(bool $isDropShipment, string $xml): void
+    {
+        if (! $isDropShipment) {
+            return;
+        }
+
+        if (stripos($xml, 'dropShipment') === false) {
+            throw new DomainException(
+                'Drop-shipment ship order requires a dropShipment indicator in outbound EPCIS, but none was emitted.',
+            );
+        }
     }
 
     /**

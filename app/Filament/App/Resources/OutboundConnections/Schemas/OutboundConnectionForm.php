@@ -54,16 +54,7 @@ class OutboundConnectionForm
                                     fn (OutboundTransport $transport): array => [$transport->value => $transport->label()]
                                 ))
                             ->required()
-                            ->live()
-                            ->rules([
-                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
-                                    $transport = OutboundTransport::tryFrom((string) $value);
-
-                                    if ($transport !== null && ! OutboundTransportAvailability::isSelectable($transport)) {
-                                        $fail(OutboundTransportAvailability::sftpSaveMessage());
-                                    }
-                                },
-                            ]),
+                            ->live(),
                         Select::make('trading_partner_id')
                             ->label('Trading partner')
                             ->relationship('tradingPartner', 'name')
@@ -154,6 +145,44 @@ class OutboundConnectionForm
                             ->columnSpanFull()
                             ->helperText('Partner public certificate for payload encryption after signing. Stored encrypted.'),
                     ]),
+                Section::make('SFTP settings')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                    ->schema([
+                        TextInput::make('settings.host')
+                            ->label('Host')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                        TextInput::make('settings.port')
+                            ->numeric()
+                            ->default(22),
+                        TextInput::make('settings.outbound_path')
+                            ->label('Outbound path')
+                            ->default('/outbound/epcis')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                        TextInput::make('settings.root')
+                            ->label('Remote root')
+                            ->default('/'),
+                    ])
+                    ->columns(2),
+                Section::make('SFTP credentials')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                    ->schema([
+                        TextInput::make('sftp_username')
+                            ->label('Username')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                        TextInput::make('sftp_password')
+                            ->label('Password')
+                            ->password()
+                            ->revealable(),
+                        Textarea::make('sftp_private_key')
+                            ->label('Private key (PEM)')
+                            ->rows(6)
+                            ->columnSpanFull(),
+                        TextInput::make('sftp_passphrase')
+                            ->label('Private key passphrase')
+                            ->password()
+                            ->revealable(),
+                    ])
+                    ->columns(2),
                 Section::make('HTTPS credentials')
                     ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Https->value)
                     ->schema([

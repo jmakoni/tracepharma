@@ -181,15 +181,15 @@ class IntegrationHealth extends Page
 
         return [
             Action::make('deactivateLegacySftp')
-                ->label('Deactivate legacy SFTP')
+                ->label('Deactivate SFTP outbound')
                 ->icon(Heroicon::OutlinedNoSymbol)
                 ->color('warning')
                 ->requiresConfirmation()
                 ->visible(fn (): bool => $this->canDeactivateLegacySftpOutbound())
-                ->modalHeading('Deactivate legacy SFTP connections?')
+                ->modalHeading('Deactivate SFTP outbound connections?')
                 ->modalDescription(
-                    'SFTP outbound is not available in this release. This will deactivate '
-                    .$count.' active SFTP connection(s). Use HTTPS or AS2 instead.',
+                    'This will deactivate '.$count.' active SFTP outbound connection(s). '
+                    .'Use when cleaning up unused SFTP endpoints.',
                 )
                 ->modalSubmitActionLabel('Deactivate all')
                 ->action(function (): void {
@@ -198,7 +198,7 @@ class IntegrationHealth extends Page
                     $deactivated = OutboundTransportAvailability::deactivateActiveLegacySftpConnections();
 
                     Notification::make()
-                        ->title("Deactivated {$deactivated} legacy SFTP connection(s)")
+                        ->title("Deactivated {$deactivated} SFTP outbound connection(s)")
                         ->success()
                         ->send();
                 }),

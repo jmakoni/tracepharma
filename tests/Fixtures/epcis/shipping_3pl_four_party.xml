@@ -107,6 +107,22 @@
           </ilmd>
         </extension>
       </ObjectEvent>
+      <ObjectEvent>
+        <eventTime>2026-07-15T18:00:00.000Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sscc:047890.01001227052</epc>
+        </epcList>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+        <readPoint>
+          <id>urn:epc:id:sgln:047890.111222.0</id>
+        </readPoint>
+        <bizLocation>
+          <id>urn:epc:id:sgln:047890.111222.0</id>
+        </bizLocation>
+      </ObjectEvent>
       <AggregationEvent>
         <eventTime>2026-07-15T19:24:20.000Z</eventTime>
         <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>

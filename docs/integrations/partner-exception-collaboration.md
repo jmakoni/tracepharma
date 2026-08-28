@@ -1,6 +1,6 @@
 # Partner exception collaboration
 
-TracePharma closes the **partner exception loop** with push email + shared portal status. Full **email-reply / ticketing** (inbound parse → case status) stays pilot-gated.
+TracePharma closes the **partner exception loop** with push email + shared portal status + a structured **apply correction** form. Full **email-reply / ticketing** (inbound parse → case status) stays deferred.
 
 ## Shipped MVP (general release)
 
@@ -9,18 +9,18 @@ TracePharma closes the **partner exception loop** with push email + shared porta
 3. Notify **ensures case `share_uuid`** so the case appears on the **supplier exception portal** with status, days open, aging badge, and last notified.
 4. Activity log records each notify (`DSCSA exception email sent…`, partner-visible).
 5. **PDG / HDA-aligned notify pack** — supplier emails include structured fields (notification UUID, issue type, ship-to GLN, GTIN/SN/lot/expiry, shipment refs, buyer resolution request) plus an attached `pdg-exception-EX-*.json` summary. Notify-only; not a mandatory PDG transport.
+6. **Partner apply-form (POET-lite)** on the supplier quarantine case page — required acknowledgement plus optional corrected reference / GTIN / serial / lot / expiry / notes. Submits a partner-visible activity (`source: supplier_apply_form`). If the case is `WaitingPartner`, status moves to `Investigating` so the buyer queue lights up. Partners still cannot resolve/close; the buyer remains the authority.
 
 ## Explicitly not in this slice
 
 - **No inbound email-reply parser** — partners do not change case status by replying to mail.
-- No partner apply-fix UI / HDA POET-style multienterprise workspace.
-- No second case system; portal is pull + status shared from TracePharma.
+- No HDA POET-style multienterprise workspace / second case system; portal remains pull + status shared from TracePharma.
 
-## What remains pilot-gated
+## What remains deferred
 
 **Full email-to-ticket / reply-driven workflow** ships only when a **named paying wholesaler** has enough exception volume after this MVP is live. Until then:
 
-1. Use Email supplier / aging notify + supplier portal.
+1. Use Email supplier / aging notify + supplier portal apply-form / comment / corrected EPCIS upload.
 2. Resolve cases in Quarantine / Exceptions.
 3. Prefer HTTPS / hub / customer portal for data exchange (see [outbound-transports.md](outbound-transports.md)).
 4. See also [drop-ship-t2.md](drop-ship-t2.md) for the deferred drop-ship path.

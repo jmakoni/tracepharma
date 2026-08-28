@@ -131,30 +131,31 @@ class IntegrationHealthPageTest extends TestCase
     }
 
     #[Test]
-    public function integration_health_shows_legacy_sftp_badge_and_deactivate_action(): void
+    public function integration_health_shows_active_sftp_and_deactivate_action(): void
     {
         $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
 
         try {
             $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
-            $connection = OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
-                'name' => 'Active Legacy SFTP',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Active SFTP Outbound',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-            ]));
+                'credentials' => ['username' => 'sftp-user'],
+            ]);
             $this->outboundConnectionId = (int) $connection->getKey();
 
             Livewire::test(IntegrationHealth::class)
                 ->assertOk()
-                ->assertSee('Active Legacy SFTP')
-                ->assertSee('Legacy/unavailable')
-                ->assertSee('SFTP outbound is not available in this release')
+                ->assertSee('Active SFTP Outbound')
+                ->assertDontSee('Legacy/unavailable')
+                ->assertDontSee('not available in this release')
                 ->assertActionVisible('deactivateLegacySftp')
                 ->mountAction('deactivateLegacySftp')
                 ->callMountedAction()
@@ -179,16 +180,17 @@ class IntegrationHealthPageTest extends TestCase
         try {
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
 
-            OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
+            OutboundConnection::query()->create([
                 'name' => 'Viewer Blocked SFTP',
-                'serialization_provider' => SerializationProvider::TraceLink,
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-            ]));
+                'credentials' => ['username' => 'sftp-user'],
+            ]);
             $this->outboundConnectionId = (int) OutboundConnection::query()
                 ->where('name', 'Viewer Blocked SFTP')
                 ->value('id');
@@ -214,31 +216,32 @@ class IntegrationHealthPageTest extends TestCase
     }
 
     #[Test]
-    public function inactive_legacy_sftp_still_shows_legacy_unavailable_badge(): void
+    public function inactive_sftp_does_not_show_legacy_unavailable_badge(): void
     {
         $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
 
         try {
             $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
-            OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
-                'name' => 'Inactive Legacy SFTP',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            OutboundConnection::query()->create([
+                'name' => 'Inactive SFTP Outbound',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => false,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-            ]));
+                'credentials' => ['username' => 'sftp-user'],
+            ]);
             $this->outboundConnectionId = (int) OutboundConnection::query()
-                ->where('name', 'Inactive Legacy SFTP')
+                ->where('name', 'Inactive SFTP Outbound')
                 ->value('id');
 
             Livewire::test(IntegrationHealth::class)
                 ->assertOk()
-                ->assertSee('Inactive Legacy SFTP')
-                ->assertSee('Legacy/unavailable')
+                ->assertSee('Inactive SFTP Outbound')
+                ->assertDontSee('Legacy/unavailable')
                 ->assertActionDoesNotExist('deactivateLegacySftp');
         } finally {
             $this->cleanup();
@@ -253,18 +256,19 @@ class IntegrationHealthPageTest extends TestCase
         try {
             $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
-            OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
-                'name' => 'Legacy SFTP To Deactivate',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            OutboundConnection::query()->create([
+                'name' => 'SFTP To Deactivate',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-            ]));
+                'credentials' => ['username' => 'sftp-user'],
+            ]);
             $this->outboundConnectionId = (int) OutboundConnection::query()
-                ->where('name', 'Legacy SFTP To Deactivate')
+                ->where('name', 'SFTP To Deactivate')
                 ->value('id');
 
             $https = OutboundConnection::query()->create([

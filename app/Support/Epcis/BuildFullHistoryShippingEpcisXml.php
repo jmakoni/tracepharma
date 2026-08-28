@@ -483,6 +483,7 @@ final class BuildFullHistoryShippingEpcisXml
             "      </EPCISMasterData>\n".
             "    </extension>\n".
             ShippingTiTsFragments::dscsaTransactionStatementXml().
+            ShippingTiTsFragments::dropShipmentIndicatorXml((bool) $session->is_drop_shipment).
             "  </EPCISHeader>\n";
 
         $body =
@@ -492,7 +493,7 @@ final class BuildFullHistoryShippingEpcisXml
             "    </EventList>\n".
             "  </EPCISBody>\n";
 
-        return
+        $xml =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".
             "<!-- Full-history EPCIS 1.2: Location+EPCClass master data, DSCSA TS, SSCC commissioning, bottle ILMD, packing in_progress, ship without bizLocation. -->\n".
             "<epcis:EPCISDocument\n".
@@ -505,6 +506,13 @@ final class BuildFullHistoryShippingEpcisXml
             $header.
             $body.
             "</epcis:EPCISDocument>\n";
+
+        ShippingTiTsFragments::assertDropShipmentEmitted(
+            isDropShipment: (bool) $session->is_drop_shipment,
+            xml: $xml,
+        );
+
+        return $xml;
     }
 
     /**

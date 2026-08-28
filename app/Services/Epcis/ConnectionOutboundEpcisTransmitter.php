@@ -3,6 +3,7 @@
 namespace App\Services\Epcis;
 
 use App\Actions\Epcis\DispatchEpcisSubscriptions;
+use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Enums\OutboundTransport;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\TransmissionMdn;
@@ -31,6 +32,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         private readonly SftpOutboundSender $sftpSender,
         private readonly As2OutboundSender $as2Sender,
         private readonly As2MdnDispositionParser $dispositionParser,
+        private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
     ) {}
 
     public function hasRecentTransmitHeartbeat(EpcisDocument $document): bool
@@ -160,6 +162,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                     $connection->forceFill([
                         'last_error' => $errorMessage,
                     ])->save();
+
+                    $this->catalogSignal->partnerRejected($document, $errorMessage);
 
                     return;
                 }

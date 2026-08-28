@@ -2,7 +2,6 @@
 
 namespace App\Services\Epcis;
 
-use App\Enums\OutboundTransport;
 use App\Models\OutboundConnection;
 
 final class OutboundConnectionResolver
@@ -34,8 +33,7 @@ final class OutboundConnectionResolver
     public function resolve(?int $tradingPartnerId): ?OutboundConnection
     {
         $base = OutboundConnection::query()
-            ->where('is_active', true)
-            ->where('transport', '!=', OutboundTransport::Sftp);
+            ->where('is_active', true);
 
         if ($tradingPartnerId !== null) {
             return $base->where('trading_partner_id', $tradingPartnerId)

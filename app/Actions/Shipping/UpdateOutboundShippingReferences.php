@@ -49,6 +49,9 @@ final class UpdateOutboundShippingReferences
             'dscsa_affirm' => Arr::has($data, 'dscsa_affirm')
                 ? (bool) $data['dscsa_affirm']
                 : $session->dscsa_affirm,
+            'is_drop_shipment' => Arr::has($data, 'is_drop_shipment')
+                ? (bool) $data['is_drop_shipment']
+                : $session->is_drop_shipment,
         ])->save();
 
         return $session->refresh();

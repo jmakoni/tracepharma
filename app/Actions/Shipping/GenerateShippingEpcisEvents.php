@@ -187,6 +187,12 @@ final class GenerateShippingEpcisEvents
                 instanceId: (string) $document->document_uuid,
                 tiTs: $tiTs,
                 affirmTransactionStatement: (bool) $session->dscsa_affirm,
+                isDropShipment: (bool) $session->is_drop_shipment,
+            );
+
+            ShippingTiTsFragments::assertDropShipmentEmitted(
+                isDropShipment: (bool) $session->is_drop_shipment,
+                xml: $xml,
             );
 
             $document->forceFill([
@@ -859,6 +865,7 @@ final class GenerateShippingEpcisEvents
         string $instanceId,
         array $tiTs,
         bool $affirmTransactionStatement,
+        bool $isDropShipment = false,
     ): string {
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $eventTimeXml = $eventTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
@@ -914,7 +921,7 @@ final class GenerateShippingEpcisEvents
             "    xmlns:gs1ushc=\"http://epcis.gs1us.org/hc/ns\"\n".
             "    schemaVersion=\"1.2\"\n".
             "    creationDate=\"{$creationDate}\">\n".
-            $this->headerXml($tiTs, $instanceId, $creationDate, $affirmTransactionStatement).
+            $this->headerXml($tiTs, $instanceId, $creationDate, $affirmTransactionStatement, $isDropShipment).
             "  <EPCISBody>\n".
             "    <EventList>\n".
             "{$shippingEvent}\n".
@@ -931,6 +938,7 @@ final class GenerateShippingEpcisEvents
         string $instanceId,
         string $creationDate,
         bool $affirmTransactionStatement,
+        bool $isDropShipment = false,
     ): string {
         $header = '';
 
@@ -946,6 +954,8 @@ final class GenerateShippingEpcisEvents
         if ($affirmTransactionStatement) {
             $header .= ShippingTiTsFragments::dscsaTransactionStatementXml();
         }
+
+        $header .= ShippingTiTsFragments::dropShipmentIndicatorXml($isDropShipment);
 
         return $header !== ''
             ? "  <EPCISHeader>\n".$header."  </EPCISHeader>\n"

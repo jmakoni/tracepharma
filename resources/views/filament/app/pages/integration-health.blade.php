@@ -195,10 +195,9 @@
                         </div>
                     @else
                         @if ($this->hasActiveLegacySftpOutbound())
-                            <div class="alert alert-warning">
+                            <div class="alert alert-info">
                                 <span>
-                                    {{ $this->activeLegacySftpOutboundCount() }} active SFTP outbound connection(s) remain configured.
-                                    SFTP outbound is not available in this release — deactivate them and use HTTPS or AS2 instead.
+                                    {{ $this->activeLegacySftpOutboundCount() }} active SFTP outbound connection(s) are configured.
                                 </span>
                             </div>
                         @endif

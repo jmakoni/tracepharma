@@ -1625,6 +1625,61 @@ class OutboundShippingSessionTest extends TestCase
         }
     }
 
+    #[Test]
+    public function flagged_drop_shipment_epcis_contains_dropShipment_indicator(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-DROP-001',
+                'customer_po' => 'PO-DROP-001',
+                'dscsa_affirm' => true,
+                'is_drop_shipment' => true,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $this->documentIds[] = (int) $document->getKey();
+
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertTrue((bool) $completed->is_drop_shipment);
+            $this->assertStringContainsString('dropShipment', $xml);
+            $this->assertStringContainsString('<gs1ushc:dropShipment>', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function unflagged_ship_epcis_does_not_require_dropShipment_indicator(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-NODROP-001',
+                'customer_po' => 'PO-NODROP-001',
+                'dscsa_affirm' => true,
+                'is_drop_shipment' => false,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $this->documentIds[] = (int) $document->getKey();
+
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertFalse((bool) $completed->is_drop_shipment);
+            $this->assertStringNotContainsString('dropShipment', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     /**
      * GS1 EPCIS 1.2 XSD complaints about an authored payload, as descriptions.
      *

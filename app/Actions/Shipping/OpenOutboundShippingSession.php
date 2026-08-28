@@ -30,6 +30,8 @@ final class OpenOutboundShippingSession
         bool $isCorrective = false,
         ?string $correctiveReason = null,
         ?int $correctsEpcisDocumentId = null,
+        bool $isDropShipment = false,
+        ?int $principalId = null,
     ): OutboundShippingSession {
         if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
@@ -59,9 +61,17 @@ final class OpenOutboundShippingSession
             'confirmed_count' => 0,
             // TI/TS is the seller's affirmation, so the operator makes it on the send step.
             'dscsa_affirm' => false,
+            'is_drop_shipment' => $isDropShipment,
             'opened_by' => $openedBy,
             'opened_at' => now(),
         ];
+
+        if (
+            $principalId !== null
+            && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+        ) {
+            $attributes['principal_id'] = $principalId;
+        }
 
         if ($isCorrective) {
             $attributes['is_corrective'] = true;

@@ -4,6 +4,22 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.2.0] — 2026-08-28
+
+Wave 1 — Mid-market deal blockers (honest GA for SFTP, MDN signals, POET-lite apply-form, drop-ship flag, PMS runbooks).
+
+### Added
+
+- Outbound SFTP transmit (Flysystem) + Filament SFTP connection form; SFTP selectable for create/route/transmit
+- AS2 MDN catalog emitters: `PARTNER_REJECTED_FILE` on sync/async reject; scheduled `epcis:emit-pending-mdn-signals` for `MISSING_MDN` / `LATE_MDN`; codes operator-visible
+- Partner exception **apply-form** on supplier quarantine portal (WaitingPartner → Investigating); email-reply parser still deferred
+- Ship Order **drop-shipment** flag emits GS1 `dropShipment` on outbound EPCIS; TraceLink-style T2 network still deferred
+- Named PMS vendor runbooks (`docs/integrations/pms/*`) targeting unified `POST /api/v1/dispense-check`
+
+### Changed
+
+- Integration Health no longer treats outbound SFTP as legacy/unavailable
+
 ## [1.1.0] — 2026-08-28
 
 Wave 0 — Buying group control-plane unlock and marketing honesty.
@@ -56,5 +72,6 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.2.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.0.0

@@ -4,6 +4,7 @@ namespace App\Models\Shipping;
 
 use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
+use App\Models\Principal;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
@@ -18,6 +19,7 @@ class OutboundShippingSession extends Model
 
     protected $fillable = [
         'site_id',
+        'principal_id',
         'trading_partner_id',
         'ship_to_site_id',
         'ship_to_gln',
@@ -31,6 +33,7 @@ class OutboundShippingSession extends Model
         'invoice_number',
         'shipment_reference',
         'dscsa_affirm',
+        'is_drop_shipment',
         'expected_count',
         'confirmed_count',
         'epcis_document_id',
@@ -48,6 +51,7 @@ class OutboundShippingSession extends Model
     {
         return [
             'dscsa_affirm' => 'boolean',
+            'is_drop_shipment' => 'boolean',
             'is_corrective' => 'boolean',
             'wms_complete' => 'boolean',
             'expected_count' => 'integer',
@@ -62,6 +66,11 @@ class OutboundShippingSession extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class, 'site_id');
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function tradingPartner(): BelongsTo

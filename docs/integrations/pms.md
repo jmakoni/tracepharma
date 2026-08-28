@@ -10,6 +10,8 @@ Authorization: Bearer {sanctum-token}
 Content-Type: application/json
 ```
 
+**Only product API for PMS dispense gating.** There are **no** `/api/v1/pms/{vendor}/dispense` routes.
+
 ## Required token ability
 
 Sanctum tokens must include the `vrs:dispense-check` ability.
@@ -26,19 +28,23 @@ Create a new token from **Settings → API tokens** in the App panel and include
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `gtin` | Yes* | 14-digit GTIN |
+| `gtin` / `gtin14` | Yes* | 14-digit GTIN |
 | `serial` | Yes* | Serial number |
-| `barcode` | No | Full GS1 element string (alternative to gtin+serial) |
-| `site_id` | No | Site scope when job roles limit site access |
+| `barcode` | No* | Full GS1 element string (alternative to gtin+serial) |
+| `lot` | No | Optional lot (AI 10) |
+| `expiry` | No | Optional expiry (AI 17; `YYMMDD` or `YYYYMMDD`) |
 
-\* Provide either `barcode` or both `gtin` and `serial`.
+\* Provide either `barcode` or both GTIN (`gtin` or `gtin14`) and `serial`. See `DispenseCheckRequest`.
 
 ## Response (200)
+
+From `DispenseCheckController`:
 
 ```json
 {
   "allowed": true,
-  "reason": null,
+  "status": "verified",
+  "message": null,
   "verification_id": 12345
 }
 ```
@@ -48,10 +54,25 @@ When blocked:
 ```json
 {
   "allowed": false,
-  "reason": "quarantined",
+  "status": "quarantined",
+  "message": "Under quarantine. Clear or release quarantine before dispensing.",
   "verification_id": null
 }
 ```
+
+Optional `exception_id` when the caller may view the linked exception case.
+
+## Named vendor runbooks
+
+Use the unified endpoint above; map vendor webhooks in middleware. Certified per-vendor adapters remain deferred ([multi-pms-adapters.md](multi-pms-adapters.md)).
+
+| Vendor | Runbook |
+|--------|---------|
+| PioneerRx | [pms/pioneerrx.md](pms/pioneerrx.md) |
+| BestRx | [pms/bestrx.md](pms/bestrx.md) |
+| PrimeRx | [pms/primerx.md](pms/primerx.md) |
+| Liberty / Rx30 | [pms/liberty-rx30.md](pms/liberty-rx30.md) |
+| QS/1 | [pms/qs1.md](pms/qs1.md) |
 
 ## Reference flows
 
@@ -70,16 +91,19 @@ Set collection variables:
 
 ## Certification checklist
 
+In-app: **Integrations → PMS integration**. Manual docs steps:
+
 - [ ] ATP evaluation jurisdictions configured (org facility states/countries, or preferred receiving state fallback)
 - [ ] Upstream wholesaler EPCIS receiving proven
 - [ ] API token issued with `vrs:dispense-check`
 - [ ] Test GTIN+serial returns `allowed: true` for in-custody product
 - [ ] Test quarantined serial returns `allowed: false`
 - [ ] PMS logs blocked reason for audit
+- [ ] Vendor runbook followed (`docs/integrations/pms/{vendor}.md`)
 - [ ] Production cutover runbook shared with pharmacy IT
 
 ## Related
 
-- In-app: **Verify Product**, **VRS lookup directory**, **API tokens**
+- In-app: **Verify Product**, **VRS lookup directory**, **API tokens**, **PMS integration** checklist
 - Compliance: dispenser scorecard and FDA 3911 exports in **Compliance reports**
 - Per-vendor certified adapters remain pilot-gated — see [multi-pms-adapters.md](multi-pms-adapters.md)

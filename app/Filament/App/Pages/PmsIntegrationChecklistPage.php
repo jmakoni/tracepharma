@@ -44,7 +44,7 @@ class PmsIntegrationChecklistPage extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Certify dispense-check for your pharmacy management system — one reference integration, not 30 connectors.';
+        return 'Certify dispense-check for your pharmacy management system — one reference integration, not 30 connectors. Follow docs/integrations/pms/*.md runbooks.';
     }
 
     public function checklistScore(): int

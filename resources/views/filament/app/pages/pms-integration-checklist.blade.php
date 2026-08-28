@@ -5,6 +5,12 @@
                 TracePharma ships an API-first PMS bridge (<code class="font-mono text-xs">POST /api/v1/dispense-check</code>).
                 Use this checklist for a pilot certification — not a 30-connector marketplace.
                 Full guide: <code class="font-mono text-xs">docs/integrations/pms.md</code>.
+                Vendor runbooks: <code class="font-mono text-xs">docs/integrations/pms/pioneerrx.md</code>,
+                <code class="font-mono text-xs">bestrx.md</code>,
+                <code class="font-mono text-xs">primerx.md</code>,
+                <code class="font-mono text-xs">liberty-rx30.md</code>,
+                <code class="font-mono text-xs">qs1.md</code>
+                (no <code class="font-mono text-xs">/api/v1/pms/{vendor}/dispense</code> routes).
             </span>
         </div>
 

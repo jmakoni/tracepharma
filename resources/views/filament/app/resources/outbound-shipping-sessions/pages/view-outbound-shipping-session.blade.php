@@ -368,6 +368,20 @@
                                 </p>
                             @endunless
                         </div>
+                        <div class="form-control w-full gap-1.5">
+                            <label for="is-drop-shipment" class="label cursor-pointer justify-start gap-3">
+                                <input
+                                    id="is-drop-shipment"
+                                    type="checkbox"
+                                    wire:model.live="is_drop_shipment"
+                                    class="checkbox checkbox-primary"
+                                />
+                                <span class="label-text">Drop shipment</span>
+                            </label>
+                            <p class="text-xs text-base-content/70">
+                                When checked, outbound EPCIS includes the GS1 dropShipment indicator for the trading partner.
+                            </p>
+                        </div>
 
                         @if ($this->atpOutboundGateDisabled())
                             <p class="text-xs text-warning" data-testid="atp-outbound-gate-disabled-send-note">

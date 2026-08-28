@@ -475,7 +475,7 @@ final class ExceptionService
     public function transition(
         ExceptionCase $case,
         ExceptionStatus $to,
-        User $actor,
+        ?User $actor = null,
         ?string $notes = null,
     ): ExceptionCase {
         $from = $case->status;

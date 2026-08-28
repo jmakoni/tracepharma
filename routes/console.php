@@ -113,6 +113,11 @@ Schedule::command('exceptions:notify-aging-suppliers')
     ->withoutOverlapping()
     ->name('aging-supplier-exception-notify');
 
+Schedule::command('epcis:emit-pending-mdn-signals')
+    ->hourly()
+    ->withoutOverlapping()
+    ->name('epcis-emit-pending-mdn-signals');
+
 Schedule::command('tracepharma:tenant-health-alert')
     ->hourly()
     ->withoutOverlapping()

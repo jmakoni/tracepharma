@@ -33,6 +33,15 @@ class PmsIntegrationChecklistPageTest extends TestCase
 
             $this->assertContains('dispense_token', $ids);
             $this->assertContains('receiving_state', $ids);
+            $this->assertContains('vendor_runbook', $ids);
+
+            $runbookItem = collect($items)->firstWhere('id', 'vendor_runbook');
+            $this->assertNotNull($runbookItem);
+            $this->assertStringContainsString('docs/integrations/pms/pioneerrx.md', $runbookItem['description']);
+            $this->assertStringContainsString('bestrx.md', $runbookItem['description']);
+            $this->assertStringContainsString('primerx.md', $runbookItem['description']);
+            $this->assertStringContainsString('/api/v1/pms/{vendor}/dispense', $runbookItem['description']);
+
             $this->assertGreaterThanOrEqual(0, app(PmsIntegrationChecklist::class)->score());
         } finally {
             tenancy()->end();

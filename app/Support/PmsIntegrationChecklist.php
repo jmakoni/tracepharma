@@ -56,14 +56,23 @@ final class PmsIntegrationChecklist
                 href: $this->pageUrl(ApiTokens::class),
                 actionLabel: 'API tokens',
             ),
+            $this->item(
+                id: 'vendor_runbook',
+                title: 'Named PMS vendor runbook followed',
+                description: 'Manual step: map your PMS webhook to POST /api/v1/dispense-check using docs/integrations/pms/pioneerrx.md, bestrx.md, primerx.md, liberty-rx30.md, or qs1.md. No /api/v1/pms/{vendor}/dispense routes. Not auto-scored.',
+                done: false,
+                href: $this->pageUrl(ApiTokens::class),
+                actionLabel: 'API tokens',
+            ),
         ];
     }
 
     public function score(): int
     {
+        $manualIds = ['postman_docs', 'vendor_runbook'];
         $items = array_values(array_filter(
             $this->items(),
-            fn (array $item): bool => ($item['id'] ?? '') !== 'postman_docs',
+            fn (array $item): bool => ! in_array($item['id'] ?? '', $manualIds, true),
         ));
 
         if ($items === []) {

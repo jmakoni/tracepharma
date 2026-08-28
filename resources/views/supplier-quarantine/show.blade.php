@@ -325,6 +325,44 @@
     @endif
 
     <div class="card">
+        <h2 style="margin:0 0 0.75rem;font-size:1.05rem;">Apply correction</h2>
+        <p class="meta">Acknowledge the exception and optionally provide corrected shipment / product fields. Your buyer remains the authority to resolve the case.</p>
+        <form method="post" action="{{ $applyUrl }}">
+            @csrf
+            <label for="apply_supplier_name">Your name / company</label>
+            <input id="apply_supplier_name" name="supplier_name" value="{{ old('supplier_name') }}" maxlength="150">
+
+            <label for="corrected_reference">Corrected shipment / document reference</label>
+            <input id="corrected_reference" name="corrected_reference" value="{{ old('corrected_reference') }}" maxlength="255">
+
+            <label for="gtin">Corrected GTIN</label>
+            <input id="gtin" name="gtin" value="{{ old('gtin') }}" maxlength="64" class="mono">
+
+            <label for="serial">Corrected serial</label>
+            <input id="serial" name="serial" value="{{ old('serial') }}" maxlength="128" class="mono">
+
+            <label for="lot">Corrected lot</label>
+            <input id="lot" name="lot" value="{{ old('lot') }}" maxlength="128" class="mono">
+
+            <label for="expiry">Corrected expiry</label>
+            <input id="expiry" name="expiry" value="{{ old('expiry') }}" maxlength="64" placeholder="YYYY-MM-DD">
+
+            <label for="apply_notes">Notes</label>
+            <textarea id="apply_notes" name="notes" rows="3" maxlength="5000">{{ old('notes') }}</textarea>
+
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;font-weight:600;margin-bottom:0.85rem;">
+                <input type="checkbox" name="acknowledged" value="1" style="width:auto;margin:0.2rem 0 0;" @checked(old('acknowledged')) required>
+                <span>I acknowledge this exception and the correction details above</span>
+            </label>
+            @error('acknowledged')
+                <p style="color:var(--danger);margin-top:-0.5rem;">{{ $message }}</p>
+            @enderror
+
+            <button type="submit">Submit correction</button>
+        </form>
+    </div>
+
+    <div class="card">
         <h2 style="margin:0 0 0.75rem;font-size:1.05rem;">Supplier response</h2>
         <form method="post" action="{{ $commentUrl }}">
             @csrf

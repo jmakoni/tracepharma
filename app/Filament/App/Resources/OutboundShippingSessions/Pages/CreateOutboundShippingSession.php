@@ -38,6 +38,8 @@ class CreateOutboundShippingSession extends CreateRecord
             return app(OpenOutboundShippingSession::class)->handle(
                 siteId: isset($data['site_id']) ? (int) $data['site_id'] : null,
                 openedBy: auth()->id(),
+                isDropShipment: (bool) ($data['is_drop_shipment'] ?? false),
+                principalId: isset($data['principal_id']) ? (int) $data['principal_id'] : null,
             );
         } catch (InvalidArgumentException|DomainException $e) {
             throw ValidationException::withMessages([

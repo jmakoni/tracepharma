@@ -21,17 +21,17 @@ use Database\Seeders\ExceptionTypeSeeder;
  * actually emitted by {@see EpcisCatalogBusinessRules},
  * {@see ValidateEpcis12Document} and {@see ProcessEpcisDocument}.
  *
- * Codes that exist in the catalog only as unwired stubs — the partner/MDN/L2-L3 hooks in
- * {@see RecordOperationalEpcisCatalogSignal} that no job/controller calls yet
- * (PARTNER_REJECTED_FILE, MISSING_MDN, LATE_MDN, L2_L3_RECONCILIATION_FAILURE,
- * AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
+ * Codes that exist in the catalog only as unwired stubs —
+ * {@see RecordOperationalEpcisCatalogSignal} hooks that no job/controller calls yet
+ * (L2_L3_RECONCILIATION_FAILURE, AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
  * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator;
  * superseded for live detection by {@see EpcisCatalogBusinessRules} emitting
  * SERIAL_SHIPPED_NOT_COMMISSIONED and MISSING_COMMISSIONING instead — keep stub-hidden, no new emitter)
  * intentionally fall through to the generic {@see self::FAMILY_FALLBACK} profile.
  *
  * L3_TRANSMISSION_FAILURE is live (ForwardCommissioningToL3 → RecordOperationalEpcisCatalogSignal)
- * and is operator-visible. MDN / partner-reject stubs stay operator-hidden until timeout emitters exist.
+ * and is operator-visible. PARTNER_REJECTED_FILE / MISSING_MDN / LATE_MDN are live from AS2 MDN
+ * reject paths and {@see \App\Console\Commands\EmitPendingMdnCatalogSignalsCommand}.
  */
 final class ExceptionCorrectionProfile
 {
@@ -253,9 +253,6 @@ final class ExceptionCorrectionProfile
     public static function operatorHiddenStubCodes(): array
     {
         return [
-            'PARTNER_REJECTED_FILE',
-            'MISSING_MDN',
-            'LATE_MDN',
             'L2_L3_RECONCILIATION_FAILURE',
             'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
@@ -495,9 +492,9 @@ final class ExceptionCorrectionProfile
         'DECOMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
 
         // Transmission & Partner
-        'PARTNER_REJECTED_FILE' => self::FAMILY_FALLBACK, // stub: RecordOperationalEpcisCatalogSignal hook, no caller yet
-        'MISSING_MDN' => self::FAMILY_FALLBACK, // stub: MDN hook, no caller yet
-        'LATE_MDN' => self::FAMILY_FALLBACK, // stub: MDN hook, no caller yet
+        'PARTNER_REJECTED_FILE' => self::FAMILY_FALLBACK, // live: ProcessAs2AsyncMdn + ConnectionOutboundEpcisTransmitter
+        'MISSING_MDN' => self::FAMILY_FALLBACK, // live: epcis:emit-pending-mdn-signals
+        'LATE_MDN' => self::FAMILY_FALLBACK, // live: epcis:emit-pending-mdn-signals
         'DUPLICATE_TRANSMISSION' => self::FAMILY_DOCUMENT,
         'FILE_SIZE_EXCEEDED' => self::FAMILY_DOCUMENT,
         'ENCODING_ERROR' => self::FAMILY_DOCUMENT, // hook-only today
