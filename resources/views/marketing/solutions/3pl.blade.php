@@ -51,7 +51,7 @@
             :pillars="[
                 ['title' => 'Principal isolation', 'description' => 'Each principal\'s inventory, outbound messages, and exceptions stay scoped — no commingled reporting.', 'items' => ['Principal onboarding wizard step', 'Principal filter on operations scorecard', '3PL principal field on ship orders']],
                 ['title' => 'Multi-facility operations', 'description' => 'Ship-from facility selection, cross-dock between DCs, and read-point gate enforcement.', 'items' => ['Facility-scoped outbound staging', 'Cross-dock scan verification', 'Integration health per connection']],
-                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 and 2.0 repository', 'Transaction search at scale', 'Compliance export API']],
+                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 GA + 2.0 capture/query/subscriptions', 'Transaction search at scale', 'Compliance export API']],
             ]"
         />
     </section>

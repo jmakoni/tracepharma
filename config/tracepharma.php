@@ -17,7 +17,7 @@ return [
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.0'),
+    'app_version' => env('APP_VERSION', '1.0.0'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))
@@ -95,6 +95,18 @@ return [
             'max_findings_per_type' => (int) env('TRACEPHARMA_EPCIS_MAX_FINDINGS_PER_TYPE', 50),
             'severity_overrides' => [],
         ],
+
+        /*
+        | EPCIS 2.0 JSON-LD ingest/outbound is opt-in. Default off preserves
+        | EPCIS 1.2/1.3 XML as the only accepted edge format.
+        */
+        'accept_20' => (bool) env('TRACEPHARMA_EPCIS_ACCEPT_20', false),
+        // Platform default for new / unpinned outbound connections. Prefer 1.2 XML until
+        // a real XML 2.0 writer ships; JSON-LD 2.0 remains opt-in via connection + accept_20.
+        // Existing rows may still be pinned explicitly by tenant migration pin_outbound_epcis_version_1_2.
+        'default_outbound_version' => env('TRACEPHARMA_EPCIS_DEFAULT_OUTBOUND_VERSION', '1.2'),
+        'subscription_inline_event_threshold' => (int) env('TRACEPHARMA_EPCIS_SUBSCRIPTION_INLINE_EVENTS', 50),
+        'subscription_download_ttl_minutes' => (int) env('TRACEPHARMA_EPCIS_SUBSCRIPTION_DOWNLOAD_TTL', 60),
     ],
 
     /*
@@ -165,6 +177,15 @@ return [
     */
     'supplier_portal' => [
         'link_ttl_days' => (int) env('TRACEPHARMA_SUPPLIER_PORTAL_LINK_TTL_DAYS', 30),
+    ],
+
+    /*
+    | Aging supplier exception collaboration: push email + portal status when
+    | open partner-linked cases age. No inbound email-reply parser.
+    */
+    'supplier_exception_notify' => [
+        'aging_days' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_AGING_DAYS', 3),
+        'cooldown_hours' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_NOTIFY_COOLDOWN_HOURS', 72),
     ],
 
     /*

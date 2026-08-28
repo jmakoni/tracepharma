@@ -169,7 +169,7 @@ class PartnerAtpSiteCoverageTest extends TestCase
 
             $this->assertNull($row['source']);
             $this->assertSame('Needs WDD / 3PL', $row['source_label']);
-            $this->assertSame('Must be on the WDD/3PL list for the receiving state', $row['note']);
+            $this->assertSame('Must be on the WDD/3PL list for organization jurisdictions', $row['note']);
         } finally {
             $this->cleanupTenantRows();
         }

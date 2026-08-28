@@ -63,7 +63,12 @@ class InvestigatorSla extends Page
     public function blockingCases(): Collection
     {
         return $this->casesQuery()
-            ->with(['type', 'tradingPartner'])
+            ->with([
+                'type',
+                'tradingPartner',
+                'activities' => fn ($query) => app(InvestigatorSlaClock::class)
+                    ->constrainSupplierEmailActivities($query),
+            ])
             ->orderBy('due_at')
             ->orderBy('id')
             ->limit(100)
@@ -82,11 +87,13 @@ class InvestigatorSla extends Page
 
     public function lastEmailLabel(ExceptionCase $case): string
     {
-        $activity = ExceptionActivity::query()
-            ->where('exception_id', $case->getKey())
-            ->where('body', 'like', 'DSCSA exception email sent%')
-            ->latest('id')
-            ->first();
+        $clock = app(InvestigatorSlaClock::class);
+
+        $activity = $case->relationLoaded('activities')
+            ? $case->activities->first(fn (mixed $activity): bool => $clock->isSupplierEmailActivity($activity))
+            : $clock->constrainSupplierEmailActivities(
+                ExceptionActivity::query()->where('exception_id', $case->getKey()),
+            )->latest('id')->first();
 
         if ($activity === null) {
             return 'Not emailed';

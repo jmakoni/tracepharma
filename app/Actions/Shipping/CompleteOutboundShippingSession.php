@@ -6,13 +6,16 @@ use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Notifications\CustomerPortalShipNotification;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Outbound\CustomerPortalService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -153,8 +156,46 @@ final class CompleteOutboundShippingSession
 
         try {
             $this->customerPortalService->ensureCustomerPortalLink($partner);
+            $this->notifyPartnerPortalPickup($session, $partner);
         } catch (Throwable $e) {
             Log::warning('Customer portal link was not issued after outbound send.', [
+                'outbound_shipping_session_id' => $session->getKey(),
+                'trading_partner_id' => $partner->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Optional email-on-ship: partner contact gets a signed portal URL. Never fails the send.
+     */
+    private function notifyPartnerPortalPickup(OutboundShippingSession $session, TradingPartner $partner): void
+    {
+        if (! TenantSettings::forTenant(tenant())->emailPortalOnShipEnabled()) {
+            return;
+        }
+
+        $email = filled($partner->email) ? (string) $partner->email : null;
+
+        if ($email === null) {
+            return;
+        }
+
+        try {
+            $portalUrl = $this->customerPortalService->signedCustomerPortalUrl($partner);
+
+            (new AnonymousNotifiable)
+                ->route('mail', $email)
+                ->notify(new CustomerPortalShipNotification(
+                    partnerName: (string) $partner->name,
+                    portalUrl: $portalUrl,
+                    asnNumber: filled($session->asn_number) ? (string) $session->asn_number : null,
+                    customerPo: filled($session->customer_po) ? (string) $session->customer_po : null,
+                    tenantId: tenant()?->getKey() !== null ? (string) tenant()->getKey() : null,
+                    tenantName: tenant()?->name,
+                ));
+        } catch (Throwable $e) {
+            Log::warning('Customer portal ship email was not sent.', [
                 'outbound_shipping_session_id' => $session->getKey(),
                 'trading_partner_id' => $partner->getKey(),
                 'error' => $e->getMessage(),

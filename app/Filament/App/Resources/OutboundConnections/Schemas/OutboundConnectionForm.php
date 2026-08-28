@@ -74,6 +74,23 @@ class OutboundConnectionForm
                         Toggle::make('is_default')
                             ->label('Default for partner')
                             ->helperText('When set, this connection is preferred for auto-routing to the selected trading partner (or globally when no partner is linked).'),
+                        Select::make('settings.epcis_document_version')
+                            ->label('EPCIS document version')
+                            ->options([
+                                '1.2' => 'EPCIS 1.2 XML (default)',
+                                '2.0' => 'EPCIS 2.0 JSON-LD (opt-in when accept_20 is on)',
+                            ])
+                            ->default('1.2')
+                            ->helperText('Ship Orders (and receive/transfer/unpack authors) always generate EPCIS 1.2 XML today — this setting does not change those payloads. Version 2.0 JSON-LD applies to disposition documents and other resolver-backed paths when TRACEPHARMA_EPCIS_ACCEPT_20 is on. XML 2.0 outbound is not offered.'),
+                        Select::make('settings.epcis_document_format')
+                            ->label('EPCIS 2.0 format')
+                            ->options([
+                                'json' => 'JSON-LD (supported)',
+                            ])
+                            ->default('json')
+                            ->dehydrated()
+                            ->visible(fn (Get $get): bool => $get('settings.epcis_document_version') === '2.0')
+                            ->helperText('Only for resolver-backed 2.0 documents (e.g. disposition). Ship Orders stay on 1.2 XML.'),
                     ])
                     ->columns(2),
                 Section::make('HTTPS settings')

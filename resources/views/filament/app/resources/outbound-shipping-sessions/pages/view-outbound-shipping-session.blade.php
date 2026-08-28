@@ -12,12 +12,16 @@
                 <div class="flex flex-col gap-0.5">
                     <span class="font-semibold">ATP outbound gate is disabled</span>
                     <span class="text-sm">
-                        Shipments are not being checked against the destination's ATP license for the
-                        organization receiving state. Confirm the customer is an authorized trading
+                        Shipments are not being checked against the destination's ATP license for your
+                        organization jurisdictions. Confirm the customer is an authorized trading
                         partner before sending, and ask an administrator to re-enable the gate.
                     </span>
                 </div>
             </div>
+        @endif
+
+        @if ($this->readinessBadges() !== [])
+            @include('filament.app.partials.outbound-ship-readiness', ['badges' => $this->readinessBadges()])
         @endif
 
         @if (! $this->isCompleted() && $this->getRecord()->status !== 'cancelled')

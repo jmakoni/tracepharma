@@ -217,6 +217,7 @@
                                         <th>Name</th>
                                         <th>Partner</th>
                                         <th>Transport</th>
+                                        <th>EPCIS</th>
                                         <th>Active</th>
                                         <th>Last sent</th>
                                         <th>Last error</th>
@@ -226,6 +227,9 @@
                                     @foreach ($outboundConnections as $connection)
                                         @php
                                             $viewUrl = $this->outboundConnectionViewUrl($connection);
+                                            $epcisVersion = is_array($connection->settings)
+                                                ? (string) ($connection->settings['epcis_document_version'] ?? '1.2')
+                                                : '1.2';
                                         @endphp
                                         <tr>
                                             <td>
@@ -266,6 +270,11 @@
                                                         </span>
                                                     @endif
                                                 @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-sm {{ $epcisVersion === '2.0' ? 'badge-info' : 'badge-ghost' }}">
+                                                    {{ $epcisVersion === '2.0' ? '2.0 JSON-LD' : '1.2 XML' }}
+                                                </span>
                                             </td>
                                             <td>
                                                 @if ($connection->is_active)

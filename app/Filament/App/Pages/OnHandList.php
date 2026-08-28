@@ -48,7 +48,8 @@ class OnHandList extends Page
 
     public static function shouldRegisterNavigation(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav()
+            && static::canAccess();
     }
 
     public function mount(): void

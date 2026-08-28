@@ -16,11 +16,13 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 final class AtpReadinessGate
 {
     /**
-     * Readiness states that do not evidence a licence in force for the receiving state.
+     * Readiness states that do not evidence a licence in force for the tenant's
+     * evaluation jurisdictions (org footprint, or preferred receiving state fallback).
      *
      * Expiring is absent on purpose: a licence with weeks left still authorizes today's
      * delivery, and the expiry dashboards already chase it. A licence with no expiration
      * date on file is here because it cannot be shown to be in force at all.
+     * NeedsReceivingState blocks when neither footprint nor receiving state is available.
      *
      * @var list<SiteAtpReadinessStatus>
      */
@@ -28,6 +30,7 @@ final class AtpReadinessGate
         SiteAtpReadinessStatus::Expired,
         SiteAtpReadinessStatus::NoLicenses,
         SiteAtpReadinessStatus::UnknownExpiry,
+        SiteAtpReadinessStatus::NeedsReceivingState,
     ];
 
     public static function blocks(SiteAtpReadinessStatus $status): bool

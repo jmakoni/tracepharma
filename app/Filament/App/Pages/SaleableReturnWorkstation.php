@@ -16,6 +16,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Disposition\SaleableReturnScorecardMetrics;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Recalls\OpenRecallFlag;
@@ -84,7 +85,15 @@ class SaleableReturnWorkstation extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Saleable return desk. VRS must pass before credit. The existing Return screen is unchanged.';
+        return 'Saleable return desk. VRS must pass before credit. Scorecard below shows VRS + returning EPCIS readiness.';
+    }
+
+    /**
+     * @return array{vrs_verified: int, vrs_blocked: int, vrs_deferred: int, returning_authored_today: int, session_confirmed: int}
+     */
+    public function scorecard(): array
+    {
+        return app(SaleableReturnScorecardMetrics::class)->handle(count($this->confirmed));
     }
 
     public function processScan(

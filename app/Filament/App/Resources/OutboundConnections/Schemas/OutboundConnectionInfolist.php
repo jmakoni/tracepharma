@@ -33,6 +33,20 @@ class OutboundConnectionInfolist
                         IconEntry::make('is_default')
                             ->label('Default for partner')
                             ->boolean(),
+                        TextEntry::make('settings.epcis_document_version')
+                            ->label('EPCIS document version')
+                            ->state(function (OutboundConnection $record): string {
+                                $version = is_array($record->settings)
+                                    ? (string) ($record->settings['epcis_document_version'] ?? '1.2')
+                                    : '1.2';
+
+                                return $version === '2.0' ? 'EPCIS 2.0 JSON-LD' : 'EPCIS 1.2 XML';
+                            })
+                            ->badge()
+                            ->color(fn (OutboundConnection $record): string => (is_array($record->settings) && ($record->settings['epcis_document_version'] ?? '1.2') === '2.0')
+                                ? 'info'
+                                : 'gray')
+                            ->helperText('Ship Orders always author EPCIS 1.2 XML. This version applies to disposition and other resolver-backed documents when 2.0 is selected.'),
                         TextEntry::make('last_sent_at')
                             ->dateTime()
                             ->placeholder('Never'),

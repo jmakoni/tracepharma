@@ -70,12 +70,12 @@ class TenantForm
                             ->rule(fn (Get $get, ?Tenant $record): \Closure => self::identityConflictRule($get, $record, 'company_prefix'))
                             ->helperText('6–11 digit GS1 Company Prefix used to build SGLNs from the company GLN.'),
                         Select::make('receiving_state')
-                            ->label('Receiving state')
+                            ->label('Preferred receiving state')
                             ->options(UsState::selectOptions())
                             ->searchable()
                             ->nullable()
                             ->native(false)
-                            ->helperText('Used to evaluate partner ATP licenses for your location'),
+                            ->helperText('Optional badge label / empty-footprint fallback. Partner ATP uses organization facility jurisdictions.'),
                         TextInput::make('tenant_slug')
                             ->label('Tenant slug')
                             ->helperText('Creates both stage and prod hosts: '.TenantHostname::pairHint())

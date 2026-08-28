@@ -5,13 +5,13 @@ namespace App\Actions\Epcis;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
 use App\Support\MasterData\AtpDisclosure;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\AtpReadinessGate;
-use App\Support\MasterData\TenantReceivingState;
 
 /**
  * Soft ATP gate at ingest/receiving: warn when seller (trading_partner_id) or
  * sold-to (ship_to_partner_id) owning-party sites lack valid licenses for the
- * tenant receiving state. Does not block.
+ * tenant evaluation jurisdictions. Does not block.
  *
  * Judges what the outbound gate would judge, by the same rule: the site the document
  * names, when it names one, and otherwise the party as a whole, where one ready address
@@ -45,12 +45,12 @@ final class RecordAtpSoftWarning
             return null;
         }
 
-        // Every party reads as NeedsReceivingState without one, which is not evidence of a
-        // license — surface the gap instead of passing the document silently.
-        if (TenantReceivingState::resolve() === null) {
+        // Without org footprint or preferred receiving state, every party reads as
+        // NeedsReceivingState — surface the gap instead of passing the document silently.
+        if (AtpLicenseRelevance::evaluationJurisdictionKeys() === []) {
             return $this->open(
                 $document,
-                'ATP licenses were not evaluated for this document — the organization receiving state is not set.',
+                'ATP licenses were not evaluated for this document — organization jurisdictions are not configured (add facility sites with country/state, or set a preferred receiving state).',
             );
         }
 
@@ -109,6 +109,6 @@ final class RecordAtpSoftWarning
             ? ucfirst($failedParties[0]).' sites'
             : implode(' and ', $failedParties).' sites';
 
-        return $subject.' have expired, missing, or undated ATP licenses on record for the tenant receiving state. '.AtpDisclosure::SHORT;
+        return $subject.' have expired, missing, or undated ATP licenses on record for the organization jurisdictions. '.AtpDisclosure::SHORT;
     }
 }

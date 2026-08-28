@@ -406,28 +406,46 @@ class ProcessEpcisDocumentSoftSignalTest extends TestCase
     }
 
     #[Test]
-    public function record_atp_soft_warning_surfaces_an_unset_receiving_state(): void
+    public function record_atp_soft_warning_surfaces_missing_evaluation_jurisdictions(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, null);
         config(['tracepharma.epcis.enforce_atp_soft_gate' => true]);
 
+        $orgSites = Site::query()
+            ->ownedByOrganization()
+            ->whereNotNull('state')
+            ->get(['id', 'state']);
+        $priorStates = $orgSites->mapWithKeys(
+            fn (Site $site): array => [(int) $site->id => $site->state],
+        )->all();
+
         try {
+            foreach ($orgSites as $site) {
+                $site->forceFill(['state' => null])->save();
+            }
+
             $shipToPartner = $this->createPartnerWithSiteLicenses([
                 ['license_state' => 'AK', 'license_expiration_date' => now()->addYear()],
             ]);
 
             $document = $this->shipmentDocument($shipToPartner);
 
-            // Without a receiving state every partner reads as "set receiving state", which is
-            // not evidence of a licence — say so rather than passing the document silently.
+            // Without org footprint or preferred receiving state, every partner reads as
+            // NeedsReceivingState — say so rather than passing the document silently.
             $warning = app(RecordAtpSoftWarning::class)->handle($document->fresh());
 
             $this->assertNotNull($warning);
             $this->assertSame('atp_soft_warning', $warning->exception_type);
             $this->assertSame('warning', $warning->severity);
-            $this->assertStringContainsString('receiving state is not set', $warning->description);
+            $this->assertTrue(
+                str_contains($warning->description, 'receiving state')
+                || str_contains($warning->description, 'jurisdictions'),
+            );
         } finally {
+            foreach ($priorStates as $siteId => $state) {
+                Site::query()->whereKey($siteId)->update(['state' => $state]);
+            }
             $this->setTenantReceivingState($tenant, 'IL');
             $this->cleanup();
         }

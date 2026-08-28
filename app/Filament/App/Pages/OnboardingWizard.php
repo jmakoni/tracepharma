@@ -213,7 +213,7 @@ class OnboardingWizard extends Page
     {
         $notification = Notification::make()
             ->title('Upstream partner ATP not ready')
-            ->body('Before go-live, at least one manufacturer or wholesaler you receive from needs a site with an ATP / WDD license in force for your receiving state.')
+            ->body('Before go-live, at least one manufacturer or wholesaler you receive from needs a site with an ATP / WDD license in force for your organization jurisdictions.')
             ->warning()
             ->persistent();
 

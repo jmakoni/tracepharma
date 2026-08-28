@@ -18,15 +18,17 @@ class ExceptionCorrectionProfileStubCodesTest extends TestCase
             'MISSING_MDN',
             'LATE_MDN',
             'L2_L3_RECONCILIATION_FAILURE',
-            'L3_TRANSMISSION_FAILURE',
             'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
             // Superseded at runtime by SERIAL_SHIPPED_NOT_COMMISSIONED / MISSING_COMMISSIONING.
             'SHIP_BEFORE_COMMISSION',
         ], $codes);
 
+        $this->assertNotContains('L3_TRANSMISSION_FAILURE', $codes);
         $this->assertNotContains('UNCLASSIFIED', $codes);
         $this->assertNotContains('UNKNOWN_GTIN', $codes);
+
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('L3_TRANSMISSION_FAILURE'));
     }
 
     #[Test]

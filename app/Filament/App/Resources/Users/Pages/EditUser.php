@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\Users\Pages;
 
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\Users\Concerns\RestrictsOwnerRoleAssignment;
+use App\Filament\App\Resources\Users\Concerns\RestrictsSupportEngineerAssignment;
 use App\Filament\App\Resources\Users\Concerns\SyncsUserSiteMembership;
 use App\Filament\App\Resources\Users\UserResource;
 use App\Filament\Resources\Pages\EditRecord;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
 class EditUser extends EditRecord
 {
     use RestrictsOwnerRoleAssignment;
+    use RestrictsSupportEngineerAssignment;
     use SyncsUserSiteMembership;
 
     protected static string $resource = UserResource::class;
@@ -26,6 +28,7 @@ class EditUser extends EditRecord
         $record = $this->getRecord();
 
         $this->assertOwnerRoleAssignmentAllowed($record);
+        $this->assertSupportEngineerAssignmentAllowed($record);
     }
 
     /**
@@ -50,6 +53,7 @@ class EditUser extends EditRecord
         $record = $this->getRecord();
 
         $data = $this->preserveOwnerRoleForNonOwnerActor($data, $record);
+        $data = $this->preserveSupportEngineerRoleForNonOwnerActor($data, $record);
 
         return $this->extractSiteMembershipFromFormData($data);
     }

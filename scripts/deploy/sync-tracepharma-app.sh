@@ -48,6 +48,9 @@ sudo rm -f "${TARGET}/bootstrap/cache/packages.php" "${TARGET}/bootstrap/cache/s
 echo "==> composer install --no-dev in ${TARGET}"
 sudo -u www-data bash -lc "cd '${TARGET}' && composer install --no-dev --optimize-autoloader --no-interaction --no-scripts"
 sudo -u www-data bash -lc "cd '${TARGET}' && composer dump-autoload -o --no-interaction --no-scripts"
+# Deploy uses --no-scripts; sticky-columns registers hasViews() without shipping views.
+sudo -u www-data bash -lc "cd '${TARGET}' && bash scripts/ensure-filament-sticky-columns-views.sh" \
+    || echo "!! ensure-filament-sticky-columns-views failed (continuing)"
 sudo -u www-data bash -lc "cd '${TARGET}' && php artisan package:discover --ansi" \
     || echo "!! package:discover failed (continuing)"
 sudo -u www-data bash -lc "cd '${TARGET}' && php artisan filament:assets" \

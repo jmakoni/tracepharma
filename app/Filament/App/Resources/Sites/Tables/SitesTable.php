@@ -13,9 +13,9 @@ use App\Models\Site;
 use App\Support\Catalog\DisplayName;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseExpiry;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\MasterData\SiteReferences;
-use App\Support\MasterData\TenantReceivingState;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
@@ -232,8 +232,8 @@ class SitesTable
                             EligibleReceiveSites::forOrganization()->reorder()->select('id'),
                         ),
                     ),
-                // Readiness is judged against the receiving state; renewals are due
-                // whatever state licensed them, so this filter ignores it.
+                // Readiness is judged against evaluation jurisdictions (org footprint or
+                // preferred receiving state); renewals are due whatever state licensed them.
                 Filter::make('atp_expiring_90_days')
                     ->label('License expiring within 90 days')
                     ->toggle()
@@ -249,7 +249,7 @@ class SitesTable
                     ->options(function (): array {
                         return collect(SiteAtpReadinessStatus::cases())
                             ->reject(fn (SiteAtpReadinessStatus $status): bool => $status === SiteAtpReadinessStatus::NeedsReceivingState
-                                && TenantReceivingState::resolve() !== null)
+                                && AtpLicenseRelevance::evaluationJurisdictionKeys() !== [])
                             ->mapWithKeys(fn (SiteAtpReadinessStatus $status): array => [
                                 $status->value => $status->label(),
                             ])

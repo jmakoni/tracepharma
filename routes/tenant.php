@@ -13,6 +13,7 @@ declare(strict_types=1);
 */
 
 use App\Http\Controllers\CustomerPortalController;
+use App\Http\Controllers\EpcisSubscriptionDownloadController;
 use App\Http\Controllers\Labeling\ClientLabelPrintController;
 use App\Http\Controllers\RecallBroadcastAckPortalController;
 use App\Http\Controllers\SetCurrentSiteController;
@@ -80,6 +81,11 @@ Route::middleware([
         ->middleware(['signed', 'throttle:20,1'])
         ->whereNumber('document')
         ->name('tenant.customer-portal.download');
+
+    Route::get('/epcis-subscription/documents/{document}/epcis-2.0', EpcisSubscriptionDownloadController::class)
+        ->middleware(['signed', 'throttle:60,1'])
+        ->whereNumber('document')
+        ->name('tenant.epcis-subscription.download');
 
     Route::get('/supplier-quarantine/{shareUuid}', [SupplierQuarantineController::class, 'show'])
         ->middleware(['signed', 'throttle:20,1'])

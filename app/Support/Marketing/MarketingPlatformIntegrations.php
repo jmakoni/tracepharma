@@ -141,23 +141,23 @@ class MarketingPlatformIntegrations
                 'pulse_listed' => false,
                 'preset' => $key,
                 'transports' => ['HTTPS REST'],
-                'meta_description' => "Connect {$label} to TracePharma for DSCSA dispense-check—block fills until VRS verification passes, with full audit trail and dispenser scorecard.",
-                'hero_description' => "TracePharma exposes a dispense-check API for {$label}. Your PMS calls TracePharma before completing a fill; unverified or failed serials block dispense with a logged reason.",
-                'summary' => "{$label} remains your pharmacy system of record. TracePharma is the L4 traceability hub—receiving wholesaler EPCIS, running VRS verification, and gating dispense through POST /api/v1/pms/{$key}/dispense.",
+                'meta_description' => "Connect {$label} to TracePharma for DSCSA dispense-check—block fills until VRS verification passes via POST /api/v1/dispense-check.",
+                'hero_description' => "TracePharma exposes a single dispense-check API that {$label} middleware can call before completing a fill. Named per-vendor PMS adapter routes are not GA; unverified or failed serials block dispense with a logged reason.",
+                'summary' => "{$label} remains your pharmacy system of record. TracePharma is the L4 traceability hub—receiving wholesaler EPCIS, running VRS verification, and gating dispense through POST /api/v1/dispense-check (not a per-vendor /api/v1/pms/{$key}/dispense route).",
                 'inbound' => [
-                    "{$label} middleware POSTs dispense-check requests with GTIN, serial, and optional barcode fields.",
+                    "{$label} middleware POSTs to POST /api/v1/dispense-check with GTIN, serial, and optional barcode fields.",
                     'TracePharma validates prior verification state or runs VRS when configured.',
                     'Blocked dispenses return structured reasons for pharmacist workflow and audit.',
                 ],
                 'outbound' => [
-                    'pms_dispense_events audit trail in Filament with list/view per event.',
-                    'Dispenser scorecard with 30-day PMS blocked-reason trends.',
-                    'GET /api/v1/compliance/dispenser-scorecard and pms-blocked-reason-trends for BI.',
+                    'Dispense outcomes feed the dispenser scorecard and verification audit trail.',
+                    'Dispenser scorecard with blocked-reason trends for compliance review.',
+                    'GET /api/v1/compliance/dispenser-scorecard for BI.',
                 ],
                 'cutover' => [
-                    "Enable PMS dispense integration in Tenant Settings.",
-                    "Configure optional shared secret ({$vendor['header_name']}) for {$label}.",
-                    "Point {$label} dispense-check middleware at your tenant dispense endpoint.",
+                    'Enable dispense-check integration and issue a Sanctum token with vrs:dispense-check.',
+                    "Point {$label} middleware at POST /api/v1/dispense-check on your tenant domain.",
+                    'Named per-vendor PMS adapters are not GA—use the unified dispense-check endpoint.',
                     'Test with a verified GTIN+serial before production fills.',
                 ],
                 'best_for' => [
@@ -169,11 +169,15 @@ class MarketingPlatformIntegrations
                 'faq' => [
                     [
                         'question' => "Does TracePharma replace {$label}?",
-                        'answer' => "No. {$label} continues to manage prescriptions and inventory. TracePharma provides DSCSA verification and dispense-check gating via API.",
+                        'answer' => "No. {$label} continues to manage prescriptions and inventory. TracePharma provides DSCSA verification and dispense-check gating via POST /api/v1/dispense-check.",
                     ],
                     [
                         'question' => 'What happens when verification fails?',
                         'answer' => 'The dispense-check API returns a blocked response with a reason code. The event is logged for FDA 3911 and dispenser scorecard reporting.',
+                    ],
+                    [
+                        'question' => "Is there a dedicated {$label} adapter route?",
+                        'answer' => 'Not as GA. Marketing pages may mention common PMS vendors as integration targets; the shipped surface is the single POST /api/v1/dispense-check endpoint.',
                     ],
                 ],
             ];

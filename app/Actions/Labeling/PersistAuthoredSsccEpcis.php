@@ -10,6 +10,7 @@ use App\Jobs\Labeling\ForwardCommissioningToL3;
 use App\Jobs\ProcessEpcisDocumentJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Services\Epcis\EpcisIngestionService;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisStoragePath;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\TenantSettings;
@@ -74,15 +75,21 @@ final class PersistAuthoredSsccEpcis
 
             [$disk, $storedPath] = $this->persistPayload($xml, $payloadPath, $preferredDisk);
 
+            $trimmed = ltrim($xml);
+            $isJson = $trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[');
+            $schemaVersion = $isJson
+                ? (EpcisSchemaVersion::peekJson(substr($xml, 0, 8192)) ?? EpcisSchemaVersion::V20)
+                : EpcisSchemaVersion::V12;
+
             return EpcisDocument::query()->create([
                 'document_uuid' => (string) Str::uuid(),
-                'schema_version' => '1.2',
+                'schema_version' => $schemaVersion,
                 'creation_date' => now(),
                 'direction' => 'outbound',
                 'authored_kind' => $meta['authored_kind'],
                 'trading_partner_id' => isset($meta['trading_partner_id']) ? (int) $meta['trading_partner_id'] : null,
                 'ship_from_site_id' => isset($meta['ship_from_site_id']) ? (int) $meta['ship_from_site_id'] : null,
-                'format' => 'xml',
+                'format' => $isJson ? EpcisSchemaVersion::FORMAT_JSON : EpcisSchemaVersion::FORMAT_XML,
                 'original_filename' => $meta['original_filename'] ?? basename($payloadPath),
                 'file_sha256' => $sha256,
                 'payload_disk' => $disk,

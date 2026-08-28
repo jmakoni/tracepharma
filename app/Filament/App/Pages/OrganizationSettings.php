@@ -122,6 +122,10 @@ class OrganizationSettings extends Page
             'dashboard_allow_user_customize' => $settings->dashboardAllowUserCustomize(),
             'dashboard_allowed' => array_keys(array_filter($settings->dashboardAllowed())),
             'dashboard_defaults' => array_keys(array_filter($settings->dashboardDefaults())),
+            'pharmacy_simplified_nav' => $settings->pharmacySimplifiedNavEnabled(),
+            'alert_digest_enabled' => $settings->alertDigestEnabled(),
+            'alert_digest_frequency' => $settings->alertDigestFrequency(),
+            'email_portal_on_ship' => $settings->emailPortalOnShipEnabled(),
         ], $settings->organizationAddress()));
     }
 
@@ -174,12 +178,12 @@ class OrganizationSettings extends Page
                             })
                             ->helperText('6–11 digit GS1 Company Prefix used for SGLNs and SSCC number ranges. Ranges must match this GCP.'),
                         Select::make('receiving_state')
-                            ->label('Receiving / ATP evaluation state')
+                            ->label('Preferred receiving state')
                             ->options(UsState::selectOptions())
                             ->searchable()
                             ->nullable()
                             ->native(false)
-                            ->helperText('Used to evaluate partner ATP licenses for your location.'),
+                            ->helperText('Optional badge label. Partner ATP licenses are evaluated against organization facility jurisdictions; this is the fallback when no org sites have a state.'),
                     ]),
                 Section::make('Address')
                     ->compact()
@@ -248,6 +252,42 @@ class OrganizationSettings extends Page
                         Toggle::make('job_roles_enabled')
                             ->label('Limit access by job role')
                             ->helperText('When off, users with Manage users (Owners and system administrators) manage accounts, and everyone with site access sees the same menus for your business type. When on, each user’s job role further limits menus — we sync role permissions automatically when you turn this on. With roles on, users with the Master data capability can create and edit sites, products, and trading partners (not Owner-only); deletes stay with Owner and master-data administrator personas.')
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Pharmacy navigation')
+                    ->compact()
+                    ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy)
+                    ->description('Trim navigation for independent pharmacies — receive, verify, pharmacy outbound desk, and compliance essentials.')
+                    ->schema([
+                        Toggle::make('pharmacy_simplified_nav')
+                            ->label('Simplified navigation')
+                            ->helperText('When on, hides transfer, pack, ship order, analytics, and other wholesaler floor workflows.')
+                            ->default(true)
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Notifications')
+                    ->compact()
+                    ->description('Compliance Alert Center digests and customer portal ship notices.')
+                    ->schema([
+                        Toggle::make('alert_digest_enabled')
+                            ->label('Alert center email digest')
+                            ->helperText('Email compliance and IT contacts (or Owners) when Alert Center has critical or warning signals.')
+                            ->default(true)
+                            ->live()
+                            ->columnSpanFull(),
+                        Select::make('alert_digest_frequency')
+                            ->label('Digest frequency')
+                            ->options([
+                                'daily' => 'Daily',
+                                'weekly' => 'Weekly (Mondays)',
+                            ])
+                            ->default('daily')
+                            ->visible(fn ($get): bool => (bool) $get('alert_digest_enabled'))
+                            ->required(fn ($get): bool => (bool) $get('alert_digest_enabled')),
+                        Toggle::make('email_portal_on_ship')
+                            ->label('Email customer portal link on ship')
+                            ->helperText('After TI is authored, email the trading partner contact a signed portal link. No portal login accounts.')
+                            ->default(true)
                             ->columnSpanFull(),
                     ]),
                 Section::make('Dashboard')
@@ -494,6 +534,14 @@ class OrganizationSettings extends Page
             $organization['dashboard_allowed'] = $this->dashboardCheckboxListToFlags($data['dashboard_allowed'] ?? []);
             $organization['dashboard_defaults'] = $this->dashboardCheckboxListToFlags($data['dashboard_defaults'] ?? []);
         }
+
+        if (tenant()?->profile === TenantProfile::Pharmacy) {
+            $organization['pharmacy_simplified_nav'] = (bool) ($data['pharmacy_simplified_nav'] ?? true);
+        }
+
+        $organization['alert_digest_enabled'] = (bool) ($data['alert_digest_enabled'] ?? true);
+        $organization['alert_digest_frequency'] = (string) ($data['alert_digest_frequency'] ?? 'daily');
+        $organization['email_portal_on_ship'] = (bool) ($data['email_portal_on_ship'] ?? true);
 
         try {
             TenantSettings::forTenant(tenant())->saveOrganization($organization);

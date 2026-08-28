@@ -9,6 +9,7 @@ use App\Models\AtpLicense;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
+use App\Support\MasterData\AlertableAtpLicenses;
 use App\Support\MasterData\AtpLicenseExpiry;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
@@ -40,16 +41,7 @@ class AlertExpiringAtpLicensesCommand extends Command
         $query->cursor()->each(function (Tenant $tenant) use ($dryRun, &$notified, &$failed): void {
             try {
                 $tenant->run(function () use ($tenant, $dryRun, &$notified): void {
-                    $licenses = AtpLicense::query()
-                        ->active()
-                        ->with('site:id,name')
-                        ->where(function ($query): void {
-                            $query->where(fn ($inner) => AtpLicenseExpiry::expired($inner))
-                                ->orWhere(fn ($inner) => AtpLicenseExpiry::expiringSoon($inner))
-                                ->orWhere(fn ($inner) => AtpLicenseExpiry::unknownExpiry($inner));
-                        })
-                        ->orderBy('license_expiration_date')
-                        ->get();
+                    $licenses = AlertableAtpLicenses::query();
 
                     if ($licenses->isEmpty()) {
                         return;
@@ -81,11 +73,16 @@ class AlertExpiringAtpLicensesCommand extends Command
                         $expired = $license->license_expiration_date !== null
                             && $license->license_expiration_date->lt($today);
 
+                        $country = strtoupper(trim((string) ($license->getAttribute('license_country') ?? 'US')));
+                        $jurisdiction = $country === 'US'
+                            ? (string) $license->license_state
+                            : $country.' '.$license->license_state;
+
                         return sprintf(
                             '%s %s %s — %s (%s)',
                             $expired ? 'Expired' : 'Expiring',
                             $license->license_number,
-                            $license->license_state,
+                            $jurisdiction,
                             $license->license_expiration_date?->toDateString() ?? 'unknown',
                             $license->site?->name ?? 'site '.$license->site_id,
                         );

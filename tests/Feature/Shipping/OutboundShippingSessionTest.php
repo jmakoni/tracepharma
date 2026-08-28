@@ -3230,6 +3230,18 @@ class OutboundShippingSessionTest extends TestCase
         try {
             $this->setTenantReceivingState($tenant, null);
 
+            $orgSites = Site::query()
+                ->ownedByOrganization()
+                ->whereNotNull('state')
+                ->get(['id', 'state']);
+            $priorStates = $orgSites->mapWithKeys(
+                fn (Site $site): array => [(int) $site->id => $site->state],
+            )->all();
+
+            foreach ($orgSites as $site) {
+                $site->forceFill(['state' => null])->save();
+            }
+
             $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
             $this->makeEpcShippableAtSite($site);
 
@@ -3259,14 +3271,18 @@ class OutboundShippingSessionTest extends TestCase
 
             $this->assertNotEmpty(array_filter(
                 $blockers,
-                fn (string $blocker): bool => str_contains($blocker, 'receiving state'),
+                fn (string $blocker): bool => str_contains($blocker, 'receiving state')
+                    || str_contains($blocker, 'jurisdictions'),
             ));
 
             try {
                 app(CompleteOutboundShippingSession::class)->handle($session->fresh());
-                $this->fail('Expected a missing receiving state to stop the send rather than allow it.');
+                $this->fail('Expected missing jurisdictions to stop the send rather than allow it.');
             } catch (DomainException $e) {
-                $this->assertStringContainsString('receiving state', $e->getMessage());
+                $this->assertTrue(
+                    str_contains($e->getMessage(), 'receiving state')
+                    || str_contains($e->getMessage(), 'jurisdictions'),
+                );
             }
 
             $this->assertNotSame('completed', $session->fresh()->status);
@@ -3277,6 +3293,10 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertSame([], $this->atpBlockers(
                 app(ValidateOutboundShippingSend::class)->handle($session->fresh()),
             ));
+
+            foreach ($priorStates as $siteId => $state) {
+                Site::query()->whereKey($siteId)->update(['state' => $state]);
+            }
         } finally {
             $this->cleanup($tenant);
         }

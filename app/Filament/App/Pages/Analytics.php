@@ -22,6 +22,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Dashboard\AnalyticsMetrics;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Dashboard\ResolveDashboardWidgets;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\TenantFeatures;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
@@ -35,6 +36,8 @@ use UnitEnum;
 
 class Analytics extends Page
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
     protected static ?string $navigationLabel = 'Analytics';

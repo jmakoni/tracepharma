@@ -828,38 +828,54 @@ a.tp-trace-link:hover {
     box-shadow: none;
 }
 
-/* Inbound EPCIS: keep Actions pinned while scrolling horizontally (no F5 sticky-actions plugin) */
-.tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-.tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
+/*
+ * Inbound EPCIS: pin Status + Actions on horizontal scroll.
+ * Status uses filament-sticky-columns (data-sticky=right, offset=56).
+ * Actions are Filament recordActions (not a Column) — pin with CSS.
+ */
+.tp-inbound-epcis-table {
+    --tp-inbound-actions-sticky-bg: var(--color-base-100, rgb(255 255 255));
+    --tp-inbound-status-sticky-bg: var(--color-base-100, rgb(255 255 255));
+    --tp-inbound-sticky-header-bg: var(--color-base-200, rgb(249 250 251));
+}
+
+.tp-inbound-epcis-table .fi-ta-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+/* Actions column (rightmost) */
+.tp-inbound-epcis-table .fi-ta-table thead tr > th.fi-ta-actions-header-cell,
+.tp-inbound-epcis-table .fi-ta-table tbody tr > td.fi-ta-cell:has(> .fi-ta-actions) {
     position: sticky;
     right: 0;
-    z-index: 12;
-    background-color: rgb(249 250 251);
+    z-index: 13;
+    background-color: var(--tp-inbound-actions-sticky-bg);
+    box-shadow: -4px 0 8px -2px rgba(0, 0, 0, 0.08);
 }
 
-.tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell {
-    background-color: rgb(249 250 251);
+.tp-inbound-epcis-table .fi-ta-table thead tr > th.fi-ta-actions-header-cell {
+    z-index: 23;
+    background-color: var(--tp-inbound-sticky-header-bg);
 }
 
-.tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-    background-color: rgb(255 255 255);
+/* Status column (plugin data-sticky=right) — keep opaque above scrolling cells */
+.tp-inbound-epcis-table .fi-ta-table thead tr > th[data-sticky='right'],
+.tp-inbound-epcis-table .fi-ta-table tbody tr > td[data-sticky='right'],
+.tp-inbound-epcis-table .fi-ta-table thead tr > th[data-sticky-applied='right'],
+.tp-inbound-epcis-table .fi-ta-table tbody tr > td[data-sticky-applied='right'] {
+    background-color: var(--tp-inbound-status-sticky-bg) !important;
 }
 
-.dark .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-html.dark .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell {
-    background-color: rgb(17 24 39);
+.tp-inbound-epcis-table .fi-ta-table thead tr > th[data-sticky='right'],
+.tp-inbound-epcis-table .fi-ta-table thead tr > th[data-sticky-applied='right'] {
+    background-color: var(--tp-inbound-sticky-header-bg) !important;
 }
 
-.dark .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions),
-html.dark .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-    background-color: rgb(24 24 27);
-}
-
-@media (max-width: 639px) {
-    .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-    .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-        position: static;
-        right: auto;
-        z-index: auto;
-    }
+.dark .tp-inbound-epcis-table,
+html.dark .tp-inbound-epcis-table,
+[data-theme='dark'] .tp-inbound-epcis-table {
+    --tp-inbound-actions-sticky-bg: var(--color-base-100, rgb(24 24 27));
+    --tp-inbound-status-sticky-bg: var(--color-base-100, rgb(24 24 27));
+    --tp-inbound-sticky-header-bg: var(--color-base-200, rgb(17 24 39));
 }

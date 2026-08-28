@@ -1,7 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\V1\DispenseCheckController;
+use App\Http\Controllers\Api\V1\EpcisCaptureController;
 use App\Http\Controllers\Api\V1\EpcisDocumentsController;
+use App\Http\Controllers\Api\V1\EpcisEventsQueryController;
+use App\Http\Controllers\Api\V1\EpcisGs1SubscriptionsController;
 use App\Http\Controllers\Api\V1\EpcisInboundController;
 use App\Http\Controllers\Api\V1\EpcisOutboundController;
 use App\Http\Controllers\Api\V1\WmsShipConfirmController;
@@ -57,4 +60,42 @@ Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v
     Route::get('epcis/documents', [EpcisDocumentsController::class, 'index'])
         ->middleware('abilities:epcis:view')
         ->name('api.v1.epcis.documents');
+
+    Route::get('epcis/documents/{document}', [EpcisDocumentsController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.documents.show');
+
+    Route::get('epcis/documents/{document}/epcis-2.0', [EpcisDocumentsController::class, 'epcis20'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.documents.epcis20');
+
+    Route::post('epcis/capture', [EpcisCaptureController::class, 'store'])
+        ->middleware('abilities:epcis:upload')
+        ->name('api.v1.epcis.capture.store');
+
+    Route::get('epcis/capture/{captureId}', [EpcisCaptureController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->whereNumber('captureId')
+        ->name('api.v1.epcis.capture.show');
+
+    Route::get('epcis/events', [EpcisEventsQueryController::class, 'index'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.events.index');
+
+    Route::get('epcis/events/{eventID}', [EpcisEventsQueryController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->where('eventID', '.*')
+        ->name('api.v1.epcis.events.show');
+
+    Route::get('epcis/subscriptions', [EpcisGs1SubscriptionsController::class, 'index'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.index');
+
+    Route::post('epcis/subscriptions', [EpcisGs1SubscriptionsController::class, 'store'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.store');
+
+    Route::delete('epcis/subscriptions/{subscriptionID}', [EpcisGs1SubscriptionsController::class, 'destroy'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.destroy');
 });

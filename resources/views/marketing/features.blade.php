@@ -1,7 +1,7 @@
 @extends('marketing.layout')
 
 @section('title', 'Features — TracePharma')
-@section('meta_description', 'L4 DSCSA features: EPCIS receiving and shipping, L3 serial provisioning, exceptions, partner connectivity, VRS verification, and compliance reporting.')
+@section('meta_description', 'L4 DSCSA features: EPCIS receiving and shipping, L3 commissioning forward, exceptions, partner connectivity, VRS verification, and compliance reporting.')
 
 @section('content')
     <x-marketing.page-hero
@@ -18,7 +18,7 @@
         <div class="max-w-2xl">
             <h2 class="text-xl font-semibold text-tp-ink">Follow the DSCSA workflow</h2>
             <p class="mt-2 text-sm leading-relaxed text-tp-muted">
-                Deep-dive guides map to how product moves through your network—from inbound EPCIS and L3 serial handoff through ship, verify (where applicable), exceptions, and compliance reporting.
+                Deep-dive guides map to how product moves through your network—from inbound EPCIS and L3 commissioning forward through ship, verify (where applicable), exceptions, and compliance reporting.
             </p>
         </div>
 
@@ -45,14 +45,14 @@
                 ],
                 [
                     'phase' => 'Serialize',
-                    'title' => 'L3 ↔ L4 provisioning',
-                    'description' => 'SGTIN pools, line handoff, commissioning reconcile—so L3 line output stays tied to L4 serial authority.',
+                    'title' => 'L3 ↔ L4 handoff',
+                    'description' => 'Organization L3 forward URL plus idempotent commissioning POST—so plant systems stay in place without a vapor allocation API.',
                     'href' => route('marketing.features.show', 'serialization'),
                 ],
                 [
                     'phase' => 'Verify',
                     'title' => 'VRS & dispense',
-                    'description' => 'Dispenser profiles: workstation, API, eligibility—so verify outcomes land in an audit log auditors can review.',
+                    'description' => 'Dispenser profiles: workstation and POST /api/v1/dispense-check—so verify outcomes land in an audit log auditors can review.',
                     'href' => route('marketing.features.show', 'verification'),
                 ],
                 [
@@ -100,7 +100,7 @@
                 <x-marketing.feature-list
                     :items="[
                         ['title' => 'EPCIS receiving & shipping', 'description' => 'Inbound via upload, SFTP, AS2, or webhooks. Outbound EPCIS with SSCC labeling and partner routing—so receive and ship stay in one L4 workspace.'],
-                        ['title' => 'L3 serial provisioning', 'description' => 'SGTIN allocation to plant-floor systems with commissioning reconcile—so manufacturer and prepackager lines stay tied to corporate serial authority.'],
+                        ['title' => 'L3 commissioning forward', 'description' => 'Organization settings L3 URL plus ForwardCommissioningToL3—so manufacturer and prepackager lines stay connected without a public allocation API.'],
                         ['title' => 'Exception management', 'description' => 'Structured reason codes, assignment, resolution notes, and playbook guidance—so operators know the next step on every failure.'],
                         ['title' => 'Supplier correction loop', 'description' => 'Send correction requests to trading partners and optionally auto-send on new exceptions—so supplier accountability is tracked in-system, not in email.'],
                         ['title' => 'VRS verification', 'description' => 'Workstation and API checks with full audit log—so pharmacy, wholesaler, and dental/medical profiles prove verify outcomes at inspection.'],
@@ -174,7 +174,7 @@
                     [
                         'label' => 'Manufacturer',
                         'title' => 'Drug manufacturers',
-                        'description' => 'Outbound EPCIS, L3 serial provisioning, ACK monitoring, and receive saleable returns—so brand owners ship with traceable transaction data and close the return loop.',
+                        'description' => 'Outbound EPCIS, L3 commissioning forward, ACK monitoring, and receive saleable returns—so brand owners ship with traceable transaction data and close the return loop.',
                         'href' => route('marketing.solutions.manufacturers'),
                         'highlight' => true,
                     ],

@@ -30,7 +30,8 @@ trait RestrictsOwnerRoleAssignment
             return;
         }
 
-        $selectedRoleIds = array_map(intval(...), (array) ($this->form->getState()['roles'] ?? []));
+        // Relationship CheckboxList roles are dehydrated(false); getState() omits them.
+        $selectedRoleIds = array_map(intval(...), (array) ($this->form->getRawState()['roles'] ?? []));
 
         if (in_array((int) $ownerRoleId, $selectedRoleIds, true) && ($record === null || ! $record->hasRole(TenantRole::Owner->value))) {
             Notification::make()

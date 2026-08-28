@@ -121,6 +121,11 @@ class EpcisDocumentsTable
                     ->color('gray')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('schema_version')
+                    ->label('Schema')
+                    ->badge()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('document_uuid')
                     ->label('UUID')
                     ->limit(12)
@@ -160,8 +165,8 @@ class EpcisDocumentsTable
                         };
                     })
                     ->sortable()
-                    // Leave room for sticky Actions (recordActions CSS); plugin only measures sticky columns.
-                    ->stickyRight(offset: 56, zIndex: 2),
+                    // Pin Status just left of sticky Actions (~icon-button width); z-index above scrolling cells.
+                    ->stickyRight(offset: 56, zIndex: 11),
             ])
             ->defaultSort('creation_date', 'desc')
             ->filters([
@@ -173,6 +178,19 @@ class EpcisDocumentsTable
                         'validated' => 'Validated',
                         'error' => 'Error',
                         'voided' => 'Voided',
+                    ]),
+                SelectFilter::make('schema_version')
+                    ->label('Schema version')
+                    ->options([
+                        '1.2' => 'EPCIS 1.2',
+                        '1.3' => 'EPCIS 1.3',
+                        '2.0' => 'EPCIS 2.0',
+                    ]),
+                SelectFilter::make('format')
+                    ->label('Format')
+                    ->options([
+                        'xml' => 'XML',
+                        'json' => 'JSON-LD',
                     ]),
                 SelectFilter::make('trading_partner_id')
                     ->label('Partner')
@@ -363,12 +381,12 @@ class EpcisDocumentsTable
                     ->visible(fn (EpcisDocument $record): bool => filled($record->payload_path))
                     ->disabled(fn (EpcisDocument $record): bool => ! EpcisDocumentXmlDownload::available($record))
                     ->tooltip(fn (EpcisDocument $record): ?string => EpcisDocumentXmlDownload::available($record)
-                        ? 'Download the stored EPCIS XML payload'
-                        : 'XML payload is missing from storage')
+                        ? 'Download the stored EPCIS payload'
+                        : 'Payload is missing from storage')
                     ->action(function (EpcisDocument $record) {
                         if (! EpcisDocumentXmlDownload::available($record)) {
                             Notification::make()
-                                ->title('XML file missing')
+                                ->title('Payload file missing')
                                 ->body('The payload path is recorded but the file is not on disk.')
                                 ->danger()
                                 ->send();
@@ -385,8 +403,10 @@ class EpcisDocumentsTable
                             ->withProperties([
                                 'filename' => EpcisDocumentXmlDownload::filename($record),
                                 'payload_path' => $record->payload_path,
+                                'schema_version' => $record->schema_version,
+                                'format' => $record->format,
                             ])
-                            ->log('Downloaded EPCIS XML');
+                            ->log('Downloaded EPCIS payload');
 
                         return EpcisDocumentXmlDownload::response($record);
                     }),

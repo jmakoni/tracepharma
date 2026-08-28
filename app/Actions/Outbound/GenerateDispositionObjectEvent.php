@@ -84,6 +84,14 @@ XML;
     }
 
     /**
+     * @param  array{sgln_urn?: string}|null  $settings
+     */
+    public function resolveLocationUrn(?array $settings, ?int $siteId): string
+    {
+        return $this->resolveSglnUrn($settings ?? [], $siteId);
+    }
+
+    /**
      * @param  array{sgln_urn?: string}  $settings
      */
     private function resolveSglnUrn(array $settings, ?int $siteId): string

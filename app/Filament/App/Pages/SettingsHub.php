@@ -236,6 +236,20 @@ class SettingsHub extends Page
             $sections[] = ['title' => 'Partners', 'cards' => $partnerCards];
         }
 
+        $complianceCards = [];
+        if ($features->supportsComplianceReports()) {
+            $this->pushCard($complianceCards, [
+                'label' => 'Inspection day',
+                'description' => 'FDA walk-in checklist: ZIP pack, ATP, exceptions, SOPs, Alert Center.',
+                'url' => $this->pageUrl(InspectionDayReadinessPage::class),
+                'icon' => 'heroicon-o-clipboard-document-check',
+            ]);
+        }
+
+        if ($complianceCards !== []) {
+            $sections[] = ['title' => 'Compliance', 'cards' => $complianceCards];
+        }
+
         $integrationCards = [];
         $this->pushCard($integrationCards, [
             'label' => 'Integration health',
@@ -245,6 +259,12 @@ class SettingsHub extends Page
         ]);
 
         if ($features->supportsInboundIntegrations()) {
+            $this->pushCard($integrationCards, [
+                'label' => 'Partner onboarding kit',
+                'description' => 'Connect a supplier, validate inbound EPCIS, and complete first receive.',
+                'url' => $this->pageUrl(PartnerOnboardingKitPage::class),
+                'icon' => 'heroicon-o-user-group',
+            ]);
             $this->pushCard($integrationCards, [
                 'label' => 'Inbound connections',
                 'description' => 'HTTPS webhooks and SFTP for partner EPCIS.',
@@ -256,6 +276,24 @@ class SettingsHub extends Page
                 'description' => 'Programmatic access for inbound integrations.',
                 'url' => $this->pageUrl(ApiTokens::class),
                 'icon' => 'heroicon-o-key',
+            ]);
+        }
+
+        if ($features->supportsVrs()) {
+            $this->pushCard($integrationCards, [
+                'label' => 'PMS integration',
+                'description' => 'Dispense-check certification checklist for pharmacy PMS pilots.',
+                'url' => $this->pageUrl(PmsIntegrationChecklistPage::class),
+                'icon' => 'heroicon-o-puzzle-piece',
+            ]);
+        }
+
+        if ($features->supportsOutboundIntegrations()) {
+            $this->pushCard($integrationCards, [
+                'label' => 'Wholesaler / WMS pack',
+                'description' => 'Ship-confirm webhook + Sanctum outbound kit for WMS partners.',
+                'url' => $this->pageUrl(WholesalerIntegrationPackPage::class),
+                'icon' => 'heroicon-o-truck',
             ]);
         }
 

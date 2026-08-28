@@ -52,7 +52,7 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <x-marketing.compliance-pillars
             :pillars="[
-                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 and 2.0 repository', 'Transaction search at scale', 'Tracing request SLA tracking']],
+                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 GA + 2.0 capture/query/subscriptions', 'Transaction search at scale', 'Tracing request SLA tracking']],
                 ['title' => 'Partner connectivity', 'description' => 'Connect directly to manufacturers and pharmacies — presets for major serialization platforms.', 'items' => ['TraceLink, UniTrace, LSPedia presets', 'Gateway Checker and regional SFTP', 'No mandatory network enrollment fees']],
                 ['title' => 'Operator-first UX', 'description' => 'Built for receiving clerks and compliance officers — not consultant-only configuration.', 'items' => ['Persona-based navigation', 'Scan-to-ship on outbound pages', 'Integration health with connection test actions']],
             ]"

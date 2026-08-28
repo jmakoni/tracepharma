@@ -98,10 +98,20 @@ Schedule::command('compliance:alert-license-expiry')
     ->withoutOverlapping()
     ->name('atp-license-expiry-alert');
 
+Schedule::command('compliance:alert-center-digest')
+    ->dailyAt('07:30')
+    ->withoutOverlapping()
+    ->name('compliance-alert-center-digest');
+
 Schedule::command('tracepharma:exception-digest')
     ->dailyAt('08:00')
     ->withoutOverlapping()
     ->name('epcis-validation-digest');
+
+Schedule::command('exceptions:notify-aging-suppliers')
+    ->dailyAt('08:30')
+    ->withoutOverlapping()
+    ->name('aging-supplier-exception-notify');
 
 Schedule::command('tracepharma:tenant-health-alert')
     ->hourly()

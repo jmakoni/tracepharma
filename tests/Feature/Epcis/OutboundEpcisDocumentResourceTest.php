@@ -198,7 +198,7 @@ class OutboundEpcisDocumentResourceTest extends TestCase
             {
                 public int $calls = 0;
 
-                public function transmit(EpcisDocument $document): void
+                public function transmit(EpcisDocument $document, bool $forceRetransmit = false): void
                 {
                     $this->calls++;
                     $document->forceFill([

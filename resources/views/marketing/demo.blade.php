@@ -170,7 +170,7 @@
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-tp-teal-400">What to expect</h2>
                     <ul class="mt-4 space-y-4 text-sm leading-relaxed text-tp-muted">
                         <li>30–45 minute product walkthrough on a profile-tuned tenant workspace</li>
-                        <li>Manufacturers: L3 serial allocation, outbound EPCIS, ACK monitoring</li>
+                        <li>Manufacturers: L3 commissioning forward, outbound EPCIS, ACK monitoring</li>
                         <li>Wholesalers &amp; 3PL: receive-to-ship, principals, cross-dock</li>
                         <li>Dispensers: receiving, VRS verification, exceptions, FDA 3911</li>
                         <li>Pricing conversation after we understand your volume and integrations</li>

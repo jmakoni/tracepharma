@@ -37,6 +37,8 @@ final class TenantRoleSeeder
         return match ($role) {
             TenantRole::Owner => Permissions::tenantAppPermissions(),
 
+            TenantRole::SupportEngineer => Permissions::tenantAppPermissions(),
+
             TenantRole::ReceivingTechnician => [
                 Permissions::NavReceive,
             ],

@@ -15,9 +15,9 @@ use App\Rules\RejectTenantGln;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\FdaTenantLink;
 use App\Support\Gs1\GlnRules;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\PartnerSiteCreate;
 use App\Support\MasterData\SiteAtpReadiness;
-use App\Support\MasterData\TenantReceivingState;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Radio;
@@ -99,7 +99,7 @@ class SitesRelationManager extends RelationManager
                     ->options(function (): array {
                         return collect(SiteAtpReadinessStatus::cases())
                             ->reject(fn (SiteAtpReadinessStatus $status): bool => $status === SiteAtpReadinessStatus::NeedsReceivingState
-                                && TenantReceivingState::resolve() !== null)
+                                && AtpLicenseRelevance::evaluationJurisdictionKeys() !== [])
                             ->mapWithKeys(fn (SiteAtpReadinessStatus $status): array => [
                                 $status->value => $status->label(),
                             ])

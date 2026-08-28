@@ -18,6 +18,7 @@ use Filament\Schemas\Components\Utilities\Get as SchemaGet;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
 class UserForm
@@ -67,7 +68,7 @@ class UserForm
                                     ->orderBy('name');
 
                                 if (! JobRoleAccess::isOwner()) {
-                                    $livewire = \Livewire\Livewire::current();
+                                    $livewire = Livewire::current();
                                     $record = is_object($livewire) && method_exists($livewire, 'getRecord')
                                         ? $livewire->getRecord()
                                         : null;
@@ -122,7 +123,7 @@ class UserForm
             Section::make('Site access')
                 ->compact()
                 ->description('Organization facility sites this user can access.')
-                ->visible(fn (SchemaGet $get): bool => ! self::formHasOwnerRole($get('roles')))
+                ->visible(fn (SchemaGet $get): bool => ! self::formHasUnrestrictedSiteAccess($get('roles')))
                 ->schema([
                     CheckboxList::make('site_ids')
                         ->label('Sites')
@@ -132,7 +133,7 @@ class UserForm
                         ->columns(2)
                         ->bulkToggleable()
                         ->live()
-                        ->required(fn (SchemaGet $get): bool => ! self::formHasOwnerRole($get('roles'))),
+                        ->required(fn (SchemaGet $get): bool => ! self::formHasUnrestrictedSiteAccess($get('roles'))),
                     Select::make('default_site_id')
                         ->label('Default site')
                         ->options(fn (SchemaGet $get): array => EligibleReceiveSites::forOrganization()
@@ -146,18 +147,31 @@ class UserForm
                 ]),
             Section::make('Site access')
                 ->compact()
-                ->visible(fn (SchemaGet $get): bool => self::formHasOwnerRole($get('roles')))
+                ->visible(fn (SchemaGet $get): bool => self::formHasUnrestrictedSiteAccess($get('roles')))
                 ->schema([
                     Placeholder::make('owner_site_access')
                         ->hiddenLabel()
-                        ->content('Owners have access to all organization facility sites.'),
+                        ->content(fn (SchemaGet $get): string => self::formHasSupportEngineerRole($get('roles'))
+                            && ! self::formHasOwnerRole($get('roles'))
+                            ? 'Support Engineers have access to all organization facility sites.'
+                            : 'Owners have access to all organization facility sites.'),
                 ]),
         ]);
+    }
+
+    private static function formHasUnrestrictedSiteAccess(mixed $roles): bool
+    {
+        return self::formHasOwnerRole($roles) || self::formHasSupportEngineerRole($roles);
     }
 
     private static function formHasOwnerRole(mixed $roles): bool
     {
         return in_array(TenantRole::Owner, self::selectedTenantRoles($roles), true);
+    }
+
+    private static function formHasSupportEngineerRole(mixed $roles): bool
+    {
+        return in_array(TenantRole::SupportEngineer, self::selectedTenantRoles($roles), true);
     }
 
     /**

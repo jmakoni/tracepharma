@@ -23,10 +23,10 @@ class DscsaProviderChecklist
                 'Are SSCC labels generated with pool low-water alerts before serial exhaustion?',
             ],
             'L3 ↔ L4 serialization' => [
-                'Can you allocate SGTIN serial ranges to plant-floor line systems without replacing L3 software?',
-                'How are commissioning events reconciled against allocated ranges?',
-                'Is gap detection visible on an operations scorecard before auditors ask?',
-                'Which handoff methods are supported: file export, REST API, or both?',
+                'Can you forward authored commissioning EPCIS to a plant-floor L3 HTTPS endpoint without replacing L3 software?',
+                'Is the L3 handoff configured in Organization settings (URL + credentials) rather than a public allocation CRUD API?',
+                'Are commissioning forwards idempotent so retries do not duplicate plant intake?',
+                'Which handoff methods are shipped today: commissioning forward, custom cutover, or both?',
             ],
             '3PL & principal operations' => [
                 'Can inventory and outbound be scoped per principal brand owner?',
@@ -36,9 +36,9 @@ class DscsaProviderChecklist
             ],
             'Verification & dispensing' => [
                 'Do you log every VRS request with GTIN, serial, lot, expiry, outcome, and timestamp?',
-                'Can operators verify at a workstation and via API for automation?',
+                'Can operators verify at a workstation and via POST /api/v1/dispense-check for automation?',
                 'Is dispense blocked or flagged when verification fails or product is quarantined?',
-                'Can you notify manufacturers on verification failure without a separate ticket?',
+                'Are named per-vendor PMS adapter routes GA, or is dispense-check a single Sanctum endpoint?',
             ],
             'Exceptions & accountability' => [
                 'Are exceptions assigned, resolved, and retained with reason codes?',

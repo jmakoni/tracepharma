@@ -1,7 +1,7 @@
 @extends('marketing.layout')
 
 @section('title', 'Prepackagers & repackagers — TracePharma')
-@section('meta_description', 'Level 4 DSCSA for contract packagers and repackagers: bulk receive, repack lineage, outbound EPCIS with new serials, decommission, and plant floor telemetry.')
+@section('meta_description', 'Level 4 DSCSA for contract packagers and repackagers: bulk receive, repack lineage, outbound EPCIS with new serials, decommission, and L3 commissioning forward.')
 
 @section('content')
     <x-marketing.page-hero
@@ -14,7 +14,7 @@
         </x-slot:breadcrumb>
         <x-slot:actions>
             <a href="{{ route('marketing.demo') }}">Request a prepack demo →</a>
-            <a href="{{ route('marketing.features.show', 'serialization') }}">L3 ↔ L4 provisioning →</a>
+            <a href="{{ route('marketing.features.show', 'serialization') }}">L3 ↔ L4 handoff →</a>
         </x-slot:actions>
     </x-marketing.page-hero>
 
@@ -36,9 +36,9 @@
                 :modules="[
                     ['title' => 'Prepack / repack workflow', 'description' => 'Assign new serials from bulk parent inventory with validation before outbound ship—so repack runs cannot ship without lineage recorded.'],
                     ['title' => 'Multi-hop lineage', 'description' => 'Product trace surfaces repack chains—not just single-hop parent/child—so QA answers multi-step lineage without spreadsheet reconstruction.', 'href' => route('marketing.features.show', 'compliance')],
-                    ['title' => 'L3 serial provisioning', 'description' => 'Allocate SGTIN ranges to line systems and reconcile commissioning inbound—so plant-floor output stays tied to L4 serial authority.', 'href' => route('marketing.features.show', 'serialization')],
+                    ['title' => 'L3 commissioning forward', 'description' => 'Configure an L3 forward URL in Organization settings; authored commissioning EPCIS POSTs to your plant endpoint (idempotent)—no allocation export API.', 'href' => route('marketing.features.show', 'serialization')],
                     ['title' => 'Decommission & scrap', 'description' => 'Destroy and sample workflows with EPCIS events—so scrap and sample pulls stay in the compliance package auditors expect.'],
-                    ['title' => 'Plant floor metrics', 'description' => 'Packaging line telemetry heartbeat tied to operations scorecard—so throughput issues surface before repack backlogs delay ship.'],
+                    ['title' => 'Operations scorecards', 'description' => 'Outbound volume, ACK health, and commissioning forward status—so throughput and partner issues surface before repack backlogs delay ship.'],
                     ['title' => 'Outbound ACK monitoring', 'description' => 'Track wholesaler customer acknowledgments on repack shipments—so stale ACKs are visible before customers call about missing serials.'],
                 ]"
             />
@@ -49,8 +49,8 @@
         <x-marketing.compliance-pillars
             :pillars="[
                 ['title' => 'Repackager profile', 'description' => 'Navigation tuned for contract packaging — bulk receive, repack, ship, and trace without dispenser workflows.', 'items' => ['Prepack/repack page', 'Lineage in product trace', 'Manufacturer supplier scorecard']],
-                ['title' => 'DSCSA repack obligations', 'description' => 'Generate compliant outbound serialization and maintain serial-level audit trail across repack events.', 'items' => ['New serial on repack', 'Parent serial linkage', 'EPCIS 1.2 and 2.0 repository']],
-                ['title' => 'Plant-floor handoff', 'description' => 'Works with standard line serialization platforms — L4 allocates ranges and reconciles commissioning.', 'items' => ['L3 allocation export', 'Commissioning inbound', 'Telemetry API for lines']],
+                ['title' => 'DSCSA repack obligations', 'description' => 'Generate compliant outbound serialization and maintain serial-level audit trail across repack events.', 'items' => ['New serial on repack', 'Parent serial linkage', 'EPCIS 1.2 GA + 2.0 capture/query/subscriptions']],
+                ['title' => 'Plant-floor handoff', 'description' => 'Works with standard line serialization platforms — keep your L3; TracePharma forwards commissioning EPCIS from Organization settings.', 'items' => ['L3 forward URL in settings', 'Idempotent commissioning POST', 'Operations scorecard visibility']],
             ]"
         />
     </section>

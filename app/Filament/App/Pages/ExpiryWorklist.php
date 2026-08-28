@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Models\Epcis\Epc;
 use App\Models\User;
+use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -12,6 +13,8 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -61,7 +64,44 @@ class ExpiryWorklist extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'On-hand serials with ILMD expiry in the next 30/60/90 days. Asset Tracking is unchanged.';
+        return 'On-hand serials with ILMD expiry in the next 30/60/90 days. Quarantine uses the same path as Site recall.';
+    }
+
+    public function canQuarantine(): bool
+    {
+        return JobRoleAccess::allows(Permissions::NavExceptions);
+    }
+
+    public function quarantineHitAction(): Action
+    {
+        return Action::make('quarantineHit')
+            ->label('Quarantine')
+            ->color('danger')
+            ->visible(fn (): bool => $this->canQuarantine())
+            ->action(function (array $arguments): void {
+                $epcId = (int) ($arguments['epc'] ?? 0);
+                $siteId = $this->resolvedSiteId();
+                if ($epcId < 1 || $siteId === null || ! $this->canQuarantine()) {
+                    return;
+                }
+
+                $epc = Epc::query()->with('ilmd')->find($epcId);
+                if (! $epc instanceof Epc || ! $this->rows()->contains(fn (Epc $row): bool => (int) $row->getKey() === $epcId)) {
+                    Notification::make()->title('Not on this expiry worklist')->danger()->send();
+
+                    return;
+                }
+
+                $expiry = $epc->ilmd?->expiry_date?->toDateString() ?? 'unknown';
+                $case = app(QuarantineService::class)->quarantineFromFindRecall(
+                    [$epcId],
+                    'Expiry worklist · expires '.$expiry,
+                    $this->authUser(),
+                );
+                $case->forceFill(['site_id' => $siteId])->save();
+
+                Notification::make()->title('Quarantined')->success()->send();
+            });
     }
 
     /**

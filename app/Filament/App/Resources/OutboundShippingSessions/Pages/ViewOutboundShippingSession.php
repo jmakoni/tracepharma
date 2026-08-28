@@ -24,6 +24,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\OutboundPortalPickupNotice;
+use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\Shipping\SearchShipToCustomers;
 use DomainException;
@@ -103,6 +104,21 @@ class ViewOutboundShippingSession extends ViewRecord
         }
 
         return 'Ship order #'.$record->getKey();
+    }
+
+    /**
+     * @return list<array{key: string, label: string, status: string, detail: string}>
+     */
+    public function readinessBadges(): array
+    {
+        /** @var OutboundShippingSession $record */
+        $record = $this->getRecord();
+
+        if (! in_array($record->status, ['open', 'in_progress'], true)) {
+            return [];
+        }
+
+        return app(OutboundShipReadiness::class)->badges($record);
     }
 
     public function statusLabel(): string

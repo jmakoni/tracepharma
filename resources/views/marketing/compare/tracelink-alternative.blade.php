@@ -32,7 +32,7 @@
                 Buyers often assume TraceLink is mandatory because a wholesaler or manufacturer mentioned Opus. That fits enterprises onboarding thousands of partners across global markets. Teams evaluate TracePharma when they have a <strong class="text-tp-ink">known partner list</strong>, US DSCSA is the primary frame, and floor operators—not consultants—run receiving and ship daily.
             </p>
             <p>
-                This page is intentionally honest. TraceLink wins on network scale and global regulation breadth. TracePharma wins on operator UX, EPCIS 2.0 depth, mid-market TCO, and direct partner control without per-transaction network economics.
+                This page is intentionally honest. TraceLink wins on network scale and global regulation breadth. TracePharma wins on operator UX, EPCIS 1.2 GA with 2.0 capture + query-as-2.0 + HTTPS subscriptions, mid-market TCO, and direct partner control without per-transaction network economics.
             </p>
         </div>
     </section>
@@ -47,7 +47,7 @@
                 competitor-label="TraceLink Opus"
                 :rows="[
                     ['capability' => 'Partner network', 'them' => 'Large published network footprint — automated onboarding at scale', 'us' => 'Direct AS2, SFTP, HTTPS per tenant — no mandatory exchange'],
-                    ['capability' => 'EPCIS ingest & outbound', 'them' => 'Strong — network-native messaging', 'us' => 'Strong — unified L4 workspace + EPCIS 2.0 repository'],
+                    ['capability' => 'EPCIS ingest & outbound', 'them' => 'Strong — network-native messaging', 'us' => 'Strong — unified L4 workspace; 1.2 GA + 2.0 capture + query-as-2.0 + HTTPS subscriptions'],
                     ['capability' => 'Global regulation', 'them' => 'Multi-country programs — core strength', 'us' => 'US DSCSA only — deliberate scope'],
                     ['capability' => 'VRS verification', 'them' => 'Yes', 'us' => 'Yes — profile-gated dispenser/distributor'],
                     ['capability' => 'Exception investigation', 'them' => 'Enterprise workflows', 'us' => 'Structured exceptions + supplier correction loop'],

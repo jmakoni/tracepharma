@@ -105,6 +105,7 @@ class IntegrationHealthMetrics
                 'last_sent_at',
                 'last_error',
                 'trading_partner_id',
+                'settings',
             ])
             ->orderBy('name')
             ->get();

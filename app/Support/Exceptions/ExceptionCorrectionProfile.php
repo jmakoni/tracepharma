@@ -21,14 +21,17 @@ use Database\Seeders\ExceptionTypeSeeder;
  * actually emitted by {@see EpcisCatalogBusinessRules},
  * {@see ValidateEpcis12Document} and {@see ProcessEpcisDocument}.
  *
- * Codes that exist in the catalog only as unwired stubs — the partner/MDN/VRS/L2-L3 hooks in
+ * Codes that exist in the catalog only as unwired stubs — the partner/MDN/L2-L3 hooks in
  * {@see RecordOperationalEpcisCatalogSignal} that no job/controller calls yet
  * (PARTNER_REJECTED_FILE, MISSING_MDN, LATE_MDN, L2_L3_RECONCILIATION_FAILURE,
- * L3_TRANSMISSION_FAILURE, AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
+ * AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
  * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator;
  * superseded for live detection by {@see EpcisCatalogBusinessRules} emitting
  * SERIAL_SHIPPED_NOT_COMMISSIONED and MISSING_COMMISSIONING instead — keep stub-hidden, no new emitter)
  * intentionally fall through to the generic {@see self::FAMILY_FALLBACK} profile.
+ *
+ * L3_TRANSMISSION_FAILURE is live (ForwardCommissioningToL3 → RecordOperationalEpcisCatalogSignal)
+ * and is operator-visible. MDN / partner-reject stubs stay operator-hidden until timeout emitters exist.
  */
 final class ExceptionCorrectionProfile
 {
@@ -254,7 +257,6 @@ final class ExceptionCorrectionProfile
             'MISSING_MDN',
             'LATE_MDN',
             'L2_L3_RECONCILIATION_FAILURE',
-            'L3_TRANSMISSION_FAILURE',
             'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
             'SHIP_BEFORE_COMMISSION',
@@ -514,7 +516,7 @@ final class ExceptionCorrectionProfile
 
         // System / Operational
         'L2_L3_RECONCILIATION_FAILURE' => self::FAMILY_FALLBACK, // stub: L2/L3 hook, no caller yet
-        'L3_TRANSMISSION_FAILURE' => self::FAMILY_FALLBACK, // stub: L2/L3 hook, no caller yet
+        'L3_TRANSMISSION_FAILURE' => self::FAMILY_FALLBACK, // live: ForwardCommissioningToL3
         'AUTO_DECOMMISSION_FAILED' => self::FAMILY_FALLBACK, // stub: hook, no caller yet
         'MASTER_DATA_SYNC_LAG' => self::FAMILY_MASTER_DATA_PRODUCT,
         'INGESTION_PARSE_ERROR' => self::FAMILY_DOCUMENT,

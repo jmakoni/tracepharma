@@ -248,17 +248,14 @@ class SupplierQuarantineController extends Controller
 
     private function assertEpcis12Schema(string $absolutePath): void
     {
-        $handle = fopen($absolutePath, 'rb');
-        $head = $handle === false ? '' : (string) fread($handle, 8192);
-        if (is_resource($handle)) {
-            fclose($handle);
+        try {
+            EpcisSchemaVersion::assertAccepted(
+                EpcisSchemaVersion::peekFile($absolutePath),
+                EpcisSchemaVersion::detectFormat($absolutePath),
+            );
+        } catch (\InvalidArgumentException $e) {
+            abort(422, $e->getMessage());
         }
-
-        if (EpcisSchemaVersion::isAccepted(EpcisSchemaVersion::peek($head))) {
-            return;
-        }
-
-        abort(422, 'EPCIS 1.2 or 1.3 is required. EPCIS 1.0 (or a file missing schemaVersion 1.2/1.3) is not accepted.');
     }
 
     private function assertSupplierCollaborationAccess(ExceptionCase $case): void

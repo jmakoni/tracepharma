@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\User;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Dashboard\HqRollupMetrics;
@@ -45,7 +46,8 @@ class HqRollup extends Page
 
     public static function shouldRegisterNavigation(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav()
+            && static::canAccess();
     }
 
     public function getSubheading(): string|Htmlable|null

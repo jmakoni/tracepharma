@@ -14,7 +14,7 @@ Living gap summary vs the greenfield build plan and the selective port from the 
 |-------|--------|
 | 0–1 | Scaffold, tenancy, Admin/App panels, `TenantFeatures`, demo2 |
 | 2 | Master data + catalog / ATP / FDA |
-| 3 | EPCIS 1.2 ingest + App UI + Horizon jobs |
+| 3 | EPCIS 1.2 + 2.0 dual-stack: JSON-LD & XML 2.0 capture; query-as-2.0; GS1-shaped Capture/SimpleEventQuery REST; **default outbound 1.2 XML**; **Ship Orders always author 1.2** (connection 2.0 JSON-LD for disposition/resolver paths only; XML 2.0 writer not selectable); GS1 subscribe/unsubscribe REST + HMAC delivery |
 | 4 (slice) | Receiving end-to-end (open/confirm/complete, authored receiving events, last-seen) |
 | 4 (slice) | Scan-first receive (ASN-free / transfer_receive kinds, Receive UI, Ops Hub routing) |
 | 4 (slice) | Scan-in → ASN reconcile (confirm/backfill expected ASN lines from scan-first; null-site + completed session handling) |
@@ -80,22 +80,39 @@ Living gap summary vs the greenfield build plan and the selective port from the 
 | — | Site-scoped authorization (`site_user`, `sites.access_all`, pickers/lists/actions, current-site switcher) |
 | — | Dashboard lean widgets + Analytics page + My dashboard prefs; home bundle renders opted-in analytics keys |
 | — | Admin platform dashboard: Platform Analytics, home analytics bundle, My dashboard prefs, platform widget defaults |
+| GTM (Feature Gap v1) | Partner onboarding kit (+ PDF/mailto); pharmacy simplified nav; customer portal v2 (filters/retention); Compliance Alert Center; ATP partner readiness; Scout global search; PMS docs/Postman/sample adapter; outbound-transports.md |
+| GTM (Feature Gap v2) | Alert Center email digests (`compliance:alert-center-digest`); portal email-on-ship; ship TI/TS readiness badges; PMS integration checklist page; one-click dispense-check token; conditional outbound SFTP + partner-exception docs |
+| GTM (Feature Gap v3) | Supplier exception collab MVP (email + aging notify + portal status; no reply parser); expiry signals in Alert Center/digest; wholesaler WMS integration pack; SOP starter pack PDF; roadmap/sales talk sync; drop-ship T2 + full email-to-ticket remain pilot-gated |
+| GTM (Feature Gap v4) | PDG/HDA-aligned exception notify (structured email + JSON attach); Inspection day readiness checklist; saleable returns scorecard; recall closure dashboard (ack % / unreconciled); expiry worklist quarantine shortcuts; pilot gates + talk-track sync |
 
 Wholesaler inbound critical path is live: master data → EPCIS → receive → last-seen → SSCC labels → exceptions. Inter-site transfer and scan-in/ASN reconciliation are live.
+
+### What we are NOT missing (sales talk track)
+
+- Core DSCSA spine: receive, ship, transfer, VRS, quarantine, tracing, 3911, compliance ZIP.
+- Floor mobile UX and exception depth vs dispenser-lite tools.
+- Multi-site, kill switches, audit trail, tenant isolation.
+- GTM packaging already shipped (v1–v4): onboarding kit/PDF, pharmacy simplified nav, portal v2 + email-on-ship, alert center + digests + expiry signals, ATP readiness, global search, ship TI/TS badges, PMS/WMS packs, SOP starter PDF, supplier exception email + aging notify + PDG-structured notify + portal status, inspection day checklist, saleable returns scorecard, recall closure packaging, expiry quarantine actions.
+- **Pilot-only (do not oversell):** outbound SFTP transmit, drop-ship/T2 network path, full email-reply ticketing / partner apply-fix / POET-style workspace, 30+ native PMS adapters.
+- Runtime EPCIS: **1.2 is the default outbound** (XML). **Ship Orders always author 1.2 XML** today — outbound connection version does not change ship payloads until dual-stack ship authoring ships. **JSON-LD 2.0** is opt-in per connection for resolver-backed documents (e.g. disposition) when `TRACEPHARMA_EPCIS_ACCEPT_20` is on (XML 2.0 outbound writer is not selectable). **2.0 JSON-LD and XML capture** when accept_20 is on. **Query-as-2.0**, **GS1-shaped Capture + SimpleEventQuery REST**, and **GS1 subscribe/unsubscribe REST** plus HMAC callback delivery—honest subset, not a certified GS1 Exchange / full Query Control Interface.
+
+**Regulatory timing:** Small-dispenser enhanced electronic package-level exemption through **Nov 27, 2027** does not pause ATP, retention, suspect product, 3911, or 48-hour tracing. TracePharma covers those now; electronic receive/verify/dispense-check stays ready before the cliff.
 
 ## Partial
 
 | Item | There | Missing |
 |------|--------|---------|
 | VRS | Verify + clients; history; dispense-check (**`vrs:dispense-check`** + `tracepharma:grant-dispense-check-ability`); responder (**per-tenant key**); async verify; manufacturer notify (FDA-first) | — |
-| WMS | Ship-confirm; `complete:false`; per-tenant key; unique idempotency; **prod requires Idempotency-Key**; ASN/PO/invoice match | Full WMS bidirectional sync |
+| WMS | Ship-confirm; `complete:false`; per-tenant key; unique idempotency; **prod requires Idempotency-Key**; ASN/PO/invoice match; **WMS integration pack + Settings hub** | Full WMS bidirectional sync |
 | PMS | Dispense scorecard; Verify Product history link; dispense-check API | PMS-specific adapters beyond Sanctum API |
 | L3 | Organization L3 (masked API key UI); ForwardCommissioningToL3 | Full L3 UI / reconciliation workflows |
-| Recall / tracing | Tracing + SLA (**first-response clock preserved**); complete requires response; recall broadcast; ack portal | — |
-| Outbound EPCIS | Connections + LabelPrinters (**mutation policies**); transmitter fail-closed; Ship Order (**ATP zero-site block**); jobs (**force-fail sticks**, overlap lock release, parsing→error); AS2 S/MIME + MDN; pack/unpack/break (**site on-hand**, aggregation hard-fail, **child+parent locks**); SSCC SiteAccess + ship_from_site_id; **completed-pending-generate exclusivity**; **enqueue TOCTOU + transmit fail-closed**; **L3 forwarded idempotency** | Partner AS2 MIME quirks; AS2 inbound |
-| Quarantine / compliance UI | Workstation + SiteAccess; **exception changeStatus cannot fake resolve/close**; **manual exceptions site_id scoped**; **3911/Find-Recall/Verification/Unpacked/AssetTrace aligned**; reports hub | — |
+| Recall / tracing | Tracing + SLA (**first-response clock preserved**); complete requires response; recall broadcast; ack portal; **Recall closure dashboard (ack % / unreconciled)** | — |
+| Outbound EPCIS | Connections + LabelPrinters (**mutation policies**); transmitter fail-closed; Ship Order (**ATP zero-site block**); jobs (**force-fail sticks**, overlap lock release, parsing→error); AS2 S/MIME + MDN; pack/unpack/break (**site on-hand**, aggregation hard-fail, **child+parent locks**); SSCC SiteAccess + ship_from_site_id; **completed-pending-generate exclusivity**; **enqueue TOCTOU + transmit fail-closed**; **L3 forwarded idempotency**; **AS2 inbound webhook** (`As2InboundWebhookController`) | Partner AS2 MIME quirks; AS2 inbound **not operator-selectable** on Inbound Connections form (stretch UI) |
+| Quarantine / compliance UI | Workstation + SiteAccess; **exception changeStatus cannot fake resolve/close**; **manual exceptions site_id scoped**; **3911/Find-Recall/Verification/Unpacked/AssetTrace aligned**; reports hub; **supplier exception email + aging notify + PDG-structured notify + portal status**; **Inspection day checklist** | Full email-reply / POET ticketing (pilot) |
+| Expiry | Expiry worklist; **Alert Center + digest expiry signals** (expired / 30d / 90d on-hand); **quarantine shortcuts from worklist** | — |
+| Returns | Return workstation; **Saleable return scorecard (VRS + returning EPCIS)** | — |
 | Floor receive UX | Floor + camera; staged scans; scan-first custody; ASN SiteAccess; **null-auth/null-site fail-closed**; mobile **promptCopy scan helper**; return custody re-check | — |
-| Sanctum | Token mint allowlist; EPCIS APIs; dispense grant command | AS2 inbound |
+| Sanctum | Token mint allowlist; EPCIS APIs; dispense grant command | AS2 inbound form UX (webhook exists) |
 | Scout | Tenant indexes; ingest validate-before-generation / finally index; tenancy-required Scout | — |
 | Demo path | Master-data + choreography seed (`--transfer` / `--unpack` / `--pack` / `--return`) | `--receive-only` live Ship Order click |
 | Tenant management | DB-per-tenant; pair provision; suspend gate + cascade; impersonation; kill switches; compliance export ZIP | Self-service sandbox; usage quotas; custom domains/SSO; branding/Stripe out of scope |
@@ -123,7 +140,7 @@ Source of truth for scope and exit criteria: [Vatengi feature port phases](/home
 | **3** | **Floor UX parity** | Receive + Transfer + Ship floor pages shipped |
 | **4** | **Production VRS** | ICP shipped including async verify on receive confirm |
 | **5** | **Returns / pack / hierarchy** | ICP shipped (Return / Pack / Unpack / Break-pack); not a greenfield port |
-| **6** | **Integration ops** | **Shipped** — AS2 S/MIME + async MDN, multi-partner `is_default` routing, WMS `complete:false` + Idempotency-Key, PMS scorecard buckets, L3 forward job; remaining: partner MIME quirks, AS2 inbound, full WMS bidir, L3 reconcile UI |
+| **6** | **Integration ops** | **Shipped** — AS2 S/MIME + async MDN, multi-partner `is_default` routing, WMS `complete:false` + Idempotency-Key, PMS scorecard buckets, L3 forward job, AS2 inbound webhook; remaining: partner MIME quirks, AS2 inbound operator UI, full WMS bidir, L3 reconcile UI |
 
 **ICP default:** pharmacy + wholesaler inbound/outbound (demo2). Manufacturer/L3 and buying-group later.
 

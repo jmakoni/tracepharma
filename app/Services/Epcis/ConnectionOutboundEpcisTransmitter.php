@@ -2,6 +2,7 @@
 
 namespace App\Services\Epcis;
 
+use App\Actions\Epcis\DispatchEpcisSubscriptions;
 use App\Enums\OutboundTransport;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\TransmissionMdn;
@@ -175,6 +176,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 'last_sent_at' => $now,
                 'last_error' => null,
             ])->save();
+
+            app(DispatchEpcisSubscriptions::class)->handle($document, 'sent');
         } catch (Throwable $e) {
             $message = $e->getMessage();
 

@@ -9,9 +9,9 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Support\Gs1\Sgln;
 use App\Support\MasterData\AtpDisclosure;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\AtpReadinessGate;
 use App\Support\MasterData\SiteAtpReadiness;
-use App\Support\MasterData\TenantReceivingState;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
@@ -162,9 +162,9 @@ final class ValidateOutboundShippingSend
 
     /**
      * Inbound only soft-warns on partner ATP, but a shipment we author is a transfer of
-     * ownership to that party: a license for the tenant receiving state that is expired,
-     * missing, or carries no expiration date stops the send instead of trailing it as an
-     * exception.
+     * ownership to that party: a license for the tenant evaluation jurisdictions that is
+     * expired, missing, or carries no expiration date stops the send instead of trailing
+     * it as an exception.
      *
      * Silent only when there is nothing to judge at all — no customer, and no site on
      * record for the one that is selected.
@@ -178,12 +178,13 @@ final class ValidateOutboundShippingSend
             return null;
         }
 
-        $tenantState = TenantReceivingState::resolve();
+        $evaluationKeys = AtpLicenseRelevance::evaluationJurisdictionKeys();
+        $jurisdictionLabel = AtpLicenseRelevance::evaluationJurisdictionsLabel();
 
-        // Without a receiving state every partner reads as NeedsReceivingState, which is
-        // not evidence of a license — say so rather than waving the shipment through.
-        if ($tenantState === null) {
-            return 'Set the organization receiving state in Organization settings before sending — partner ATP licenses cannot be evaluated without it.';
+        // Without org footprint or preferred receiving state, every partner reads as
+        // NeedsReceivingState — say so rather than waving the shipment through.
+        if ($evaluationKeys === []) {
+            return 'Add organization facility sites with country/state, or set a preferred receiving state in Organization settings, before sending — partner ATP licenses cannot be evaluated without jurisdictions.';
         }
 
         $destination = $this->destinationCandidates($session);
@@ -193,7 +194,7 @@ final class ValidateOutboundShippingSend
                 'Ship-to GLN %s does not match any active site on record for %s, so its ATP license for %s cannot be checked. Add the destination site before sending.',
                 $destination['unresolved_gln'],
                 $session->tradingPartner?->name ?? 'the selected customer',
-                $tenantState,
+                $jurisdictionLabel,
             );
         }
 
@@ -216,7 +217,7 @@ final class ValidateOutboundShippingSend
             $unready[] = $status;
         }
 
-        return $this->atpBlockerMessage($session, $sites, $unready, $tenantState);
+        return $this->atpBlockerMessage($session, $sites, $unready, $jurisdictionLabel);
     }
 
     /**
@@ -310,6 +311,10 @@ final class ValidateOutboundShippingSend
                 'Ship-to site "%s" has an ATP license for %s with no expiration date on file, so it cannot be shown to be in force.',
                 $site->name,
                 $tenantState,
+            ),
+            SiteAtpReadinessStatus::NeedsReceivingState => sprintf(
+                'Ship-to site "%s" cannot be ATP-evaluated — organization jurisdictions are not configured.',
+                $site->name,
             ),
             default => sprintf(
                 'Ship-to site "%s" has no ATP license for %s on record.',

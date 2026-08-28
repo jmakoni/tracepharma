@@ -11,6 +11,7 @@ use App\Filament\App\Resources\TransferringSessions\Schemas\TransferringSessionF
 use App\Filament\App\Resources\TransferringSessions\Schemas\TransferringSessionInfolist;
 use App\Filament\App\Resources\TransferringSessions\Tables\TransferringSessionsTable;
 use App\Models\Transferring\TransferringSession;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
@@ -26,6 +27,8 @@ use UnitEnum;
 
 class TransferringSessionResource extends Resource
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static ?string $model = TransferringSession::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;

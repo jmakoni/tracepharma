@@ -227,6 +227,122 @@ class TenantSettings
         return $this;
     }
 
+    /**
+     * Pharmacy tenants: hide wholesaler-heavy floor nav (transfer, pack, ship order, etc.).
+     * Default on for Pharmacy profile.
+     */
+    public function pharmacySimplifiedNavEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'access.pharmacy_simplified_nav', true);
+    }
+
+    public function setPharmacySimplifiedNavEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'access.pharmacy_simplified_nav', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Daily/weekly digest of Compliance Alert Center signals.
+     * Default on — peers market real-time alerts; in-app center alone is not enough.
+     */
+    public function alertDigestEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'notifications.alert_digest_enabled', true);
+    }
+
+    public function setAlertDigestEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('notifications.alert_digest_enabled', $enabled);
+    }
+
+    /**
+     * @return 'daily'|'weekly'
+     */
+    public function alertDigestFrequency(): string
+    {
+        $value = data_get($this->settingsBag(), 'notifications.alert_digest_frequency', 'daily');
+
+        return $value === 'weekly' ? 'weekly' : 'daily';
+    }
+
+    public function setAlertDigestFrequency(string $frequency): self
+    {
+        return $this->putNestedSetting(
+            'notifications.alert_digest_frequency',
+            $frequency === 'weekly' ? 'weekly' : 'daily',
+        );
+    }
+
+    public function alertDigestLastSentAt(): ?\Illuminate\Support\Carbon
+    {
+        $raw = data_get($this->settingsBag(), 'notifications.alert_digest_last_sent_at');
+
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function setAlertDigestLastSentAt(\Illuminate\Support\Carbon|string|null $at): self
+    {
+        $value = $at instanceof \Illuminate\Support\Carbon
+            ? $at->toIso8601String()
+            : (is_string($at) && $at !== '' ? $at : null);
+
+        return $this->putNestedSetting('notifications.alert_digest_last_sent_at', $value);
+    }
+
+    /**
+     * After outbound ship complete, email the trading partner a signed customer portal link.
+     */
+    public function emailPortalOnShipEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'outbound.email_portal_on_ship', true);
+    }
+
+    public function setEmailPortalOnShipEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('outbound.email_portal_on_ship', $enabled);
+    }
+
+    public function saveQuietly(): void
+    {
+        if ($this->tenant === null) {
+            return;
+        }
+
+        $this->tenant->saveQuietly();
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function putNestedSetting(string $path, mixed $value): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, $path, $value);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
     public function dashboardAllowUserCustomize(): bool
     {
         return (bool) data_get($this->settingsBag(), 'dashboard.allow_user_customize', true);
@@ -689,6 +805,30 @@ class TenantSettings
         return $this->killSwitch(TenantKillSwitches::INBOUND_EPCIS);
     }
 
+    /**
+     * Tenant override for EPCIS 2.0 JSON-LD capture. Defaults true when the
+     * platform flag TRACEPHARMA_EPCIS_ACCEPT_20 is on; set false to opt out.
+     */
+    public function epcisAccept20(): bool
+    {
+        $value = $this->setting('epcis.accept_20');
+
+        if ($value === false || $value === 0 || $value === '0' || $value === 'false') {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function setEpcisAccept20(?bool $enabled): self
+    {
+        if ($enabled === null) {
+            return $this->putSetting('epcis.accept_20', null);
+        }
+
+        return $this->putSetting('epcis.accept_20', $enabled);
+    }
+
     public function sanctumApiKilled(): bool
     {
         return $this->killSwitch(TenantKillSwitches::SANCTUM_API);
@@ -1137,6 +1277,10 @@ class TenantSettings
             'dashboard_allow_user_customize',
             'dashboard_defaults',
             'dashboard_allowed',
+            'pharmacy_simplified_nav',
+            'alert_digest_enabled',
+            'alert_digest_frequency',
+            'email_portal_on_ship',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -1214,6 +1358,12 @@ class TenantSettings
                 'dashboard_allowed' => $this->setDashboardAllowed(
                     is_array($data[$key]) ? $data[$key] : [],
                 ),
+                'pharmacy_simplified_nav' => $this->setPharmacySimplifiedNavEnabled((bool) $data[$key]),
+                'alert_digest_enabled' => $this->setAlertDigestEnabled((bool) $data[$key]),
+                'alert_digest_frequency' => $this->setAlertDigestFrequency(
+                    is_string($data[$key]) ? $data[$key] : 'daily',
+                ),
+                'email_portal_on_ship' => $this->setEmailPortalOnShipEnabled((bool) $data[$key]),
             };
         }
 

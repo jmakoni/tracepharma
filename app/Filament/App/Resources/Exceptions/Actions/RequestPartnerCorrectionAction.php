@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\Exceptions\Actions;
 
+use App\Actions\Exceptions\SendDscsaExceptionEmail;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
@@ -11,6 +12,7 @@ use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
@@ -57,6 +59,11 @@ final class RequestPartnerCorrectionAction
                     ->rows(4)
                     ->maxLength(5000)
                     ->helperText('Visible to trading partners when partner portals are enabled.'),
+                Toggle::make('email_supplier')
+                    ->label('Also email supplier portal link')
+                    ->default(fn (): bool => filled($page->getRecord()->tradingPartner?->email))
+                    ->visible(fn (): bool => filled($page->getRecord()->tradingPartner?->email))
+                    ->helperText('Sends the DSCSA exception notice with a link to the supplier exception portal.'),
             ])
             ->action(function (array $data) use ($page): void {
                 /** @var User $actor */
@@ -83,11 +90,19 @@ final class RequestPartnerCorrectionAction
 
                 self::moveTowardWaitingPartner($record->fresh() ?? $record, $actor);
 
+                $emailBody = null;
+                if (($data['email_supplier'] ?? false) === true) {
+                    $result = app(SendDscsaExceptionEmail::class)->execute($record->fresh() ?? $record, $actor);
+                    $emailBody = ($result['sent'] ?? false)
+                        ? 'Supplier portal email sent.'
+                        : ('Partner note saved; email not sent: '.($result['error'] ?? 'unable to send.'));
+                }
+
                 $page->refreshRecord();
 
                 Notification::make()
                     ->title('Partner correction requested')
-                    ->body('Partner-visible note added.')
+                    ->body($emailBody ?? 'Partner-visible note added.')
                     ->success()
                     ->send();
             });

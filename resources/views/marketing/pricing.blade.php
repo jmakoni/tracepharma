@@ -1,7 +1,7 @@
 @php
     $pricingFaqs = [
         ['question' => 'Does TracePharma publish list prices?', 'answer' => 'No. TracePharma quotes after a demo and scoping call. Packaging depends on your operating profile, facility count, partner connections, and optional modules—not a generic per-seat tier table.'],
-        ['question' => 'What is included in a typical subscription?', 'answer' => 'Core L4 DSCSA workflows for your profile: EPCIS ingest and outbound, 3T matching, exceptions, compliance reporting, and tenant-scoped partner connectivity. VRS, PMS APIs, and L3 provisioning are quoted when your profile needs them.'],
+        ['question' => 'What is included in a typical subscription?', 'answer' => 'Core L4 DSCSA workflows for your profile: EPCIS ingest and outbound, 3T matching, exceptions, compliance reporting, and tenant-scoped partner connectivity. VRS, dispense-check API, and L3 commissioning forward are quoted when your profile needs them.'],
         ['question' => 'Do you offer annual and monthly billing?', 'answer' => 'Yes. Most customers choose annual packaging for predictable compliance budgeting. Monthly options are available for qualified deployments after scoping.'],
         ['question' => 'How long does implementation take?', 'answer' => 'Mid-market cutovers often run four to twelve weeks depending on partner count and transport channels. Self-serve onboarding in the app covers GLN setup, first partner, and test receiving after your tenant is provisioned.'],
     ];
@@ -50,7 +50,7 @@
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Optional modules</p>
-                <p class="mt-3 text-sm leading-relaxed text-tp-muted">VRS verification, PMS dispense-check APIs, L3 serial provisioning, compliance export API, and multi-principal 3PL reporting.</p>
+                <p class="mt-3 text-sm leading-relaxed text-tp-muted">VRS verification, POST /api/v1/dispense-check, L3 commissioning forward, compliance export API, and multi-principal 3PL reporting.</p>
             </div>
         </div>
     </section>

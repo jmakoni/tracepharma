@@ -22,6 +22,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Shipping\OutboundPortalPickupNotice;
+use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -390,6 +391,19 @@ class PharmacyOutboundDesk extends Page
                 requireReason: false,
             ),
         ];
+    }
+
+    /**
+     * @return list<array{key: string, label: string, status: string, detail: string}>
+     */
+    public function readinessBadges(): array
+    {
+        $session = $this->session();
+        if ($session === null || ! in_array($session->status, ['open', 'in_progress'], true)) {
+            return [];
+        }
+
+        return app(OutboundShipReadiness::class)->badges($session);
     }
 
     /**

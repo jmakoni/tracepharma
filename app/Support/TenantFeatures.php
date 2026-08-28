@@ -145,6 +145,18 @@ class TenantFeatures
     }
 
     /**
+     * When true (default for Pharmacy), hide wholesaler floor and ship-order nav.
+     */
+    public function showsWholesaleOperationsNav(): bool
+    {
+        if ($this->profile !== TenantProfile::Pharmacy) {
+            return true;
+        }
+
+        return ! TenantSettings::forTenant(tenant())->pharmacySimplifiedNavEnabled();
+    }
+
+    /**
      * Author ship sessions from Scan Out / Ship Order / pharmacy desk.
      * WMS ship-confirm stays on supportsOutboundIntegrations() only.
      */

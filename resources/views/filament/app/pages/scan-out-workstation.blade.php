@@ -46,6 +46,10 @@
                         <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
                     </div>
 
+                    @if ($this->readinessBadges() !== [])
+                        @include('filament.app.partials.outbound-ship-readiness', ['badges' => $this->readinessBadges()])
+                    @endif
+
                     <div class="grid gap-3 sm:grid-cols-2 text-sm">
                         <div>
                             <span class="opacity-70">ASN</span>

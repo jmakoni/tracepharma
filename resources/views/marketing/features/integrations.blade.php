@@ -53,11 +53,11 @@
                 ]"
             />
             <x-marketing.detail-section
-                title="L3 serial provisioning (manufacturers)"
+                title="L3 commissioning forward (manufacturers)"
                 :items="[
-                    'REST API to create allocations and export serial ranges to plant-floor systems.',
-                    'Inbound commissioning EPCIS reconciled against reserved allocations.',
-                    'Presets for TraceLink, UniTrace, LSPedia, and regional connectivity vendors.',
+                    'Configure an L3 HTTPS forward URL and credentials in Organization settings.',
+                    'When commissioning EPCIS is authored, ForwardCommissioningToL3 POSTs it to your endpoint (idempotent).',
+                    'No public /api/v1/l3/allocations surface or provision-l3 commands—settings plus commissioning forward drive the handoff.',
                 ]"
             />
             <x-marketing.detail-section
@@ -71,10 +71,10 @@
             <x-marketing.detail-section
                 title="Pharmacy PMS dispense check"
                 :items="[
-                    'Unified POST /api/v1/pms/{vendor}/dispense for PioneerRx, BestRx, PrimeRx, Liberty/Rx30, QS/1, EnterpriseRx, and ScriptPro.',
-                    'Optional per-vendor shared-secret headers before completing a fill.',
-                    'pms_dispense_events audit trail with Filament list/view and 30-day blocked-reason trends on the dispenser scorecard.',
-                    'GET /api/v1/compliance/dispenser-scorecard embeds pms_blocked_reason_trends; standalone GET /api/v1/compliance/pms-blocked-reason-trends for BI.',
+                    'Single Sanctum endpoint: POST /api/v1/dispense-check—PMS middleware calls TracePharma before completing a fill.',
+                    'Named per-vendor PMS adapter routes (e.g. POST /api/v1/pms/{vendor}/dispense) are not GA; use the unified dispense-check API.',
+                    'Dispense outcomes feed the dispenser scorecard and verification audit trail for inspection-ready evidence.',
+                    'GET /api/v1/compliance/dispenser-scorecard for BI and compliance reporting.',
                 ]"
             />
             <x-marketing.detail-section

@@ -80,6 +80,7 @@
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "bash scripts/ensure-filament-sticky-columns-views.sh",
             "@php artisan package:discover --ansi",
             "@php artisan filament:upgrade"
         ],

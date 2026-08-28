@@ -26,6 +26,7 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
 use App\Support\Shipping\ShippableEpcsAtSite;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
@@ -42,6 +43,8 @@ use UnitEnum;
 
 class OperationsHub extends Page
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-home';
 
     protected static ?string $navigationLabel = 'Operations Hub';
@@ -49,8 +52,6 @@ class OperationsHub extends Page
     protected static ?string $title = 'Operations Hub';
 
     protected static ?int $navigationSort = 1;
-
-    protected static bool $shouldRegisterNavigation = true;
 
     protected static string|UnitEnum|null $navigationGroup = 'Operations';
 

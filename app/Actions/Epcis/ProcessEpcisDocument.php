@@ -7,8 +7,11 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\Epcis\EpcisUnmatchedGln;
+use App\Services\Epcis\EpcisJsonLd20Parser;
+use App\Services\Epcis\EpcisXml20Parser;
 use App\Services\Epcis\EpcisXmlParser;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisXmlReader;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
@@ -65,7 +68,9 @@ final class ProcessEpcisDocument
     private array $closedDuringAttemptLinkIds = [];
 
     public function __construct(
-        private readonly EpcisXmlParser $parser,
+        private readonly EpcisXmlParser $xmlParser,
+        private readonly EpcisXml20Parser $xml20Parser,
+        private readonly EpcisJsonLd20Parser $jsonLd20Parser,
         private readonly MaterializeEpcKeys $materializeEpcKeys,
         private readonly ResolveGlnToMasterData $resolveGln,
         private readonly ResolveProductFromIdentifier $resolveProduct,
@@ -108,8 +113,9 @@ final class ProcessEpcisDocument
             $generation = $this->nextIngestGeneration($document);
             $priorGenerationOpenLinkIds = $this->snapshotPriorGenerationOpenLinkIds($document, $generation);
 
+            $parser = $this->ingestParser($document);
             $uniqueUris = [];
-            $header = $this->parser->parseHeaderAndStream(
+            $header = $parser->parseHeaderAndStream(
                 $absolutePath,
                 function (array $event) use (&$uniqueUris): void {
                     foreach ($event['epcs'] ?? [] as $epcRef) {
@@ -146,11 +152,12 @@ final class ProcessEpcisDocument
                 $document,
                 $epcIdByUri,
                 $generation,
+                $parser,
                 &$eventCount,
                 &$batch,
                 &$documentEpcIds,
             ): void {
-                $this->parser->parseHeaderAndStream(
+                $parser->parseHeaderAndStream(
                     $absolutePath,
                     function (array $eventData) use ($document, $epcIdByUri, $generation, &$eventCount, &$batch, &$documentEpcIds): void {
                         $batch[] = $eventData;
@@ -600,6 +607,27 @@ final class ProcessEpcisDocument
         }
 
         $document->forceFill(['header_json' => $headerJson])->save();
+    }
+
+    /**
+     * Select edge parser by stored payload format and schema version.
+     * JSON → JSON-LD 2.0 parser; XML 2.0 → Xml20Parser; else XML 1.2 parser.
+     *
+     * @return EpcisXmlParser|EpcisXml20Parser|EpcisJsonLd20Parser
+     */
+    private function ingestParser(EpcisDocument $document): EpcisXmlParser|EpcisXml20Parser|EpcisJsonLd20Parser
+    {
+        $format = (string) ($document->format ?? EpcisSchemaVersion::FORMAT_XML);
+
+        if ($format === EpcisSchemaVersion::FORMAT_JSON) {
+            return $this->jsonLd20Parser;
+        }
+
+        if ((string) $document->schema_version === EpcisSchemaVersion::V20) {
+            return $this->xml20Parser;
+        }
+
+        return $this->xmlParser;
     }
 
     /**

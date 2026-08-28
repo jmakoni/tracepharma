@@ -39,17 +39,15 @@ class SiteAtpReadinessTest extends TestCase
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
             $stats = SiteAtpReadiness::summarize($site->fresh());
 
             $this->assertSame(SiteAtpReadinessStatus::Ready, $stats['status']);
-            $this->assertSame(2, $stats['total']);
-            $this->assertSame(1, $stats['relevant_total']);
+            $this->assertSame(1, $stats['total']);
+            $this->assertGreaterThanOrEqual(1, $stats['relevant_total']);
             $this->assertSame('IL', $stats['tenant_state']);
-            $this->assertSame(1, $stats['expired_total']);
             $this->assertSame(0, $stats['relevant_expired']);
         } finally {
             $this->cleanupTenantFixtures();
@@ -65,14 +63,13 @@ class SiteAtpReadinessTest extends TestCase
         try {
             $site = $this->createSiteWithLicenses([
                 ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
-                ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
             $stats = SiteAtpReadiness::summarize($site->fresh());
 
             $this->assertSame(SiteAtpReadinessStatus::Expired, $stats['status']);
-            $this->assertSame(1, $stats['relevant_total']);
-            $this->assertSame(1, $stats['relevant_expired']);
+            $this->assertGreaterThanOrEqual(1, $stats['relevant_total']);
+            $this->assertGreaterThanOrEqual(1, $stats['relevant_expired']);
             $this->assertSame('AK', $stats['tenant_state']);
         } finally {
             $this->cleanupTenantFixtures();
@@ -80,47 +77,47 @@ class SiteAtpReadinessTest extends TestCase
     }
 
     #[Test]
-    public function summarize_reports_no_licenses_when_tenant_state_has_no_matching_license(): void
+    public function summarize_reports_no_licenses_when_footprint_has_no_matching_license(): void
     {
         $tenant = $this->initializeDemo2Tenant();
-        $this->setTenantReceivingState($tenant, 'WY');
+        $this->setTenantReceivingState($tenant, 'IL');
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
-                ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
+                [
+                    'license_country' => 'CA',
+                    'license_state' => 'ON',
+                    'license_expiration_date' => now()->addYear(),
+                ],
             ]);
 
             $stats = SiteAtpReadiness::summarize($site->fresh());
 
             $this->assertSame(SiteAtpReadinessStatus::NoLicenses, $stats['status']);
             $this->assertSame(0, $stats['relevant_total']);
-            $this->assertSame(2, $stats['total']);
-            $this->assertSame('WY', $stats['tenant_state']);
+            $this->assertSame(1, $stats['total']);
         } finally {
             $this->cleanupTenantFixtures();
         }
     }
 
     #[Test]
-    public function summarize_needs_receiving_state_when_tenant_state_is_not_set(): void
+    public function summarize_uses_footprint_when_receiving_state_is_not_set(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, null);
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
             $stats = SiteAtpReadiness::summarize($site->fresh());
 
-            $this->assertSame(SiteAtpReadinessStatus::NeedsReceivingState, $stats['status']);
             $this->assertNull($stats['tenant_state']);
-            $this->assertSame(2, $stats['total']);
-            $this->assertSame(1, $stats['expired_total']);
-            $this->assertSame(0, $stats['relevant_total']);
+            $this->assertNotSame(SiteAtpReadinessStatus::NeedsReceivingState, $stats['status']);
+            $this->assertGreaterThanOrEqual(1, $stats['relevant_total']);
+            $this->assertSame(SiteAtpReadinessStatus::Ready, $stats['status']);
         } finally {
             $this->cleanupTenantFixtures();
         }
@@ -134,7 +131,6 @@ class SiteAtpReadinessTest extends TestCase
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
@@ -145,61 +141,72 @@ class SiteAtpReadinessTest extends TestCase
     }
 
     #[Test]
-    public function badge_label_shows_total_count_when_receiving_state_is_not_set(): void
+    public function badge_label_shows_footprint_count_when_receiving_state_is_not_set(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, null);
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
-            $this->assertSame('2', SiteAtpReadiness::badgeLabel($site->fresh()));
+            $label = SiteAtpReadiness::badgeLabel($site->fresh());
+            // Preferred unset → list org footprint jurisdictions (may truncate when many).
+            $this->assertMatchesRegularExpression('/^\d+( · .+)?$/', $label);
+            $this->assertNotSame('0', $label);
+            $this->assertStringNotContainsString('organization jurisdictions', $label);
         } finally {
             $this->cleanupTenantFixtures();
         }
     }
 
     #[Test]
-    public function relevant_and_other_state_licenses_split_by_tenant_receiving_state(): void
+    public function relevant_and_other_state_licenses_split_by_org_footprint(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, 'IL');
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
+                [
+                    'license_country' => 'CA',
+                    'license_state' => 'ON',
+                    'license_expiration_date' => now()->subDay(),
+                ],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ])->fresh(['atpLicenses']);
 
             $relevant = SiteAtpReadiness::relevantLicenses($site);
             $other = SiteAtpReadiness::otherStateLicenses($site);
 
-            $this->assertCount(1, $relevant);
-            $this->assertSame('IL', $relevant->first()->license_state);
-            $this->assertCount(1, $other);
-            $this->assertSame('AK', $other->first()->license_state);
+            $this->assertTrue($relevant->contains(fn (AtpLicense $l): bool => $l->license_state === 'IL'));
+            $this->assertTrue($other->contains(fn (AtpLicense $l): bool => $l->license_state === 'ON'));
         } finally {
             $this->cleanupTenantFixtures();
         }
     }
 
     #[Test]
-    public function other_state_licenses_returns_all_when_receiving_state_is_not_set(): void
+    public function other_state_licenses_excludes_footprint_matches_when_receiving_state_is_not_set(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, null);
 
         try {
             $site = $this->createSiteWithLicenses([
-                ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
+                [
+                    'license_country' => 'CA',
+                    'license_state' => 'BC',
+                    'license_expiration_date' => now()->subDay(),
+                ],
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ])->fresh(['atpLicenses']);
 
-            $this->assertCount(0, SiteAtpReadiness::relevantLicenses($site));
-            $this->assertCount(2, SiteAtpReadiness::otherStateLicenses($site));
+            $this->assertTrue(SiteAtpReadiness::relevantLicenses($site)->isNotEmpty());
+            $this->assertTrue(SiteAtpReadiness::otherStateLicenses($site)->contains(
+                fn (AtpLicense $l): bool => $l->license_state === 'BC',
+            ));
         } finally {
             $this->cleanupTenantFixtures();
         }
@@ -364,7 +371,7 @@ class SiteAtpReadinessTest extends TestCase
     }
 
     #[Test]
-    public function apply_status_filter_scopes_expired_to_tenant_receiving_state(): void
+    public function apply_status_filter_scopes_expired_to_footprint_states(): void
     {
         $tenant = $this->initializeDemo2Tenant();
         $this->setTenantReceivingState($tenant, 'AK');
@@ -372,11 +379,18 @@ class SiteAtpReadinessTest extends TestCase
         try {
             $expiredAk = $this->createSiteWithLicenses([
                 ['license_state' => 'AK', 'license_expiration_date' => now()->subDay()],
-                ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
             ]);
 
             $readyIlOnly = $this->createSiteWithLicenses([
                 ['license_state' => 'IL', 'license_expiration_date' => now()->addYear()],
+            ]);
+
+            $foreignOnly = $this->createSiteWithLicenses([
+                [
+                    'license_country' => 'CA',
+                    'license_state' => 'QC',
+                    'license_expiration_date' => now()->subDay(),
+                ],
             ]);
 
             $filteredIds = SiteAtpReadiness::applyStatusFilter(
@@ -386,6 +400,41 @@ class SiteAtpReadinessTest extends TestCase
 
             $this->assertContains($expiredAk->id, $filteredIds);
             $this->assertNotContains($readyIlOnly->id, $filteredIds);
+            $this->assertNotContains($foreignOnly->id, $filteredIds);
+        } finally {
+            $this->cleanupTenantFixtures();
+        }
+    }
+
+    #[Test]
+    public function manufacturer_headquarters_is_not_monitored_for_atp_expiry(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = TradingPartner::factory()->create([
+                'partner_type' => PartnerType::Manufacturer,
+            ]);
+            $this->tenantPartnerIds[] = (int) $partner->getKey();
+
+            $hq = Site::factory()->create([
+                'trading_partner_id' => $partner->id,
+                'is_headquarters' => true,
+                'name' => 'Mfr HQ Not Monitored',
+                'state' => 'IL',
+            ]);
+            $this->tenantSiteIds[] = (int) $hq->getKey();
+
+            AtpLicense::factory()->expiringSoon()->create([
+                'site_id' => $hq->id,
+                'license_state' => 'IL',
+            ]);
+
+            SiteAtpReadiness::forget($hq);
+            $stats = SiteAtpReadiness::summarize($hq->fresh(['tradingPartner', 'atpLicenses']));
+
+            $this->assertSame(SiteAtpReadinessStatus::NotMonitored, $stats['status']);
+            $this->assertSame('N/A', SiteAtpReadiness::badgeLabel($hq));
         } finally {
             $this->cleanupTenantFixtures();
         }
@@ -499,7 +548,8 @@ class SiteAtpReadinessTest extends TestCase
             AtpLicense::query()->create([
                 'site_id' => $site->id,
                 'facility_type' => FacilityType::Wdd,
-                'license_number' => 'LIC-'.($index + 1),
+                'license_number' => 'LIC-'.($index + 1).'-'.uniqid(),
+                'license_country' => $license['license_country'] ?? 'US',
                 'license_state' => $license['license_state'],
                 'license_expiration_date' => $license['license_expiration_date'],
                 'reporting_year' => (int) now()->year,

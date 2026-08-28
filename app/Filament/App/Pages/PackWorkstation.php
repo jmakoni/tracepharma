@@ -16,6 +16,7 @@ use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
@@ -40,6 +41,8 @@ use UnitEnum;
 
 class PackWorkstation extends Page
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
     protected static ?string $navigationLabel = 'Pack';

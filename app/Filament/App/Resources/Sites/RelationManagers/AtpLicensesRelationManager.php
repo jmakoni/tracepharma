@@ -10,6 +10,7 @@ use App\Models\AtpLicense;
 use App\Models\Site;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseExpiry;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\MasterData\TenantReceivingState;
 use App\Support\Places\UsState;
@@ -20,6 +21,8 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
@@ -32,7 +35,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
-use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AtpLicensesRelationManager extends RelationManager
 {
@@ -50,14 +53,7 @@ class AtpLicensesRelationManager extends RelationManager
     public static function getBadge(Model $ownerRecord, string $pageClass): ?string
     {
         /** @var Site $ownerRecord */
-        $tenantState = TenantReceivingState::resolve();
-        $licenses = $ownerRecord->atpLicenses()->getQuery()->active();
-
-        if ($tenantState !== null) {
-            SiteAtpReadiness::applyStateMatch($licenses, $tenantState);
-        }
-
-        return (string) $licenses->count();
+        return (string) SiteAtpReadiness::summarize($ownerRecord)['relevant_total'];
     }
 
     public static function getBadgeColor(Model $ownerRecord, string $pageClass): ?string
@@ -75,17 +71,66 @@ class AtpLicensesRelationManager extends RelationManager
                 ))
                 ->required()
                 ->native(false),
-            TextInput::make('license_number')->required()->maxLength(100),
+            TextInput::make('license_number')
+                ->required()
+                ->maxLength(100),
+            Select::make('license_country')
+                ->label('License country')
+                ->options([
+                    'US' => 'United States',
+                    'CA' => 'Canada',
+                    'MX' => 'Mexico',
+                    'GB' => 'United Kingdom',
+                    'DE' => 'Germany',
+                    'FR' => 'France',
+                    'IE' => 'Ireland',
+                    'AU' => 'Australia',
+                    'NZ' => 'New Zealand',
+                    'JP' => 'Japan',
+                    'CN' => 'China',
+                    'IN' => 'India',
+                    'BR' => 'Brazil',
+                ])
+                ->default('US')
+                ->required()
+                ->live()
+                ->native(false)
+                ->afterStateUpdated(function (Set $set, ?string $state): void {
+                    if (AtpLicenseRelevance::normalizeCountry($state) === 'US') {
+                        $set('license_jurisdiction', null);
+                    } else {
+                        $set('license_state', null);
+                    }
+                })
+                ->dehydrateStateUsing(fn (?string $state): string => AtpLicenseRelevance::normalizeCountry($state)),
             Select::make('license_state')
                 ->label('License state')
                 ->options(UsState::selectOptions())
-                ->required()
+                ->required(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US')
                 ->searchable()
                 ->native(false)
-                // Rows imported before the list was closed can hold a full name or lower
-                // case, which would render as an empty Select and silently blank the state.
+                ->visible(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US')
+                ->dehydrated(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US')
                 ->formatStateUsing(fn (?string $state): ?string => UsState::normalize($state))
-                ->rule(Rule::in(UsState::codes()))
+                ->rule(fn (Get $get): mixed => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US'
+                    ? \Illuminate\Validation\Rule::in(UsState::codes())
+                    : null)
+                ->dehydrateStateUsing(fn (?string $state): string => strtoupper(trim((string) $state))),
+            TextInput::make('license_jurisdiction')
+                ->label('License jurisdiction')
+                ->required(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) !== 'US')
+                ->maxLength(16)
+                ->helperText('Province, territory, or other subdivision code (e.g. ON, BC).')
+                ->visible(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) !== 'US')
+                ->dehydrated(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) !== 'US')
+                ->formatStateUsing(function (?string $state, ?AtpLicense $record): ?string {
+                    if ($record instanceof AtpLicense
+                        && AtpLicenseRelevance::normalizeCountry($record->license_country ?? 'US') !== 'US') {
+                        return $record->license_state;
+                    }
+
+                    return $state;
+                })
                 ->dehydrateStateUsing(fn (?string $state): string => strtoupper(trim((string) $state))),
             DatePicker::make('license_expiration_date')
                 ->helperText('Without an expiration date the license cannot be shown to be in force, so the site is not ATP ready.'),
@@ -107,6 +152,9 @@ class AtpLicensesRelationManager extends RelationManager
                     ->searchable()
                     ->copyable()
                     ->fontFamily(FontFamily::Mono),
+                TextColumn::make('license_country')
+                    ->label('Country')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('license_state')
                     ->searchable(),
                 TextColumn::make('expiration_status')
@@ -135,22 +183,16 @@ class AtpLicensesRelationManager extends RelationManager
             ])
             ->defaultSort('license_expiration_date')
             ->filters([
-                TernaryFilter::make('for_receiving_state')
-                    ->label('Receiving state')
-                    ->placeholder('All states')
-                    ->trueLabel('Receiving state only')
-                    ->falseLabel('Other states')
-                    ->visible(fn (): bool => TenantReceivingState::resolve() !== null)
-                    ->default(fn (): bool => $this->shouldDefaultReceivingStateFilter())
+                TernaryFilter::make('for_org_footprint')
+                    ->label('Org jurisdictions')
+                    ->placeholder('All licenses')
+                    ->trueLabel('Org footprint only')
+                    ->falseLabel('Outside footprint')
+                    ->visible(fn (): bool => AtpLicenseRelevance::evaluationJurisdictionKeys() !== [])
+                    ->default(fn (): bool => $this->shouldDefaultFootprintFilter())
                     ->queries(
-                        true: fn (Builder $query): Builder => SiteAtpReadiness::applyStateMatch(
-                            $query,
-                            TenantReceivingState::resolve() ?? '',
-                        ),
-                        false: fn (Builder $query): Builder => SiteAtpReadiness::applyOtherStateMatch(
-                            $query,
-                            TenantReceivingState::resolve() ?? '',
-                        ),
+                        true: fn (Builder $query): Builder => SiteAtpReadiness::applyFootprintRelevantMatch($query),
+                        false: fn (Builder $query): Builder => SiteAtpReadiness::applyOutsideFootprintMatch($query),
                     ),
                 SelectFilter::make('license_state')
                     ->label('State')
@@ -194,21 +236,39 @@ class AtpLicensesRelationManager extends RelationManager
             ->emptyStateDescription('Licenses are copied from the catalog when you receive a partner site, or you can add one manually.')
             ->emptyStateActions([
                 RegulatoryCompliance::apply(
-                    CreateAction::make()->slideOver(),
+                    CreateAction::make()
+                        ->slideOver()
+                        ->fillForm(fn (): array => [
+                            'license_country' => 'US',
+                            'license_state' => TenantReceivingState::resolve()
+                                ?? (AtpLicenseRelevance::tenantFootprintUsStates()[0] ?? null),
+                            'reporting_year' => (int) now()->year,
+                        ])
+                        ->mutateFormDataUsing(fn (array $data): array => $this->prepareLicenseFormData($data)),
                     'sites_atp_create',
                     requireReason: false,
                 ),
             ])
             ->headerActions([
                 RegulatoryCompliance::apply(
-                    CreateAction::make()->slideOver(),
+                    CreateAction::make()
+                        ->slideOver()
+                        ->fillForm(fn (): array => [
+                            'license_country' => 'US',
+                            'license_state' => TenantReceivingState::resolve()
+                                ?? (AtpLicenseRelevance::tenantFootprintUsStates()[0] ?? null),
+                            'reporting_year' => (int) now()->year,
+                        ])
+                        ->mutateFormDataUsing(fn (array $data): array => $this->prepareLicenseFormData($data)),
                     'sites_atp_create',
                     requireReason: false,
                 ),
             ])
             ->recordActions(RecordActionGroup::make([
                 RegulatoryCompliance::apply(
-                    EditAction::make()->slideOver(),
+                    EditAction::make()
+                        ->slideOver()
+                        ->mutateFormDataUsing(fn (array $data, AtpLicense $record): array => $this->prepareLicenseFormData($data, $record)),
                     'sites_atp_edit',
                     requireReason: false,
                 ),
@@ -221,6 +281,66 @@ class AtpLicensesRelationManager extends RelationManager
     }
 
     /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function prepareLicenseFormData(array $data, ?AtpLicense $ignore = null): array
+    {
+        $data = self::normalizeLicenseFormData($data);
+        self::assertUniqueLicense($this->getOwnerRecord(), $data, $ignore);
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function normalizeLicenseFormData(array $data): array
+    {
+        $country = AtpLicenseRelevance::normalizeCountry(
+            isset($data['license_country']) ? (string) $data['license_country'] : 'US',
+        );
+        $data['license_country'] = $country;
+
+        $rawState = $country === 'US'
+            ? ($data['license_state'] ?? '')
+            : ($data['license_jurisdiction'] ?? $data['license_state'] ?? '');
+
+        unset($data['license_jurisdiction']);
+
+        $data['license_state'] = AtpLicenseRelevance::normalizeSubdivision($country, (string) $rawState)
+            ?? strtoupper(trim((string) $rawState));
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private static function assertUniqueLicense(Model $site, array $data, ?AtpLicense $ignore = null): void
+    {
+        $rule = \Illuminate\Validation\Rule::unique('atp_licenses', 'license_number')
+            ->where('site_id', $site->getKey())
+            ->where('license_country', $data['license_country'] ?? 'US')
+            ->where('license_state', $data['license_state'] ?? '');
+
+        if ($ignore instanceof AtpLicense) {
+            $rule->ignore($ignore);
+        }
+
+        $validator = validator(
+            ['license_number' => $data['license_number'] ?? null],
+            ['license_number' => [$rule]],
+            ['license_number.unique' => 'This site already has a license with this country, state, and number.'],
+        );
+
+        if ($validator->fails()) {
+            throw ValidationException::withMessages($validator->errors()->toArray());
+        }
+    }
+
+    /**
      * The provenance caveat is unconditional — every row here is a listing or a typed
      * entry, whether or not a receiving state is set to judge it against.
      */
@@ -228,8 +348,10 @@ class AtpLicensesRelationManager extends RelationManager
     {
         $lines = [AtpDisclosure::SOURCE];
 
-        if (TenantReceivingState::resolve() === null) {
-            $lines[] = 'Ask your administrator to set the tenant receiving state in Admin → Tenants to evaluate licenses for your location.';
+        if (AtpLicenseRelevance::evaluationJurisdictionKeys() === []) {
+            $lines[] = 'Add organization facility sites with country/state, or set a preferred receiving state, so licenses can be evaluated.';
+        } elseif (TenantReceivingState::resolve() === null && AtpLicenseRelevance::tenantFootprintKeys() !== []) {
+            $lines[] = 'Optional: set a preferred receiving state in Organization settings for badge labels (evaluation already uses org site jurisdictions).';
         }
 
         return new HtmlString(implode('', array_map(
@@ -238,7 +360,7 @@ class AtpLicensesRelationManager extends RelationManager
         )));
     }
 
-    private function shouldDefaultReceivingStateFilter(): bool
+    private function shouldDefaultFootprintFilter(): bool
     {
         $status = request()->query('atp_status');
 
@@ -246,6 +368,6 @@ class AtpLicensesRelationManager extends RelationManager
             return true;
         }
 
-        return TenantReceivingState::resolve() !== null;
+        return AtpLicenseRelevance::evaluationJurisdictionKeys() !== [];
     }
 }
