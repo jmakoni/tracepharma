@@ -226,6 +226,69 @@ class EpcisSubscriptionDeliveryTest extends TestCase
     }
 
     #[Test]
+    public function delivery_job_refuses_http_redirects(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Http::fake([
+                'https://8.8.8.8/*' => Http::response('', 302, [
+                    'Location' => 'http://169.254.169.254/latest/meta-data/',
+                ]),
+            ]);
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Redirect SSRF hook',
+                'target_url' => 'https://8.8.8.8/epcis',
+                'secret' => 'super-secret-hmac-key-for-tests!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_BOTH,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            tenancy()->end();
+
+            try {
+                (new DeliverEpcisSubscriptionJob(
+                    (string) $tenant->getKey(),
+                    (int) $subscription->getKey(),
+                    (int) $document->getKey(),
+                    'validated',
+                ))->handle(app(\App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20::class));
+                $this->fail('Expected redirect delivery to throw.');
+            } catch (\RuntimeException $exception) {
+                $this->assertStringContainsString('redirect', strtolower($exception->getMessage()));
+            }
+
+            tenancy()->initialize($tenant);
+            $fresh = $subscription->fresh();
+            $this->assertNull($fresh?->last_delivered_at);
+            $this->assertNotNull($fresh?->last_error_at);
+            $this->assertStringContainsString('redirect', strtolower((string) $fresh?->last_error));
+
+            Http::assertSentCount(1);
+        } finally {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function subscription_url_rejects_loopback(): void
     {
         $this->expectException(\InvalidArgumentException::class);

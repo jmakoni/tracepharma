@@ -54,6 +54,7 @@ class EpcisSubscriptionsTable
                             $timestamp = (string) now()->timestamp;
                             $signature = hash_hmac('sha256', $timestamp.'.'.$body, (string) $record->secret);
                             $response = Http::timeout(10)
+                                ->withoutRedirecting()
                                 ->withHeaders([
                                     'Content-Type' => 'application/json',
                                     'X-TracePharma-Signature' => 't='.$timestamp.',v1='.$signature,
@@ -62,7 +63,13 @@ class EpcisSubscriptionsTable
                                 ->withBody($body, 'application/json')
                                 ->post((string) $record->target_url);
 
-                            if ($response->successful()) {
+                            if ($response->redirect()) {
+                                Notification::make()
+                                    ->title('Ping failed')
+                                    ->body('HTTP '.$response->status().' redirect refused (SSRF protection).')
+                                    ->danger()
+                                    ->send();
+                            } elseif ($response->successful()) {
                                 Notification::make()->title('Ping succeeded')->success()->send();
                             } else {
                                 Notification::make()

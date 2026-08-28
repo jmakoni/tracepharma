@@ -73,6 +73,7 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
 
             try {
                 $response = Http::timeout(20)
+                    ->withoutRedirecting()
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                         'Accept' => 'application/json',
@@ -82,6 +83,12 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                     ])
                     ->withBody($body, 'application/json')
                     ->post((string) $subscription->target_url);
+
+                if ($response->redirect()) {
+                    throw new \RuntimeException(
+                        'Subscription delivery refused HTTP redirect '.$response->status().' (SSRF protection).',
+                    );
+                }
 
                 if (! $response->successful()) {
                     throw new \RuntimeException(
