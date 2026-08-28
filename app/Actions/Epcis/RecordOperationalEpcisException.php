@@ -28,6 +28,17 @@ final class RecordOperationalEpcisException
     ): EpcisException {
         $code = strtoupper(trim($exceptionType));
 
+        $existing = EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->where('exception_type', $code)
+            ->where('status', 'open')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
         $resolvedSeverity = $severity ?? EpcisValidationSeverityMap::severityFor(
             $code,
             $this->profileResolver->resolve($document, (string) $document->direction),

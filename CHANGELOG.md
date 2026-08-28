@@ -4,6 +4,17 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.3.0] — 2026-08-28
+
+Wave 2 — Trust / certification evidence (honest internal packs; not TraceReady / Pulse-listed / Gateway Certified).
+
+### Added
+
+- Internal EPCIS scenario evidence export (`epcis:export-scenario-evidence`) — not TraceReady / Gateway Checker certified
+- VRS Verify readiness checklist + `vrs:export-readiness-log` — not Gateway Certified
+- Manual ATP verification sources for partner-supplied Pulse / OCI evidence (no Pulse API; not Pulse-listed)
+- Partner ingest quality rollup page (7d/30d inbound exception counts) — not clean-data certified
+
 ## [1.2.0] — 2026-08-28
 
 Wave 1 — Mid-market deal blockers (honest GA for SFTP, MDN signals, POET-lite apply-form, drop-ship flag, PMS runbooks).
@@ -72,6 +83,7 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.3.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.0.0

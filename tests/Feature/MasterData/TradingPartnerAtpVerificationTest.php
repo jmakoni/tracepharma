@@ -77,6 +77,8 @@ class TradingPartnerAtpVerificationTest extends TestCase
 
         $this->assertArrayHasKey(AtpVerificationSource::FdaDecrs->value, $options);
         $this->assertSame('FDA DECRS', $options[AtpVerificationSource::FdaDecrs->value]);
+        $this->assertArrayHasKey(AtpVerificationSource::PulsePartnerEvidence->value, $options);
+        $this->assertArrayHasKey(AtpVerificationSource::OciPartnerEvidence->value, $options);
     }
 
     #[Test]
