@@ -21,11 +21,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class TransferringSessionResource extends Resource
+class TransferringSessionResource extends Resource implements HasKnowledgeBase
 {
     use HidesForPharmacySimplifiedNav;
 
@@ -47,7 +48,7 @@ class TransferringSessionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsTransferring())
+        return TenantFeatures::forTenant(tenant())->supportsTransferring()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
@@ -140,5 +141,10 @@ class TransferringSessionResource extends Resource
             'view' => ViewTransferringSession::route('/{record}'),
             'floor' => MobileViewTransferringSession::route('/{record}/floor'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.transferring';
     }
 }

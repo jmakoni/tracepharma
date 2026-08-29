@@ -20,9 +20,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class TradingPartnerResource extends Resource
+class TradingPartnerResource extends Resource implements HasKnowledgeBase
 {
     use UsesTenantScoutGlobalSearch;
 
@@ -98,7 +100,7 @@ class TradingPartnerResource extends Resource
     /**
      * @return array<string, string>
      */
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         if (! $record instanceof TradingPartner) {
             return [];
@@ -108,5 +110,10 @@ class TradingPartnerResource extends Resource
             'GLN' => $record->gln,
             'Type' => $record->partner_type?->value ?? (string) $record->partner_type,
         ]);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.trading-partners';
     }
 }

@@ -57,11 +57,27 @@
                     </button>
                 </div>
             </div>
+            <div class="form-control w-full max-w-md gap-1.5">
+                <label for="asset-tracking-as-of-input" class="label-text text-sm font-medium">
+                    As of (UTC) — optional
+                </label>
+                <input
+                    id="asset-tracking-as-of-input"
+                    type="datetime-local"
+                    wire:model="asOf"
+                    step="1"
+                    class="input input-bordered w-full font-mono text-sm"
+                />
+                <span class="label-text-alt text-base-content/60">Leave blank for current custody. Point-in-time uses events live at that instant.</span>
+            </div>
         </form>
 
         @if ($this->trace && $this->trace['found'])
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="badge badge-outline">Traced {{ $this->trace['primary_identifier'] }}</span>
+                @if (! empty($this->trace['as_of']))
+                    <span class="badge badge-ghost">As of {{ $this->trace['as_of'] }}</span>
+                @endif
                 @if ($url = $this->findRecallUrl())
                     <a href="{{ $url }}" class="link link-hover">Find / Recall</a>
                 @endif

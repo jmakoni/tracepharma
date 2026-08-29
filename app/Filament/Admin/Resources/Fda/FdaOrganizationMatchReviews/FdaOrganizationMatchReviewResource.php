@@ -13,9 +13,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaOrganizationMatchReviewResource extends Resource
+class FdaOrganizationMatchReviewResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -69,5 +70,10 @@ class FdaOrganizationMatchReviewResource extends Resource
     public static function getNavigationBadgeColor(): string|array|null
     {
         return 'warning';
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.match-review';
     }
 }

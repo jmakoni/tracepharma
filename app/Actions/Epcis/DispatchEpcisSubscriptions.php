@@ -8,12 +8,17 @@ use App\Jobs\DeliverEpcisSubscriptionJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisSubscription;
 use App\Models\Tenant;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
  * Queue HTTPS subscription deliveries when a document reaches validated (inbound)
  * or outbound sent. Trigger must match document direction so outbound hooks do
  * not fire on validate-time for documents that still need transmit.
+ *
+ * Job pushes are deferred with DB::afterCommit when called inside a transaction
+ * (e.g. ValidateEpcis12Document) so workers never see pre-commit status and
+ * rollbacks do not notify partners.
  *
  * Not a GS1 Query Control scheduler: `schedule` / `query_params` on the subscription
  * row are not executed here (except bizStep matching already stored on the row).
@@ -48,6 +53,9 @@ final class DispatchEpcisSubscriptions
             ->where('is_active', true)
             ->get();
 
+        /** @var list<array{0: string, 1: int, 2: int, 3: string}> $pending */
+        $pending = [];
+
         foreach ($subscriptions as $subscription) {
             if (! $subscription->matchesDirection($direction)) {
                 continue;
@@ -57,12 +65,33 @@ final class DispatchEpcisSubscriptions
                 continue;
             }
 
-            DeliverEpcisSubscriptionJob::dispatch(
+            $pending[] = [
                 (string) $tenant->getKey(),
                 (int) $subscription->getKey(),
                 (int) $document->getKey(),
                 $trigger,
-            );
+            ];
+        }
+
+        if ($pending === []) {
+            return;
+        }
+
+        $push = static function () use ($pending): void {
+            foreach ($pending as [$tenantId, $subscriptionId, $documentId, $jobTrigger]) {
+                DeliverEpcisSubscriptionJob::dispatch(
+                    $tenantId,
+                    $subscriptionId,
+                    $documentId,
+                    $jobTrigger,
+                );
+            }
+        };
+
+        if (DB::transactionLevel() > 0) {
+            DB::afterCommit($push);
+        } else {
+            $push();
         }
     }
 

@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Admin\Pages\Dashboard;
 use App\Support\Auth\TracepharmaBreezyCore;
+use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -12,7 +13,9 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -66,6 +69,20 @@ class AdminPanelProvider extends PanelProvider
                         scopeToPanel: true,
                     )
             )
+            ->plugin(
+                KnowledgeBaseCompanionPlugin::make()
+                    ->knowledgeBasePanelId('admin-knowledge-base')
+                    ->modalPreviews()
+                    ->slideOverPreviews()
+            )
+            ->userMenuItems([
+                Action::make('adminHelp')
+                    ->label('Admin help')
+                    ->icon(Heroicon::OutlinedBookOpen)
+                    ->url(fn (): string => filament()->getPanel('admin-knowledge-base')->getUrl())
+                    ->openUrlInNewTab()
+                    ->sort(20),
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

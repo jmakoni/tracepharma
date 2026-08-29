@@ -19,6 +19,7 @@ use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -98,6 +99,12 @@ class AppPanelProvider extends PanelProvider
                         scopeToPanel: true,
                     )
             )
+            ->plugin(
+                KnowledgeBaseCompanionPlugin::make()
+                    ->knowledgeBasePanelId('knowledge-base')
+                    ->modalPreviews()
+                    ->slideOverPreviews()
+            )
             ->userMenuItems([
                 Action::make('organizationSettings')
                     ->label('Organization Settings')
@@ -105,6 +112,12 @@ class AppPanelProvider extends PanelProvider
                     ->url(fn (): string => OrganizationSettings::getUrl(panel: 'app'))
                     ->visible(fn (): bool => OrganizationSettings::canAccess())
                     ->sort(10),
+                Action::make('operatorHelp')
+                    ->label('Operator help')
+                    ->icon(Heroicon::OutlinedBookOpen)
+                    ->url(fn (): string => filament()->getPanel('knowledge-base')->getUrl())
+                    ->openUrlInNewTab()
+                    ->sort(20),
             ])
             ->middleware([
                 PreventAccessFromCentralDomains::class,

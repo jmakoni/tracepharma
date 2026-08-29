@@ -16,9 +16,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class ReadPointResource extends Resource
+class ReadPointResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = ReadPoint::class;
 
@@ -36,7 +37,7 @@ class ReadPointResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -57,5 +58,10 @@ class ReadPointResource extends Resource
             'create' => CreateReadPoint::route('/create'),
             'edit' => EditReadPoint::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.sites-and-devices';
     }
 }

@@ -18,6 +18,7 @@ use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -351,7 +352,13 @@ class MdnCatalogSignalTest extends TestCase
     private function createOutboundDocument(?OutboundConnection $connection = null): EpcisDocument
     {
         $path = 'epcis/outbound/test-mdn-catalog-'.Str::uuid().'.xml';
-        $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+        $xml = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($xml);
+        $xml = str_replace(
+            '11111111-2222-3333-4444-555555555555',
+            (string) Str::uuid(),
+            $xml,
+        );
         Storage::disk('local')->put($path, $xml);
 
         $document = EpcisDocument::query()->create([
@@ -379,7 +386,7 @@ class MdnCatalogSignalTest extends TestCase
         return $document;
     }
 
-    private function postAsyncMdnWebhook(Tenant $tenant, OutboundConnection $connection, string $body): \Illuminate\Testing\TestResponse
+    private function postAsyncMdnWebhook(Tenant $tenant, OutboundConnection $connection, string $body): TestResponse
     {
         return $this->call(
             'POST',

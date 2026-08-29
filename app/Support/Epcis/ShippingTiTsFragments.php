@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Epcis;
 
+use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
 use DomainException;
 
 /**
@@ -67,6 +68,27 @@ final class ShippingTiTsFragments
      * Empty string when neither reference can be authored, so the event omits the
      * element rather than emitting an invalid empty list.
      */
+    /**
+     * @return list<array{type: string, bizTransaction: string}>
+     */
+    public static function bizTransactionListJson(
+        ?string $po,
+        ?string $asn,
+        ?string $destOwningGln,
+        ?string $sourceOwningGln,
+    ): array {
+        $transactions = [];
+
+        foreach (self::bizTransactions($po, $asn, $destOwningGln, $sourceOwningGln) as $transaction) {
+            $transactions[] = [
+                'type' => $transaction['type_uri'],
+                'bizTransaction' => $transaction['value'],
+            ];
+        }
+
+        return $transactions;
+    }
+
     public static function bizTransactionListXml(
         ?string $po,
         ?string $asn,
@@ -90,6 +112,44 @@ final class ShippingTiTsFragments
             "        <bizTransactionList>\n".
             $items.
             "        </bizTransactionList>\n";
+    }
+
+    /**
+     * EPCIS 2.0 JSON-LD source/destination parties (top-level on the event).
+     *
+     * @return array{
+     *     sourceList: list<array{type: string, source: string}>,
+     *     destinationList: list<array{type: string, destination: string}>
+     * }
+     */
+    public static function sourceDestinationListsJson(
+        string $sourceOwningSgln,
+        string $sourceLocationSgln,
+        string $destOwningSgln,
+        string $destLocationSgln,
+    ): array {
+        return [
+            'sourceList' => [
+                [
+                    'type' => self::SDT_OWNING_PARTY,
+                    'source' => $sourceOwningSgln,
+                ],
+                [
+                    'type' => self::SDT_LOCATION,
+                    'source' => $sourceLocationSgln,
+                ],
+            ],
+            'destinationList' => [
+                [
+                    'type' => self::SDT_OWNING_PARTY,
+                    'destination' => $destOwningSgln,
+                ],
+                [
+                    'type' => self::SDT_LOCATION,
+                    'destination' => $destLocationSgln,
+                ],
+            ],
+        ];
     }
 
     public static function sourceDestinationExtensionXml(
@@ -125,7 +185,7 @@ final class ShippingTiTsFragments
 
     /**
      * GS1 US HC drop-shipment indicator. Inbound catalog rule
-     * {@see \App\Support\Epcis\Validation\EpcisCatalogBusinessRules} string-scans
+     * {@see EpcisCatalogBusinessRules} string-scans
      * for `dropShipment`; emit only when the ship order is flagged.
      *
      * Empty string when unflagged so the header omits the element.
@@ -140,16 +200,53 @@ final class ShippingTiTsFragments
     }
 
     /**
-     * Fail closed when a drop-ship ship order's payload lacks the indicator
-     * inbound validation would accept (stripos for `dropShipment`).
+     * GS1 US HC drop-shipment indicator on an EPCIS 2.0 JSON-LD document envelope.
      */
-    public static function assertDropShipmentEmitted(bool $isDropShipment, string $xml): void
+    public static function withDropShipmentDocumentField(string $json): string
+    {
+        /** @var array<string, mixed> $document */
+        $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $document['gs1ushc:dropShipment'] = true;
+
+        $encoded = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($encoded === false) {
+            throw new DomainException('Unable to encode drop-shipment EPCIS 2.0 JSON-LD document.');
+        }
+
+        return $encoded."\n";
+    }
+
+    /**
+     * GS1 US HC DSCSA transaction statement on an EPCIS 2.0 JSON-LD document envelope.
+     */
+    public static function withDscsaTransactionStatementDocumentField(string $json): string
+    {
+        /** @var array<string, mixed> $document */
+        $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $document['gs1ushc:dscsaTransactionStatement'] = [
+            'gs1ushc:affirmTransactionStatement' => true,
+            'gs1ushc:legalNotice' => self::LEGAL_NOTICE,
+        ];
+
+        $encoded = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($encoded === false) {
+            throw new DomainException('Unable to encode DSCSA transaction statement on EPCIS 2.0 JSON-LD document.');
+        }
+
+        return $encoded."\n";
+    }
+
+    /**
+     * Fail closed when a drop-ship ship order's payload lacks the indicator
+     * inbound validation would accept (stripos for `dropShipment` in XML or JSON).
+     */
+    public static function assertDropShipmentEmitted(bool $isDropShipment, string $payload): void
     {
         if (! $isDropShipment) {
             return;
         }
 
-        if (stripos($xml, 'dropShipment') === false) {
+        if (stripos($payload, 'dropShipment') === false) {
             throw new DomainException(
                 'Drop-shipment ship order requires a dropShipment indicator in outbound EPCIS, but none was emitted.',
             );

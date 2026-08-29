@@ -1,9 +1,13 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
 
+@plugin "@tailwindcss/typography";
+
 @source '../../../../app/Filament/Admin/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/components/**/*';
 @source '../../../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../../../vendor/guava/filament-knowledge-base/src/**/*';
+@source '../../../../vendor/guava/filament-knowledge-base/resources/views/**/*';
 
 @plugin "daisyui" {
     themes: false;

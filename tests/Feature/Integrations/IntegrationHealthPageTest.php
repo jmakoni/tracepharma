@@ -44,29 +44,38 @@ class IntegrationHealthPageTest extends TestCase
     private ?int $httpsConnectionId = null;
 
     #[Test]
-    public function outbound_connections_for_health_page_do_not_load_credentials(): void
+    public function outbound_connections_for_health_page_load_credentials_for_as2_cert_expiry(): void
     {
-        $this->initializeDemo2Tenant();
+        $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
 
         try {
-            $this->actingAs($this->createOwner());
+            $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
             $connection = OutboundConnection::query()->create([
-                'name' => 'Secret Outbound',
-                'serialization_provider' => SerializationProvider::CustomHttps,
-                'transport' => OutboundTransport::Https,
+                'name' => 'AS2 Cert Outbound',
+                'serialization_provider' => SerializationProvider::Axway,
+                'transport' => OutboundTransport::As2,
                 'is_active' => true,
-                'settings' => ['endpoint_url' => 'https://partner.example/epcis'],
-                'credentials' => ['webhook_token' => 'super-secret-token'],
-                'last_error' => 'POST failed for https://user:pass@partner.example/epcis?token=abc',
+                'settings' => [
+                    'as2_url' => 'https://partner.example/as2',
+                    'as2_from' => 'SENDER',
+                    'as2_to' => 'RECEIVER',
+                    'as2_mdn_ack_mode' => 'sync',
+                ],
+                'credentials' => ['signing_cert_pem' => '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----'],
+                'last_error' => 'POST failed for https://user:pass@partner.example/as2?token=abc',
             ]);
             $this->outboundConnectionId = (int) $connection->getKey();
 
             $loaded = app(IntegrationHealthMetrics::class)->outboundConnections()->firstWhere('id', $connection->getKey());
 
             $this->assertNotNull($loaded);
-            $this->assertFalse($loaded->offsetExists('credentials'));
-            $this->assertNull($loaded->getAttribute('credentials'));
+            $this->assertTrue($loaded->offsetExists('credentials'));
+            $this->assertIsArray($loaded->getAttribute('credentials'));
+            $this->assertSame(
+                '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----',
+                $loaded->credentials['signing_cert_pem'] ?? null,
+            );
         } finally {
             $this->cleanup();
         }

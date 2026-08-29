@@ -9,8 +9,14 @@ use RuntimeException;
 
 final class HttpsOutboundSender
 {
-    public function send(OutboundConnection $connection, string $content, string $filename): void
-    {
+    public function send(
+        OutboundConnection $connection,
+        string $content,
+        string $filename,
+        ?string $contentType = null,
+    ): void {
+        $contentType ??= 'application/xml';
+
         $settings = $connection->settings ?? [];
         $endpoint = $settings['endpoint_url'] ?? $settings['webhook_url'] ?? null;
 
@@ -25,11 +31,11 @@ final class HttpsOutboundSender
 
         $request = Http::timeout(60)
             ->withHeaders([
-                'Content-Type' => 'application/xml',
+                'Content-Type' => $contentType,
                 'Accept' => 'application/xml',
                 'Content-Disposition' => 'attachment; filename="'.$attachmentName.'"',
             ])
-            ->withBody($content, 'application/xml');
+            ->withBody($content, $contentType);
 
         if (is_string($token) && $token !== '') {
             $request = $request->withHeaders(['X-Inbound-Token' => $token]);

@@ -6,6 +6,7 @@ use App\Exceptions\VrsConfigurationException;
 use App\Models\Tenant;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\TenantSettings;
+use App\Support\Vrs\VrsLogCorrelation;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -72,7 +73,7 @@ final class HttpVrsClient implements VrsClient
         if (self::isPlaceholderHost($host)) {
             throw new VrsConfigurationException(
                 'VRS_BASE_URL still points at the example host "'.$host.'". '
-                .'Set the Verification Router Service endpoint for this environment, or use VRS_DRIVER=null to defer verification.',
+                .'Set the Verification Router Service endpoint for this environment.',
             );
         }
     }
@@ -116,7 +117,13 @@ final class HttpVrsClient implements VrsClient
                 ->post(rtrim($baseUrl, '/').$path, $request)
                 ->throw();
 
+            $httpStatus = $response->status();
+            $rawBody = Str::limit((string) $response->body(), 2000);
             $body = $response->json();
+            $httpEvidence = [
+                'http_status' => $httpStatus,
+                'http_body' => $rawBody,
+            ];
 
             if (! self::isVerdictShaped($body)) {
                 // A 2xx with no body, a non-JSON body, or a JSON value that carries none of
@@ -127,6 +134,7 @@ final class HttpVrsClient implements VrsClient
                     'unavailable',
                     'VRS response malformed',
                     new \RuntimeException('VRS returned a 2xx response without a recognizable verification payload.'),
+                    $httpEvidence,
                 );
             }
 
@@ -135,6 +143,7 @@ final class HttpVrsClient implements VrsClient
             if ($verified) {
                 return [
                     ...$base,
+                    ...$httpEvidence,
                     'status' => 'verified',
                     'message' => (string) ($body['message'] ?? 'Product verified.'),
                 ];
@@ -150,6 +159,7 @@ final class HttpVrsClient implements VrsClient
             if (in_array($reason, ['not_in_network', 'unknown'], true)) {
                 return [
                     ...$base,
+                    ...$httpEvidence,
                     'status' => 'unavailable',
                     'message' => (string) ($body['message'] ?? 'VRS has no coverage or record for this product — retry or verify manually.'),
                 ];
@@ -157,6 +167,7 @@ final class HttpVrsClient implements VrsClient
 
             return [
                 ...$base,
+                ...$httpEvidence,
                 'status' => $reason === 'suspect' ? 'suspect' : 'failed',
                 'message' => (string) ($body['message'] ?? 'Verification did not confirm this product.'),
             ];
@@ -167,7 +178,16 @@ final class HttpVrsClient implements VrsClient
         } catch (RequestException $exception) {
             // The endpoint answered with 4xx/5xx — a system fault on one side of the
             // exchange, still not a verdict about the product.
-            return $this->transportFailure($base, 'error', 'VRS request failed', $exception);
+            $evidence = [];
+            $response = $exception->response;
+            if ($response !== null) {
+                $evidence = [
+                    'http_status' => $response->status(),
+                    'http_body' => Str::limit((string) $response->body(), 2000),
+                ];
+            }
+
+            return $this->transportFailure($base, 'error', 'VRS request failed', $exception, $evidence);
         } catch (Throwable $exception) {
             // Anything else (malformed URL, redirect loop, JSON decode) must still return a
             // result array so the attempt is persisted as a Verification for the audit trail.
@@ -177,20 +197,26 @@ final class HttpVrsClient implements VrsClient
 
     /**
      * @param  array{gtin14: string, serial: string, lot: ?string, expiry_yymmdd: ?string}  $base
-     * @return array{gtin14: string, serial: string, lot: ?string, expiry_yymmdd: ?string, status: string, message: string}
+     * @param  array{http_status?: int, http_body?: string}  $httpEvidence
+     * @return array{gtin14: string, serial: string, lot: ?string, expiry_yymmdd: ?string, status: string, message: string, http_status?: int, http_body?: string}
      */
-    private function transportFailure(array $base, string $status, string $label, Throwable $exception): array
-    {
+    private function transportFailure(
+        array $base,
+        string $status,
+        string $label,
+        Throwable $exception,
+        array $httpEvidence = [],
+    ): array {
         Log::warning('VRS verification could not complete.', [
             'status' => $status,
-            'gtin14' => $base['gtin14'],
-            'serial' => $base['serial'],
+            'identity_hash' => VrsLogCorrelation::hash($base['gtin14'], $base['serial']),
             'exception' => $exception::class,
             'message' => $exception->getMessage(),
         ]);
 
         return [
             ...$base,
+            ...$httpEvidence,
             'status' => $status,
             'message' => Str::limit(
                 $label.': '.$exception->getMessage(),

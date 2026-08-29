@@ -18,12 +18,13 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 use Throwable;
 use UnitEnum;
 
-class IntegrationHealth extends Page
+class IntegrationHealth extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedSignal;
 
@@ -242,5 +243,10 @@ class IntegrationHealth extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.integration-health';
     }
 }

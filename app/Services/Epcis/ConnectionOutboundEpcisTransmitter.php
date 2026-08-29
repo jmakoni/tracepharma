@@ -4,21 +4,31 @@ namespace App\Services\Epcis;
 
 use App\Actions\Epcis\DispatchEpcisSubscriptions;
 use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
+use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Enums\OutboundTransport;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\TransmissionMdn;
 use App\Models\OutboundConnection;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Services\Epcis\Outbound\As2OutboundSender;
 use App\Services\Epcis\Outbound\As2SendResult;
 use App\Services\Epcis\Outbound\HttpsOutboundSender;
+use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Services\Epcis\Outbound\SftpOutboundSender;
+use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\LiveAcceptedEpcisEventId;
+use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Integrations\As2MdnDispositionParser;
 use App\Support\Integrations\OutboundTransportAvailability;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use League\Flysystem\UnableToCheckExistence;
+use League\Flysystem\UnableToReadFile;
 use RuntimeException;
 use Throwable;
 
@@ -33,6 +43,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         private readonly As2OutboundSender $as2Sender,
         private readonly As2MdnDispositionParser $dispositionParser,
         private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
+        private readonly ValidateEpcis12Document $validateEpcis12Document,
+        private readonly OutboundEpcisWriterResolver $writerResolver,
     ) {}
 
     public function hasRecentTransmitHeartbeat(EpcisDocument $document): bool
@@ -119,10 +131,63 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             throw new RuntimeException('EPCIS payload file is missing.');
         }
 
+        // Schema/catalog hard-gate before any partner adapter runs. Blocking findings
+        // open EpcisException rows via ValidateEpcis12Document; L4 event rows stay untouched.
+        if (! $this->passesPreTransmitValidation($document, $hasExplicitConnection)) {
+            return;
+        }
+
+        $document = $document->fresh() ?? $document;
+
+        $replayed = 0;
+        $liveAccepted = app(LiveAcceptedEpcisEventId::class);
+        $eventIdsQuery = EpcisEvent::query()
+            ->where('document_id', $document->getKey())
+            ->whereNotNull('event_id')
+            ->where('event_id', '!=', '');
+
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $eventIdsQuery->whereNull('superseded_at');
+        }
+
+        if (
+            Schema::hasColumn('epcis_events', 'ingest_generation')
+            && $document->ingest_generation !== null
+        ) {
+            $eventIdsQuery->where('ingest_generation', (int) $document->ingest_generation);
+        }
+
+        foreach ($eventIdsQuery->pluck('event_id') as $eventId) {
+            if ($liveAccepted->existsOnOtherDocument((string) $eventId, (int) $document->getKey())) {
+                $replayed++;
+            }
+        }
+
+        if ($replayed > 0) {
+            $this->markSkipped(
+                $document,
+                $hasExplicitConnection,
+                'Enterprise event-id already accepted; transmit skipped. accepted_event_ids='.$replayed,
+            );
+
+            return;
+        }
+
         $connection = $this->resolveConnection($document);
 
         if ($connection === null) {
             $this->markSkipped($document, $hasExplicitConnection, 'No active outbound connection.');
+
+            return;
+        }
+
+        if ($this->isJsonLdDocument($document)
+            && $this->writerResolver->versionForConnection($connection) === EpcisSchemaVersion::V12) {
+            $this->markFailed(
+                $document,
+                $hasExplicitConnection,
+                'Outbound connection is EPCIS 1.2; JSON-LD payloads cannot be transmitted.',
+            );
 
             return;
         }
@@ -135,12 +200,13 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 $document->original_filename,
                 (string) $document->payload_path,
             );
+            $contentType = $this->contentTypeForDocument($document);
 
             $document->touch();
 
             $sendResult = match ($connection->transport) {
-                OutboundTransport::As2 => $this->as2Sender->send($connection, $content, $filename),
-                OutboundTransport::Https => $this->httpsSender->send($connection, $content, $filename),
+                OutboundTransport::As2 => $this->as2Sender->send($connection, $content, $filename, $contentType),
+                OutboundTransport::Https => $this->httpsSender->send($connection, $content, $filename, $contentType),
                 OutboundTransport::Sftp => $this->sftpSender->send($connection, $content, $filename),
             };
 
@@ -216,8 +282,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             return true;
         }
 
-        if ($e instanceof \League\Flysystem\UnableToCheckExistence
-            || $e instanceof \League\Flysystem\UnableToReadFile) {
+        if ($e instanceof UnableToCheckExistence
+            || $e instanceof UnableToReadFile) {
             return true;
         }
 
@@ -236,6 +302,41 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 return true;
             }
         }
+
+        return false;
+    }
+
+    /**
+     * Run XSD/JSON Schema + catalog validation on the persisted outbound payload.
+     * On blocking findings: mark transmission failed and return false (do not throw —
+     * validation failures are not transient retries).
+     */
+    private function passesPreTransmitValidation(EpcisDocument $document, bool $hasExplicitConnection): bool
+    {
+        $findings = $this->validateEpcis12Document->handle($document, null, 'outbound');
+
+        $blocking = array_values(array_filter(
+            $findings,
+            static fn (EpcisValidationFinding $finding): bool => $finding->isBlocking(),
+        ));
+
+        if ($blocking === []) {
+            return true;
+        }
+
+        $summaries = array_map(
+            static fn (EpcisValidationFinding $finding): string => $finding->exceptionType.': '.$finding->description,
+            array_slice($blocking, 0, 5),
+        );
+
+        $message = 'Pre-transmit EPCIS validation failed: '.Str::limit(implode('; ', $summaries), 1800);
+
+        Log::warning('Outbound EPCIS pre-transmit validation blocked send.', [
+            'document_id' => $document->getKey(),
+            'blocking_count' => count($blocking),
+        ]);
+
+        $this->markFailed($document->fresh() ?? $document, $hasExplicitConnection, $message);
 
         return false;
     }
@@ -274,7 +375,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         $content = Storage::disk($document->payloadFilesystemDisk())->get((string) $document->payload_path);
 
         if (! is_string($content) || $content === '') {
-            throw new \RuntimeException('EPCIS payload is empty or unreadable.');
+            throw new RuntimeException('EPCIS payload is empty or unreadable.');
         }
 
         return $content;
@@ -352,5 +453,18 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         }
 
         $document->forceFill($attributes)->save();
+    }
+
+    private function isJsonLdDocument(EpcisDocument $document): bool
+    {
+        return $document->format === EpcisSchemaVersion::FORMAT_JSON
+            || $document->schema_version === EpcisSchemaVersion::V20;
+    }
+
+    private function contentTypeForDocument(EpcisDocument $document): string
+    {
+        return $document->format === EpcisSchemaVersion::FORMAT_JSON
+            ? 'application/ld+json'
+            : 'application/xml';
     }
 }

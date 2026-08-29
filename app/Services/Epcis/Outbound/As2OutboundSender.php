@@ -21,8 +21,12 @@ final class As2OutboundSender
         private readonly As2MdnDispositionParser $dispositionParser,
     ) {}
 
-    public function send(OutboundConnection $connection, string $content, string $filename): As2SendResult
-    {
+    public function send(
+        OutboundConnection $connection,
+        string $content,
+        string $filename,
+        ?string $contentType = null,
+    ): As2SendResult {
         $settings = $connection->settings ?? [];
         $endpoint = $settings['as2_url'] ?? null;
         $as2From = $settings['as2_from'] ?? null;
@@ -44,8 +48,9 @@ final class As2OutboundSender
         $canSign = filled($credentials['signing_cert_pem'] ?? null) && filled($credentials['signing_key_pem'] ?? null);
         $canEncrypt = filled($credentials['partner_encrypt_cert_pem'] ?? null);
 
+        $payloadContentType = $contentType ?? 'application/xml';
         $body = $content;
-        $contentType = 'application/xml';
+        $contentType = $payloadContentType;
         $smimeApplied = false;
 
         if ($canSign || $canEncrypt) {
@@ -55,6 +60,7 @@ final class As2OutboundSender
                     signingCertPem: $canSign ? (string) $credentials['signing_cert_pem'] : null,
                     signingKeyPem: $canSign ? (string) $credentials['signing_key_pem'] : null,
                     partnerEncryptCertPem: $canEncrypt ? (string) $credentials['partner_encrypt_cert_pem'] : null,
+                    contentType: $payloadContentType,
                 );
 
                 $body = $envelope->body;

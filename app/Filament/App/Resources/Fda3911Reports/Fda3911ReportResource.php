@@ -19,11 +19,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class Fda3911ReportResource extends Resource
+class Fda3911ReportResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Fda3911Report::class;
 
@@ -45,7 +46,7 @@ class Fda3911ReportResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsComplianceCases())
+        return TenantFeatures::forTenant(tenant())->supportsComplianceCases()
             && JobRoleAccess::allows(Permissions::NavCompliance);
     }
 
@@ -96,5 +97,10 @@ class Fda3911ReportResource extends Resource
             'view' => ViewFda3911Report::route('/{record}'),
             'edit' => EditFda3911Report::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.tracing-and-fda3911';
     }
 }

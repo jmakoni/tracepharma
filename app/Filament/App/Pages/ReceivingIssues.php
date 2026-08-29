@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -27,7 +28,7 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class ReceivingIssues extends Page
+class ReceivingIssues extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-exclamation-triangle';
 
@@ -56,7 +57,7 @@ class ReceivingIssues extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsReceiving())
+        return TenantFeatures::forTenant(tenant())->supportsReceiving()
             && JobRoleAccess::allows(Permissions::NavReceive);
     }
 
@@ -438,5 +439,10 @@ class ReceivingIssues extends Page
         }
 
         $notification->send();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.receiving-issues';
     }
 }

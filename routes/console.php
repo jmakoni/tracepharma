@@ -78,6 +78,11 @@ Schedule::command('sscc:check-pool-levels')
     ->withoutOverlapping()
     ->name('sscc-check-pool-levels');
 
+Schedule::command('sscc:reconcile-l3-l4')
+    ->daily()
+    ->withoutOverlapping()
+    ->name('sscc-reconcile-l3-l4');
+
 Schedule::command('sscc:fail-stale-client-print-jobs')
     ->everyFiveMinutes()
     ->withoutOverlapping()
@@ -137,3 +142,20 @@ Schedule::command('tracepharma:doctor-aggregation-link-fk --alert')
     ->dailyAt('05:00')
     ->withoutOverlapping()
     ->name('aggregation-link-fk-doctor');
+
+/**
+ * Printed-never-shipped auto-decommission. System actor (no tenant user);
+ * chunks under the TP-406 remaining mass-SoD window per site.
+ */
+Schedule::command('disposition:decommission-never-shipped')
+    ->dailyAt('02:30')
+    ->withoutOverlapping()
+    ->name('decommission-never-shipped');
+
+/**
+ * MOVE aged epcis_events into archive tables (retention_years). Dry-run stays a CLI flag.
+ */
+Schedule::command('tracepharma:epcis-archive-events')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->name('epcis-archive-events');

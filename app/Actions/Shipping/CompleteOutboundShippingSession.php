@@ -107,9 +107,11 @@ final class CompleteOutboundShippingSession
         /** @var OutboundShippingSession $session */
         $session = $completion['session'];
 
+        $authoredThisRequest = false;
         if ($session->status === 'completed' && $session->shipping_events_generated_at === null) {
             try {
                 $this->generateShippingEpcisEvents->handle($session, $actorId);
+                $authoredThisRequest = true;
             } catch (Throwable $e) {
                 // Authoring the EPCIS *is* the shipment as far as trading partners and
                 // regulators are concerned, so a failure here cannot be reported as a send.
@@ -134,7 +136,13 @@ final class CompleteOutboundShippingSession
         }
 
         $session = $session->refresh();
-        $this->issueCustomerPortalLink($session);
+
+        // Always provision portal access once TI is authored (including idempotent retry
+        // after author+throw). Email only when this handle newly authored — avoids
+        // re-sending a fresh signed URL on double-submit.
+        if ($session->status === 'completed' && $session->shipping_events_generated_at !== null) {
+            $this->issueCustomerPortalLink($session, sendEmail: $authoredThisRequest);
+        }
 
         return $session->refresh();
     }
@@ -143,7 +151,7 @@ final class CompleteOutboundShippingSession
      * Portal pickup is access, not identity. A link failure must not undo a send
      * that already authored transaction information.
      */
-    private function issueCustomerPortalLink(OutboundShippingSession $session): void
+    private function issueCustomerPortalLink(OutboundShippingSession $session, bool $sendEmail = true): void
     {
         $partner = $session->tradingPartner
             ?? ($session->trading_partner_id !== null
@@ -156,7 +164,9 @@ final class CompleteOutboundShippingSession
 
         try {
             $this->customerPortalService->ensureCustomerPortalLink($partner);
-            $this->notifyPartnerPortalPickup($session, $partner);
+            if ($sendEmail) {
+                $this->notifyPartnerPortalPickup($session, $partner);
+            }
         } catch (Throwable $e) {
             Log::warning('Customer portal link was not issued after outbound send.', [
                 'outbound_shipping_session_id' => $session->getKey(),

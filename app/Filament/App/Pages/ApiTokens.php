@@ -22,6 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -29,7 +30,7 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use UnitEnum;
 
-class ApiTokens extends Page implements HasTable
+class ApiTokens extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -244,5 +245,10 @@ class ApiTokens extends Page implements HasTable
         }
 
         return (int) max(1, round(((int) $minutes) / 60 / 24));
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.api-tokens';
     }
 }

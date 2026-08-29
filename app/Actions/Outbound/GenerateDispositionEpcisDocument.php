@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Actions\Outbound;
 
-use App\Domain\Epcis\EpcisEventFactory;
 use App\Domain\Epcis\Enums\EpcisAction;
+use App\Domain\Epcis\EpcisEventFactory;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Services\Epcis\Outbound\Xml12Writer;
 use App\Support\Epcis\EpcisSchemaVersion;
 use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 
 /**
@@ -20,6 +21,7 @@ final class GenerateDispositionEpcisDocument
 {
     public function __construct(
         private readonly GenerateDispositionObjectEvent $eventBuilder,
+        private readonly AssertAuthoredObjectEventCandidate $assertCandidate,
         private readonly Xml12Writer $xml12Writer,
         private readonly JsonLd20Writer $jsonLd20Writer,
         private readonly OutboundEpcisWriterResolver $writerResolver,
@@ -85,7 +87,7 @@ final class GenerateDispositionEpcisDocument
             GenerateDispositionObjectEvent::KIND_DECOMMISSIONING => [
                 EpcisAction::Delete,
                 'decommissioning',
-                'inactive',
+                $this->resolveDispositionLocal($settings['disposition'] ?? null, 'inactive'),
             ],
             GenerateDispositionObjectEvent::KIND_RETURNING => [
                 EpcisAction::Observe,
@@ -96,6 +98,7 @@ final class GenerateDispositionEpcisDocument
         };
 
         $sglnUrn = $this->eventBuilder->resolveLocationUrn($settings, $siteId);
+        $eventTimeUtc = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $domainEvents = [];
 
         foreach ($epcUris as $epcUri) {
@@ -104,12 +107,21 @@ final class GenerateDispositionEpcisDocument
                 continue;
             }
 
+            // Same pre-author hard-gate as XML path (GenerateDispositionObjectEvent::execute).
+            $this->assertCandidate->handle(
+                epcList: [$uri],
+                action: $action,
+                bizStep: $bizStep,
+                disposition: $disposition,
+                eventTimeUtc: $eventTimeUtc,
+            );
+
             $domainEvents[] = $this->eventFactory->objectEvent(
                 epcList: [$uri],
                 action: $action,
                 bizStep: $bizStep,
                 disposition: $disposition,
-                eventTimeUtc: new DateTimeImmutable('now', new \DateTimeZone('UTC')),
+                eventTimeUtc: $eventTimeUtc,
                 readPoint: $sglnUrn,
                 bizLocation: $sglnUrn,
             );
@@ -120,5 +132,21 @@ final class GenerateDispositionEpcisDocument
         }
 
         return $this->jsonLd20Writer->buildFromDomainEvents($domainEvents, now()->toIso8601String(), $correlationId);
+    }
+
+    private function resolveDispositionLocal(?string $disposition, string $default): string
+    {
+        $value = strtolower(trim((string) $disposition));
+        if ($value === '') {
+            return $default;
+        }
+
+        if (str_contains($value, ':')) {
+            $value = (string) str($value)->afterLast(':');
+        }
+
+        $value = trim($value);
+
+        return $value !== '' ? $value : $default;
     }
 }

@@ -12,10 +12,11 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class OnboardingWizard extends Page
+class OnboardingWizard extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedRocketLaunch;
 
@@ -257,5 +258,10 @@ class OnboardingWizard extends Page
     private function itemDescriptions(): array
     {
         return OnboardingCopy::forTenant(tenant())->itemDescriptions();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.onboarding';
     }
 }

@@ -10,23 +10,24 @@ use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
- * Delete superseded ingest generations for a document, keeping only the active projection.
+ * Soft-supersede non-active ingest generations for a document (append-only L4 event store).
  *
- * Event children (event_epcs, parties, locations, biz transactions, quantities, ILMD)
- * cascade from epcis_events deletes. Retired aggregation_links (valid_to set) are
- * preserved: established_by_event_id is a non-cascading audit reference so reprocess
- * retirement survives prune.
+ * Marks prior/orphan {@see EpcisEvent} rows with superseded_at instead of DELETE so RCA
+ * can still load historical event PKs, EPCs, bizStep, and times. Projection indexes
+ * (document_epcs, vocab/location/product_class) for non-active gens are still removed.
+ * Retired aggregation_links (valid_to set) remain; established_by_event_id keeps a live FK.
  */
 final class PruneSupersededIngestGenerations
 {
-    private const EVENT_DELETE_CHUNK = 500;
+    private const EVENT_CHUNK = 500;
 
     /**
-     * Delete all non-active generations after ingest_generation advances (both older and orphan rows).
+     * Soft-supersede all non-active generations after ingest_generation advances
+     * (both older and orphan rows).
      *
      * @return array{
      *     kept_generation: int,
-     *     events_deleted: int,
+     *     events_superseded: int,
      *     document_epcs_deleted: int,
      *     product_classes_deleted: int,
      *     locations_deleted: int,
@@ -48,17 +49,17 @@ final class PruneSupersededIngestGenerations
             return $empty;
         }
 
-        return $this->deleteGenerations($documentId, $keptGeneration, orphansOnly: false);
+        return $this->supersedeGenerations($documentId, $keptGeneration, orphansOnly: false);
     }
 
     /**
-     * Delete failed partial reprocess leftovers (generations greater than the active pointer).
+     * Soft-supersede failed partial reprocess leftovers (generations greater than the active pointer).
      *
-     * Does not delete generations below the active pointer — the last good projection remains.
+     * Does not touch generations at or below the active pointer — the last good projection remains.
      *
      * @return array{
      *     kept_generation: int,
-     *     events_deleted: int,
+     *     events_superseded: int,
      *     document_epcs_deleted: int,
      *     product_classes_deleted: int,
      *     locations_deleted: int,
@@ -69,8 +70,8 @@ final class PruneSupersededIngestGenerations
     {
         // Keep the active pointer (default 1). A failed first ingest writes its
         // only projection at generation 1; treating "never processed" as kept=0
-        // deleted those rows and left the document view empty. Failed reprocess
-        // leftovers remain orphans because they are written at max(gen)+1.
+        // would have wiped those rows. Failed reprocess leftovers remain orphans
+        // because they are written at max(gen)+1.
         $keptGeneration = (int) ($document->ingest_generation ?? 1);
         $empty = $this->emptyStats($keptGeneration);
 
@@ -84,13 +85,64 @@ final class PruneSupersededIngestGenerations
             return $empty;
         }
 
-        return $this->deleteGenerations($documentId, $keptGeneration, orphansOnly: true);
+        return $this->supersedeGenerations($documentId, $keptGeneration, orphansOnly: true);
+    }
+
+    /**
+     * Tentatively retire prior generations on this document so a new generation
+     * can persist the same GS1 event_id without violating live uniqueness.
+     */
+    public function supersedePriorGenerationsForAttempt(EpcisDocument $document, int $newGeneration): void
+    {
+        if ($newGeneration <= 1 || ! $this->softSupersedeReady()) {
+            return;
+        }
+
+        EpcisEvent::query()
+            ->where('document_id', $document->getKey())
+            ->where('ingest_generation', '<', $newGeneration)
+            ->whereNull('superseded_at')
+            ->update([
+                'superseded_at' => now(),
+                'superseded_by_generation' => $newGeneration,
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
+     * Undo {@see supersedePriorGenerationsForAttempt} when the new generation fails.
+     */
+    public function restoreTentativeSupersede(EpcisDocument $document, int $newGeneration): void
+    {
+        if ($newGeneration <= 1 || ! $this->softSupersedeReady()) {
+            return;
+        }
+
+        EpcisEvent::query()
+            ->where('document_id', $document->getKey())
+            ->where('ingest_generation', $newGeneration)
+            ->whereNull('superseded_at')
+            ->update([
+                'superseded_at' => now(),
+                'superseded_by_generation' => $newGeneration,
+                'updated_at' => now(),
+            ]);
+
+        EpcisEvent::query()
+            ->where('document_id', $document->getKey())
+            ->where('ingest_generation', '<', $newGeneration)
+            ->where('superseded_by_generation', $newGeneration)
+            ->update([
+                'superseded_at' => null,
+                'superseded_by_generation' => null,
+                'updated_at' => now(),
+            ]);
     }
 
     /**
      * @return array{
      *     kept_generation: int,
-     *     events_deleted: int,
+     *     events_superseded: int,
      *     document_epcs_deleted: int,
      *     product_classes_deleted: int,
      *     locations_deleted: int,
@@ -101,7 +153,7 @@ final class PruneSupersededIngestGenerations
     {
         return [
             'kept_generation' => $keptGeneration,
-            'events_deleted' => 0,
+            'events_superseded' => 0,
             'document_epcs_deleted' => 0,
             'product_classes_deleted' => 0,
             'locations_deleted' => 0,
@@ -115,11 +167,18 @@ final class PruneSupersededIngestGenerations
             && Schema::hasColumn('epcis_events', 'ingest_generation');
     }
 
+    private function softSupersedeReady(): bool
+    {
+        return Schema::hasColumn('epcis_events', 'superseded_at')
+            && Schema::hasColumn('epcis_events', 'superseded_by_generation');
+    }
+
     private function hasGenerationsToPrune(int $documentId, int $keptGeneration, bool $orphansOnly): bool
     {
         $eventQuery = EpcisEvent::query()
             ->where('document_id', $documentId);
         $this->applyGenerationFilter($eventQuery, $keptGeneration, $orphansOnly);
+        $this->applyNotYetSupersededFilter($eventQuery);
 
         if ($eventQuery->exists()) {
             return true;
@@ -139,14 +198,14 @@ final class PruneSupersededIngestGenerations
     /**
      * @return array{
      *     kept_generation: int,
-     *     events_deleted: int,
+     *     events_superseded: int,
      *     document_epcs_deleted: int,
      *     product_classes_deleted: int,
      *     locations_deleted: int,
      *     vocabulary_elements_deleted: int,
      * }
      */
-    private function deleteGenerations(int $documentId, int $keptGeneration, bool $orphansOnly): array
+    private function supersedeGenerations(int $documentId, int $keptGeneration, bool $orphansOnly): array
     {
         return DB::transaction(function () use ($documentId, $keptGeneration, $orphansOnly): array {
             $stats = $this->emptyStats($keptGeneration);
@@ -179,14 +238,20 @@ final class PruneSupersededIngestGenerations
                 $stats['document_epcs_deleted'] = (int) $query->delete();
             }
 
+            if (! $this->softSupersedeReady()) {
+                // Pre-migration safety: never hard-delete events; leave them for RCA.
+                return $stats;
+            }
+
             do {
                 $eventQuery = EpcisEvent::query()
                     ->where('document_id', $documentId);
                 $this->applyGenerationFilter($eventQuery, $keptGeneration, $orphansOnly);
+                $this->applyNotYetSupersededFilter($eventQuery);
 
                 $events = $eventQuery
                     ->orderBy('id')
-                    ->limit(self::EVENT_DELETE_CHUNK)
+                    ->limit(self::EVENT_CHUNK)
                     ->get();
 
                 if ($events->isEmpty()) {
@@ -196,12 +261,16 @@ final class PruneSupersededIngestGenerations
                 try {
                     $events->unsearchable();
                 } catch (Throwable) {
-                    // Best-effort: DB purge must proceed even when Scout is unavailable.
+                    // Best-effort: soft-supersede must proceed even when Scout is unavailable.
                 }
 
-                $stats['events_deleted'] += (int) EpcisEvent::query()
+                $stats['events_superseded'] += (int) EpcisEvent::query()
                     ->whereIn('id', $events->modelKeys())
-                    ->delete();
+                    ->update([
+                        'superseded_at' => now(),
+                        'superseded_by_generation' => $keptGeneration,
+                        'updated_at' => now(),
+                    ]);
             } while (true);
 
             return $stats;
@@ -217,6 +286,16 @@ final class PruneSupersededIngestGenerations
             $query->where('ingest_generation', '>', $keptGeneration);
         } else {
             $query->where('ingest_generation', '!=', $keptGeneration);
+        }
+    }
+
+    /**
+     * @param  Builder<EpcisEvent>|\Illuminate\Database\Query\Builder  $query
+     */
+    private function applyNotYetSupersededFilter($query): void
+    {
+        if ($this->softSupersedeReady()) {
+            $query->whereNull('superseded_at');
         }
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
+use App\Exceptions\VrsConfigurationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\DispenseCheckRequest;
 use App\Models\Exceptions\ExceptionCase;
@@ -32,7 +33,13 @@ final class DispenseCheckController extends Controller
         try {
             $result = $verification->handle($scan, $request->user());
         } catch (InvalidArgumentException $exception) {
-            return response()->json(['message' => $exception->getMessage()], 422);
+            return response()->json(['message' => $exception->getMessage(), 'allowed' => false], 422);
+        } catch (VrsConfigurationException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'allowed' => false,
+                'status' => 'unavailable',
+            ], 503);
         }
 
         $record = $result['verification'];

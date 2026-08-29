@@ -10,31 +10,32 @@ use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResou
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\Sites\SiteResource;
-use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Filament\App\Resources\TracingRequests\TracingRequestResource;
+use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Filament\App\Resources\Verifications\VerificationResource;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Dashboard\AnalyticsMetrics;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Dashboard\ResolveDashboardWidgets;
-use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\TenantFeatures;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 use Throwable;
 use UnitEnum;
 
-class Analytics extends Page
+class Analytics extends Page implements HasKnowledgeBase
 {
     use HidesForPharmacySimplifiedNav;
 
@@ -273,7 +274,7 @@ class Analytics extends Page
     }
 
     /**
-     * @param  class-string<Resource>  $resource
+     * @param  class-string<resource>  $resource
      */
     private function resourceIndexUrl(string $resource): ?string
     {
@@ -296,7 +297,7 @@ class Analytics extends Page
     }
 
     /**
-     * @param  class-string<Resource>  $resource
+     * @param  class-string<resource>  $resource
      */
     private function resourceViewUrl(string $resource, int $id): ?string
     {
@@ -309,5 +310,10 @@ class Analytics extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.compliance-reports';
     }
 }

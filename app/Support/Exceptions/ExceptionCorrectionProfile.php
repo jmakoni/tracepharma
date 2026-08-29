@@ -5,6 +5,7 @@ namespace App\Support\Exceptions;
 use App\Actions\Epcis\ProcessEpcisDocument;
 use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Actions\Epcis\ValidateEpcis12Document;
+use App\Console\Commands\EmitPendingMdnCatalogSignalsCommand;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
 use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
@@ -21,17 +22,17 @@ use Database\Seeders\ExceptionTypeSeeder;
  * actually emitted by {@see EpcisCatalogBusinessRules},
  * {@see ValidateEpcis12Document} and {@see ProcessEpcisDocument}.
  *
- * Codes that exist in the catalog only as unwired stubs —
- * {@see RecordOperationalEpcisCatalogSignal} hooks that no job/controller calls yet
- * (L2_L3_RECONCILIATION_FAILURE, AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
+ * Codes that exist in the catalog only as unwired stubs — the orphaned TIMING_INVERSION and
  * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator;
  * superseded for live detection by {@see EpcisCatalogBusinessRules} emitting
  * SERIAL_SHIPPED_NOT_COMMISSIONED and MISSING_COMMISSIONING instead — keep stub-hidden, no new emitter)
  * intentionally fall through to the generic {@see self::FAMILY_FALLBACK} profile.
  *
+ * AUTO_DECOMMISSION_FAILED is live (DecommissionNeverShippedEpcs) and operator-visible.
+ * L2_L3_RECONCILIATION_FAILURE is live (ReconcileSsccBatchL3L4) and operator-visible.
  * L3_TRANSMISSION_FAILURE is live (ForwardCommissioningToL3 → RecordOperationalEpcisCatalogSignal)
  * and is operator-visible. PARTNER_REJECTED_FILE / MISSING_MDN / LATE_MDN are live from AS2 MDN
- * reject paths and {@see \App\Console\Commands\EmitPendingMdnCatalogSignalsCommand}.
+ * reject paths and {@see EmitPendingMdnCatalogSignalsCommand}.
  */
 final class ExceptionCorrectionProfile
 {
@@ -253,8 +254,6 @@ final class ExceptionCorrectionProfile
     public static function operatorHiddenStubCodes(): array
     {
         return [
-            'L2_L3_RECONCILIATION_FAILURE',
-            'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
             'SHIP_BEFORE_COMMISSION',
         ];
@@ -477,7 +476,7 @@ final class ExceptionCorrectionProfile
 
         // Quantity, Lot & Expiry
         'LOT_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
-        'QUANTITY_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
+        'QUANTITY_MISMATCH' => self::FAMILY_DOCUMENT, // emitted on outbound under-scan without declared split
         'MISSING_EXPIRY' => self::FAMILY_DOCUMENT,
         'EXPIRED_PRODUCT_SHIPPED' => self::FAMILY_QUARANTINE,
         'MIXED_EXPIRY_SAME_LOT' => self::FAMILY_DOCUMENT,
@@ -512,9 +511,9 @@ final class ExceptionCorrectionProfile
         'OWNERSHIP_TRANSFER_UNCLEAR' => self::FAMILY_DOCUMENT,
 
         // System / Operational
-        'L2_L3_RECONCILIATION_FAILURE' => self::FAMILY_FALLBACK, // stub: L2/L3 hook, no caller yet
+        'L2_L3_RECONCILIATION_FAILURE' => self::FAMILY_DOCUMENT, // emitted by ReconcileSsccBatchL3L4
         'L3_TRANSMISSION_FAILURE' => self::FAMILY_FALLBACK, // live: ForwardCommissioningToL3
-        'AUTO_DECOMMISSION_FAILED' => self::FAMILY_FALLBACK, // stub: hook, no caller yet
+        'AUTO_DECOMMISSION_FAILED' => self::FAMILY_FALLBACK, // live: DecommissionNeverShippedEpcs
         'MASTER_DATA_SYNC_LAG' => self::FAMILY_MASTER_DATA_PRODUCT,
         'INGESTION_PARSE_ERROR' => self::FAMILY_DOCUMENT,
         'INTERNAL_VALIDATION_FAILED' => self::FAMILY_DOCUMENT,

@@ -18,12 +18,13 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Models\Activity;
 use UnitEnum;
 
-class ActivityLogResource extends Resource
+class ActivityLogResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Activity::class;
 
@@ -43,7 +44,7 @@ class ActivityLogResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavCompliance);
     }
 
@@ -145,5 +146,10 @@ class ActivityLogResource extends Resource
             'index' => ListActivityLogs::route('/'),
             'view' => ViewActivityLog::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.activity-log';
     }
 }

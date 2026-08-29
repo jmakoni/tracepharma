@@ -1,11 +1,15 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
 @import '../../../../vendor/zeeshantariq/filament-sticky-columns/resources/css/filament-sticky-columns.css';
 
+@plugin "@tailwindcss/typography";
+
 @source '../../../../app/Filament/App/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/components/**/*';
 @source '../../../../resources/views/livewire/**/*';
 @source '../../../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../../../vendor/guava/filament-knowledge-base/src/**/*';
+@source '../../../../vendor/guava/filament-knowledge-base/resources/views/**/*';
 
 /*
  * Topbar menus (profile + site) must paint above page content and floor sticky

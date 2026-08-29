@@ -11,13 +11,13 @@ use App\Models\Site;
 use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
-use App\Support\Receiving\EligibleReceiveSites;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\Packing\AcquirePackChildLocks;
+use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
@@ -26,13 +26,14 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
 use Throwable;
 use UnitEnum;
 
-class UnpackWorkstation extends Page
+class UnpackWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCubeTransparent;
 
@@ -421,5 +422,10 @@ class UnpackWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.unpack';
     }
 }

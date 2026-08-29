@@ -14,10 +14,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class AdminResource extends Resource
+class AdminResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Admin::class;
 
@@ -68,5 +69,10 @@ class AdminResource extends Resource
             'create' => CreateAdmin::route('/create'),
             'edit' => EditAdmin::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'platform.admins';
     }
 }

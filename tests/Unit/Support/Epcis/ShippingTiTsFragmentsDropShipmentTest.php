@@ -10,7 +10,7 @@ use Tests\TestCase;
 class ShippingTiTsFragmentsDropShipmentTest extends TestCase
 {
     #[Test]
-    public function drop_shipment_indicator_xml_emits_dropShipment_when_flagged(): void
+    public function drop_shipment_indicator_xml_emits_drop_shipment_when_flagged(): void
     {
         $xml = ShippingTiTsFragments::dropShipmentIndicatorXml(true);
 
@@ -33,7 +33,7 @@ class ShippingTiTsFragmentsDropShipmentTest extends TestCase
 
         ShippingTiTsFragments::assertDropShipmentEmitted(
             isDropShipment: true,
-            xml: '<?xml version="1.0"?><epcis:EPCISDocument></epcis:EPCISDocument>',
+            payload: '<?xml version="1.0"?><epcis:EPCISDocument></epcis:EPCISDocument>',
         );
     }
 
@@ -42,7 +42,7 @@ class ShippingTiTsFragmentsDropShipmentTest extends TestCase
     {
         ShippingTiTsFragments::assertDropShipmentEmitted(
             isDropShipment: false,
-            xml: '<?xml version="1.0"?><epcis:EPCISDocument></epcis:EPCISDocument>',
+            payload: '<?xml version="1.0"?><epcis:EPCISDocument></epcis:EPCISDocument>',
         );
 
         $this->assertTrue(true);

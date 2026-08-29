@@ -11,10 +11,11 @@ use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class WholesalerIntegrationPackPage extends Page
+class WholesalerIntegrationPackPage extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
 
@@ -77,5 +78,10 @@ class WholesalerIntegrationPackPage extends Page
                 ->url(fn (): string => OrganizationSettings::getUrl(panel: 'app'))
                 ->visible(fn (): bool => OrganizationSettings::canAccess()),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.pms-and-wholesaler-packs';
     }
 }

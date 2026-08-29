@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Packing;
 
 use App\Actions\Packing\AuthorTransformationRepack;
+use App\Enums\EpcisAuthoredKind;
 use App\Enums\TenantProfile;
 use App\Filament\App\Pages\RepackTransformWorkstation;
 use App\Models\Epcis\Epc;
@@ -110,6 +111,206 @@ class AuthorTransformationRepackTest extends TestCase
             $this->assertNotNull($output);
             $this->epcIds[] = (int) $output->getKey();
             $this->assertSame('outputEPC', $roles[(int) $output->getKey()] ?? null);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function direct_persist_fallback_reuses_incomplete_transformation_event(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Prepackager);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            $input = $this->createEpc('IN');
+            $this->receiveAtSite($site, $input);
+            $outputUri = 'urn:epc:id:sgtin:0399991.000001.'.(string) random_int(100000000, 999999999);
+
+            $path = 'epcis/outbound/transformation-fallback-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($path, '<xml/>');
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Transformation,
+                'ship_from_site_id' => $site->getKey(),
+                'format' => 'xml',
+                'original_filename' => basename($path),
+                'file_sha256' => hash('sha256', '<xml/>'),
+                'payload_disk' => 'local',
+                'payload_path' => $path,
+                'dscsa_affirm' => false,
+                'status' => 'parsed',
+                'notes' => 'Incomplete ingest fixture',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 0,
+                'received_at' => now(),
+                'processed_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            $incomplete = EpcisEvent::query()->create([
+                'document_id' => $document->getKey(),
+                'event_id' => 'urn:uuid:'.(string) Str::uuid(),
+                'event_type' => 'TransformationEvent',
+                'event_time' => now(),
+                'record_time' => now(),
+                'event_timezone_offset' => '+00:00',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                'disposition' => 'urn:epcglobal:cbv:disp:active',
+            ]);
+            $this->eventIds[] = (int) $incomplete->getKey();
+
+            $action = app(AuthorTransformationRepack::class);
+            $method = new \ReflectionMethod(AuthorTransformationRepack::class, 'persistDirectRows');
+            $method->setAccessible(true);
+            $method->invoke(
+                $action,
+                (int) $site->getKey(),
+                [(int) $input->getKey()],
+                [(string) $input->epc_uri],
+                [$outputUri],
+                'urn:uuid:'.(string) Str::uuid(),
+                (string) $site->gln,
+                $path,
+                '<xml/>',
+                $document,
+            );
+
+            $events = EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->where('event_type', 'TransformationEvent')
+                ->get();
+            $this->assertCount(1, $events);
+            $this->assertSame((int) $incomplete->getKey(), (int) $events->first()->getKey());
+
+            $roles = DB::table('event_epcs')
+                ->where('event_id', $events->first()->getKey())
+                ->pluck('role');
+            $this->assertTrue($roles->contains('inputEPC'));
+            $this->assertTrue($roles->contains('outputEPC'));
+
+            $output = Epc::query()->where('epc_uri', $outputUri)->first();
+            $this->assertNotNull($output);
+            $this->epcIds[] = (int) $output->getKey();
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function input_only_roles_do_not_count_as_complete(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Prepackager);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+
+            $input = $this->createEpc('IN');
+            $this->receiveAtSite($site, $input);
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Transformation,
+                'ship_from_site_id' => $site->getKey(),
+                'format' => 'xml',
+                'original_filename' => 'partial-roles.xml',
+                'file_sha256' => hash('sha256', (string) Str::uuid()),
+                'payload_disk' => 'local',
+                'payload_path' => 'epcis/outbound/partial-roles.xml',
+                'dscsa_affirm' => false,
+                'status' => 'parsed',
+                'notes' => 'Partial roles fixture',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+                'processed_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            $partial = EpcisEvent::query()->create([
+                'document_id' => $document->getKey(),
+                'event_id' => 'urn:uuid:'.(string) Str::uuid(),
+                'event_type' => 'TransformationEvent',
+                'event_time' => now(),
+                'record_time' => now(),
+                'event_timezone_offset' => '+00:00',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                'disposition' => 'urn:epcglobal:cbv:disp:active',
+            ]);
+            $this->eventIds[] = (int) $partial->getKey();
+
+            DB::table('event_epcs')->insert([
+                'event_id' => $partial->getKey(),
+                'epc_id' => $input->getKey(),
+                'role' => 'inputEPC',
+                'quantity' => null,
+                'uom' => null,
+            ]);
+
+            $method = new \ReflectionMethod(AuthorTransformationRepack::class, 'hasCompleteTransformationRoles');
+            $method->setAccessible(true);
+            $action = app(AuthorTransformationRepack::class);
+
+            $this->assertFalse($method->invoke($action, $partial));
+            $this->assertFalse($method->invoke($action, null));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function ensure_last_good_projection_does_not_clear_error_status(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Transformation,
+                'format' => 'xml',
+                'original_filename' => 'error-transform.xml',
+                'file_sha256' => hash('sha256', (string) Str::uuid()),
+                'payload_disk' => 'local',
+                'payload_path' => 'epcis/outbound/error-transform.xml',
+                'dscsa_affirm' => false,
+                'status' => 'error',
+                'notes' => 'Hard-fail fixture',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 0,
+                'received_at' => now(),
+                'processed_at' => null,
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            $method = new \ReflectionMethod(AuthorTransformationRepack::class, 'ensureLastGoodProjection');
+            $method->setAccessible(true);
+            $method->invoke(app(AuthorTransformationRepack::class), $document);
+
+            $this->assertSame('error', (string) $document->fresh()->status);
+            $this->assertNull($document->fresh()->processed_at);
         } finally {
             $this->cleanup($tenant);
         }

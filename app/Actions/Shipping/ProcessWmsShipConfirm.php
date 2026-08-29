@@ -129,7 +129,12 @@ final class ProcessWmsShipConfirm
             ? (int) $payload['site_id']
             : null;
 
-        $session = $this->openSession->handle($siteId);
+        $expectedCount = $this->payloadExpectedCount($payload);
+
+        $session = $this->openSession->handle(
+            $siteId,
+            expectedCount: $expectedCount,
+        );
 
         if ($idempotencyKey !== null) {
             try {
@@ -374,7 +379,7 @@ final class ProcessWmsShipConfirm
         if ($this->hasReferencePayload($payload)) {
             $references = $this->referencePayload($payload);
 
-            foreach (['asn_number', 'customer_po', 'invoice_number'] as $key) {
+            foreach (['asn_number', 'customer_po', 'invoice_number', 'expected_count'] as $key) {
                 if (! array_key_exists($key, $references)) {
                     continue;
                 }
@@ -406,6 +411,10 @@ final class ProcessWmsShipConfirm
 
     private function referenceFieldMatches(string $key, mixed $expected, mixed $actual): bool
     {
+        if ($key === 'expected_count') {
+            return (int) $expected === (int) $actual;
+        }
+
         $expectedValue = blank($expected) ? null : trim((string) $expected);
         $actualValue = blank($actual) ? null : trim((string) $actual);
 
@@ -582,6 +591,8 @@ final class ProcessWmsShipConfirm
             'invoice_number',
             'shipment_reference',
             'dscsa_affirm',
+            'expected_count',
+            'quantity',
         ]);
     }
 
@@ -611,6 +622,27 @@ final class ProcessWmsShipConfirm
             }
         }
 
+        $expected = $this->payloadExpectedCount($payload);
+        if ($expected !== null) {
+            $data['expected_count'] = $expected;
+        }
+
         return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadExpectedCount(array $payload): ?int
+    {
+        if (Arr::has($payload, 'expected_count') && $payload['expected_count'] !== null && $payload['expected_count'] !== '') {
+            return max(0, (int) $payload['expected_count']);
+        }
+
+        if (Arr::has($payload, 'quantity') && $payload['quantity'] !== null && $payload['quantity'] !== '') {
+            return max(0, (int) $payload['quantity']);
+        }
+
+        return null;
     }
 }

@@ -780,6 +780,9 @@ final class EpcisXmlReader
         $disposition = $this->firstByLocalName($event, 'disposition');
         $eventIdNode = $this->firstByLocalName($event, 'eventID');
         $eventId = $eventIdNode !== null ? trim((string) $eventIdNode) : null;
+        if ($eventId === null || $eventId === '') {
+            $eventId = $this->firstLocalText($event, 'baseExtension', 'eventID');
+        }
 
         $transformationIdNode = $this->firstByLocalName($event, 'transformationID');
         $transformationId = $transformationIdNode !== null ? trim((string) $transformationIdNode) : null;

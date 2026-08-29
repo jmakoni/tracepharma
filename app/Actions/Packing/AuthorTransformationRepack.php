@@ -128,14 +128,9 @@ final class AuthorTransformationRepack
             ->where('event_type', 'TransformationEvent')
             ->first();
 
-        $hasRoles = $event !== null && DB::table('event_epcs')
-            ->where('event_id', $event->getKey())
-            ->whereIn('role', ['inputEPC', 'outputEPC'])
-            ->exists();
-
         // Prefer ingest projection; if processing did not emit TransformationEvent rows
-        // with roles (hard-gate / schema edge cases), write the ProcessEpcisDocument shape directly.
-        if (! $hasRoles) {
+        // with both roles (hard-gate / schema edge cases), write the ProcessEpcisDocument shape directly.
+        if (! $this->hasCompleteTransformationRoles($event)) {
             $document = $this->persistDirectRows(
                 siteId: $siteId,
                 inputEpcIds: $inputEpcIds,
@@ -162,18 +157,41 @@ final class AuthorTransformationRepack
         ];
     }
 
+    private function hasCompleteTransformationRoles(?EpcisEvent $event): bool
+    {
+        if ($event === null) {
+            return false;
+        }
+
+        $eventId = (int) $event->getKey();
+
+        return DB::table('event_epcs')
+            ->where('event_id', $eventId)
+            ->where('role', 'inputEPC')
+            ->exists()
+            && DB::table('event_epcs')
+                ->where('event_id', $eventId)
+                ->where('role', 'outputEPC')
+                ->exists();
+    }
+
     private function ensureLastGoodProjection(EpcisDocument $document): void
     {
         $status = (string) $document->status;
-        $ok = in_array($status, ['parsed', 'validated', 'received', 'generated'], true)
-            || ($status === 'error' && $document->processed_at !== null);
 
-        if ($ok) {
+        // Never coerce error (or voided) into last-good — Asset Trace would hide a failed transform.
+        if (in_array($status, ['error', 'voided'], true)) {
+            return;
+        }
+
+        $ok = in_array($status, ['parsed', 'validated', 'received', 'generated'], true);
+
+        if ($ok && $document->processed_at !== null) {
             return;
         }
 
         $document->forceFill([
-            'status' => 'parsed',
+            'status' => $ok ? $status : 'parsed',
             'processed_at' => $document->processed_at ?? now(),
         ])->save();
     }
@@ -280,20 +298,43 @@ XML;
                 ])->save();
             }
 
-            $event = EpcisEvent::query()->create([
-                'document_id' => $document->getKey(),
-                'event_id' => 'urn:uuid:'.(string) Str::uuid(),
-                'event_type' => 'TransformationEvent',
-                'event_time' => now(),
-                'record_time' => now(),
-                'event_timezone_offset' => '+00:00',
-                'action' => 'ADD',
-                'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
-                'disposition' => 'urn:epcglobal:cbv:disp:active',
-                'read_point_gln' => $gln,
-                'biz_location_gln' => $gln,
-                'extension_json' => ['transformation_id' => $transformationId],
-            ]);
+            // Reuse an incomplete ingest TransformationEvent when present so fallback
+            // does not leave a second event on the same document without roles.
+            $event = EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->where('event_type', 'TransformationEvent')
+                ->orderBy('id')
+                ->first();
+
+            if ($event instanceof EpcisEvent) {
+                DB::table('event_epcs')->where('event_id', $event->getKey())->delete();
+                $event->forceFill([
+                    'event_time' => now(),
+                    'record_time' => now(),
+                    'event_timezone_offset' => '+00:00',
+                    'action' => 'ADD',
+                    'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                    'disposition' => 'urn:epcglobal:cbv:disp:active',
+                    'read_point_gln' => $gln,
+                    'biz_location_gln' => $gln,
+                    'extension_json' => ['transformation_id' => $transformationId],
+                ])->save();
+            } else {
+                $event = EpcisEvent::query()->create([
+                    'document_id' => $document->getKey(),
+                    'event_id' => 'urn:uuid:'.(string) Str::uuid(),
+                    'event_type' => 'TransformationEvent',
+                    'event_time' => now(),
+                    'record_time' => now(),
+                    'event_timezone_offset' => '+00:00',
+                    'action' => 'ADD',
+                    'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                    'disposition' => 'urn:epcglobal:cbv:disp:active',
+                    'read_point_gln' => $gln,
+                    'biz_location_gln' => $gln,
+                    'extension_json' => ['transformation_id' => $transformationId],
+                ]);
+            }
 
             $rows = [];
             foreach ($inputEpcIds as $epcId) {

@@ -17,12 +17,13 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class InvestigatorSla extends Page
+class InvestigatorSla extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
@@ -168,5 +169,10 @@ class InvestigatorSla extends Page
                     ]);
                 }),
         );
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.investigator-sla';
     }
 }

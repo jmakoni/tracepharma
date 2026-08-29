@@ -20,11 +20,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class OutboundShippingSessionResource extends Resource
+class OutboundShippingSessionResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = OutboundShippingSession::class;
 
@@ -44,7 +45,7 @@ class OutboundShippingSessionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations())
+        return TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
@@ -133,5 +134,10 @@ class OutboundShippingSessionResource extends Resource
             'view' => ViewOutboundShippingSession::route('/{record}'),
             'floor' => MobileViewOutboundShippingSession::route('/{record}/floor'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.outbound-shipping';
     }
 }

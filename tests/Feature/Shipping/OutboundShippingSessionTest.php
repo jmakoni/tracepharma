@@ -9,15 +9,20 @@ use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CompleteOutboundShippingSession;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
+use App\Actions\Shipping\DeclareOutboundShippingSplit;
 use App\Actions\Shipping\GenerateShippingEpcisEvents;
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Actions\Shipping\OverrideOutboundShippingQuantityGate;
+use App\Actions\Shipping\ProcessWmsShipConfirm;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Actions\Shipping\ValidateOutboundShippingSend;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\OpenTransferringSession;
 use App\Enums\EpcisAuthoredKind;
+use App\Enums\ExceptionStatus;
 use App\Enums\FacilityType;
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
@@ -32,6 +37,8 @@ use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\OutboundConnection;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
@@ -45,8 +52,10 @@ use App\Models\TradingPartner;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
+use App\Notifications\CustomerPortalShipNotification;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Epcis\Validation\EpcisXsdValidator;
@@ -56,6 +65,7 @@ use App\Support\Shipping\SearchShipToCustomers;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantSettings;
+use Database\Seeders\ExceptionTypeSeeder;
 use DomainException;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -63,6 +73,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -70,6 +81,7 @@ use InvalidArgumentException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 class OutboundShippingSessionTest extends TestCase
@@ -1626,7 +1638,7 @@ class OutboundShippingSessionTest extends TestCase
     }
 
     #[Test]
-    public function flagged_drop_shipment_epcis_contains_dropShipment_indicator(): void
+    public function flagged_drop_shipment_epcis_contains_drop_shipment_indicator(): void
     {
         $tenant = $this->initializeWholesalerTenant();
 
@@ -1654,7 +1666,7 @@ class OutboundShippingSessionTest extends TestCase
     }
 
     #[Test]
-    public function unflagged_ship_epcis_does_not_require_dropShipment_indicator(): void
+    public function unflagged_ship_epcis_does_not_require_drop_shipment_indicator(): void
     {
         $tenant = $this->initializeWholesalerTenant();
 
@@ -1960,6 +1972,14 @@ class OutboundShippingSessionTest extends TestCase
 
             $document = EpcisDocument::query()->findOrFail($session->epcis_document_id);
             $this->assertSame('failed', $document->transmission_status);
+            $this->assertNull($customer->fresh()->customer_portal_uuid);
+
+            // Idempotent retry after author+throw must still provision portal access.
+            $this->mock(OutboundEpcisTransmitter::class, function ($mock): void {
+                $mock->shouldReceive('transmit')->zeroOrMoreTimes();
+            });
+            app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->assertNotNull($customer->fresh()->customer_portal_uuid);
         } finally {
             $this->cleanup($tenant);
         }
@@ -1975,13 +1995,27 @@ class OutboundShippingSessionTest extends TestCase
         $tenant = $this->initializeWholesalerTenant();
 
         try {
+            Notification::fake();
+
             $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
             $this->makeEpcShippableAtSite($site);
             $partner = $this->ensureDemoPartner();
+            $partner->forceFill([
+                'email' => 'portal-idempotent-'.uniqid('', true).'@example.test',
+            ])->save();
+            TenantSettings::forTenant($tenant)
+                ->setEmailPortalOnShipEnabled(true)
+                ->saveQuietly();
+
             $session = $this->readyToSendSession($site, $partner, 'ASN-IDEMPOTENT-001', 'PO-IDEMPOTENT-001');
 
             $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
             $this->documentIds[] = (int) $completed->epcis_document_id;
+
+            Notification::assertSentOnDemandTimes(
+                CustomerPortalShipNotification::class,
+                1,
+            );
 
             $again = app(CompleteOutboundShippingSession::class)->handle($completed->fresh());
 
@@ -1991,6 +2025,10 @@ class OutboundShippingSessionTest extends TestCase
                 1,
                 EpcisEvent::query()->where('document_id', $completed->epcis_document_id)->count(),
                 'Re-sending an already-authored session must not author duplicate events.',
+            );
+            Notification::assertSentOnDemandTimes(
+                CustomerPortalShipNotification::class,
+                1,
             );
         } finally {
             $this->cleanup($tenant);
@@ -3679,6 +3717,567 @@ class OutboundShippingSessionTest extends TestCase
         }
     }
 
+    #[Test]
+    public function expected_count_populated_from_open_refs_and_wms_quantity(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $opened = app(OpenOutboundShippingSession::class)->handle(
+                (int) $site->getKey(),
+                expectedCount: 5,
+            );
+            $this->sessionIds[] = (int) $opened->getKey();
+            $this->assertSame(5, (int) $opened->expected_count);
+
+            app(UpdateOutboundShippingReferences::class)->handle($opened, [
+                'asn_number' => 'ASN-QTY-'.Str::random(4),
+                'customer_po' => 'PO-QTY',
+                'expected_count' => 3,
+            ]);
+            $this->assertSame(3, (int) $opened->fresh()->expected_count);
+
+            $wms = app(ProcessWmsShipConfirm::class)->handle([
+                'site_id' => (int) $site->getKey(),
+                'scans' => [self::SSCC_URI],
+                'quantity' => 7,
+                'complete' => false,
+            ]);
+            $this->sessionIds[] = (int) $wms['session_id'];
+            $wmsSession = OutboundShippingSession::query()->findOrFail($wms['session_id']);
+            $this->assertSame(7, (int) $wmsSession->expected_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function quantity_match_allows_complete(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Qty Match Customer');
+            $shipTo = $this->createCustomerSite($customer, '037102');
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-MATCH', 'PO-MATCH', $shipTo);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 1,
+            ]);
+
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(1, (int) $completed->confirmed_count);
+            $this->assertSame(1, (int) $completed->expected_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function under_scan_without_split_blocks_and_opens_quantity_mismatch(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            if (! ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->exists()) {
+                (new ExceptionTypeSeeder)->run();
+            }
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Qty Under Customer');
+            $shipTo = $this->createCustomerSite($customer, '037103');
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-UNDER', 'PO-UNDER', $shipTo);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertTrue(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'below expected')),
+                'Blockers: '.implode(' | ', $blockers),
+            );
+
+            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->firstOrFail();
+            $case = ExceptionCase::query()
+                ->where('exception_type_id', $type->getKey())
+                ->where('status', ExceptionStatus::New->value)
+                ->where('description', 'like', '%ship-order-#'.$session->getKey().'%')
+                ->first();
+            $this->assertNotNull($case);
+
+            try {
+                app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+                $this->fail('Expected under-scan without split to block complete.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('below expected', strtolower($e->getMessage()));
+            }
+
+            $this->assertNotSame('completed', $session->fresh()->status);
+            $this->assertNull($session->fresh()->epcis_document_id);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function under_scan_with_declared_split_ships_confirmed_only(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Qty Split Customer');
+            $shipTo = $this->createCustomerSite($customer, '037104');
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-SPLIT', 'PO-SPLIT', $shipTo);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+
+            $this->assertTrue((bool) $session->fresh()->split_declared);
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(1, (int) $completed->confirmed_count);
+            $this->assertSame(2, (int) $completed->expected_count);
+            $this->assertSame(1, (int) $completed->expected_count - (int) $completed->confirmed_count);
+
+            $doc = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $epcCount = DB::table('event_epcs')
+                ->whereIn('event_id', EpcisEvent::query()->where('document_id', $doc->getKey())->pluck('id'))
+                ->where('role', 'epcList')
+                ->distinct('epc_id')
+                ->count('epc_id');
+            $this->assertGreaterThanOrEqual(1, $epcCount);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function cannot_lower_expected_count_after_scanning(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Lower Expected Blocked Customer');
+            $shipTo = $this->createCustomerSite($customer, '037108');
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+
+            $confirmed = app(ConfirmOutboundShippingScan::class)->handle($session->fresh(), self::SSCC_URI);
+            $this->assertTrue($confirmed['ok'], (string) ($confirmed['message'] ?? ''));
+
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $customer->getKey(),
+                'ship_to_site_id' => (int) $shipTo->getKey(),
+                'ship_to_gln' => (string) $shipTo->gln,
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-LOWER-BLOCK',
+                'customer_po' => 'PO-LOWER-BLOCK',
+                'dscsa_affirm' => true,
+            ]);
+
+            try {
+                app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                    'expected_count' => 1,
+                ]);
+                $this->fail('Expected lowering expected_count after scanning to be blocked.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('Cannot lower expected unit count after scanning', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function declared_split_does_not_lower_expected_count(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Split Keeps Expected Customer');
+            $shipTo = $this->createCustomerSite($customer, '037109');
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-SPLIT-KEEP', 'PO-SPLIT-KEEP', $shipTo);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+
+            $session = $session->fresh();
+            $this->assertTrue((bool) $session->split_declared);
+            $this->assertSame(2, (int) $session->expected_count);
+            $this->assertSame(1, (int) $session->confirmed_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function expected_count_may_be_set_freely_before_any_scan(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey(), expectedCount: 5);
+            $this->sessionIds[] = (int) $session->getKey();
+            $this->assertSame(5, (int) $session->expected_count);
+
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+            $this->assertSame(2, (int) $session->fresh()->expected_count);
+
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 7,
+            ]);
+            $this->assertSame(7, (int) $session->fresh()->expected_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function overscan_is_blocked_on_confirm_and_validate(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Qty Over Customer');
+            $shipTo = $this->createCustomerSite($customer, '037105');
+
+            $session = app(OpenOutboundShippingSession::class)->handle(
+                (int) $site->getKey(),
+                expectedCount: 1,
+            );
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $first = app(ConfirmOutboundShippingScan::class)->handle($session, self::SSCC_URI);
+            $this->assertTrue($first['ok'], (string) ($first['message'] ?? ''));
+
+            $second = app(ConfirmOutboundShippingScan::class)->handle($session->fresh(), self::SGTIN_URI);
+            $this->assertFalse($second['ok']);
+            $this->assertSame('overscan', $second['effect']);
+
+            OutboundShippingScanLine::query()->create([
+                'outbound_shipping_session_id' => $session->getKey(),
+                'epc_id' => Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id'),
+                'line_role' => 'parent',
+                'status' => 'confirmed',
+                'scan_raw' => self::SGTIN_URI,
+                'confirmed_at' => now(),
+            ]);
+            $session->forceFill(['confirmed_count' => 2])->save();
+
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $customer->getKey(),
+                'ship_to_site_id' => (int) $shipTo->getKey(),
+                'ship_to_gln' => (string) $shipTo->gln,
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-OVER',
+                'customer_po' => 'PO-OVER',
+                'dscsa_affirm' => true,
+            ]);
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertTrue(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'exceeds expected')),
+                'Blockers: '.implode(' | ', $blockers),
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function live_connection_with_expected_count_zero_blocks_send(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            if (! ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->exists()) {
+                (new ExceptionTypeSeeder)->run();
+            }
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Qty Zero Customer');
+            $shipTo = $this->createCustomerSite($customer, '037106');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Live);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVE0', 'PO-LIVE0', $shipTo);
+            $session->forceFill([
+                'outbound_connection_id' => $connection->getKey(),
+                'expected_count' => 0,
+            ])->save();
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertTrue(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'expected unit count is required')),
+                'Blockers: '.implode(' | ', $blockers),
+            );
+
+            try {
+                app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+                $this->fail('Expected live connection with expected_count=0 to block complete.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('expected unit count is required', strtolower($e->getMessage()));
+            }
+
+            $this->assertNotSame('completed', $session->fresh()->status);
+            $this->assertNull($session->fresh()->epcis_document_id);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function test_connection_may_open_and_validate_with_expected_count_zero(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Test Qty Zero Customer');
+            $shipTo = $this->createCustomerSite($customer, '037107');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Test);
+
+            $session = app(OpenOutboundShippingSession::class)->handle(
+                (int) $site->getKey(),
+                expectedCount: 0,
+            );
+            $this->sessionIds[] = (int) $session->getKey();
+            $this->assertSame(0, (int) $session->expected_count);
+
+            $session->forceFill(['outbound_connection_id' => $connection->getKey()])->save();
+
+            $confirmed = app(ConfirmOutboundShippingScan::class)->handle($session->fresh(), self::SSCC_URI);
+            $this->assertTrue($confirmed['ok'], (string) ($confirmed['message'] ?? ''));
+
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $customer->getKey(),
+                'ship_to_site_id' => (int) $shipTo->getKey(),
+                'ship_to_gln' => (string) $shipTo->gln,
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-TEST0',
+                'customer_po' => 'PO-TEST0',
+                'dscsa_affirm' => true,
+                'expected_count' => 0,
+            ]);
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertFalse(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'expected unit count is required')),
+                'Test-state connection must not require expected count. Blockers: '.implode(' | ', $blockers),
+            );
+            $this->assertSame([], $blockers);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function live_connection_quantity_match_allows_complete(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Qty Match Customer');
+            $shipTo = $this->createCustomerSite($customer, '037108');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Live);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVEM', 'PO-LIVEM', $shipTo);
+            $session->forceFill(['outbound_connection_id' => $connection->getKey()])->save();
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 1,
+            ]);
+
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(1, (int) $completed->confirmed_count);
+            $this->assertSame(1, (int) $completed->expected_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function live_connection_declared_split_still_ships_confirmed_only(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Qty Split Customer');
+            $shipTo = $this->createCustomerSite($customer, '037109');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::FirstLiveLot);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVES', 'PO-LIVES', $shipTo);
+            $session->forceFill(['outbound_connection_id' => $connection->getKey()])->save();
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'expected_count' => 2,
+            ]);
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+
+            $this->assertTrue((bool) $session->fresh()->split_declared);
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(1, (int) $completed->confirmed_count);
+            $this->assertSame(2, (int) $completed->expected_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function live_connection_quantity_gate_override_allows_send_with_expected_count_zero(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+            if (! ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->exists()) {
+                (new ExceptionTypeSeeder)->run();
+            }
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Qty Override Customer');
+            $shipTo = $this->createCustomerSite($customer, '037110');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Live);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVEO', 'PO-LIVEO', $shipTo);
+            $session->forceFill([
+                'outbound_connection_id' => $connection->getKey(),
+                'expected_count' => 0,
+            ])->save();
+
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertTrue(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'expected unit count is required')),
+                'Blockers: '.implode(' | ', $blockers),
+            );
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            $denied = User::factory()->create([
+                'email' => 'ship-qty-denied-'.uniqid('', true).'@example.test',
+            ]);
+            $denied->assignRole(TenantRole::OutboundPickAndPackLead->value);
+            $this->userIds[] = (int) $denied->getKey();
+
+            try {
+                app(OverrideOutboundShippingQuantityGate::class)->handle(
+                    $session->fresh(),
+                    $denied,
+                    'Missing ASN qty on emergency ship',
+                );
+                $this->fail('Expected AuthorizationException without ShipQuantityGateOverride.');
+            } catch (AuthorizationException) {
+                // expected
+            }
+
+            $this->assertFalse((bool) $session->fresh()->quantity_gate_overridden);
+
+            $owner = $this->createShippingUser();
+            $this->assertTrue($owner->can(Permissions::ShipQuantityGateOverride));
+
+            $before = Activity::query()
+                ->where('description', 'outbound_shipping_quantity_gate_overridden')
+                ->count();
+
+            $reason = 'ASN qty unavailable; partner confirmed count by phone';
+            app(OverrideOutboundShippingQuantityGate::class)->handle($session->fresh(), $owner, $reason);
+
+            $session = $session->fresh();
+            $this->assertTrue((bool) $session->quantity_gate_overridden);
+            $this->assertSame($reason, $session->quantity_gate_override_reason);
+            $this->assertSame((int) $owner->getKey(), (int) $session->quantity_gate_overridden_by);
+            $this->assertNotNull($session->quantity_gate_overridden_at);
+
+            $this->assertSame(
+                $before + 1,
+                Activity::query()
+                    ->where('description', 'outbound_shipping_quantity_gate_overridden')
+                    ->count(),
+            );
+
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(0, (int) $completed->expected_count);
+            $this->assertTrue((bool) $completed->quantity_gate_overridden);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     /**
      * The blockers the ATP gate owns. Asserted on instead of the whole list so a shared
      * fixture problem elsewhere reads as its own failure rather than as an ATP verdict.
@@ -3694,6 +4293,27 @@ class OutboundShippingSessionTest extends TestCase
                 || str_contains($blocker, 'receiving state')
                 || str_contains($blocker, 'does not match any active site'),
         ));
+    }
+
+    private function createOutboundConnection(OutboundConformanceState $state): OutboundConnection
+    {
+        $connection = OutboundConnection::query()->create([
+            'name' => 'Qty Gate HTTPS '.Str::random(4),
+            'serialization_provider' => SerializationProvider::CustomHttps,
+            'transport' => OutboundTransport::Https,
+            'is_active' => true,
+            'settings' => ['endpoint_url' => 'https://partner.example/epcis'],
+            'credentials' => ['webhook_token' => 'qty-gate-token'],
+        ]);
+        $this->connectionIds[] = (int) $connection->getKey();
+
+        if ($state !== OutboundConformanceState::Test) {
+            $connection->allowConformanceTransition = true;
+            $connection->forceFill(['conformance_state' => $state])->save();
+            $connection->allowConformanceTransition = false;
+        }
+
+        return $connection->fresh();
     }
 
     /**

@@ -509,7 +509,7 @@ final class BuildFullHistoryShippingEpcisXml
 
         ShippingTiTsFragments::assertDropShipmentEmitted(
             isDropShipment: (bool) $session->is_drop_shipment,
-            xml: $xml,
+            payload: $xml,
         );
 
         return $xml;

@@ -48,6 +48,13 @@ class OutboundShippingSessionInfolist
                         ->columnSpanFull(),
                     TextEntry::make('confirmed_count')
                         ->label('Confirmed units'),
+                    TextEntry::make('expected_count')
+                        ->label('Expected units')
+                        ->visible(fn ($record): bool => (int) ($record?->expected_count ?? 0) > 0),
+                    IconEntry::make('split_declared')
+                        ->label('Split declared')
+                        ->boolean()
+                        ->visible(fn ($record): bool => (bool) $record?->split_declared),
                     TextEntry::make('opened_at')
                         ->dateTime(),
                     TextEntry::make('completed_at')

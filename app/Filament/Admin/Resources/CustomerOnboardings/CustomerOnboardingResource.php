@@ -18,10 +18,11 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class CustomerOnboardingResource extends Resource
+class CustomerOnboardingResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = CustomerOnboarding::class;
 
@@ -180,5 +181,10 @@ class CustomerOnboardingResource extends Resource
             'index' => ListCustomerOnboardings::route('/'),
             'view' => ViewCustomerOnboarding::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'tenants.customer-onboarding';
     }
 }

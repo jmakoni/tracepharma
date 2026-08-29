@@ -5,11 +5,11 @@ namespace App\Filament\App\Pages;
 use App\Models\Epcis\Epc;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
-use App\Support\Packing\UnpackedNotRepackedQuery;
-use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Packing\UnpackedNotRepackedQuery;
+use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
@@ -26,12 +26,13 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use UnitEnum;
 
-class UnpackedItems extends Page implements HasTable
+class UnpackedItems extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -262,5 +263,10 @@ class UnpackedItems extends Page implements HasTable
         }
 
         return (string) $epc->epc_uri;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.on-hand-and-unpacked';
     }
 }

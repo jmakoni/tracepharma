@@ -5,8 +5,10 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CancelOutboundShippingSession;
 use App\Actions\Shipping\CompleteOutboundShippingSession;
+use App\Actions\Shipping\DeclareOutboundShippingSplit;
 use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Actions\Shipping\OverrideOutboundShippingQuantityGate;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
@@ -21,12 +23,13 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\OutboundPortalPickupNotice;
-use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\Shipping\OutboundShippingSessionStatus;
+use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\Shipping\SearchShipToCustomers;
 use DomainException;
 use Filament\Actions\Action;
@@ -74,6 +77,8 @@ class ViewOutboundShippingSession extends ViewRecord
     public ?string $invoice_number = null;
 
     public ?string $shipment_reference = null;
+
+    public ?int $expected_count = null;
 
     public bool $dscsa_affirm = false;
 
@@ -263,6 +268,7 @@ class ViewOutboundShippingSession extends ViewRecord
                         'shipment_reference' => $this->shipment_reference,
                         'dscsa_affirm' => $this->dscsa_affirm,
                         'is_drop_shipment' => $this->is_drop_shipment,
+                        'expected_count' => $this->expected_count ?? 0,
                     ]);
                 } catch (DomainException $e) {
                     Notification::make()
@@ -280,6 +286,114 @@ class ViewOutboundShippingSession extends ViewRecord
                 Notification::make()
                     ->title('References saved')
                     ->success()
+                    ->send();
+            });
+    }
+
+    public function declareSplitAction(): Action
+    {
+        return Action::make('declareSplit')
+            ->label('Declare split / partial')
+            ->icon(Heroicon::OutlinedArrowsPointingOut)
+            ->color('warning')
+            ->visible(fn (): bool => $this->isActive()
+                && (int) $this->getRecord()->expected_count > 0
+                && ! (bool) $this->getRecord()->split_declared)
+            ->requiresConfirmation()
+            ->modalHeading('Declare split / partial shipment?')
+            ->modalDescription('Allows sending with fewer confirmed units than expected. Only confirmed EPCs are authored onto the shipping event; residual expected quantity stays on this ship order.')
+            ->modalSubmitActionLabel('Declare split')
+            ->action(function (): void {
+                /** @var OutboundShippingSession $session */
+                $session = $this->getRecord();
+
+                try {
+                    app(DeclareOutboundShippingSplit::class)->handle($session);
+                } catch (DomainException $e) {
+                    Notification::make()
+                        ->title('Split blocked')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                $this->hydrateWizardFromRecord();
+
+                Notification::make()
+                    ->title('Split declared')
+                    ->body('You can send with the confirmed units only.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    public function overrideQuantityGateAction(): Action
+    {
+        return Action::make('overrideQuantityGate')
+            ->label('Override quantity gate')
+            ->icon(Heroicon::OutlinedShieldExclamation)
+            ->color('danger')
+            ->visible(function (): bool {
+                /** @var OutboundShippingSession $session */
+                $session = $this->getRecord();
+                $user = auth()->user();
+
+                if (! $user instanceof User || ! $user->can(Permissions::ShipQuantityGateOverride)) {
+                    return false;
+                }
+
+                if (! $session->canSend() || (int) $session->expected_count > 0 || (bool) $session->quantity_gate_overridden) {
+                    return false;
+                }
+
+                $session->loadMissing('outboundConnection');
+                $connection = $session->outboundConnection;
+
+                return $connection !== null && $connection->conformanceState()->requiresExpectedQuantity();
+            })
+            ->form([
+                Textarea::make('reason')
+                    ->label('Override reason')
+                    ->required()
+                    ->rows(3)
+                    ->helperText('Audited justification for sending without an ASN/order expected unit count.'),
+            ])
+            ->modalHeading('Override quantity gate?')
+            ->modalSubmitActionLabel('Override and allow send')
+            ->action(function (array $data): void {
+                /** @var OutboundShippingSession $session */
+                $session = $this->getRecord();
+                $user = auth()->user();
+                if (! $user instanceof User) {
+                    return;
+                }
+
+                try {
+                    app(OverrideOutboundShippingQuantityGate::class)->handle(
+                        $session,
+                        $user,
+                        (string) ($data['reason'] ?? ''),
+                    );
+                } catch (AuthorizationException|DomainException|InvalidArgumentException $e) {
+                    Notification::make()
+                        ->title('Override blocked')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                $this->hydrateWizardFromRecord();
+
+                Notification::make()
+                    ->title('Quantity gate overridden')
+                    ->body('You may send without an expected unit count. This override is audited.')
+                    ->warning()
                     ->send();
             });
     }
@@ -442,6 +556,8 @@ class ViewOutboundShippingSession extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->declareSplitAction(),
+            $this->overrideQuantityGateAction(),
             RegulatoryCompliance::apply(
                 Action::make('sendShipment')
                     ->label('Send shipment')
@@ -479,6 +595,7 @@ class ViewOutboundShippingSession extends ViewRecord
                                 'shipment_reference' => $this->shipment_reference,
                                 'dscsa_affirm' => $this->dscsa_affirm,
                                 'is_drop_shipment' => $this->is_drop_shipment,
+                                'expected_count' => $this->expected_count ?? 0,
                             ]);
                             app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
                                 'trading_partner_id' => $this->trading_partner_id,
@@ -696,6 +813,7 @@ class ViewOutboundShippingSession extends ViewRecord
         $this->customer_po = $record->customer_po;
         $this->invoice_number = $record->invoice_number;
         $this->shipment_reference = $record->shipment_reference;
+        $this->expected_count = $record->expected_count !== null ? (int) $record->expected_count : null;
         $this->dscsa_affirm = (bool) $record->dscsa_affirm;
         $this->is_drop_shipment = (bool) $record->is_drop_shipment;
 

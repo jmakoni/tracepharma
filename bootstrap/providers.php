@@ -1,9 +1,19 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\Filament\AdminKnowledgeBasePanelProvider;
+use App\Providers\Filament\AdminPanelProvider;
+use App\Providers\Filament\AppPanelProvider;
+use App\Providers\Filament\KnowledgeBasePanelProvider;
+use App\Providers\HorizonServiceProvider;
+use App\Providers\TenancyServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\TenancyServiceProvider::class,
-    App\Providers\Filament\AdminPanelProvider::class,
-    App\Providers\Filament\AppPanelProvider::class,
-    App\Providers\HorizonServiceProvider::class,
+    AppServiceProvider::class,
+    TenancyServiceProvider::class,
+    AdminPanelProvider::class,
+    AdminKnowledgeBasePanelProvider::class,
+    AppPanelProvider::class,
+    KnowledgeBasePanelProvider::class,
+    HorizonServiceProvider::class,
 ];

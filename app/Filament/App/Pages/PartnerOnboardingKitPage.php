@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Filament\App\Pages;
 
 use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\PartnerOnboardingKit;
 use App\Support\PartnerOnboardingKitPdf;
 use App\Support\TenantFeatures;
@@ -13,11 +12,12 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use UnitEnum;
 
-class PartnerOnboardingKitPage extends Page
+class PartnerOnboardingKitPage extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
 
@@ -123,5 +123,10 @@ class PartnerOnboardingKitPage extends Page
                 ->url(fn (): string => OnboardingWizard::getUrl(panel: 'app'))
                 ->visible(fn (): bool => OnboardingWizard::canAccess()),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.partner-onboarding';
     }
 }

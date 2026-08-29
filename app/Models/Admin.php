@@ -100,7 +100,7 @@ class Admin extends Authenticatable implements FilamentUser, HasAvatar
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $panel->getId() === 'admin';
+        return in_array($panel->getId(), ['admin', 'admin-knowledge-base'], true);
     }
 
     public function getFilamentAvatarUrl(): ?string

@@ -72,14 +72,19 @@ final class EnsureLegalAcceptance
 
     private function acceptUrl(): string
     {
+        $previousPanel = Filament::getCurrentPanel();
+
         try {
-            if (Filament::getCurrentPanel()?->getId() !== 'app') {
-                Filament::setCurrentPanel(Filament::getPanel('app'));
-            }
+            // Generate the App-panel accept URL without permanently switching the
+            // current panel (isExemptPath calls this on every gated request — a
+            // leaked setCurrentPanel('app') breaks sibling panels like /help).
+            Filament::setCurrentPanel(Filament::getPanel('app'));
 
             return AcceptLegalDocuments::getUrl(panel: 'app');
         } catch (Throwable) {
             return url('/accept-legal-documents');
+        } finally {
+            Filament::setCurrentPanel($previousPanel);
         }
     }
 }

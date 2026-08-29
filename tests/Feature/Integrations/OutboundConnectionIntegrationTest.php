@@ -65,7 +65,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -142,7 +142,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionIds[] = (int) $explicitConnection->getKey();
 
             $path = 'epcis/outbound/test-explicit-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -216,7 +216,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionIds[] = (int) $inactiveConnection->getKey();
 
             $path = 'epcis/outbound/test-inactive-pin-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -308,7 +308,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-sftp-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -377,7 +377,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionIds[] = (int) $sftpConnection->getKey();
 
             $path = 'epcis/outbound/test-resolver-sftp-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -504,6 +504,18 @@ class OutboundConnectionIntegrationTest extends TestCase
         tenancy()->initialize($tenant);
 
         return $tenant;
+    }
+
+    private function schemaValidOutboundXml(): string
+    {
+        $xml = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($xml);
+
+        return str_replace(
+            '11111111-2222-3333-4444-555555555555',
+            (string) Str::uuid(),
+            $xml,
+        );
     }
 
     private function cleanup(): void

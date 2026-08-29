@@ -23,13 +23,14 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use UnitEnum;
 
-class L3ForwardLog extends Page implements HasTable
+class L3ForwardLog extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -233,5 +234,10 @@ class L3ForwardLog extends Page implements HasTable
         $settings = TenantSettings::forTenant(tenant());
 
         return $settings->l3Enabled() && filled($settings->l3EndpointUrl());
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.l3-forward-log';
     }
 }

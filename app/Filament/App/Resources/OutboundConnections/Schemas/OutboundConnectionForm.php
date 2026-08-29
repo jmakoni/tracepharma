@@ -3,9 +3,12 @@
 namespace App\Filament\App\Resources\OutboundConnections\Schemas;
 
 use App\Enums\As2MdnAckMode;
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
+use App\Models\OutboundConnection;
 use App\Support\Integrations\OutboundTransportAvailability;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -65,6 +68,16 @@ class OutboundConnectionForm
                         Toggle::make('is_default')
                             ->label('Default for partner')
                             ->helperText('When set, this connection is preferred for auto-routing to the selected trading partner (or globally when no partner is linked).'),
+                        Placeholder::make('conformance_state_display')
+                            ->label('Conformance')
+                            ->content(function (?OutboundConnection $record): string {
+                                if ($record === null) {
+                                    return OutboundConformanceState::Test->label().' (new connections always start in Test)';
+                                }
+
+                                return $record->conformanceState()->label();
+                            })
+                            ->helperText('Advance via Promote or Break-glass on the connection view — not editable here.'),
                         Select::make('settings.epcis_document_version')
                             ->label('EPCIS document version')
                             ->options([
@@ -72,7 +85,7 @@ class OutboundConnectionForm
                                 '2.0' => 'EPCIS 2.0 JSON-LD (opt-in when accept_20 is on)',
                             ])
                             ->default('1.2')
-                            ->helperText('Ship Orders (and receive/transfer/unpack authors) always generate EPCIS 1.2 XML today — this setting does not change those payloads. Version 2.0 JSON-LD applies to disposition documents and other resolver-backed paths when TRACEPHARMA_EPCIS_ACCEPT_20 is on. XML 2.0 outbound is not offered.'),
+                            ->helperText('Ship Orders follow this connection version when accept_20 allows 2.0; otherwise 1.2 XML. XML 2.0 outbound is not offered.'),
                         Select::make('settings.epcis_document_format')
                             ->label('EPCIS 2.0 format')
                             ->options([
@@ -81,7 +94,7 @@ class OutboundConnectionForm
                             ->default('json')
                             ->dehydrated()
                             ->visible(fn (Get $get): bool => $get('settings.epcis_document_version') === '2.0')
-                            ->helperText('Only for resolver-backed 2.0 documents (e.g. disposition). Ship Orders stay on 1.2 XML.'),
+                            ->helperText('Only used when EPCIS 2.0 is selected. Ship Orders and disposition documents follow the connection version above.'),
                     ])
                     ->columns(2),
                 Section::make('HTTPS settings')

@@ -7,11 +7,16 @@ use App\Enums\EpcisAuthoredKind;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\OutboundConnection;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Services\Custody\EpcCustodyGate;
+use App\Services\Epcis\Outbound\JsonLd20Writer;
+use App\Services\Epcis\Outbound\OutboundEpcisDocumentWriter;
+use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\OutboundEpcisFilename;
 use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
@@ -26,6 +31,7 @@ use App\Support\Shipping\ResolveOutboundShipToSgln;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
+use DateTimeInterface;
 use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -72,6 +78,8 @@ final class GenerateShippingEpcisEvents
         private readonly EpcCustodyGate $custodyGate,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
+        private readonly OutboundEpcisWriterResolver $writerResolver,
+        private readonly JsonLd20Writer $jsonLd20Writer,
     ) {}
 
     /**
@@ -138,14 +146,21 @@ final class GenerateShippingEpcisEvents
 
             $shippingUuid = (string) Str::uuid();
 
+            $connection = $session->outbound_connection_id !== null
+                ? OutboundConnection::query()->find($session->outbound_connection_id)
+                : null;
+            $writer = $this->writerResolver->forConnection($connection);
+            $isJson20 = $writer->schemaVersion() === EpcisSchemaVersion::V20;
+
             $document = $this->createAuthoredDocument(
-                $session,
-                $epcsById,
-                $recordTime,
-                $eventTime,
-                $shipTo,
-                $tenant,
-                $party,
+                session: $session,
+                epcsById: $epcsById,
+                now: $recordTime,
+                eventTime: $eventTime,
+                shipTo: $shipTo,
+                tenant: $tenant,
+                party: $party,
+                writer: $writer,
             );
 
             // readPoint is the dock the unit was scanned at; bizLocation is where it comes
@@ -178,21 +193,33 @@ final class GenerateShippingEpcisEvents
             $this->attachTransactionIdentity($shippingEvent, $tiTs);
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 
-            $xml = $this->buildXml(
-                epcsById: $epcsById,
-                eventTime: $eventTime,
-                recordTime: $recordTime,
-                timezoneOffset: $timezoneOffset,
-                shippingUuid: $shippingUuid,
-                instanceId: (string) $document->document_uuid,
-                tiTs: $tiTs,
-                affirmTransactionStatement: (bool) $session->dscsa_affirm,
-                isDropShipment: (bool) $session->is_drop_shipment,
-            );
+            $payload = $isJson20
+                ? $this->buildJsonLd20(
+                    epcsById: $epcsById,
+                    eventTime: $eventTime,
+                    recordTime: $recordTime,
+                    timezoneOffset: $timezoneOffset,
+                    shippingUuid: $shippingUuid,
+                    instanceId: (string) $document->document_uuid,
+                    tiTs: $tiTs,
+                    affirmTransactionStatement: (bool) $session->dscsa_affirm,
+                    isDropShipment: (bool) $session->is_drop_shipment,
+                )
+                : $this->buildXml(
+                    epcsById: $epcsById,
+                    eventTime: $eventTime,
+                    recordTime: $recordTime,
+                    timezoneOffset: $timezoneOffset,
+                    shippingUuid: $shippingUuid,
+                    instanceId: (string) $document->document_uuid,
+                    tiTs: $tiTs,
+                    affirmTransactionStatement: (bool) $session->dscsa_affirm,
+                    isDropShipment: (bool) $session->is_drop_shipment,
+                );
 
             ShippingTiTsFragments::assertDropShipmentEmitted(
                 isDropShipment: (bool) $session->is_drop_shipment,
-                xml: $xml,
+                payload: $payload,
             );
 
             $document->forceFill([
@@ -205,7 +232,7 @@ final class GenerateShippingEpcisEvents
 
             $this->persistEpcisXmlPayload->handle(
                 $document,
-                $xml,
+                $payload,
                 (string) $document->payload_path,
                 (string) $document->payload_disk,
                 'Shipping EPCIS',
@@ -625,12 +652,15 @@ final class GenerateShippingEpcisEvents
         array $shipTo,
         Tenant $tenant,
         array $party,
+        OutboundEpcisDocumentWriter $writer,
     ): EpcisDocument {
-        // Authored outbound XML stays on local tenant storage; inbound S3 disk is for uploads.
+        // Authored outbound payloads stay on local tenant storage; inbound S3 disk is for uploads.
         $disk = (string) config('tracepharma.epcis.authored_payload_disk', 'local');
 
-        $filename = OutboundEpcisFilename::forShippingEvent($tenant, $eventTime);
-        $payloadPath = OutboundEpcisFilename::storagePath($tenant, $eventTime);
+        $format = $writer->format();
+        $extension = $format === EpcisSchemaVersion::FORMAT_JSON ? 'json' : 'xml';
+        $filename = OutboundEpcisFilename::forShippingEvent($tenant, $eventTime, $extension);
+        $payloadPath = OutboundEpcisFilename::storagePath($tenant, $eventTime, $extension);
         // Two sessions completing in the same event-time millisecond must not collide on
         // the document_uuid unique index — the session id keeps the stamp unique while the
         // timestamp prefix stays the meaningful part of the SBDH instance identifier.
@@ -638,7 +668,7 @@ final class GenerateShippingEpcisEvents
 
         $attributes = [
             'document_uuid' => $documentUuid,
-            'schema_version' => '1.2',
+            'schema_version' => $writer->schemaVersion(),
             'creation_date' => $now,
             'direction' => 'outbound',
             'authored_kind' => EpcisAuthoredKind::Shipping,
@@ -646,7 +676,7 @@ final class GenerateShippingEpcisEvents
             'ship_to_partner_id' => $session->trading_partner_id,
             'sender_gln' => $party['sender_gln'],
             'receiver_gln' => $party['receiver_gln'],
-            'format' => 'xml',
+            'format' => $format,
             'original_filename' => $filename,
             'payload_disk' => $disk,
             'payload_path' => $payloadPath,
@@ -844,6 +874,83 @@ final class GenerateShippingEpcisEvents
                 'source_dest_type_uri' => $party['source_dest_type_uri'],
             ], JSON_THROW_ON_ERROR),
         ], array_values($tiTs['parties'])));
+    }
+
+    /**
+     * @param  Collection<int, Epc>  $epcsById
+     * @param  array{
+     *     po: ?string,
+     *     asn: ?string,
+     *     sender_gln: ?string,
+     *     receiver_gln: ?string,
+     *     parties: array<string, TiTsParty>
+     * }  $tiTs
+     */
+    private function buildJsonLd20(
+        Collection $epcsById,
+        Carbon $eventTime,
+        Carbon $recordTime,
+        string $timezoneOffset,
+        string $shippingUuid,
+        string $instanceId,
+        array $tiTs,
+        bool $affirmTransactionStatement = false,
+        bool $isDropShipment = false,
+    ): string {
+        $parties = $tiTs['parties'];
+
+        $epcList = $epcsById
+            ->map(fn (Epc $epc): string => (string) $epc->epc_uri)
+            ->values()
+            ->all();
+
+        $sourceDestination = ShippingTiTsFragments::sourceDestinationListsJson(
+            sourceOwningSgln: $parties['source_owning']['sgln'],
+            sourceLocationSgln: $parties['source_location']['sgln'],
+            destOwningSgln: $parties['dest_owning']['sgln'],
+            destLocationSgln: $parties['dest_location']['sgln'],
+        );
+
+        $event = [
+            'type' => 'ObjectEvent',
+            'eventTime' => $eventTime->clone()->utc()->format(DateTimeInterface::ATOM),
+            'eventTimeZoneOffset' => $timezoneOffset,
+            'eventID' => 'urn:uuid:'.$shippingUuid,
+            'epcList' => $epcList,
+            'action' => 'OBSERVE',
+            'bizStep' => self::BIZ_STEP_SHIPPING,
+            'disposition' => self::DISPOSITION_IN_TRANSIT,
+            'readPoint' => ['id' => $parties['source_location']['sgln']],
+            'sourceList' => $sourceDestination['sourceList'],
+            'destinationList' => $sourceDestination['destinationList'],
+        ];
+
+        $bizTransactionList = ShippingTiTsFragments::bizTransactionListJson(
+            po: $tiTs['po'],
+            asn: $tiTs['asn'],
+            destOwningGln: $parties['dest_owning']['gln'],
+            sourceOwningGln: $parties['source_owning']['gln'],
+        );
+
+        if ($bizTransactionList !== []) {
+            $event['bizTransactionList'] = $bizTransactionList;
+        }
+
+        $json = $this->jsonLd20Writer->buildFromDomainEvents(
+            [$event],
+            $recordTime->clone()->utc()->format(DateTimeInterface::ATOM),
+            $instanceId,
+        );
+
+        if ($affirmTransactionStatement) {
+            $json = ShippingTiTsFragments::withDscsaTransactionStatementDocumentField($json);
+        }
+
+        if ($isDropShipment) {
+            $json = ShippingTiTsFragments::withDropShipmentDocumentField($json);
+        }
+
+        return $json;
     }
 
     /**

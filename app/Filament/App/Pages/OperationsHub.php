@@ -20,28 +20,30 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Auth\HidesForPharmacySimplifiedNav;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use InvalidArgumentException;
 use Throwable;
 use UnitEnum;
 
-class OperationsHub extends Page
+class OperationsHub extends Page implements HasKnowledgeBase
 {
     use HidesForPharmacySimplifiedNav;
 
@@ -63,7 +65,7 @@ class OperationsHub extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->hasAnyOperations())
+        return TenantFeatures::forTenant(tenant())->hasAnyOperations()
             && JobRoleAccess::allowsAny(
                 Permissions::NavReceive,
                 Permissions::NavShip,
@@ -75,9 +77,9 @@ class OperationsHub extends Page
     /**
      * Active receive sessions for the topbar-selected site (max 5).
      *
-     * @return \Illuminate\Support\Collection<int, ReceivingSession>
+     * @return Collection<int, ReceivingSession>
      */
-    public function activeReceivingSessions(): \Illuminate\Support\Collection
+    public function activeReceivingSessions(): Collection
     {
         if (! ReceivingSessionResource::canAccess()) {
             return collect();
@@ -99,7 +101,7 @@ class OperationsHub extends Page
             ->get()
             ->when(
                 $user instanceof User,
-                fn (\Illuminate\Support\Collection $sessions) => $sessions->filter(
+                fn (Collection $sessions) => $sessions->filter(
                     fn (ReceivingSession $session): bool => Gate::forUser($user)->allows('view', $session),
                 ),
             )
@@ -620,5 +622,10 @@ class OperationsHub extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.shell-and-site';
     }
 }

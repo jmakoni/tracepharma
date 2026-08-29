@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Actions\Disposition\EmitReturningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
+use App\Exceptions\VrsConfigurationException;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -29,6 +30,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -36,7 +38,7 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class SaleableReturnWorkstation extends Page
+class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
 
@@ -155,7 +157,7 @@ class SaleableReturnWorkstation extends Page
 
         try {
             $vrs = app(RunProductVerification::class)->handle($scan, auth()->user());
-        } catch (InvalidArgumentException $exception) {
+        } catch (InvalidArgumentException|VrsConfigurationException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -486,5 +488,10 @@ class SaleableReturnWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.saleable-return';
     }
 }

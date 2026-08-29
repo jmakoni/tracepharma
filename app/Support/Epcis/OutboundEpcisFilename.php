@@ -11,19 +11,20 @@ use Carbon\CarbonInterface;
  */
 final class OutboundEpcisFilename
 {
-    public static function forShippingEvent(Tenant $tenant, CarbonInterface $shipEventTime): string
+    public static function forShippingEvent(Tenant $tenant, CarbonInterface $shipEventTime, string $extension = 'xml'): string
     {
         $tenantName = self::tenantName($tenant);
         $env = self::environmentSegment();
         $datetime = $shipEventTime->copy()->utc()->format('Ymd\THis\Z');
         $tenantId = (string) $tenant->getKey();
+        $extension = ltrim($extension, '.');
 
-        return "{$tenantName}_{$env}_tracepharma_io_{$datetime}_{$tenantId}-processed_data.xml";
+        return "{$tenantName}_{$env}_tracepharma_io_{$datetime}_{$tenantId}-processed_data.{$extension}";
     }
 
-    public static function storagePath(Tenant $tenant, CarbonInterface $shipEventTime): string
+    public static function storagePath(Tenant $tenant, CarbonInterface $shipEventTime, string $extension = 'xml'): string
     {
-        return 'epcis/outbound/'.self::forShippingEvent($tenant, $shipEventTime);
+        return 'epcis/outbound/'.self::forShippingEvent($tenant, $shipEventTime, $extension);
     }
 
     private static function tenantName(Tenant $tenant): string

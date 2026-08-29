@@ -22,11 +22,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class EpcisDocumentResource extends Resource
+class EpcisDocumentResource extends Resource implements HasKnowledgeBase
 {
     use UsesTenantScoutGlobalSearch;
 
@@ -50,7 +51,7 @@ class EpcisDocumentResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsInboundIntegrations())
+        return TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavReceive);
     }
 
@@ -157,5 +158,10 @@ class EpcisDocumentResource extends Resource
             'ASN' => $record->asn_number,
             'PO' => $record->customer_po,
         ]);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.inbound-epcis';
     }
 }

@@ -11,13 +11,13 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Tracing\BuildAssetTrace;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\CbvStatusColor;
 use App\Support\Tracing\EpcContextLinks;
@@ -40,11 +40,13 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class AssetTracking extends Page implements HasTable
+class AssetTracking extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -61,6 +63,11 @@ class AssetTracking extends Page implements HasTable
     protected string $view = 'filament.app.pages.asset-tracking';
 
     public string $scan = '';
+
+    /**
+     * Optional UTC instant for point-in-time custody (ISO-8601 or datetime-local).
+     */
+    public ?string $asOf = null;
 
     /**
      * @var array<string, mixed>|null
@@ -86,6 +93,11 @@ class AssetTracking extends Page implements HasTable
     public function mount(): void
     {
         $scan = request()->query('scan');
+        $asOf = request()->query('as_of');
+
+        if (filled($asOf)) {
+            $this->asOf = (string) $asOf;
+        }
 
         if (filled($scan)) {
             $this->scan = (string) $scan;
@@ -95,7 +107,7 @@ class AssetTracking extends Page implements HasTable
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Scan a unit or pallet to see status and custody history.';
+        return 'Scan a unit or pallet to see status and custody history. Optionally set As of (UTC) for a point-in-time snapshot.';
     }
 
     public function runTrace(BuildAssetTrace $builder): void
@@ -135,7 +147,8 @@ class AssetTracking extends Page implements HasTable
             return;
         }
 
-        $this->trace = $builder->handle($scan);
+        $asOfCarbon = $this->parseAsOfUtc();
+        $this->trace = $builder->handle($scan, $asOfCarbon);
         $this->resultsTab = 'tracking';
 
         // Filament caches the `content` schema for the request. If it was built
@@ -164,6 +177,26 @@ class AssetTracking extends Page implements HasTable
         }
 
         $this->dispatch('focus-scan');
+    }
+
+    private function parseAsOfUtc(): ?Carbon
+    {
+        $raw = trim((string) ($this->asOf ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw, 'UTC')->utc();
+        } catch (\Throwable) {
+            Notification::make()
+                ->title('Invalid as-of time')
+                ->body('Use a valid UTC datetime (e.g. 2026-08-28 15:00:00).')
+                ->warning()
+                ->send();
+
+            return null;
+        }
     }
 
     private function canAccessEpc(Epc $epc): bool
@@ -431,7 +464,7 @@ class AssetTracking extends Page implements HasTable
         $builder = app(BuildAssetTrace::class);
 
         return $table
-            ->query($builder->eventsQuery($epc)->with(['locations']))
+            ->records(fn (): Collection => $builder->eventsForTrackingTable($epc, $this->parseAsOfUtc())->values())
             ->columns([
                 TextColumn::make('event_time')
                     ->label('Event time')
@@ -585,5 +618,10 @@ class AssetTracking extends Page implements HasTable
         $segment = (string) str($uri)->afterLast(':');
 
         return $segment !== '' ? $segment : $uri;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.asset-tracking';
     }
 }

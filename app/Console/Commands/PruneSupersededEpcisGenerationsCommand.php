@@ -15,9 +15,9 @@ class PruneSupersededEpcisGenerationsCommand extends Command
     protected $signature = 'tracepharma:epcis-prune-superseded-generations
         {--tenant= : Tenant id; defaults to the current tenancy context}
         {--document= : Optional document id to prune}
-        {--dry-run : Report rows that would be deleted without deleting}';
+        {--dry-run : Report rows that would be superseded/pruned without writing}';
 
-    protected $description = 'Delete superseded EPCIS ingest generations, keeping each document\'s active projection';
+    protected $description = 'Soft-supersede non-active EPCIS ingest event generations; prune projection indexes for those gens';
 
     public function handle(PruneSupersededIngestGenerations $prune): int
     {
@@ -56,10 +56,13 @@ class PruneSupersededEpcisGenerationsCommand extends Command
 
             $query->each(function (EpcisDocument $document) use ($prune, $dryRun, &$documents, &$events, &$documentEpcs): void {
                 $keep = (int) ($document->ingest_generation ?? 1);
-                $staleEvents = (int) EpcisEvent::query()
+                $staleEventsQuery = EpcisEvent::query()
                     ->where('document_id', $document->getKey())
-                    ->where('ingest_generation', '!=', $keep)
-                    ->count();
+                    ->where('ingest_generation', '!=', $keep);
+                if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+                    $staleEventsQuery->whereNull('superseded_at');
+                }
+                $staleEvents = (int) $staleEventsQuery->count();
                 $staleDocumentEpcs = Schema::hasTable('document_epcs')
                     ? (int) DB::table('document_epcs')
                         ->where('document_id', $document->getKey())
@@ -74,10 +77,13 @@ class PruneSupersededEpcisGenerationsCommand extends Command
                 $documents++;
 
                 if ($dryRun) {
-                    $orphanEvents = (int) EpcisEvent::query()
+                    $orphanEventsQuery = EpcisEvent::query()
                         ->where('document_id', $document->getKey())
-                        ->where('ingest_generation', '>', $keep)
-                        ->count();
+                        ->where('ingest_generation', '>', $keep);
+                    if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+                        $orphanEventsQuery->whereNull('superseded_at');
+                    }
+                    $orphanEvents = (int) $orphanEventsQuery->count();
                     $orphanDocumentEpcs = Schema::hasTable('document_epcs')
                         ? (int) DB::table('document_epcs')
                             ->where('document_id', $document->getKey())
@@ -96,15 +102,15 @@ class PruneSupersededEpcisGenerationsCommand extends Command
                 }
 
                 $stats = $prune->handle($document);
-                $events += $stats['events_deleted'];
+                $events += $stats['events_superseded'];
                 $documentEpcs += $stats['document_epcs_deleted'];
                 $this->line(
-                    "document #{$document->getKey()} pruned events={$stats['events_deleted']} document_epcs={$stats['document_epcs_deleted']}",
+                    "document #{$document->getKey()} superseded events={$stats['events_superseded']} document_epcs={$stats['document_epcs_deleted']}",
                 );
             });
 
             $this->info("Tenant: {$tenant->id} ({$tenant->name})");
-            $this->info(($dryRun ? 'Would prune' : 'Pruned')." documents={$documents} events={$events} document_epcs={$documentEpcs}");
+            $this->info(($dryRun ? 'Would supersede/prune' : 'Superseded/pruned')." documents={$documents} events={$events} document_epcs={$documentEpcs}");
 
             return self::SUCCESS;
         } finally {

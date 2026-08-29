@@ -22,6 +22,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Artisan;
 use UnitEnum;
@@ -29,7 +30,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class EpcisHubSettings extends Page
+class EpcisHubSettings extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedServerStack;
 
@@ -266,5 +267,10 @@ class EpcisHubSettings extends Page
                 ->submit('save')
                 ->keyBindings(['mod+s']),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.epcis-hub-settings';
     }
 }

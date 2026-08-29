@@ -10,11 +10,12 @@ use App\Support\Compliance\ComplianceAlertMetrics;
 use App\Support\TenantFeatures;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class AtpPartnerReadiness extends Page
+class AtpPartnerReadiness extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedShieldCheck;
 
@@ -50,5 +51,10 @@ class AtpPartnerReadiness extends Page
     public function partnerAtpRows(): Collection
     {
         return app(ComplianceAlertMetrics::class)->partnerAtpRows();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.atp-readiness';
     }
 }

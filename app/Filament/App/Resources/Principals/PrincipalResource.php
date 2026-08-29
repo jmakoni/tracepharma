@@ -16,9 +16,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class PrincipalResource extends Resource
+class PrincipalResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Principal::class;
 
@@ -59,5 +60,10 @@ class PrincipalResource extends Resource
             'create' => CreatePrincipal::route('/create'),
             'edit' => EditPrincipal::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.products';
     }
 }

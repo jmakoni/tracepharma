@@ -32,6 +32,7 @@ final class OpenOutboundShippingSession
         ?int $correctsEpcisDocumentId = null,
         bool $isDropShipment = false,
         ?int $principalId = null,
+        ?int $expectedCount = null,
     ): OutboundShippingSession {
         if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
@@ -57,8 +58,9 @@ final class OpenOutboundShippingSession
         $attributes = [
             'site_id' => $siteId,
             'status' => 'open',
-            'expected_count' => 0,
+            'expected_count' => max(0, (int) ($expectedCount ?? 0)),
             'confirmed_count' => 0,
+            'split_declared' => false,
             // TI/TS is the seller's affirmation, so the operator makes it on the send step.
             'dscsa_affirm' => false,
             'is_drop_shipment' => $isDropShipment,

@@ -18,10 +18,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class EpcisSubscriptionResource extends Resource
+class EpcisSubscriptionResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = EpcisSubscription::class;
 
@@ -77,5 +78,10 @@ class EpcisSubscriptionResource extends Resource
             'create' => CreateEpcisSubscription::route('/create'),
             'edit' => EditEpcisSubscription::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.epcis-subscriptions';
     }
 }

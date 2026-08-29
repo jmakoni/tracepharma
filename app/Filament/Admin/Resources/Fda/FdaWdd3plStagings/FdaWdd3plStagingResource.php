@@ -9,9 +9,10 @@ use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaWdd3plStagingResource extends Resource
+class FdaWdd3plStagingResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = FdaWdd3plStaging::class;
 
@@ -42,5 +43,10 @@ class FdaWdd3plStagingResource extends Resource
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.wdd-3pl-staging';
     }
 }

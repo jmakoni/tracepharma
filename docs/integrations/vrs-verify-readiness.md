@@ -2,7 +2,7 @@
 
 **Honesty:** This checklist is an internal TracePharma go-live path for Verification Router Service (VRS) wiring. It is **not** Gateway Certified, TraceReady, GS1 Trustmark, or any GS1 Exchange / Query Control Interface certification.
 
-Production keeps `VRS_DRIVER` defaulting to **`null`** (deferred) until a real HTTP endpoint is configured. Local/non-production defaults to `fake` so Verify Product works without a live router.
+Production keeps `VRS_DRIVER` defaulting to **`null`** until a real HTTP endpoint is configured. With `null`, required verify flows (Verify Product, dispense-check, saleable return) **fail closed** — they do not record `verified`. Receive still skips the async VRS job when the driver is null (accept is not verify-before-accept). Local/non-production defaults to `fake` so Verify Product works without a live router.
 
 ## Prerequisites checklist
 

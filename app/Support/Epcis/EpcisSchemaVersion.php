@@ -26,6 +26,16 @@ final class EpcisSchemaVersion
     public const FORMAT_JSON = 'json';
 
     /**
+     * S3 / HTTP Content-Type for an on-disk EPCIS payload format.
+     */
+    public static function contentTypeForFormat(string $format): string
+    {
+        return $format === self::FORMAT_JSON
+            ? 'application/ld+json'
+            : 'application/xml';
+    }
+
+    /**
      * @return list<string>
      */
     public static function accepted(): array
@@ -158,7 +168,7 @@ final class EpcisSchemaVersion
                 : ' EPCIS 2.0 is disabled (set TRACEPHARMA_EPCIS_ACCEPT_20=true to enable).';
 
             throw new \InvalidArgumentException(
-                "EPCIS schema version [".($version ?? 'missing')."] is not accepted. Allowed: {$accepted}.{$hint}"
+                'EPCIS schema version ['.($version ?? 'missing')."] is not accepted. Allowed: {$accepted}.{$hint}"
             );
         }
 

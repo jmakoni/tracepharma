@@ -6,6 +6,7 @@ use App\Exceptions\VrsConfigurationException;
 use App\Services\Vrs\HttpVrsClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -76,6 +77,61 @@ class HttpVrsClientTransportTest extends TestCase
         $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
 
         $this->assertLessThanOrEqual(512, mb_strlen($result['message']));
+    }
+
+    #[Test]
+    public function timeout_returns_unavailable_not_verified(): void
+    {
+        Http::fake(function (): never {
+            throw new ConnectionException('cURL error 28: Operation timed out after 30001 milliseconds');
+        });
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN-TIMEOUT');
+
+        $this->assertSame('unavailable', $result['status']);
+        $this->assertNotSame('verified', $result['status']);
+        $this->assertStringContainsString('VRS unreachable', $result['message']);
+    }
+
+    #[Test]
+    public function transport_failure_logs_identity_hash_without_raw_serial(): void
+    {
+        Log::spy();
+
+        Http::fake(function (): never {
+            throw new ConnectionException('cURL error 28: Operation timed out');
+        });
+
+        app(HttpVrsClient::class)->verify('00301164024167', 'SECRET-SERIAL-99');
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(function (string $message, array $context): bool {
+                if ($message !== 'VRS verification could not complete.') {
+                    return false;
+                }
+
+                $encoded = json_encode($context);
+
+                return isset($context['identity_hash'])
+                    && ! str_contains((string) $encoded, 'SECRET-SERIAL-99')
+                    && ! array_key_exists('serial', $context);
+            })
+            ->atLeast()
+            ->once();
+    }
+
+    #[Test]
+    public function successful_verify_includes_http_evidence(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response(['verified' => true, 'message' => 'ok'], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('verified', $result['status']);
+        $this->assertSame(200, $result['http_status']);
+        $this->assertStringContainsString('verified', (string) $result['http_body']);
     }
 
     #[Test]

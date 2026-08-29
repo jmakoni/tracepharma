@@ -130,7 +130,7 @@ final class ReceiveEpcisUpload
 
             $payloadUuid = (string) Str::uuid();
             $payloadPath = EpcisStoragePath::onDisk($disk, "epcis/{$direction}/{$payloadUuid}.{$extension}");
-            $this->storePayloadStream($disk, $payloadPath, $absolutePath);
+            $this->storePayloadStream($disk, $payloadPath, $absolutePath, $format);
 
             return EpcisDocument::query()->create([
                 'document_uuid' => (string) Str::uuid(),
@@ -221,18 +221,19 @@ final class ReceiveEpcisUpload
         return EpcisReceivedVia::Cli;
     }
 
-    private function storePayloadStream(string $disk, string $payloadPath, string $absolutePath): void
+    private function storePayloadStream(string $disk, string $payloadPath, string $absolutePath, string $format = EpcisSchemaVersion::FORMAT_XML): void
     {
         $stream = fopen($absolutePath, 'rb');
         if ($stream === false) {
-            throw new \RuntimeException("Unable to read EPCIS XML: {$absolutePath}");
+            throw new \RuntimeException("Unable to read EPCIS payload: {$absolutePath}");
         }
 
         $isS3 = config("filesystems.disks.{$disk}.driver") === 's3';
         // Do not set S3 object ACL/visibility — buckets with Object Ownership
         // "Bucket owner enforced" reject PutObjectAcl / setVisibility.
+        $contentType = EpcisSchemaVersion::contentTypeForFormat($format);
         $options = array_filter([
-            'ContentType' => $isS3 ? 'application/xml' : null,
+            'ContentType' => $isS3 ? $contentType : null,
         ]);
 
         try {

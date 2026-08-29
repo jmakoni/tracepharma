@@ -141,6 +141,21 @@
                             {{ (int) $this->getRecord()->confirmed_count }}
                         </div>
                     </div>
+                    @if ((int) $this->getRecord()->expected_count > 0)
+                        <div class="stat">
+                            <div class="stat-title">Expected</div>
+                            <div class="stat-value text-2xl">
+                                {{ (int) $this->getRecord()->expected_count }}
+                            </div>
+                            @if ($this->getRecord()->split_declared)
+                                <div class="stat-desc">Split declared</div>
+                            @elseif ((int) $this->getRecord()->confirmed_count < (int) $this->getRecord()->expected_count)
+                                <div class="stat-desc">
+                                    Residual {{ (int) $this->getRecord()->expected_count - (int) $this->getRecord()->confirmed_count }}
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
 
                 @if ($this->isCompleted())
@@ -335,6 +350,21 @@
                         <div class="form-control w-full gap-1.5">
                             <label for="asn-number" class="label-text text-sm font-medium">ASN number *</label>
                             <input id="asn-number" type="text" wire:model.live.debounce.300ms="asn_number" class="input input-bordered w-full" />
+                        </div>
+                        <div class="form-control w-full gap-1.5">
+                            <label for="expected-count" class="label-text text-sm font-medium">Expected units</label>
+                            <input id="expected-count" type="number" min="0" step="1" wire:model.live.debounce.300ms="expected_count" class="input input-bordered w-full" />
+                            <p class="text-xs text-base-content/70">
+                                From ASN/order qty when known.
+                                @php
+                                    $liveLadder = $this->getRecord()->outboundConnection?->conformanceState()?->requiresExpectedQuantity() === true;
+                                @endphp
+                                @if ($liveLadder)
+                                    Live / hypercare / first-live-lot connections require a positive expected count (or an audited quantity-gate override) before send.
+                                @else
+                                    Leave blank or 0 to skip the quantity gate for test/conformance connections.
+                                @endif
+                            </p>
                         </div>
                         <div class="grid gap-4 sm:grid-cols-2">
                             <div class="form-control w-full gap-1.5">

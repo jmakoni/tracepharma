@@ -11,19 +11,20 @@ use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -31,7 +32,7 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class ReturnWorkstation extends Page
+class ReturnWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
 
@@ -64,7 +65,7 @@ class ReturnWorkstation extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsReturning())
+        return TenantFeatures::forTenant(tenant())->supportsReturning()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
@@ -420,5 +421,10 @@ class ReturnWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.return';
     }
 }

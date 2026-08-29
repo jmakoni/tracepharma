@@ -41,6 +41,21 @@ final class Permissions
     public const NavUsers = 'nav.users';
 
     /**
+     * Second approver for mass decommission (N > threshold).
+     */
+    public const DecommissionMassApprove = 'decommission.mass_approve';
+
+    /**
+     * Skip outbound conformance ladder and force Live (audit-logged).
+     */
+    public const IntegrationsBreakGlass = 'integrations.break_glass';
+
+    /**
+     * Send on a live-ladder connection without expected_count (audit-logged override).
+     */
+    public const ShipQuantityGateOverride = 'shipping.quantity_gate_override';
+
+    /**
      * @return list<string>
      */
     public static function navCapabilities(): array
@@ -65,6 +80,9 @@ final class Permissions
         return [
             self::UsersManage,
             self::SitesAccessAll,
+            self::DecommissionMassApprove,
+            self::IntegrationsBreakGlass,
+            self::ShipQuantityGateOverride,
             ...self::navCapabilities(),
         ];
     }
@@ -80,6 +98,9 @@ final class Permissions
             self::NavIntegrations => 'Integrations',
             self::NavCompliance => 'Compliance',
             self::NavUsers => 'Users',
+            self::DecommissionMassApprove => 'Mass decommission approve',
+            self::IntegrationsBreakGlass => 'Integrations break-glass',
+            self::ShipQuantityGateOverride => 'Ship quantity gate override',
             default => $permission,
         };
     }

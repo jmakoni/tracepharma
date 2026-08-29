@@ -18,10 +18,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class InboundConnectionResource extends Resource
+class InboundConnectionResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = InboundConnection::class;
 
@@ -39,7 +40,7 @@ class InboundConnectionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsInboundIntegrations())
+        return TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavIntegrations);
     }
 
@@ -81,5 +82,10 @@ class InboundConnectionResource extends Resource
             'view' => ViewInboundConnection::route('/{record}'),
             'edit' => EditInboundConnection::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.connections';
     }
 }

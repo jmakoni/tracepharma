@@ -18,9 +18,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class ProductResource extends Resource
+class ProductResource extends Resource implements HasKnowledgeBase
 {
     use UsesTenantScoutGlobalSearch;
 
@@ -38,7 +40,7 @@ class ProductResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -95,7 +97,7 @@ class ProductResource extends Resource
     /**
      * @return array<string, string>
      */
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         if (! $record instanceof Product) {
             return [];
@@ -105,5 +107,10 @@ class ProductResource extends Resource
             'GTIN' => $record->gtin,
             'NDC' => $record->ndc11 ?? $record->ndc,
         ]);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.products';
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OutboundConnections\Schemas;
 
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
 use App\Models\OutboundConnection;
@@ -33,6 +34,14 @@ class OutboundConnectionInfolist
                         IconEntry::make('is_default')
                             ->label('Default for partner')
                             ->boolean(),
+                        TextEntry::make('conformance_state')
+                            ->label('Conformance')
+                            ->badge()
+                            ->formatStateUsing(fn (OutboundConformanceState|string|null $state): string => match (true) {
+                                $state instanceof OutboundConformanceState => $state->label(),
+                                is_string($state) && $state !== '' => OutboundConformanceState::tryFrom($state)?->label() ?? $state,
+                                default => OutboundConformanceState::Test->label(),
+                            }),
                         TextEntry::make('settings.epcis_document_version')
                             ->label('EPCIS document version')
                             ->state(function (OutboundConnection $record): string {
@@ -46,7 +55,7 @@ class OutboundConnectionInfolist
                             ->color(fn (OutboundConnection $record): string => (is_array($record->settings) && ($record->settings['epcis_document_version'] ?? '1.2') === '2.0')
                                 ? 'info'
                                 : 'gray')
-                            ->helperText('Ship Orders always author EPCIS 1.2 XML. This version applies to disposition and other resolver-backed documents when 2.0 is selected.'),
+                            ->helperText('Ship Orders follow this connection version when accept_20 allows 2.0; otherwise 1.2 XML.'),
                         TextEntry::make('last_sent_at')
                             ->dateTime()
                             ->placeholder('Never'),

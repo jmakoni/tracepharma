@@ -10,13 +10,14 @@ use App\Support\TenantSettings;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
 /**
  * Confirms existing VRS publish/consume surfaces. Verify Product is unchanged.
  */
-class VrsLookupDirectory extends Page
+class VrsLookupDirectory extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedGlobeAlt;
 
@@ -71,5 +72,10 @@ class VrsLookupDirectory extends Page
     public function responderConfigured(): bool
     {
         return filled(TenantSettings::forTenant(tenant())->vrsResponderApiKey());
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.verifications';
     }
 }

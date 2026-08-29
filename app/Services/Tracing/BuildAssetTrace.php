@@ -12,6 +12,8 @@ use App\Models\Epcis\EventLocation;
 use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Custody\EpcCustodyGate;
+use App\Services\Custody\ResolveEpcCustodyAsOf;
+use App\Support\Epcis\ArchivedEpcEvents;
 use App\Support\Epcis\LastGoodIngestProjection;
 use App\Support\Gs1\Ndc;
 use App\Support\Tracing\AssetTrackingUrl;
@@ -30,8 +32,8 @@ use Illuminate\Support\Facades\Schema;
  * (SGTIN or SSCC): identity, product/lot context, timeline, map points,
  * parties, and biz transactions.
  *
- * Table-backed sections of the Filament page (events, children) should query
- * via {@see self::eventsQuery()} / {@see self::childrenQuery()} rather than
+ * Table-backed sections of the Filament page (events, children) should use
+ * {@see self::eventsForTrackingTable()} / {@see self::childrenQuery()} rather than
  * relying on the small preview lists returned here.
  */
 final class BuildAssetTrace
@@ -39,6 +41,8 @@ final class BuildAssetTrace
     public function __construct(
         private ResolveEpcFromScan $resolveEpcFromScan,
         private LocationDisplayResolver $locations,
+        private ResolveEpcCustodyAsOf $custodyAsOf,
+        private ArchivedEpcEvents $archivedEpcEvents,
     ) {}
 
     /**
@@ -80,9 +84,10 @@ final class BuildAssetTrace
      *     event_time: ?string,
      *     url: ?string,
      *   }>,
+     *   as_of: ?string,
      * }
      */
-    public function handle(string $scan): array
+    public function handle(string $scan, ?Carbon $asOf = null): array
     {
         $resolved = $this->resolveEpcFromScan->handle($scan);
         $epc = $resolved['epc'];
@@ -95,16 +100,17 @@ final class BuildAssetTrace
         $epc->loadMissing(['product.tradingPartner', 'ilmd']);
 
         $eventRelations = ['locations', 'bizTransactions', 'document'];
+        $asOfUtc = $asOf?->copy()->utc();
 
         // Status HUD fields use direct EPC events only — not closed-ancestor implied events.
-        $latestDirectEvent = $this->eventsQuery($epc)
+        $latestDirectEvent = $this->eventsQuery($epc, $asOfUtc)
             ->with($eventRelations)
             ->reorder()
             ->orderByDesc('event_time')
             ->orderByDesc('id')
             ->first();
 
-        $events = $this->eventsQuery($epc)
+        $events = $this->eventsQuery($epc, $asOfUtc)
             ->with($eventRelations)
             ->reorder()
             ->orderByDesc('event_time')
@@ -114,15 +120,60 @@ final class BuildAssetTrace
             ->reverse()
             ->values();
 
+        $archived = $this->archivedEpcEvents->forEpc((int) $epc->getKey(), $asOfUtc);
+        $events = $events
+            ->concat($archived)
+            ->unique(fn (EpcisEvent $event): int => (int) $event->getKey())
+            ->sortBy([
+                fn (EpcisEvent $event): int => $event->event_time?->getTimestamp() ?? 0,
+                fn (EpcisEvent $event): int => (int) $event->getKey(),
+            ])
+            ->values();
+
+        if ($archived->isNotEmpty()) {
+            $latestDirectEvent = collect([$latestDirectEvent])
+                ->filter()
+                ->concat($archived)
+                ->unique(fn (EpcisEvent $event): int => (int) $event->getKey())
+                ->sortByDesc(fn (EpcisEvent $event): array => [
+                    $event->event_time?->getTimestamp() ?? 0,
+                    (int) $event->getKey(),
+                ])
+                ->first();
+        }
+
         $this->preloadEventLocations($events);
         $this->preloadManufacturerLocation($epc, $latestDirectEvent);
 
         [$displayEvents, $inferredFromByEventId] = $this->mergeDisplayEvents($epc, $events);
 
         $displayEvents = $this->capTimelineEvents($displayEvents);
-        $quarantined = $this->hasOpenQuarantineHold($epc);
-        $inCustody = app(EpcCustodyGate::class)->isInCustody($epc);
-        $inTransitViaParent = $this->isInTransitInsideOpenParent($epc);
+        $quarantined = $asOfUtc === null && $this->hasOpenQuarantineHold($epc);
+
+        $custodySnapshot = null;
+        if ($asOfUtc !== null) {
+            $custodySnapshot = $this->custodyAsOf->handle($epc, $asOfUtc);
+            $inCustody = in_array($custodySnapshot['status'], ['Commissioned', 'In custody'], true);
+            $inTransitViaParent = $custodySnapshot['status'] === 'In transit';
+            $status = $custodySnapshot['status'];
+            $statusTone = $custodySnapshot['status_tone'];
+            $dispositionLabel = $custodySnapshot['disposition'];
+            $dispositionUri = $custodySnapshot['disposition_uri'];
+            $dispositionAt = $custodySnapshot['event_time'];
+            $lastSeen = $custodySnapshot['event_time'];
+        } else {
+            $inCustody = app(EpcCustodyGate::class)->isInCustody($epc);
+            $inTransitViaParent = $this->isInTransitInsideOpenParent($epc);
+            $status = $quarantined
+                ? 'Quarantined'
+                : ($inTransitViaParent
+                    ? 'In transit'
+                    : ($inCustody ? 'In custody' : 'Not in custody'));
+            $statusTone = $quarantined
+                ? 'warn'
+                : ($inTransitViaParent || ! $inCustody ? 'warn' : 'ok');
+            [$dispositionLabel, $dispositionUri, $dispositionAt, $lastSeen] = $this->latestEventDisplay($latestDirectEvent);
+        }
 
         $display = Gs1DualDisplay::forEpc($epc);
         $childrenCount = AggregationLink::query()
@@ -130,21 +181,13 @@ final class BuildAssetTrace
             ->where('parent_epc_id', $epc->getKey())
             ->count();
 
-        [$dispositionLabel, $dispositionUri, $dispositionAt, $lastSeen] = $this->latestEventDisplay($latestDirectEvent);
-
         return [
             'found' => true,
             'scan' => $scan,
             'epc' => (int) $epc->getKey(),
             'identity' => $identity,
-            'status' => $quarantined
-                ? 'Quarantined'
-                : ($inTransitViaParent
-                    ? 'In transit'
-                    : ($inCustody ? 'In custody' : 'Not in custody')),
-            'status_tone' => $quarantined
-                ? 'warn'
-                : ($inTransitViaParent || ! $inCustody ? 'warn' : 'ok'),
+            'status' => $status,
+            'status_tone' => $statusTone,
             'primary_identifier' => $display['primary'],
             'gs1_barcode' => $display['gs1_barcode'],
             'urn' => $display['urn'],
@@ -166,13 +209,35 @@ final class BuildAssetTrace
             'transactions' => $this->buildTransactions($displayEvents),
             'verify_url_params' => $this->verifyUrlParams($epc),
             'transformation_links' => $this->buildTransformationLinks($epc),
+            'as_of' => $asOfUtc?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Hot + archived events for the Asset Tracking events table.
+     * {@see self::eventsQuery()} stays hot-table only.
+     *
+     * @return Collection<int, EpcisEvent>
+     */
+    public function eventsForTrackingTable(Epc $epc, ?Carbon $asOf = null): Collection
+    {
+        $hot = $this->eventsQuery($epc, $asOf)->with(['locations'])->get();
+        $archived = $this->archivedEpcEvents->forEpc((int) $epc->getKey(), $asOf);
+
+        return $hot
+            ->concat($archived)
+            ->unique(fn (EpcisEvent $event): int => (int) $event->getKey())
+            ->sortBy([
+                fn (EpcisEvent $event): int => $event->event_time?->getTimestamp() ?? 0,
+                fn (EpcisEvent $event): int => (int) $event->getKey(),
+            ])
+            ->values();
     }
 
     /**
      * @return Builder<EpcisEvent>
      */
-    public function eventsQuery(Epc $epc): Builder
+    public function eventsQuery(Epc $epc, ?Carbon $asOf = null): Builder
     {
         $query = EpcisEvent::query()
             ->whereIn('id', function ($query) use ($epc): void {
@@ -180,6 +245,47 @@ final class BuildAssetTrace
                     ->from('event_epcs')
                     ->where('epc_id', $epc->getKey());
             });
+
+        if ($asOf !== null) {
+            $asOfUtc = $asOf->copy()->utc();
+            $query->where('epcis_events.event_time', '<=', $asOfUtc->toDateTimeString());
+
+            if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+                $query->where(function ($q) use ($asOfUtc): void {
+                    $q->whereNull('epcis_events.superseded_at')
+                        ->orWhere('epcis_events.superseded_at', '>', $asOfUtc->toDateTimeString());
+                });
+            }
+
+            // Prefer the generation that was active at T (lowest live ingest_generation per document).
+            if (Schema::hasColumn('epcis_events', 'ingest_generation')) {
+                $hasSuperseded = Schema::hasColumn('epcis_events', 'superseded_at');
+                $supersedeClause = $hasSuperseded
+                    ? 'AND (ev2.superseded_at IS NULL OR ev2.superseded_at > ?)'
+                    : '';
+                $bindings = [(int) $epc->getKey(), $asOfUtc->toDateTimeString()];
+                if ($hasSuperseded) {
+                    $bindings[] = $asOfUtc->toDateTimeString();
+                }
+
+                $query->whereRaw(
+                    'epcis_events.ingest_generation = (
+                        SELECT MIN(ev2.ingest_generation)
+                        FROM event_epcs ee2
+                        INNER JOIN epcis_events ev2 ON ev2.id = ee2.event_id
+                        WHERE ee2.epc_id = ?
+                          AND ev2.document_id = epcis_events.document_id
+                          AND ev2.event_time <= ?
+                          '.$supersedeClause.'
+                    )',
+                    $bindings,
+                );
+            }
+
+            return $query
+                ->orderBy('event_time')
+                ->orderBy('id');
+        }
 
         if (Schema::hasColumn('epcis_events', 'ingest_generation')
             && Schema::hasTable('epcis_documents')
@@ -194,6 +300,10 @@ final class BuildAssetTrace
                     successfulStatuses: ['parsed', 'validated', 'received', 'generated'],
                 );
             });
+        }
+
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $query->whereNull('epcis_events.superseded_at');
         }
 
         return $query
@@ -293,6 +403,7 @@ final class BuildAssetTrace
             'transactions' => [],
             'verify_url_params' => null,
             'transformation_links' => [],
+            'as_of' => null,
         ];
     }
 

@@ -28,6 +28,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +37,7 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class ScanInWorkstation extends Page
+class ScanInWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedInboxArrowDown;
 
@@ -515,5 +516,10 @@ class ScanInWorkstation extends Page
         $this->lastScanMessage = $message;
         $this->dispatch('focus-scan');
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.receiving';
     }
 }

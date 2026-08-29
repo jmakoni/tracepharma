@@ -45,7 +45,7 @@ final class ConfirmOutboundShippingScan
      *     message: string,
      *     line: ?OutboundShippingScanLine,
      *     epc: ?Epc,
-     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'
+     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'|'overscan'
      * }
      */
     public function handle(
@@ -106,6 +106,20 @@ final class ConfirmOutboundShippingScan
                     'line' => $existing,
                     'epc' => $epc,
                     'effect' => 'already_confirmed',
+                ];
+            }
+
+            $expected = (int) $session->expected_count;
+            if ($expected > 0 && (int) $session->confirmed_count >= $expected) {
+                return [
+                    'ok' => false,
+                    'message' => sprintf(
+                        'Expected unit count (%d) already confirmed. Remove a scan or raise expected units before adding more.',
+                        $expected,
+                    ),
+                    'line' => null,
+                    'epc' => $epc,
+                    'effect' => 'overscan',
                 ];
             }
 

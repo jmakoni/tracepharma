@@ -10,11 +10,15 @@ use App\Jobs\DeliverEpcisSubscriptionJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisSubscription;
 use App\Models\Tenant;
+use App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
 use Tests\TestCase;
 
 class EpcisSubscriptionDeliveryTest extends TestCase
@@ -159,6 +163,102 @@ class EpcisSubscriptionDeliveryTest extends TestCase
     }
 
     #[Test]
+    public function subscription_dispatch_waits_for_transaction_commit(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Queue::fake();
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Inbound validated hook',
+                'target_url' => 'https://hooks.example.com/epcis',
+                'secret' => 'test-secret-value-32chars-minimum!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_INBOUND,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'parsed',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            DB::transaction(function () use ($document): void {
+                $document->forceFill(['status' => 'validated', 'error_message' => null])->save();
+                app(DispatchEpcisSubscriptions::class)->handle($document->fresh(), 'validated');
+                Queue::assertNothingPushed();
+            });
+
+            Queue::assertPushed(DeliverEpcisSubscriptionJob::class, function (DeliverEpcisSubscriptionJob $job) use ($subscription, $document): bool {
+                return $job->subscriptionId === (int) $subscription->getKey()
+                    && $job->documentId === (int) $document->getKey()
+                    && $job->trigger === 'validated';
+            });
+            $this->assertSame('validated', (string) $document->fresh()->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function subscription_dispatch_is_dropped_when_transaction_rolls_back(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Queue::fake();
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Inbound validated hook',
+                'target_url' => 'https://hooks.example.com/epcis',
+                'secret' => 'test-secret-value-32chars-minimum!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_INBOUND,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'parsed',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            try {
+                DB::transaction(function () use ($document): void {
+                    $document->forceFill(['status' => 'validated', 'error_message' => null])->save();
+                    app(DispatchEpcisSubscriptions::class)->handle($document->fresh(), 'validated');
+                    throw new RuntimeException('force rollback');
+                });
+            } catch (RuntimeException $e) {
+                $this->assertSame('force rollback', $e->getMessage());
+            }
+
+            Queue::assertNothingPushed();
+            $this->assertSame('parsed', (string) $document->fresh()->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function inactive_subscription_is_skipped(): void
     {
         $this->initializeDemo2Tenant();
@@ -275,9 +375,9 @@ class EpcisSubscriptionDeliveryTest extends TestCase
                 (int) $subscription->getKey(),
                 (int) $document->getKey(),
                 'validated',
-            ))->handle(app(\App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20::class));
+            ))->handle(app(CanonicalEventsToJsonLd20::class));
 
-            Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($subscription, $document): bool {
+            Http::assertSent(function (Request $request) use ($subscription, $document): bool {
                 if ($request->url() !== 'https://8.8.8.8/epcis') {
                     return false;
                 }
@@ -349,9 +449,9 @@ class EpcisSubscriptionDeliveryTest extends TestCase
                     (int) $subscription->getKey(),
                     (int) $document->getKey(),
                     'validated',
-                ))->handle(app(\App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20::class));
+                ))->handle(app(CanonicalEventsToJsonLd20::class));
                 $this->fail('Expected redirect delivery to throw.');
-            } catch (\RuntimeException $exception) {
+            } catch (RuntimeException $exception) {
                 $this->assertStringContainsString('redirect', strtolower($exception->getMessage()));
             }
 

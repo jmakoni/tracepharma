@@ -2,11 +2,15 @@
 
 namespace App\Actions\Shipping;
 
+use App\Enums\ExceptionStatus;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Models\Epcis\Epc;
+use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
+use App\Services\Exceptions\ExceptionService;
 use App\Support\Gs1\Sgln;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseRelevance;
@@ -16,6 +20,8 @@ use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\ResolveOutboundShipToSgln;
+use App\Support\Shipping\SsccShipCompletenessException;
+use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -30,6 +36,7 @@ final class ValidateOutboundShippingSend
         private readonly DetectOpenParentHierarchyOnShip $openParentHierarchyOnShip,
         private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
         private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
+        private readonly ExceptionService $exceptionService,
     ) {}
 
     public function handle(OutboundShippingSession $session): array
@@ -74,6 +81,10 @@ final class ValidateOutboundShippingSend
             $blockers[] = 'Confirm at least one unit before sending.';
         }
 
+        foreach ($this->quantityBlockers($session) as $quantityBlocker) {
+            $blockers[] = $quantityBlocker;
+        }
+
         if (($openParentBlocker = $this->openParentHierarchyOnShip->blockerMessage($session)) !== null) {
             $blockers[] = $openParentBlocker;
         }
@@ -110,12 +121,163 @@ final class ValidateOutboundShippingSend
         foreach (Epc::query()->whereIn('id', $epcIds)->get() as $epc) {
             try {
                 $this->assertOutermostSsccHasChildren->handle($epc);
+            } catch (SsccShipCompletenessException $exception) {
+                $blockers[] = $exception->getMessage();
+                $this->openHierarchyException($session, $exception);
             } catch (InvalidArgumentException $exception) {
                 $blockers[] = $exception->getMessage();
             }
         }
 
         return $blockers;
+    }
+
+    /**
+     * When expected_count > 0: overscan always blocks; under-scan requires split_declared.
+     * Live-ladder connections (first_live_lot / hypercare / live) cannot skip with expected_count = 0.
+     *
+     * @return list<string>
+     */
+    private function quantityBlockers(OutboundShippingSession $session): array
+    {
+        $expected = (int) $session->expected_count;
+        $confirmed = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->count();
+
+        if ($expected <= 0) {
+            $session->loadMissing('outboundConnection');
+            $connection = $session->outboundConnection;
+
+            if ($connection !== null && $connection->conformanceState()->requiresExpectedQuantity()) {
+                if ((bool) $session->quantity_gate_overridden) {
+                    return [];
+                }
+
+                $message = 'Expected unit count is required for live outbound connections. '
+                    .'Set expected count from the ASN/order/WMS or on the ship order before sending.';
+                $this->openQuantityMismatchException($session, $message, $expected, $confirmed);
+
+                return [$message];
+            }
+
+            return [];
+        }
+
+        if ($confirmed > $expected) {
+            return [
+                sprintf(
+                    'Confirmed count (%d) exceeds expected units (%d). Remove extra scans before sending.',
+                    $confirmed,
+                    $expected,
+                ),
+            ];
+        }
+
+        if ($confirmed < $expected && ! (bool) $session->split_declared) {
+            $message = sprintf(
+                'Confirmed count (%d) is below expected units (%d). Confirm the remaining units or declare a split/partial shipment.',
+                $confirmed,
+                $expected,
+            );
+            $this->openQuantityMismatchException($session, $message, $expected, $confirmed);
+
+            return [$message];
+        }
+
+        return [];
+    }
+
+    private function openQuantityMismatchException(
+        OutboundShippingSession $session,
+        string $message,
+        int $expected,
+        int $confirmed,
+    ): void {
+        $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
+
+        if ($type === null) {
+            (new ExceptionTypeSeeder)->run();
+            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
+        }
+
+        if ($type === null) {
+            return;
+        }
+
+        $fingerprint = 'ship-order-#'.$session->getKey().'-qty';
+
+        $alreadyOpen = ExceptionCase::query()
+            ->where('exception_type_id', $type->getKey())
+            ->whereNotIn('status', [
+                ExceptionStatus::Resolved->value,
+                ExceptionStatus::Closed->value,
+                ExceptionStatus::Cancelled->value,
+            ])
+            ->where('description', 'like', '%'.$fingerprint.'%')
+            ->exists();
+
+        if ($alreadyOpen) {
+            return;
+        }
+
+        $epcIds = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->pluck('epc_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $this->exceptionService->create([
+            'exception_type_id' => $type->getKey(),
+            'document_id' => null,
+            'site_id' => $session->site_id,
+            'trading_partner_id' => $session->trading_partner_id,
+            'title' => $type->name,
+            'description' => $message.' ['.$fingerprint.'; expected='.$expected.'; confirmed='.$confirmed.']',
+            'status' => ExceptionStatus::New->value,
+        ], $epcIds);
+    }
+
+    private function openHierarchyException(
+        OutboundShippingSession $session,
+        SsccShipCompletenessException $exception,
+    ): void {
+        $type = ExceptionType::query()->where('code', $exception->exceptionTypeCode)->first();
+
+        if ($type === null) {
+            (new ExceptionTypeSeeder)->run();
+            $type = ExceptionType::query()->where('code', $exception->exceptionTypeCode)->first();
+        }
+
+        if ($type === null) {
+            return;
+        }
+
+        $alreadyOpen = ExceptionCase::query()
+            ->where('exception_type_id', $type->getKey())
+            ->whereNotIn('status', [
+                ExceptionStatus::Resolved->value,
+                ExceptionStatus::Closed->value,
+                ExceptionStatus::Cancelled->value,
+            ])
+            ->whereHas('epcs', fn ($query) => $query->where('epcs.id', $exception->parentEpcId))
+            ->exists();
+
+        if ($alreadyOpen) {
+            return;
+        }
+
+        $this->exceptionService->create([
+            'exception_type_id' => $type->getKey(),
+            'document_id' => null,
+            'site_id' => $session->site_id,
+            'trading_partner_id' => $session->trading_partner_id,
+            'title' => $type->name,
+            'description' => $exception->getMessage(),
+            'status' => ExceptionStatus::New->value,
+        ], $exception->epcIdsForCase());
     }
 
     private function hasConfirmedLines(OutboundShippingSession $session): bool

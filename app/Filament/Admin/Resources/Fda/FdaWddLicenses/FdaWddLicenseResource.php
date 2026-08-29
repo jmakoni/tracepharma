@@ -12,9 +12,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaWddLicenseResource extends Resource
+class FdaWddLicenseResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -55,5 +56,10 @@ class FdaWddLicenseResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['license_number'];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.fda-wdd';
     }
 }

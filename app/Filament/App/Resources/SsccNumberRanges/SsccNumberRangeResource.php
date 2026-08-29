@@ -16,9 +16,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class SsccNumberRangeResource extends Resource
+class SsccNumberRangeResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = SsccNumberRange::class;
 
@@ -40,7 +41,7 @@ class SsccNumberRangeResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsSsccLabeling())
+        return TenantFeatures::forTenant(tenant())->supportsSsccLabeling()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -61,5 +62,10 @@ class SsccNumberRangeResource extends Resource
             'create' => CreateSsccNumberRange::route('/create'),
             'edit' => EditSsccNumberRange::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.labeling';
     }
 }

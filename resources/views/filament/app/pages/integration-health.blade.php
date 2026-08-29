@@ -216,9 +216,11 @@
                                         <th>Name</th>
                                         <th>Partner</th>
                                         <th>Transport</th>
+                                        <th>Conformance</th>
                                         <th>EPCIS</th>
                                         <th>Active</th>
-                                        <th>Last sent</th>
+                                        <th>Last success</th>
+                                        <th>Cert expiry</th>
                                         <th>Last error</th>
                                     </tr>
                                 </thead>
@@ -229,6 +231,10 @@
                                             $epcisVersion = is_array($connection->settings)
                                                 ? (string) ($connection->settings['epcis_document_version'] ?? '1.2')
                                                 : '1.2';
+                                            $conformance = $connection->conformanceState();
+                                            $lastSuccess = $connection->lastSuccessAt();
+                                            $certExpires = $connection->as2CertExpiresAt();
+                                            $certWarning = $connection->certExpiryWarning();
                                         @endphp
                                         <tr>
                                             <td>
@@ -271,6 +277,11 @@
                                                 @endif
                                             </td>
                                             <td>
+                                                <span class="badge badge-sm {{ $conformance->isLive() ? 'badge-success' : 'badge-outline' }}">
+                                                    {{ $conformance->label() }}
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <span class="badge badge-sm {{ $epcisVersion === '2.0' ? 'badge-info' : 'badge-ghost' }}">
                                                     {{ $epcisVersion === '2.0' ? '2.0 JSON-LD' : '1.2 XML' }}
                                                 </span>
@@ -283,7 +294,18 @@
                                                 @endif
                                             </td>
                                             <td class="whitespace-nowrap">
-                                                {{ $connection->last_sent_at?->format('M j, Y g:i A') ?? '—' }}
+                                                {{ $lastSuccess?->format('M j, Y g:i A') ?? '—' }}
+                                            </td>
+                                            <td class="whitespace-nowrap">
+                                                @if ($certExpires === null)
+                                                    —
+                                                @elseif ($certWarning)
+                                                    <span class="badge badge-sm badge-warning" title="Certificate expires within the warning window">
+                                                        {{ $certExpires->format('M j, Y') }}
+                                                    </span>
+                                                @else
+                                                    {{ $certExpires->format('M j, Y') }}
+                                                @endif
                                             </td>
                                             @php
                                                 $redactedError = $this->redactLastError($connection->last_error);

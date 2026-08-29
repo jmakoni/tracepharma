@@ -18,13 +18,14 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
 /**
  * @property-read Schema $form
  */
-class DashboardPreferences extends Page
+class DashboardPreferences extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedSquares2x2;
 
@@ -239,5 +240,10 @@ class DashboardPreferences extends Page
     private function allowsCustomize(): bool
     {
         return TenantSettings::forTenant(tenant())->dashboardAllowUserCustomize();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.settings-hub';
     }
 }

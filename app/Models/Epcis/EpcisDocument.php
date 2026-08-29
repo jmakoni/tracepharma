@@ -5,8 +5,8 @@ namespace App\Models\Epcis;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\EpcisReceivedVia;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
-use App\Models\Concerns\TenantSearchable;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
+use App\Models\Concerns\TenantSearchable;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\OutboundConnection;
 use App\Models\Product;
@@ -391,8 +391,14 @@ class EpcisDocument extends Model
      */
     public function activeEvents(): HasMany
     {
-        return $this->hasMany(EpcisEvent::class, 'document_id')
+        $relation = $this->hasMany(EpcisEvent::class, 'document_id')
             ->where('ingest_generation', $this->ingest_generation ?? 1);
+
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $relation->whereNull('epcis_events.superseded_at');
+        }
+
+        return $relation;
     }
 
     public function documentEpcs(): HasMany

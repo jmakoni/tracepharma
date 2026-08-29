@@ -18,10 +18,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class SsccLabelResource extends Resource
+class SsccLabelResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = SsccLabel::class;
 
@@ -48,7 +50,7 @@ class SsccLabelResource extends Resource
     }
 
     /**
-     * @return Builder<\Illuminate\Database\Eloquent\Model>
+     * @return Builder<Model>
      */
     public static function getEloquentQuery(): Builder
     {
@@ -73,8 +75,8 @@ class SsccLabelResource extends Resource
      * AccessAll sees every batch. Site-restricted users only see batches whose
      * commission_site_id is one of their assigned organization facilities.
      *
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
-     * @return Builder<\Illuminate\Database\Eloquent\Model>
+     * @param  Builder<Model>  $query
+     * @return Builder<Model>
      */
     public static function constrainBatchQuery(Builder $query, ?User $user = null): Builder
     {
@@ -112,5 +114,10 @@ class SsccLabelResource extends Resource
             'index' => ListSsccLabels::route('/'),
             'view-batch' => ViewSsccLabelBatch::route('/batches/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.labeling';
     }
 }

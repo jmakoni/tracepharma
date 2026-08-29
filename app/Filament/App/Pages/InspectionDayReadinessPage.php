@@ -11,10 +11,11 @@ use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class InspectionDayReadinessPage extends Page
+class InspectionDayReadinessPage extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
@@ -69,5 +70,10 @@ class InspectionDayReadinessPage extends Page
                 ->url(fn (): string => InspectionPack::getUrl(panel: 'app'))
                 ->visible(fn (): bool => InspectionPack::canAccess()),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.recall-and-inspection';
     }
 }

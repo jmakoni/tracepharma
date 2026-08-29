@@ -11,11 +11,12 @@ use App\Support\TenantFeatures;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class PartnerIngestQuality extends Page
+class PartnerIngestQuality extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
@@ -59,5 +60,10 @@ class PartnerIngestQuality extends Page
     public function partnerRows(): Collection
     {
         return app(PartnerIngestQualityMetrics::class)->rows();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.partner-ingest-quality';
     }
 }

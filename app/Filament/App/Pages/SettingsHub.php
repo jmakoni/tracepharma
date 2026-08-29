@@ -9,8 +9,8 @@ use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
 use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Filament\App\Resources\Users\UserResource;
-use App\Support\OnboardingCopy;
 use App\Support\Auth\JobRoleAccess;
+use App\Support\OnboardingCopy;
 use App\Support\TenantFeatures;
 use App\Support\TenantOnboarding;
 use App\Support\TenantSettings;
@@ -19,11 +19,12 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Support\Facades\Route;
 use Throwable;
 use UnitEnum;
 
-class SettingsHub extends Page
+class SettingsHub extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;
 
@@ -411,5 +412,10 @@ class SettingsHub extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.settings-hub';
     }
 }

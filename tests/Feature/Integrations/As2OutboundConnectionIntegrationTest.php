@@ -18,6 +18,7 @@ use App\Services\Epcis\Outbound\As2OutboundSender;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -163,7 +164,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $pemPair = self::generatedSelfSignedPemPair();
 
             $mdnBody = "Reporting-UA: partner-as2.example\r\nOriginal-Message-ID: <test@tracepharma>\r\nDisposition: automatic-action/MDN-sent-automatically; processed";
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
 
             Http::fake([
                 'https://partner-as2.example/as2' => Http::response($mdnBody, 200, [
@@ -324,7 +325,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-as2-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -427,7 +428,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connectionForB->getKey();
 
             $path = 'epcis/outbound/test-as2-mismatch-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -493,7 +494,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-as2-idempotent-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -561,7 +562,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-as2-async-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -939,7 +940,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-as2-failed-mdn-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -1017,7 +1018,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
         $this->connectionId = (int) $connection->getKey();
 
         $path = 'epcis/outbound/test-as2-async-'.Str::uuid().'.xml';
-        $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+        $xml = $this->schemaValidOutboundXml();
         Storage::disk('local')->put($path, $xml);
 
         $document = EpcisDocument::query()->create([
@@ -1066,7 +1067,7 @@ class As2OutboundConnectionIntegrationTest extends TestCase
         return [$connection, $document, $mdn, $capturedMessageId];
     }
 
-    private function postAsyncMdnWebhook(Tenant $tenant, OutboundConnection $connection, string $body): \Illuminate\Testing\TestResponse
+    private function postAsyncMdnWebhook(Tenant $tenant, OutboundConnection $connection, string $body): TestResponse
     {
         return $this->call(
             'POST',
@@ -1109,6 +1110,18 @@ class As2OutboundConnectionIntegrationTest extends TestCase
         tenancy()->initialize($tenant);
 
         return $tenant;
+    }
+
+    private function schemaValidOutboundXml(): string
+    {
+        $xml = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($xml);
+
+        return str_replace(
+            '11111111-2222-3333-4444-555555555555',
+            (string) Str::uuid(),
+            $xml,
+        );
     }
 
     private function cleanup(): void

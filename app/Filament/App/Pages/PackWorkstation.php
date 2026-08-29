@@ -32,6 +32,7 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -39,7 +40,7 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class PackWorkstation extends Page
+class PackWorkstation extends Page implements HasKnowledgeBase
 {
     use HidesForPharmacySimplifiedNav;
 
@@ -1087,5 +1088,10 @@ class PackWorkstation extends Page
     {
         $this->lastTone = $tone;
         $this->lastMessage = $message;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.pack';
     }
 }

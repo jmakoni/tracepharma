@@ -37,6 +37,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\PermissionRegistrar;
@@ -46,7 +47,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class OrganizationSettings extends Page
+class OrganizationSettings extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice;
 
@@ -829,5 +830,10 @@ class OrganizationSettings extends Page
                 'data.job_roles_enabled' => 'Owner role permissions did not sync — you would lose Settings access. Run php artisan tracepharma:seed-tenant-job-roles or contact support, then try again.',
             ]);
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.settings-hub';
     }
 }

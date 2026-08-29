@@ -13,9 +13,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaImportRunResource extends Resource
+class FdaImportRunResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -47,5 +48,10 @@ class FdaImportRunResource extends Resource
             'index' => ListFdaImportRuns::route('/'),
             'view' => ViewFdaImportRun::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.fda-imports';
     }
 }

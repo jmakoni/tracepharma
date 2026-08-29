@@ -171,6 +171,17 @@ return [
     ],
 
     /*
+    | Decommission workstation: mass dual-control when selected EPC count exceeds threshold.
+    | Printed-never-shipped auto-decommission (disposition:decommission-never-shipped)
+    | holds commissioned/active units for unshipped_hold_days before retiring them.
+    */
+    'decommission' => [
+        'mass_threshold' => (int) env('TRACEPHARMA_DECOMMISSION_MASS_THRESHOLD', 10),
+        'mass_window_hours' => (int) env('TRACEPHARMA_DECOMMISSION_MASS_WINDOW_HOURS', 8),
+        'unshipped_hold_days' => (int) env('TRACEPHARMA_DECOMMISSION_UNSHIPPED_HOLD_DAYS', 30),
+    ],
+
+    /*
     | Supplier-facing exception portal links. Links are temporary signed URLs so a
     | forwarded email stops working on its own; they can also be revoked or rotated
     | per partner (portal_share_uuid) by owners and master-data administrators.
@@ -189,6 +200,13 @@ return [
     ],
 
     /*
+    | Outbound connection conformance / cert operational knobs.
+    */
+    'outbound' => [
+        'cert_warning_days' => (int) env('TRACEPHARMA_OUTBOUND_CERT_WARNING_DAYS', 30),
+    ],
+
+    /*
     | AS2 outbound MDN SLAs for catalog signals (MISSING_MDN / LATE_MDN).
     | Pending transmission_mdns past missing (but before late) → MISSING_MDN;
     | past late → LATE_MDN only. De-duped per document + exception_type.
@@ -196,6 +214,21 @@ return [
     'as2_mdn' => [
         'missing_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_MISSING_HOURS', 24),
         'late_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_LATE_HOURS', 72),
+    ],
+
+    /*
+    | Hours from SSCC labeling / commission-source to L4 commissioning event_time.
+    | Leadership DSCSA pack warns when a completed batch exceeds this SLA.
+    */
+    'l3_l4_ingest' => [
+        'sla_hours' => max(1, (int) env('TRACEPHARMA_L3_L4_INGEST_SLA_HOURS', 4)),
+    ],
+
+    /*
+    | Leadership DSCSA pack drill-down row caps (Filament page + CSV export).
+    */
+    'leadership' => [
+        'drill_limit' => 100,
     ],
 
     /*

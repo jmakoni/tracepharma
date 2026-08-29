@@ -13,12 +13,13 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use RuntimeException;
 use UnitEnum;
 
-class CustomerPortalLinks extends Page
+class CustomerPortalLinks extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedLink;
 
@@ -107,5 +108,10 @@ class CustomerPortalLinks extends Page
                     ->success()
                     ->send();
             });
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.customer-portal';
     }
 }

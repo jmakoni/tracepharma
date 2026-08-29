@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OutboundConnections\Tables;
 
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
 use Filament\Tables\Columns\IconColumn;
@@ -23,6 +24,15 @@ class OutboundConnectionsTable
                 TextColumn::make('transport')
                     ->badge()
                     ->formatStateUsing(fn (OutboundTransport $state): string => $state->label()),
+                TextColumn::make('conformance_state')
+                    ->label('Conformance')
+                    ->badge()
+                    ->formatStateUsing(fn (OutboundConformanceState|string|null $state): string => match (true) {
+                        $state instanceof OutboundConformanceState => $state->label(),
+                        is_string($state) && $state !== '' => OutboundConformanceState::tryFrom($state)?->label() ?? $state,
+                        default => OutboundConformanceState::Test->label(),
+                    })
+                    ->sortable(),
                 TextColumn::make('tradingPartner.name')
                     ->label('Trading partner')
                     ->placeholder('—')

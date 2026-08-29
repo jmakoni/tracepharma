@@ -5,6 +5,7 @@ namespace App\Actions\Vrs;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
+use App\Exceptions\VrsConfigurationException;
 use App\Models\Epcis\Epc;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
@@ -17,7 +18,9 @@ use App\Services\Vrs\Contracts\VrsClient;
 use App\Services\Vrs\ManufacturerVerificationNotifier;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
+use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Gs1\ElementString;
+use App\Support\Vrs\AssertVrsDriverReady;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -45,6 +48,7 @@ final class RunProductVerification
         private readonly QuarantineService $quarantine,
         private readonly ManufacturerVerificationNotifier $manufacturerNotifier,
         private readonly ResolveEpcLastKnownGln $lastKnownGln,
+        private readonly AssertVrsDriverReady $assertVrsDriverReady,
     ) {}
 
     /**
@@ -55,6 +59,9 @@ final class RunProductVerification
      *     body: string,
      *     exception_id: ?int
      * }
+     *
+     * @throws InvalidArgumentException
+     * @throws VrsConfigurationException
      */
     public function handle(string $scan, ?User $actor = null): array
     {
@@ -72,6 +79,8 @@ final class RunProductVerification
             throw new InvalidArgumentException('Scan must include a GTIN (AI 01) and serial (AI 21).');
         }
 
+        $this->assertVrsDriverReady->handle();
+
         $resolved = $this->resolveEpcFromScan->handle($scan);
         /** @var Epc|null $epc */
         $epc = $resolved['epc'];
@@ -83,6 +92,19 @@ final class RunProductVerification
             $hold = $this->receivingGate->epcBlockedByOpenHold($epc);
             if ($hold !== null) {
                 return $this->blockedByQuarantine($identity, $normalized, $hold, $actor, $lot, $expiry, $epc);
+            }
+
+            $meta = $this->lastKnownGln->latestEventMeta($epc);
+            if (TerminalEpcDisposition::matches($meta)) {
+                return $this->blockedByTerminalDisposition(
+                    $identity,
+                    $normalized,
+                    $meta,
+                    $actor,
+                    $lot,
+                    $expiry,
+                    $epc,
+                );
             }
         }
 
@@ -100,16 +122,7 @@ final class RunProductVerification
             'status' => $result['status'],
             'scanned_barcode' => $normalized,
             'verified_by' => $actor?->getKey(),
-            // A plain array_filter() drops falsy values, which would silently strip a
-            // legitimate serial or lot of "0" from the audit trail — keep every value
-            // except null/empty string.
-            'request_payload' => array_filter([
-                'gtin14' => $identity['gtin14'],
-                'serial' => $identity['serial'],
-                'lot' => $lot,
-                'expiry_yymmdd' => $expiry,
-                'site_id' => $this->resolveSiteIdForEpc($epc),
-            ], fn ($value): bool => $value !== null && $value !== ''),
+            'request_payload' => $this->buildRequestPayload($identity, $lot, $expiry, $epc),
             'response_payload' => $result,
             'message' => $result['message'],
             'verified_at' => in_array($result['status'], self::VERDICT_STATUSES, true) ? now() : null,
@@ -165,6 +178,63 @@ final class RunProductVerification
 
     /**
      * @param  array<string, mixed>  $identity
+     * @param  array<string, mixed>|null  $meta
+     * @return array{
+     *     verification: Verification,
+     *     tone: 'ok'|'warn'|'error',
+     *     title: string,
+     *     body: string,
+     *     exception_id: ?int
+     * }
+     */
+    private function blockedByTerminalDisposition(
+        array $identity,
+        string $normalized,
+        ?array $meta,
+        ?User $actor,
+        ?string $lot,
+        ?string $expiry,
+        Epc $epc,
+    ): array {
+        $label = TerminalEpcDisposition::label($meta['disposition'] ?? null);
+        $message = 'Serial is recorded as '.$label.' and cannot be verified.';
+
+        $result = [
+            'status' => 'failed',
+            'gtin14' => $identity['gtin14'],
+            'serial' => $identity['serial'],
+            'lot' => $lot,
+            'expiry_yymmdd' => $expiry,
+            'message' => $message,
+            'blocked_by' => 'terminal_disposition',
+            'disposition' => $meta['disposition'] ?? null,
+            'reason' => 'decommissioned',
+        ];
+
+        $verification = Verification::query()->create([
+            'gtin14' => $identity['gtin14'],
+            'serial' => $identity['serial'],
+            'lot' => $lot,
+            'status' => 'failed',
+            'scanned_barcode' => $normalized,
+            'verified_by' => $actor?->getKey(),
+            'request_payload' => $this->buildRequestPayload($identity, $lot, $expiry, $epc, $meta),
+            'response_payload' => $result,
+            'message' => $message,
+            'verified_at' => null,
+        ]);
+
+        return [
+            'verification' => $verification,
+            'tone' => 'error',
+            'title' => 'Verification failed',
+            'body' => $message,
+            'exception_id' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $identity
      * @return array{
      *     verification: Verification,
      *     tone: 'ok'|'warn'|'error',
@@ -191,13 +261,7 @@ final class RunProductVerification
             'status' => 'quarantined',
             'scanned_barcode' => $normalized,
             'verified_by' => $actor?->getKey(),
-            'request_payload' => array_filter([
-                'gtin14' => $identity['gtin14'],
-                'serial' => $identity['serial'],
-                'lot' => $lot,
-                'expiry_yymmdd' => $expiry,
-                'site_id' => $this->resolveSiteIdForEpc($epc),
-            ], fn ($value): bool => $value !== null && $value !== ''),
+            'request_payload' => $this->buildRequestPayload($identity, $lot, $expiry, $epc),
             'response_payload' => [
                 'blocked_by' => 'open_quarantine_hold',
                 'hold_id' => $hold->getKey(),
@@ -255,6 +319,38 @@ final class RunProductVerification
         $suffix = $caseId !== null ? " (exception #{$caseId})" : '';
 
         return 'Under quarantine'.$suffix.'. Clear or release quarantine before dispensing.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $identity
+     * @param  array<string, mixed>|null  $meta
+     * @return array<string, mixed>
+     */
+    private function buildRequestPayload(
+        array $identity,
+        ?string $lot,
+        ?string $expiry,
+        ?Epc $epc,
+        ?array $meta = null,
+    ): array {
+        $meta ??= $epc !== null ? $this->lastKnownGln->latestEventMeta($epc) : null;
+        $disposition = is_array($meta) ? ($meta['disposition'] ?? null) : null;
+
+        $payload = array_filter([
+            'gtin14' => $identity['gtin14'],
+            'serial' => $identity['serial'],
+            'lot' => $lot,
+            'expiry_yymmdd' => $expiry,
+            'site_id' => $this->resolveSiteIdForEpc($epc),
+        ], fn ($value): bool => $value !== null && $value !== '');
+
+        $payload['l4'] = array_filter([
+            'epc_id' => $epc !== null ? (int) $epc->getKey() : null,
+            'disposition' => $disposition,
+            'terminal' => TerminalEpcDisposition::matches($meta),
+        ], fn ($value): bool => $value !== null && $value !== '');
+
+        return $payload;
     }
 
     private function openVerificationException(

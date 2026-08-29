@@ -30,6 +30,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -42,7 +43,7 @@ use UnitEnum;
  *
  * @property-read Schema $form
  */
-class RepackTransformWorkstation extends Page
+class RepackTransformWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsPointingIn;
 
@@ -349,5 +350,10 @@ class RepackTransformWorkstation extends Page
         }
 
         return $uris;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.repack-transform';
     }
 }

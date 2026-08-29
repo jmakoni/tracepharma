@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3c959467827fea06b08f8550f3adc22a",
+    "content-hash": "91e5e89e2b33d0fa348b49910b46e66e",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -538,6 +538,60 @@
                 "source": "https://github.com/brunocfalcao/laravel-zepto-mail-api-driver/tree/v1.1.0"
             },
             "time": "2026-05-11T19:30:16+00:00"
+        },
+        {
+            "name": "calebporzio/sushi",
+            "version": "v2.5.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/calebporzio/sushi.git",
+                "reference": "ef71a031f78a80b0ed82ce51fc5b648c01145281"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/calebporzio/sushi/zipball/ef71a031f78a80b0ed82ce51fc5b648c01145281",
+                "reference": "ef71a031f78a80b0ed82ce51fc5b648c01145281",
+                "shasum": ""
+            },
+            "require": {
+                "ext-pdo_sqlite": "*",
+                "ext-sqlite3": "*",
+                "illuminate/database": "^5.8 || ^6.0 || ^7.0 || ^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0",
+                "illuminate/support": "^5.8 || ^6.0 || ^7.0 || ^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0",
+                "php": "^7.1.3|^8.0"
+            },
+            "require-dev": {
+                "doctrine/dbal": "^2.9 || ^3.1.4",
+                "orchestra/testbench": "3.8.* || 3.9.* || ^4.0 || ^5.0 || ^6.0 || ^7.0 || ^8.0 || ^9.0 || ^10.0 || ^11.0",
+                "phpunit/phpunit": "^7.5 || ^8.4 || ^9.0 || ^10.0 || ^11.0 || ^12.5"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Sushi\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Caleb Porzio",
+                    "email": "calebporzio@gmail.com"
+                }
+            ],
+            "description": "Eloquent's missing \"array\" driver.",
+            "support": {
+                "source": "https://github.com/calebporzio/sushi/tree/v2.5.4"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/calebporzio",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-02-21T02:53:22+00:00"
         },
         {
             "name": "carbonphp/carbon-doctrine-types",
@@ -2173,6 +2227,92 @@
                 }
             ],
             "time": "2025-12-27T19:43:20+00:00"
+        },
+        {
+            "name": "guava/filament-knowledge-base",
+            "version": "3.3.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/GuavaCZ/filament-knowledge-base.git",
+                "reference": "539501bc1d63d1bd6ec2e54a7263bf72a3484d34"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/GuavaCZ/filament-knowledge-base/zipball/539501bc1d63d1bd6ec2e54a7263bf72a3484d34",
+                "reference": "539501bc1d63d1bd6ec2e54a7263bf72a3484d34",
+                "shasum": ""
+            },
+            "require": {
+                "calebporzio/sushi": "^2.5",
+                "filament/filament": "^5.0",
+                "illuminate/contracts": "^12.0|^13.0",
+                "league/commonmark": "^2.4",
+                "n0sz/commonmark-marker-extension": "^1.0",
+                "phiki/phiki": "^2.0",
+                "php": "^8.2",
+                "spatie/laravel-package-tools": "^1.14.0",
+                "spatie/php-structure-discoverer": "^2.1",
+                "symfony/yaml": "^7.0|^8.0"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.0",
+                "nunomaduro/collision": "^8.0",
+                "orchestra/testbench": "^10.0|^11.0",
+                "pestphp/pest": "^3.8|^4.4",
+                "pestphp/pest-plugin": "^3.0|^4.0",
+                "pestphp/pest-plugin-arch": "^3.0|^4.0",
+                "pestphp/pest-plugin-laravel": "^3.2|^4.1",
+                "phpstan/extension-installer": "^1.1",
+                "phpstan/phpstan-deprecation-rules": "^2.0",
+                "phpstan/phpstan-phpunit": "^2.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "KnowledgeBase": "Guava\\FilamentKnowledgeBase\\Facades\\KnowledgeBase"
+                    },
+                    "providers": [
+                        "Guava\\FilamentKnowledgeBase\\KnowledgeBaseServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Guava\\FilamentKnowledgeBase\\": "src/",
+                    "Guava\\FilamentKnowledgeBase\\Database\\Factories\\": "database/factories/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Lukas Frey",
+                    "email": "lukas.frey@guava.cz",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A filament plugin that adds a knowledge base and help to your filament panel(s).",
+            "homepage": "https://github.com/guava/filament-knowledge-base",
+            "keywords": [
+                "Guava",
+                "filament-knowledge-base",
+                "laravel"
+            ],
+            "support": {
+                "issues": "https://github.com/GuavaCZ/filament-knowledge-base/issues",
+                "source": "https://github.com/GuavaCZ/filament-knowledge-base/tree/3.3.2"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/GuavaCZ",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-07-26T14:42:40+00:00"
         },
         {
             "name": "guzzlehttp/guzzle",
@@ -4725,6 +4865,49 @@
             "time": "2026-07-06T18:56:19+00:00"
         },
         {
+            "name": "n0sz/commonmark-marker-extension",
+            "version": "1.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/noah1400/commonmark-marker-extension.git",
+                "reference": "acb34415b84f28cc360123eba53fbb4cc4418672"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/noah1400/commonmark-marker-extension/zipball/acb34415b84f28cc360123eba53fbb4cc4418672",
+                "reference": "acb34415b84f28cc360123eba53fbb4cc4418672",
+                "shasum": ""
+            },
+            "require": {
+                "league/commonmark": "^2.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^9.5.25"
+            },
+            "type": "commonmark-extension",
+            "autoload": {
+                "psr-4": {
+                    "N0sz\\CommonMark\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "A marker extension for CommonMark PHP implementation",
+            "homepage": "https://github.com/noah1400/commonmark-marker-extension",
+            "keywords": [
+                "commonmark",
+                "markdown",
+                "parser"
+            ],
+            "support": {
+                "issues": "https://github.com/noah1400/commonmark-marker-extension/issues",
+                "source": "https://github.com/noah1400/commonmark-marker-extension/tree/1.0.1"
+            },
+            "time": "2022-09-27T20:19:00+00:00"
+        },
+        {
             "name": "nesbot/carbon",
             "version": "3.13.1",
             "source": {
@@ -5416,6 +5599,80 @@
                 "source": "https://github.com/paragonie/random_compat"
             },
             "time": "2020-10-15T08:29:30+00:00"
+        },
+        {
+            "name": "phiki/phiki",
+            "version": "v2.2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/phikiphp/phiki.git",
+                "reference": "0a9ff7efad9d433d9b173aff36b2a1905ef13c57"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/phikiphp/phiki/zipball/0a9ff7efad9d433d9b173aff36b2a1905ef13c57",
+                "reference": "0a9ff7efad9d433d9b173aff36b2a1905ef13c57",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "php": "^8.2",
+                "psr/simple-cache": "^3.0"
+            },
+            "require-dev": {
+                "illuminate/support": "^11.45",
+                "laravel/pint": "^1.18.1",
+                "league/commonmark": "^2.5.3",
+                "orchestra/testbench": "^9.15",
+                "pestphp/pest": "^3.5.1",
+                "phpstan/extension-installer": "^1.4.3",
+                "phpstan/phpstan": "^2.0",
+                "symfony/var-dumper": "^7.1.6"
+            },
+            "suggest": {
+                "league/commonmark": "Required to use the CommonMark adapter (^2.5.3)"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Phiki\\Adapters\\Laravel\\PhikiServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Phiki\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Ryan Chandler",
+                    "email": "support@ryangjchandler.co.uk",
+                    "homepage": "https://ryangjchandler.co.uk",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Syntax highlighting using TextMate grammars in PHP.",
+            "support": {
+                "issues": "https://github.com/phikiphp/phiki/issues",
+                "source": "https://github.com/phikiphp/phiki/tree/v2.2.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/sponsors/ryangjchandler",
+                    "type": "github"
+                },
+                {
+                    "url": "https://buymeacoffee.com/ryangjchandler",
+                    "type": "other"
+                }
+            ],
+            "time": "2026-07-22T19:51:40+00:00"
         },
         {
             "name": "php-http/discovery",
@@ -10960,6 +11217,82 @@
                 }
             ],
             "time": "2026-07-22T15:42:13+00:00"
+        },
+        {
+            "name": "symfony/yaml",
+            "version": "v8.1.5",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/symfony/yaml.git",
+                "reference": "b3fc9e8888eeb9daddc33bfbd15d282a61f543cd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/yaml/zipball/b3fc9e8888eeb9daddc33bfbd15d282a61f543cd",
+                "reference": "b3fc9e8888eeb9daddc33bfbd15d282a61f543cd",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.4.1",
+                "symfony/polyfill-ctype": "^1.8"
+            },
+            "conflict": {
+                "symfony/console": "<7.4"
+            },
+            "require-dev": {
+                "symfony/console": "^7.4|^8.0",
+                "yaml/yaml-test-suite": "*"
+            },
+            "bin": [
+                "Resources/bin/yaml-lint"
+            ],
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Component\\Yaml\\": ""
+                },
+                "exclude-from-classmap": [
+                    "/Tests/"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fabien Potencier",
+                    "email": "fabien@symfony.com"
+                },
+                {
+                    "name": "Symfony Community",
+                    "homepage": "https://symfony.com/contributors"
+                }
+            ],
+            "description": "Loads and dumps YAML files",
+            "homepage": "https://symfony.com",
+            "support": {
+                "source": "https://github.com/symfony/yaml/tree/v8.1.5"
+            },
+            "funding": [
+                {
+                    "url": "https://symfony.com/sponsor",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/fabpot",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/nicolas-grekas",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2026-08-21T12:16:08+00:00"
         },
         {
             "name": "thecodingmachine/safe",

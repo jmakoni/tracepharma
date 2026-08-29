@@ -13,6 +13,7 @@ use App\Services\Epcis\EpcisXmlParser;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisXmlReader;
+use App\Support\Epcis\LiveAcceptedEpcisEventId;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
 use DomainException;
@@ -111,6 +112,7 @@ final class ProcessEpcisDocument
             app(PruneSupersededIngestGenerations::class)->pruneOrphanGenerations($document->refresh());
 
             $generation = $this->nextIngestGeneration($document);
+            app(PruneSupersededIngestGenerations::class)->supersedePriorGenerationsForAttempt($document, $generation);
             $priorGenerationOpenLinkIds = $this->snapshotPriorGenerationOpenLinkIds($document, $generation);
 
             $parser = $this->ingestParser($document);
@@ -167,8 +169,9 @@ final class ProcessEpcisDocument
 
                         DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                             foreach ($batch as $row) {
-                                $this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds);
-                                $eventCount++;
+                                if ($this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds)) {
+                                    $eventCount++;
+                                }
                             }
                         });
                         $batch = [];
@@ -178,8 +181,9 @@ final class ProcessEpcisDocument
                 if ($batch !== []) {
                     DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                         foreach ($batch as $row) {
-                            $this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds);
-                            $eventCount++;
+                            if ($this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds)) {
+                                $eventCount++;
+                            }
                         }
                     });
                 }
@@ -230,6 +234,9 @@ final class ProcessEpcisDocument
                         array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
                     );
                     $this->closeThisAttemptOpenAggregationLinks($document, $generation);
+                    if ($generation !== null) {
+                        app(PruneSupersededIngestGenerations::class)->restoreTentativeSupersede($document, $generation);
+                    }
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 });
             } else {
@@ -258,6 +265,9 @@ final class ProcessEpcisDocument
                     array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
                 );
                 $this->closeThisAttemptOpenAggregationLinks($document, $generation);
+                if ($generation !== null) {
+                    app(PruneSupersededIngestGenerations::class)->restoreTentativeSupersede($document, $generation);
+                }
                 if ($previousIngestGeneration !== null) {
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 }
@@ -332,6 +342,7 @@ final class ProcessEpcisDocument
         $this->documentLocationLookupDocumentId = null;
         $this->documentLocationLookupGeneration = null;
         $generation = $this->nextIngestGeneration($document);
+        app(PruneSupersededIngestGenerations::class)->supersedePriorGenerationsForAttempt($document, $generation);
 
         $this->resolveDocumentParties($document, $parsed);
 
@@ -361,8 +372,9 @@ final class ProcessEpcisDocument
             foreach (array_chunk($parsed['events'] ?? [], self::EVENT_BATCH_SIZE) as $batch) {
                 DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                     foreach ($batch as $eventData) {
-                        $this->persistEvent($document, $eventData, $epcIdByUri, $generation, $documentEpcIds);
-                        $eventCount++;
+                        if ($this->persistEvent($document, $eventData, $epcIdByUri, $generation, $documentEpcIds)) {
+                            $eventCount++;
+                        }
                     }
                 });
             }
@@ -612,8 +624,6 @@ final class ProcessEpcisDocument
     /**
      * Select edge parser by stored payload format and schema version.
      * JSON → JSON-LD 2.0 parser; XML 2.0 → Xml20Parser; else XML 1.2 parser.
-     *
-     * @return EpcisXmlParser|EpcisXml20Parser|EpcisJsonLd20Parser
      */
     private function ingestParser(EpcisDocument $document): EpcisXmlParser|EpcisXml20Parser|EpcisJsonLd20Parser
     {
@@ -916,7 +926,7 @@ final class ProcessEpcisDocument
         array $epcIdByUri,
         int $generation,
         array &$documentEpcIds,
-    ): void {
+    ): bool {
         $readPointGln = null;
         if (filled($eventData['read_point_uri'] ?? null)) {
             $readPointGln = Sgln::fromUrn((string) $eventData['read_point_uri'])['gln'] ?? null;
@@ -930,6 +940,13 @@ final class ProcessEpcisDocument
         $gs1EventId = filled($eventData['event_id'] ?? null)
             ? Str::limit((string) $eventData['event_id'], 128, '')
             : null;
+
+        if (
+            filled($gs1EventId)
+            && app(LiveAcceptedEpcisEventId::class)->existsOnOtherDocument($gs1EventId, (int) $document->getKey())
+        ) {
+            return false;
+        }
 
         $errorDeclaration = $eventData['error_declaration'] ?? null;
         $correctiveIds = null;
@@ -1098,6 +1115,8 @@ final class ProcessEpcisDocument
         $this->persistBizTransactions($eventId, $eventData);
         $this->persistQuantities($eventId, $eventData);
         $this->persistIlmd($document, $eventId, $eventData, $epcIdByUri);
+
+        return true;
     }
 
     /**

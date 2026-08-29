@@ -20,9 +20,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class SiteResource extends Resource
+class SiteResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Site::class;
 
@@ -36,7 +37,7 @@ class SiteResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -81,5 +82,10 @@ class SiteResource extends Resource
     public static function shouldRegisterNavigation(): bool
     {
         return false;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.sites-and-devices';
     }
 }

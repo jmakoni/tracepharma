@@ -95,6 +95,7 @@ final class TenantRoleSeeder
             TenantRole::QuarantineAndReturnsSpecialist => [
                 Permissions::NavExceptions,
                 Permissions::NavShip,
+                Permissions::DecommissionMassApprove,
             ],
 
             TenantRole::PackagingLineOperator => [
@@ -104,6 +105,7 @@ final class TenantRoleSeeder
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
                 Permissions::NavCompliance,
+                Permissions::DecommissionMassApprove,
             ],
             TenantRole::MasterDataAdministrator => [
                 Permissions::NavMasterData,
@@ -131,6 +133,12 @@ final class TenantRoleSeeder
                 $labels[] = 'Manage users';
             } elseif ($name === Permissions::SitesAccessAll) {
                 $labels[] = 'All sites';
+            } elseif ($name === Permissions::DecommissionMassApprove) {
+                $labels[] = Permissions::navLabel($name);
+            } elseif ($name === Permissions::IntegrationsBreakGlass) {
+                $labels[] = 'Integrations break-glass';
+            } elseif ($name === Permissions::ShipQuantityGateOverride) {
+                $labels[] = Permissions::navLabel($name);
             }
         }
 

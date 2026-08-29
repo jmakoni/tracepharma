@@ -20,11 +20,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class ReceivingSessionResource extends Resource
+class ReceivingSessionResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = ReceivingSession::class;
 
@@ -44,7 +45,7 @@ class ReceivingSessionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsReceiving())
+        return TenantFeatures::forTenant(tenant())->supportsReceiving()
             && JobRoleAccess::allows(Permissions::NavReceive);
     }
 
@@ -131,5 +132,10 @@ class ReceivingSessionResource extends Resource
             'view' => ViewReceivingSession::route('/{record}'),
             'floor' => MobileViewReceivingSession::route('/{record}/floor'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.receiving';
     }
 }
