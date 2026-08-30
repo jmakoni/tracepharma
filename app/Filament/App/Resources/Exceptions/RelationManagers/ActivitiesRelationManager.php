@@ -56,6 +56,7 @@ class ActivitiesRelationManager extends RelationManager
                 TextColumn::make('body')
                     ->wrap()
                     ->limit(80)
+                    ->markdown()
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—'),
                 TextColumn::make('meta')

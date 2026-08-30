@@ -6,17 +6,27 @@ namespace App\Jobs;
 
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisSubscription;
+use App\Models\Epcis\EpcisSubscriptionDelivery;
 use App\Models\Tenant;
 use App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Throwable;
 
-final class DeliverEpcisSubscriptionJob implements ShouldQueue
+/**
+ * Deliver one EPCIS document to one subscription webhook.
+ *
+ * At-most-once ledger: insert unique (subscription_id, document_id) BEFORE POST.
+ * On HTTP failure delete the claim so retries can re-attempt. On success keep the
+ * row so a crash between POST success and last_delivered_at cannot double-POST.
+ */
+final class DeliverEpcisSubscriptionJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -24,12 +34,19 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
 
     public int $timeout = 60;
 
+    public int $uniqueFor = 3600;
+
     public function __construct(
         public string $tenantId,
         public int $subscriptionId,
         public int $documentId,
         public string $trigger = 'validated',
     ) {}
+
+    public function uniqueId(): string
+    {
+        return $this->tenantId.':epcis-sub:'.$this->subscriptionId.':doc:'.$this->documentId;
+    }
 
     /**
      * @return list<int>
@@ -51,6 +68,10 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
             $document = EpcisDocument::query()->find($this->documentId);
 
             if ($subscription === null || ! $subscription->is_active || $document === null) {
+                return;
+            }
+
+            if (! $this->claimDeliveryInLedger()) {
                 return;
             }
 
@@ -90,11 +111,13 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                     'last_error' => null,
                 ])->save();
             } catch (\InvalidArgumentException $exception) {
+                $this->releaseDeliveryClaim();
                 $subscription->forceFill([
                     'last_error_at' => now(),
                     'last_error' => Str::limit($exception->getMessage(), 2000),
                 ])->save();
             } catch (Throwable $exception) {
+                $this->releaseDeliveryClaim();
                 $subscription->forceFill([
                     'last_error_at' => now(),
                     'last_error' => Str::limit($exception->getMessage(), 2000),
@@ -103,6 +126,42 @@ final class DeliverEpcisSubscriptionJob implements ShouldQueue
                 throw $exception;
             }
         });
+    }
+
+    private function claimDeliveryInLedger(): bool
+    {
+        if ($this->deliveryAlreadyRecorded()) {
+            return false;
+        }
+
+        try {
+            EpcisSubscriptionDelivery::query()->create([
+                'subscription_id' => $this->subscriptionId,
+                'document_id' => $this->documentId,
+                'trigger' => $this->trigger,
+                'delivered_at' => now(),
+            ]);
+        } catch (QueryException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function releaseDeliveryClaim(): void
+    {
+        EpcisSubscriptionDelivery::query()
+            ->where('subscription_id', $this->subscriptionId)
+            ->where('document_id', $this->documentId)
+            ->delete();
+    }
+
+    private function deliveryAlreadyRecorded(): bool
+    {
+        return EpcisSubscriptionDelivery::query()
+            ->where('subscription_id', $this->subscriptionId)
+            ->where('document_id', $this->documentId)
+            ->exists();
     }
 
     /**

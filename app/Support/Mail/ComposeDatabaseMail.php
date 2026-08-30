@@ -3,6 +3,7 @@
 namespace App\Support\Mail;
 
 use App\Models\MailTemplate;
+use App\Support\Filament\ProseContent;
 use Illuminate\Database\QueryException;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Log;
@@ -37,7 +38,7 @@ class ComposeDatabaseMail
 
         $subject = $this->renderer->render($row?->subject ?? $definition->defaultSubject, $variables);
         $greeting = $this->renderer->render($row?->greeting ?? $definition->defaultGreeting, $variables);
-        $body = $this->renderer->render($row?->body ?? $definition->defaultBody, $variables);
+        $body = $this->renderBody($row?->body ?? $definition->defaultBody, $variables);
         $salutation = $this->renderNullable($row?->salutation ?? $definition->defaultSalutation, $variables);
         $actionLabel = $this->renderNullable($row?->action_label ?? $definition->defaultActionLabel, $variables);
         $actionUrl = $this->renderNullable($row?->action_url ?? $definition->defaultActionUrl, $variables);
@@ -96,6 +97,25 @@ class ComposeDatabaseMail
         ], static fn (mixed $line): bool => is_string($line) && $line !== '');
 
         return implode("\n\n", $parts);
+    }
+
+    /**
+     * @param  array<string, scalar|null>  $variables
+     */
+    private function renderBody(string $template, array $variables): string
+    {
+        if (ProseContent::isTipTapDocument($template)) {
+            $mergeTags = [];
+
+            foreach ($variables as $key => $value) {
+                // Values are plain text in TipTap nodes; Markdown/mail layers handle escaping.
+                $mergeTags[$key] = $value === null ? '' : (string) $value;
+            }
+
+            return ProseContent::tipTapToMarkdownWithMergeTags($template, $mergeTags);
+        }
+
+        return $this->renderer->render($template, $variables);
     }
 
     /**

@@ -9,9 +9,11 @@ use App\Enums\TenantProfile;
 use App\Jobs\DeliverEpcisSubscriptionJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisSubscription;
+use App\Models\Epcis\EpcisSubscriptionDelivery;
 use App\Models\Tenant;
 use App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -471,6 +473,204 @@ class EpcisSubscriptionDeliveryTest extends TestCase
     }
 
     #[Test]
+    public function delivery_job_is_idempotent_for_subscription_document_pair(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Http::fake([
+                'https://8.8.8.8/*' => Http::response(['ok' => true], 200),
+            ]);
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Idempotent hook',
+                'target_url' => 'https://8.8.8.8/epcis',
+                'secret' => 'super-secret-hmac-key-for-tests!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_BOTH,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            tenancy()->end();
+
+            $job = new DeliverEpcisSubscriptionJob(
+                (string) $tenant->getKey(),
+                (int) $subscription->getKey(),
+                (int) $document->getKey(),
+                'validated',
+            );
+
+            $this->assertInstanceOf(ShouldBeUnique::class, $job);
+            $this->assertSame(
+                (string) $tenant->getKey().':epcis-sub:'.$subscription->getKey().':doc:'.$document->getKey(),
+                $job->uniqueId(),
+            );
+
+            $projector = app(CanonicalEventsToJsonLd20::class);
+            $job->handle($projector);
+            $job->handle($projector);
+
+            Http::assertSentCount(1);
+
+            tenancy()->initialize($tenant);
+            $this->assertNotNull($subscription->fresh()?->last_delivered_at);
+        } finally {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function delivery_releases_ledger_claim_on_http_failure(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Http::fake([
+                'https://8.8.8.8/*' => Http::sequence()
+                    ->push('nope', 500)
+                    ->push(['ok' => true], 200),
+            ]);
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Claim release hook',
+                'target_url' => 'https://8.8.8.8/epcis',
+                'secret' => 'super-secret-hmac-key-for-tests!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_BOTH,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            tenancy()->end();
+
+            $job = new DeliverEpcisSubscriptionJob(
+                (string) $tenant->getKey(),
+                (int) $subscription->getKey(),
+                (int) $document->getKey(),
+                'validated',
+            );
+            $projector = app(CanonicalEventsToJsonLd20::class);
+
+            try {
+                $job->handle($projector);
+                $this->fail('Expected HTTP 500 to throw.');
+            } catch (RuntimeException) {
+                // expected
+            }
+
+            tenancy()->initialize($tenant);
+            $this->assertFalse(
+                EpcisSubscriptionDelivery::query()
+                    ->where('subscription_id', $subscription->getKey())
+                    ->where('document_id', $document->getKey())
+                    ->exists(),
+            );
+
+            tenancy()->end();
+            $job->handle($projector);
+
+            tenancy()->initialize($tenant);
+            $this->assertTrue(
+                EpcisSubscriptionDelivery::query()
+                    ->where('subscription_id', $subscription->getKey())
+                    ->where('document_id', $document->getKey())
+                    ->exists(),
+            );
+            Http::assertSentCount(2);
+        } finally {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function delivery_skips_post_when_ledger_claim_already_exists(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Http::fake([
+                'https://8.8.8.8/*' => Http::response(['ok' => true], 200),
+            ]);
+
+            $subscription = EpcisSubscription::query()->create([
+                'name' => 'Preclaimed hook',
+                'target_url' => 'https://8.8.8.8/epcis',
+                'secret' => 'super-secret-hmac-key-for-tests!!',
+                'is_active' => true,
+                'directions' => EpcisSubscription::DIRECTION_BOTH,
+                'format' => EpcisSubscription::FORMAT_JSONLD_20,
+            ]);
+            $this->subscriptionIds[] = (int) $subscription->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'schema_version' => '1.2',
+                'format' => 'xml',
+                'creation_date' => now(),
+                'event_count' => 1,
+                'received_at' => now(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            EpcisSubscriptionDelivery::query()->create([
+                'subscription_id' => $subscription->getKey(),
+                'document_id' => $document->getKey(),
+                'trigger' => 'validated',
+                'delivered_at' => now(),
+            ]);
+
+            tenancy()->end();
+
+            (new DeliverEpcisSubscriptionJob(
+                (string) $tenant->getKey(),
+                (int) $subscription->getKey(),
+                (int) $document->getKey(),
+                'validated',
+            ))->handle(app(CanonicalEventsToJsonLd20::class));
+
+            Http::assertNothingSent();
+        } finally {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function subscription_url_rejects_loopback(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -524,6 +724,7 @@ class EpcisSubscriptionDeliveryTest extends TestCase
         }
 
         foreach ($this->subscriptionIds as $id) {
+            EpcisSubscriptionDelivery::query()->where('subscription_id', $id)->delete();
             EpcisSubscription::query()->whereKey($id)->delete();
         }
         foreach ($this->documentIds as $id) {

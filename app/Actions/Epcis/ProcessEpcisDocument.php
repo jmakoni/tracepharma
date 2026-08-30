@@ -2,6 +2,7 @@
 
 namespace App\Actions\Epcis;
 
+use App\Actions\Labeling\StampSsccBatchCommissionedFromDocument;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -53,6 +54,8 @@ final class ProcessEpcisDocument
      * @var list<array{epc_id: int, existing_lot: mixed, existing_expiry: mixed, incoming_lot: mixed, incoming_expiry: mixed}>
      */
     private array $pendingSharedIlmdLotMismatches = [];
+
+    private const SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX = 'Shared EPC ILMD lot/expiry conflict';
 
     /**
      * Cached epcis_document_locations for the current document ingest generation.
@@ -227,6 +230,10 @@ final class ProcessEpcisDocument
 
             app(ValidateEpcis12Document::class)->handle($document, $absolutePath);
             $document->refresh();
+
+            if ($document->status === 'validated') {
+                app(StampSsccBatchCommissionedFromDocument::class)->handle($document);
+            }
 
             if ($document->status === 'error') {
                 DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds, $generation): void {
@@ -1046,11 +1053,25 @@ final class ProcessEpcisDocument
         $validFrom = $event->event_time?->format('Y-m-d H:i:s.u') ?? now()->format('Y-m-d H:i:s.u');
 
         if ($action === 'ADD' && $parentEpcId !== null && $childEpcIds !== []) {
+            // Serialize concurrent ADDs on the same child: lock child EPC rows
+            // (ordered by id to avoid deadlocks) before close+open so two writers
+            // cannot both observe zero open parents and insert dual open links.
+            $sortedChildIds = array_values(array_unique($childEpcIds));
+            sort($sortedChildIds);
+
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
+                DB::table('epcs')
+                    ->whereIn('id', $chunk)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get(['id']);
+            }
+
             // A child may have at most one open parent: close any prior open links
             // (any parent / any establishing document) before inserting the new ones.
             // Only close links established at or before this event's time — a backdated
             // ADD must never invert a newer open link by setting valid_to < valid_from.
-            foreach (array_chunk($childEpcIds, 1000) as $chunk) {
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
                 $hasNewerOpenLink = DB::table('aggregation_links')
                     ->whereIn('child_epc_id', $chunk)
                     ->whereNull('valid_to')
@@ -1065,7 +1086,7 @@ final class ProcessEpcisDocument
                 }
             }
 
-            foreach (array_chunk($childEpcIds, 1000) as $chunk) {
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
                 $this->closeOpenAggregationLinksDuringAttempt(
                     ['child_epc_id' => $chunk],
                     $validFrom,
@@ -1073,7 +1094,7 @@ final class ProcessEpcisDocument
             }
 
             $linkRows = [];
-            foreach ($childEpcIds as $childEpcId) {
+            foreach ($sortedChildIds as $childEpcId) {
                 $linkRows[] = [
                     'parent_epc_id' => $parentEpcId,
                     'child_epc_id' => $childEpcId,
@@ -1460,6 +1481,10 @@ final class ProcessEpcisDocument
 
             $keptLot = $lotNumber;
             $keptExpiry = $expiryDate;
+            $keptManufacturing = $manufacturingDate;
+            $keptBestBefore = $bestBeforeDate;
+            $keptAdditionalId = $additionalId;
+            $keptExtraJson = $extraJsonEncoded;
             $existing = $existingByEpcId[$epcId] ?? null;
 
             if ($existing !== null) {
@@ -1471,11 +1496,14 @@ final class ProcessEpcisDocument
                 $lotDiffers = $this->ilmdScalarDiffers($existingLot, $incomingLot);
                 $expiryDiffers = $this->ilmdScalarDiffers($existingExpiry, $incomingExpiry);
 
+                // First-wins fill: non-blank existing lot/expiry beats blank incoming (no wipe).
+                $keptLot = $this->ilmdFirstWinsScalar($existingLot, $incomingLot);
+                $keptExpiry = $this->ilmdFirstWinsScalar($existingExpiry, $incomingExpiry);
+
                 if ($lotDiffers || $expiryDiffers) {
                     // Shared epc_ilmd is URI-scoped across documents: first-wins on lot/expiry
                     // so a later TI cannot clobber an earlier lot/expiry. Soft-signal the conflict.
-                    $keptLot = $existingLot;
-                    $keptExpiry = $existingExpiry;
+                    // Also keep other non-blank shared ILMD fields; event_epc_ilmd still stores incoming.
                     $this->recordSharedIlmdLotMismatch(
                         $epcId,
                         $existingLot,
@@ -1483,6 +1511,25 @@ final class ProcessEpcisDocument
                         $incomingLot,
                         $incomingExpiry,
                     );
+
+                    $keptManufacturing = $this->ilmdFirstWinsScalar(
+                        $this->normalizeDate($existing->manufacturing_date ?? null),
+                        $manufacturingDate,
+                    );
+                    $keptBestBefore = $this->ilmdFirstWinsScalar(
+                        $this->normalizeDate($existing->best_before_date ?? null),
+                        $bestBeforeDate,
+                    );
+                    $keptAdditionalId = $this->ilmdFirstWinsScalar(
+                        $existing->additional_id ?? null,
+                        $additionalId,
+                    );
+                    $existingExtra = $existing->extra_json ?? null;
+                    if (is_string($existingExtra) && $existingExtra !== '') {
+                        $keptExtraJson = $existingExtra;
+                    } elseif ($existingExtra !== null && $existingExtra !== '' && ! is_string($existingExtra)) {
+                        $keptExtraJson = json_encode($existingExtra, JSON_THROW_ON_ERROR);
+                    }
                 }
             }
 
@@ -1490,10 +1537,10 @@ final class ProcessEpcisDocument
                 'epc_id' => $epcId,
                 'lot_number' => $keptLot,
                 'expiry_date' => $keptExpiry,
-                'manufacturing_date' => $manufacturingDate,
-                'best_before_date' => $bestBeforeDate,
-                'additional_id' => $additionalId,
-                'extra_json' => $extraJsonEncoded,
+                'manufacturing_date' => $keptManufacturing,
+                'best_before_date' => $keptBestBefore,
+                'additional_id' => $keptAdditionalId,
+                'extra_json' => $keptExtraJson,
             ];
             if (Schema::hasColumn('epc_ilmd', 'gtin14')) {
                 $row['gtin14'] = $this->gtinByEpcId[$epcId] ?? null;
@@ -1561,6 +1608,20 @@ final class ProcessEpcisDocument
         return $left !== $right;
     }
 
+    /**
+     * First-wins fill: keep non-blank existing; only take incoming when existing is blank.
+     */
+    private function ilmdFirstWinsScalar(mixed $existing, mixed $incoming): mixed
+    {
+        $left = $existing === null || $existing === '' ? null : $existing;
+
+        if ($left !== null) {
+            return $left;
+        }
+
+        return $incoming === null || $incoming === '' ? null : $incoming;
+    }
+
     private function recordSharedIlmdLotMismatch(
         int $epcId,
         mixed $existingLot,
@@ -1584,6 +1645,9 @@ final class ProcessEpcisDocument
 
     private function flushSharedIlmdLotMismatchExceptions(EpcisDocument $document): void
     {
+        // Own rewrite path only — never wipe operational/hook LOT_MISMATCH rows.
+        $this->clearSharedIlmdLotMismatchExceptions($document);
+
         if ($this->pendingSharedIlmdLotMismatches === []) {
             return;
         }
@@ -1591,24 +1655,13 @@ final class ProcessEpcisDocument
         foreach ($this->pendingSharedIlmdLotMismatches as $conflict) {
             $epcId = $conflict['epc_id'];
 
-            $alreadyOpen = EpcisException::query()
-                ->where('document_id', $document->getKey())
-                ->where('epc_id', $epcId)
-                ->where('exception_type', 'LOT_MISMATCH')
-                ->where('status', 'open')
-                ->exists();
-
-            if ($alreadyOpen) {
-                continue;
-            }
-
             EpcisException::query()->create([
                 'document_id' => $document->getKey(),
                 'epc_id' => $epcId,
                 'exception_type' => 'LOT_MISMATCH',
                 'severity' => 'warning',
                 'description' => Str::limit(
-                    'Shared EPC ILMD lot/expiry conflict: kept first-wins values '
+                    self::SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX.': kept first-wins values '
                     .'(lot='.($conflict['existing_lot'] ?? 'null')
                     .', expiry='.($conflict['existing_expiry'] ?? 'null').'); '
                     .'incoming document had lot='.($conflict['incoming_lot'] ?? 'null')
@@ -1620,6 +1673,16 @@ final class ProcessEpcisDocument
         }
 
         $this->pendingSharedIlmdLotMismatches = [];
+    }
+
+    private function clearSharedIlmdLotMismatchExceptions(EpcisDocument $document): void
+    {
+        EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->where('exception_type', 'LOT_MISMATCH')
+            ->where('status', 'open')
+            ->where('description', 'like', self::SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX.'%')
+            ->delete();
     }
 
     /**

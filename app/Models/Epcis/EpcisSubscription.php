@@ -63,7 +63,7 @@ class EpcisSubscription extends Model
     {
         return LogOptions::defaults()
             ->logFillable()
-            ->logExcept(['secret'])
+            ->logExcept(['secret', 'last_error'])
             ->logOnlyDirty();
     }
 

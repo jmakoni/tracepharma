@@ -7,6 +7,7 @@ namespace App\Jobs\Labeling;
 use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Tenant;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\Logging\RedactsUrls;
 use App\Support\TenantSettings;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -14,13 +15,16 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
  * POST authored commissioning EPCIS XML to the tenant's external L3 endpoint.
+ *
+ * At-most-once: CAS-claim `l3_forwarded_at` before POST; clear the claim on HTTP
+ * failure so retries can re-attempt. A crash after a successful POST leaves the
+ * claim set (no second POST).
  */
 final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
 {
@@ -83,6 +87,15 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
                 return;
             }
 
+            $claimed = EpcisDocument::query()
+                ->whereKey($this->documentId)
+                ->whereNull('l3_forwarded_at')
+                ->update(['l3_forwarded_at' => now()]);
+
+            if ($claimed === 0) {
+                return;
+            }
+
             try {
                 $xml = Storage::disk($document->payloadFilesystemDisk())
                     ->get((string) $document->payload_path);
@@ -91,7 +104,7 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
                     throw new \RuntimeException('Commissioning payload is empty.');
                 }
 
-                $response = $this->httpClient($settings)
+                $response = $this->httpClient($settings, $endpoint)
                     ->withHeaders([
                         'Content-Type' => 'application/xml',
                         'Accept' => 'application/xml',
@@ -102,19 +115,14 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
 
                 if (! $response->successful()) {
                     throw new \RuntimeException(
-                        'L3 POST failed (HTTP '.$response->status().'): '.substr((string) $response->body(), 0, 500),
+                        'L3 POST failed (HTTP '.$response->status().').',
                     );
                 }
-
-                $marked = EpcisDocument::query()
-                    ->whereKey($this->documentId)
-                    ->whereNull('l3_forwarded_at')
-                    ->update(['l3_forwarded_at' => now()]);
-
-                if ($marked === 0) {
-                    return;
-                }
             } catch (Throwable $e) {
+                EpcisDocument::query()
+                    ->whereKey($this->documentId)
+                    ->update(['l3_forwarded_at' => null]);
+
                 Log::warning('External L3 commissioning forward failed.', [
                     'tenant_id' => $this->tenantId,
                     'document_id' => $this->documentId,
@@ -132,9 +140,11 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
         });
     }
 
-    private function httpClient(TenantSettings $settings): PendingRequest
+    private function httpClient(TenantSettings $settings, string $endpoint): PendingRequest
     {
-        $client = Http::timeout(60);
+        EpcisSubscriptionUrl::assertSafeTargetUrl($endpoint);
+
+        $client = EpcisSubscriptionUrl::httpClient($endpoint, 60);
 
         $apiKey = $settings->l3ApiKey();
         if (filled($apiKey)) {

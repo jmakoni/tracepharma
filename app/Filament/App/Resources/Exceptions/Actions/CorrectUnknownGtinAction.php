@@ -18,10 +18,10 @@ use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Fda\FdaTenantLink;
+use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -331,11 +331,9 @@ final class CorrectUnknownGtinAction
                         ->dehydrated()
                         ->visible(fn (Get $get): bool => $record->document_id !== null
                             && $catalogFor($get) !== null),
-                    Textarea::make('resolution_notes')
+                    ProseEditor::make('resolution_notes')
                         ->label('Resolution notes')
                         ->required()
-                        ->rows(3)
-                        ->maxLength(5000)
                         ->default('Added missing GTIN to product assortment via catalog authorization.')
                         ->helperText(function (Get $get) use ($catalogFor): string {
                             if ($catalogFor($get) === null) {

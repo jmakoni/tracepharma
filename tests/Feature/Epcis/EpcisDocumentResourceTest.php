@@ -3,16 +3,21 @@
 namespace Tests\Feature\Epcis;
 
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Filament\App\Pages\OperationsHub;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\EpcisDocuments\Pages\ListEpcisDocuments;
 use App\Filament\App\Resources\EpcisDocuments\Tables\EpcisDocumentsTable;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Tenant;
+use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class EpcisDocumentResourceTest extends TestCase
@@ -127,6 +132,62 @@ class EpcisDocumentResourceTest extends TestCase
             $this->assertStringContainsString('inbound-epcis', (string) $findRecall['url']);
             $this->assertStringContainsString('findRecall=1', (string) $findRecall['url']);
         } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function refresh_action_requires_exceptions_or_integrations_job_role(): void
+    {
+        $tenant = Tenant::query()->findOrFail(self::DEMO2_TENANT_ID);
+        $originalProfile = $tenant->profile;
+        if ($tenant->profile !== TenantProfile::DrugWholesaler) {
+            $tenant->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+        }
+        tenancy()->initialize($tenant);
+
+        app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+        TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
+        $tenant->save();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $receiveOnly = null;
+        $exceptionsUser = null;
+
+        try {
+            $table = EpcisDocumentsTable::configure(Table::make(new ListEpcisDocuments));
+            $actions = collect($table->getRecordActions())
+                ->flatMap(fn ($action) => method_exists($action, 'getActions') ? $action->getActions() : [$action]);
+
+            $refresh = $actions->first(fn ($action): bool => $action->getName() === 'refresh');
+            $reprocess = $actions->first(fn ($action): bool => $action->getName() === 'reprocess');
+            $this->assertNotNull($refresh);
+            $this->assertNotNull($reprocess);
+
+            $visibleProp = new \ReflectionProperty($refresh, 'isVisible');
+            $visibleProp->setAccessible(true);
+            $refreshVisible = $visibleProp->getValue($refresh);
+            $this->assertInstanceOf(\Closure::class, $refreshVisible);
+
+            $receiveOnly = User::factory()->create([
+                'email' => 'refresh-receive-'.uniqid().'@example.test',
+            ]);
+            $receiveOnly->assignRole(TenantRole::ReceivingTechnician->value);
+            $this->actingAs($receiveOnly);
+            $this->assertFalse((bool) $refreshVisible());
+
+            $exceptionsUser = User::factory()->create([
+                'email' => 'refresh-exc-'.uniqid().'@example.test',
+            ]);
+            $exceptionsUser->assignRole(TenantRole::InboundExceptionCoordinator->value);
+            $this->actingAs($exceptionsUser);
+            $this->assertTrue((bool) $refreshVisible());
+        } finally {
+            TenantSettings::forTenant($tenant)->setJobRolesEnabled(false);
+            $tenant->forceFill(['profile' => $originalProfile])->save();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $receiveOnly?->delete();
+            $exceptionsUser?->delete();
             tenancy()->end();
         }
     }

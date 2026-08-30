@@ -6,6 +6,7 @@ use App\Enums\InboundTransport;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Support\Integrations\InboundWebhookAuthenticator;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,8 @@ class EpcisInboundWebhookController
         string $tenantId,
         int $connectionId,
     ): JsonResponse {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         TenantAccess::assertActive($tenant);

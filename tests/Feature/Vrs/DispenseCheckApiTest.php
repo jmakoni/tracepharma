@@ -93,6 +93,11 @@ class DispenseCheckApiTest extends TestCase
                 ->assertJsonMissing(['exception_id' => $case->getKey()]);
 
             $this->assertArrayNotHasKey('exception_id', $response->json());
+
+            $message = (string) $response->json('message');
+            $this->assertStringContainsString('quarantine', strtolower($message));
+            $this->assertStringNotContainsString('exception #'.$case->getKey(), $message);
+            $this->assertStringNotContainsString((string) $case->getKey(), $message);
         } finally {
             $this->cleanup();
         }

@@ -4,11 +4,14 @@ namespace App\Filament\App\Resources\Devices\Schemas;
 
 use App\Enums\DeviceType;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class DeviceForm
 {
@@ -32,7 +35,21 @@ class DeviceForm
                         TextInput::make('serial_number')->maxLength(255),
                         Select::make('site_id')
                             ->label('Site')
-                            ->relationship('site', 'name')
+                            ->relationship(
+                                'site',
+                                'name',
+                                modifyQueryUsing: function (Builder $query): Builder {
+                                    $user = auth()->user();
+                                    if ($user === null) {
+                                        return $query->whereRaw('0 = 1');
+                                    }
+                                    if ($user->can(Permissions::SitesAccessAll)) {
+                                        return $query;
+                                    }
+
+                                    return $query->whereIn('id', SiteAccess::userSiteIds($user));
+                                },
+                            )
                             ->default(fn (): ?int => CurrentSite::id())
                             ->searchable()
                             ->preload()

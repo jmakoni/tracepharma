@@ -4,6 +4,18 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+### Added
+
+- Manufacturer **Guardian L3 lot-close ingest** — HTTPS webhook archives DataFeed XML, auto-projects commissioning + aggregation into EPCIS/`epcs`, Serialization Lots UX, Asset Tracking Fields tab (toggle: Org Settings → Accept Guardian lot-close inbound)
+
+### Fixed
+
+- Guardian lot-close: project as self-authored **outbound** EPCIS and fail closed unless document status is `validated` (was marking feed/lot accepted despite `MISSING_DSCSA_STATEMENT`)
+- Guardian lot-close: sha256 receive lock, deterministic event IDs, Domain hard gates, Manufacturer/Systech/kill-switch gates, stale-processing redispatch, CaseQty/URI/Bundle/DOCTYPE guards
+- Guardian lot-close (residual): failed-feed resubmit actually reprocesses (`failed` → `processing`, not terminal skip); accepted lots are not overwritten by a later failed re-ingest; job re-checks Manufacturer/L3/Systech/kill-switch at run time; missing/null container `Type` fails closed
+- Outbound EPCIS builder: correlation header emits SBDH-first `EPCISHeader` (GS1 EPCIS 1.2 XSD-valid); Guardian lot-close restores document-level correlation
+- Webhooks rate limiter scoped by host+IP (was a single global bucket)
+
 ## [1.4.0] — 2026-08-28
 
 Wave 3 — Role expansion MVPs (buying-group roster, 3PL principals, L3 forward log, prepack transform) plus subscription delivery hardening.

@@ -28,9 +28,14 @@ final class Xml20Writer implements OutboundEpcisDocumentWriter
         return EpcisSchemaVersion::FORMAT_XML;
     }
 
-    public function buildDocument(string $eventTime, string $eventsPayload, ?string $correlationId = null): string
-    {
-        $xml = $this->builder->buildDocument($eventTime, $eventsPayload, $correlationId);
+    public function buildDocument(
+        string $eventTime,
+        string $eventsPayload,
+        ?string $correlationId = null,
+        ?string $senderGln = null,
+        ?string $receiverGln = null,
+    ): string {
+        $xml = $this->builder->buildDocument($eventTime, $eventsPayload, $correlationId, $senderGln, $receiverGln);
 
         return str_replace('schemaVersion="1.2"', 'schemaVersion="2.0"', $xml);
     }

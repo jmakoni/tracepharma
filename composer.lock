@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "91e5e89e2b33d0fa348b49910b46e66e",
+    "content-hash": "2e5909fffda404720d9104fec8825160",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -426,6 +426,74 @@
                 }
             ],
             "time": "2026-06-30T09:44:12+00:00"
+        },
+        {
+            "name": "bokshorn-it/filament-activity-timeline",
+            "version": "v1.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Bokshorn-IT/filament-activity-timeline.git",
+                "reference": "97d090740baf7a25b380e06d3d29437bf4832c47"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Bokshorn-IT/filament-activity-timeline/zipball/97d090740baf7a25b380e06d3d29437bf4832c47",
+                "reference": "97d090740baf7a25b380e06d3d29437bf4832c47",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "illuminate/contracts": "^12.0|^13.0",
+                "php": "^8.3",
+                "spatie/laravel-activitylog": "^4.12|^5.0",
+                "spatie/laravel-package-tools": "^1.92"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.27",
+                "orchestra/testbench": "^10.0|^11.0",
+                "pestphp/pest": "^4.0",
+                "pestphp/pest-plugin-laravel": "^4.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "BokshornIt\\FilamentActivityTimeline\\FilamentActivityTimelineServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "BokshornIt\\FilamentActivityTimeline\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Johannes Bokshorn",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A Filament plugin that turns spatie/laravel-activitylog into a readable audit trail: a record timeline, a filterable activity resource, and diffs that resolve enums, dates and foreign keys to human labels.",
+            "homepage": "https://github.com/Bokshorn-IT/filament-activity-timeline",
+            "keywords": [
+                "activitylog",
+                "audit-trail",
+                "filament",
+                "filament-plugin",
+                "filamentphp",
+                "laravel",
+                "timeline"
+            ],
+            "support": {
+                "issues": "https://github.com/Bokshorn-IT/filament-activity-timeline/issues",
+                "security": "https://github.com/Bokshorn-IT/filament-activity-timeline/security/policy",
+                "source": "https://github.com/Bokshorn-IT/filament-activity-timeline"
+            },
+            "time": "2026-08-13T20:19:01+00:00"
         },
         {
             "name": "brick/math",
@@ -2876,6 +2944,95 @@
             "time": "2026-07-23T11:41:37+00:00"
         },
         {
+            "name": "kisame76/filament-advanced-rich-editor",
+            "version": "v1.4.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Kisame76/filament-advanced-rich-editor.git",
+                "reference": "afd1766d56bf4b3a78c0f48ce755e7343cece2bd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Kisame76/filament-advanced-rich-editor/zipball/afd1766d56bf4b3a78c0f48ce755e7343cece2bd",
+                "reference": "afd1766d56bf4b3a78c0f48ce755e7343cece2bd",
+                "shasum": ""
+            },
+            "require": {
+                "filament/actions": "^5.7",
+                "filament/forms": "^5.7",
+                "filament/schemas": "^5.7",
+                "filament/support": "^5.7",
+                "illuminate/contracts": "^11.0||^12.0||^13.0",
+                "illuminate/database": "^11.0||^12.0||^13.0",
+                "illuminate/support": "^11.0||^12.0||^13.0",
+                "php": "^8.2",
+                "spatie/laravel-package-tools": "^1.16",
+                "ueberdosis/tiptap-php": "^2.0"
+            },
+            "require-dev": {
+                "filament/filament": "^5.7",
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.0",
+                "league/html-to-markdown": "^5.1",
+                "orchestra/testbench": "^9.0||^10.0||^11.0",
+                "pestphp/pest": "^3.0||^4.0",
+                "pestphp/pest-plugin-laravel": "^3.0||^4.0",
+                "phiki/phiki": "^2.2",
+                "spatie/laravel-medialibrary": "^11.0"
+            },
+            "suggest": {
+                "filament/infolists": "Required for AdvancedRichEntry, which renders stored content on a view page (^5.7).",
+                "filament/tables": "Required for AdvancedRichColumn, which renders stored content in a table cell (^5.7).",
+                "league/html-to-markdown": "Required to render stored rich content as Markdown with `AdvancedRichContentRenderer::toMarkdown()` (^5.1).",
+                "phiki/phiki": "Required to colour code blocks when rendering stored content with `AdvancedRichContentRenderer::highlightCode()` (^2.2).",
+                "spatie/laravel-medialibrary": "Required to store editor image attachments in a media library collection (^11.0)."
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Kisame76\\FilamentAdvancedRichEditor\\FilamentAdvancedRichEditorServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Kisame76\\FilamentAdvancedRichEditor\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Kiyan Doguc",
+                    "email": "k.doguc@kisame-labs.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A drop-in Filament v5 RichEditor with a toolbar you arrange yourself, plus callouts, a media browser, find and replace, an accessibility check, drafts in the browser, a slash menu and Spatie Media Library attachments.",
+            "homepage": "https://github.com/Kisame76/filament-advanced-rich-editor",
+            "keywords": [
+                "editor",
+                "filament",
+                "filament-plugin",
+                "filamentphp",
+                "laravel",
+                "media-library",
+                "mentions",
+                "rich-editor",
+                "tiptap",
+                "toolbar",
+                "wysiwyg"
+            ],
+            "support": {
+                "issues": "https://github.com/Kisame76/filament-advanced-rich-editor/issues",
+                "source": "https://github.com/Kisame76/filament-advanced-rich-editor"
+            },
+            "time": "2026-08-27T19:58:03+00:00"
+        },
+        {
             "name": "laravel/framework",
             "version": "v13.23.0",
             "source": {
@@ -4085,6 +4242,95 @@
                 "source": "https://github.com/thephpleague/flysystem-sftp-v3/tree/3.33.0"
             },
             "time": "2026-03-20T13:22:31+00:00"
+        },
+        {
+            "name": "league/html-to-markdown",
+            "version": "5.1.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/thephpleague/html-to-markdown.git",
+                "reference": "0b4066eede55c48f38bcee4fb8f0aa85654390fd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/thephpleague/html-to-markdown/zipball/0b4066eede55c48f38bcee4fb8f0aa85654390fd",
+                "reference": "0b4066eede55c48f38bcee4fb8f0aa85654390fd",
+                "shasum": ""
+            },
+            "require": {
+                "ext-dom": "*",
+                "ext-xml": "*",
+                "php": "^7.2.5 || ^8.0"
+            },
+            "require-dev": {
+                "mikehaertl/php-shellcommand": "^1.1.0",
+                "phpstan/phpstan": "^1.8.8",
+                "phpunit/phpunit": "^8.5 || ^9.2",
+                "scrutinizer/ocular": "^1.6",
+                "unleashedtech/php-coding-standard": "^2.7 || ^3.0",
+                "vimeo/psalm": "^4.22 || ^5.0"
+            },
+            "bin": [
+                "bin/html-to-markdown"
+            ],
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "5.2-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "League\\HTMLToMarkdown\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Colin O'Dell",
+                    "email": "colinodell@gmail.com",
+                    "homepage": "https://www.colinodell.com",
+                    "role": "Lead Developer"
+                },
+                {
+                    "name": "Nick Cernis",
+                    "email": "nick@cern.is",
+                    "homepage": "http://modernnerd.net",
+                    "role": "Original Author"
+                }
+            ],
+            "description": "An HTML-to-markdown conversion helper for PHP",
+            "homepage": "https://github.com/thephpleague/html-to-markdown",
+            "keywords": [
+                "html",
+                "markdown"
+            ],
+            "support": {
+                "issues": "https://github.com/thephpleague/html-to-markdown/issues",
+                "source": "https://github.com/thephpleague/html-to-markdown/tree/5.1.1"
+            },
+            "funding": [
+                {
+                    "url": "https://www.colinodell.com/sponsor",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://www.paypal.me/colinpodell/10.00",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/colinodell",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/league/html-to-markdown",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2023-07-12T21:21:09+00:00"
         },
         {
             "name": "league/mime-type-detection",
@@ -7914,6 +8160,77 @@
                 }
             ],
             "time": "2026-07-16T10:28:45+00:00"
+        },
+        {
+            "name": "ssbityukov/filament-command-center",
+            "version": "v1.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ssbityukov/filament-command-center.git",
+                "reference": "e9f27fcec7218b06a61b03f1794d53edd480b97a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ssbityukov/filament-command-center/zipball/e9f27fcec7218b06a61b03f1794d53edd480b97a",
+                "reference": "e9f27fcec7218b06a61b03f1794d53edd480b97a",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "illuminate/console": "^12.0|^13.0",
+                "illuminate/contracts": "^12.0|^13.0",
+                "illuminate/database": "^12.0|^13.0",
+                "illuminate/support": "^12.0|^13.0",
+                "php": "^8.3",
+                "spatie/laravel-package-tools": "^1.92",
+                "symfony/process": "^7.0|^8.0"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.27",
+                "orchestra/testbench": "^10.0|^11.0",
+                "pestphp/pest": "^4.0",
+                "pestphp/pest-plugin-laravel": "^4.0",
+                "pestphp/pest-plugin-livewire": "^4.1",
+                "phpstan/extension-installer": "^1.4",
+                "phpstan/phpstan": "^2.1"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Bityukov\\CommandCenter\\CommandCenterServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Bityukov\\CommandCenter\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Sergey Bityukov",
+                    "email": "s.s.bityukov@gmail.com"
+                }
+            ],
+            "description": "Run pre-approved Artisan and shell commands from your Filament panel.",
+            "homepage": "https://github.com/ssbityukov/filament-command-center",
+            "keywords": [
+                "artisan",
+                "commands",
+                "filament",
+                "laravel"
+            ],
+            "support": {
+                "issues": "https://github.com/ssbityukov/filament-command-center/issues",
+                "source": "https://github.com/ssbityukov/filament-command-center"
+            },
+            "time": "2026-08-04T12:17:34+00:00"
         },
         {
             "name": "stancl/jobpipeline",

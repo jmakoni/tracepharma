@@ -39,6 +39,7 @@ class ReceivingSession extends Model
         'opened_at',
         'completed_at',
         'receiving_events_generated_at',
+        'wms_receive_confirmed_at',
         'invoice_disk',
         'invoice_path',
         'invoice_original_filename',
@@ -58,6 +59,7 @@ class ReceivingSession extends Model
             'opened_at' => 'datetime',
             'completed_at' => 'datetime',
             'receiving_events_generated_at' => 'datetime',
+            'wms_receive_confirmed_at' => 'datetime',
         ];
     }
 

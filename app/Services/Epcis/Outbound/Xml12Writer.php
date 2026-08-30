@@ -25,8 +25,13 @@ final class Xml12Writer implements OutboundEpcisDocumentWriter
         return EpcisSchemaVersion::FORMAT_XML;
     }
 
-    public function buildDocument(string $eventTime, string $eventsPayload, ?string $correlationId = null): string
-    {
-        return $this->builder->buildDocument($eventTime, $eventsPayload, $correlationId);
+    public function buildDocument(
+        string $eventTime,
+        string $eventsPayload,
+        ?string $correlationId = null,
+        ?string $senderGln = null,
+        ?string $receiverGln = null,
+    ): string {
+        return $this->builder->buildDocument($eventTime, $eventsPayload, $correlationId, $senderGln, $receiverGln);
     }
 }

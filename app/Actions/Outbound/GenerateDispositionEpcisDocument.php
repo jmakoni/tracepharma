@@ -10,6 +10,7 @@ use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Services\Epcis\Outbound\Xml12Writer;
 use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\OutboundCorrelationGlns;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -63,7 +64,15 @@ final class GenerateDispositionEpcisDocument
             throw new InvalidArgumentException('No EPC URIs available for disposition EPCIS.');
         }
 
-        return $this->xml12Writer->buildDocument(now()->toIso8601String(), $events, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xml12Writer->buildDocument(
+            now()->toIso8601String(),
+            $events,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 
     /**

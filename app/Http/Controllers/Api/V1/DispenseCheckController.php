@@ -48,17 +48,24 @@ final class DispenseCheckController extends Controller
         $status = $record->status;
         $exceptionId = $result['exception_id'];
 
+        $quarantined = false;
         if ($allowed) {
             $quarantineBlock = $this->quarantineBlockForScan($scan, $resolveEpcFromScan, $receivingGate);
             if ($quarantineBlock !== null) {
                 $allowed = false;
                 $status = 'quarantined';
-                $message = $quarantineBlock['message'];
+                $quarantined = true;
                 $exceptionId = $quarantineBlock['exception_id'];
             }
         }
 
         $visibleExceptionId = $this->visibleExceptionId($request->user(), $exceptionId);
+
+        // Rebuild quarantine copy from the site-visible id only — verification may have
+        // embedded the raw exception # before SiteAccess filtering.
+        if ($quarantined || $status === 'quarantined') {
+            $message = $this->quarantineMessage($visibleExceptionId);
+        }
 
         return response()->json([
             'allowed' => $allowed,
@@ -97,7 +104,7 @@ final class DispenseCheckController extends Controller
     }
 
     /**
-     * @return array{message: string, exception_id: ?int}|null
+     * @return array{exception_id: ?int}|null
      */
     private function quarantineBlockForScan(
         string $scan,
@@ -115,12 +122,17 @@ final class DispenseCheckController extends Controller
         }
 
         $caseId = $hold->exception_id;
-        $suffix = $caseId !== null ? " (exception #{$caseId})" : '';
 
         return [
-            'message' => 'Under quarantine'.$suffix.'. Clear or release quarantine before dispensing.',
             'exception_id' => $caseId !== null ? (int) $caseId : null,
         ];
+    }
+
+    private function quarantineMessage(?int $visibleExceptionId): string
+    {
+        $suffix = $visibleExceptionId !== null ? " (exception #{$visibleExceptionId})" : '';
+
+        return 'Under quarantine'.$suffix.'. Clear or release quarantine before dispensing.';
     }
 
     private function resolveScan(DispenseCheckRequest $request): string

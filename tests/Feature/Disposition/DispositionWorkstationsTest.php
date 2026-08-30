@@ -265,8 +265,72 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertGreaterThan(0, $result['drift_count']);
             $this->assertNotNull($result['drift_notes']);
 
+            // Only links touching the decommissioned seed (pallet) close; descendant Case→Unit stays open.
             $this->assertNotNull($palletCaseLink->fresh()?->valid_to);
-            $this->assertNotNull($caseUnitLink->fresh()?->valid_to);
+            $this->assertNull($caseUnitLink->fresh()?->valid_to);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function decommission_one_bottle_leaves_sibling_case_bottle_links_open(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+
+            $case = $this->createSsccEpc('030116', '00000220101');
+            $bottleA = $this->createEpc();
+            $bottleB = $this->createEpc();
+            $this->receiveAtSite($site, $bottleA);
+            $this->receiveAtSite($site, $bottleB);
+            $seedEventId = $this->eventIds[array_key_last($this->eventIds)] ?? null;
+            $this->assertNotNull($seedEventId);
+
+            $caseBottleA = AggregationLink::query()->create([
+                'parent_epc_id' => $case->getKey(),
+                'child_epc_id' => $bottleA->getKey(),
+                'link_type' => 'contains',
+                'established_by_event_id' => $seedEventId,
+                'valid_from' => now()->subMinute(),
+                'valid_to' => null,
+            ]);
+            $caseBottleB = AggregationLink::query()->create([
+                'parent_epc_id' => $case->getKey(),
+                'child_epc_id' => $bottleB->getKey(),
+                'link_type' => 'contains',
+                'established_by_event_id' => $seedEventId,
+                'valid_from' => now()->subMinute(),
+                'valid_to' => null,
+            ]);
+
+            $result = app(EmitDecommissioningEpcis::class)->handle(
+                [(int) $bottleA->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => true, 'reason' => DecommissionReason::Destroyed],
+            );
+
+            $this->documentIds[] = (int) $result['document']->getKey();
+            $this->assertSame(1, $result['decommissioned_count']);
+
+            $this->assertNotNull($caseBottleA->fresh()?->valid_to);
+            $this->assertNull(
+                $caseBottleB->fresh()?->valid_to,
+                'Sibling Case→Bottle link for a non-decommissioned bottle must stay open',
+            );
+            $this->assertTrue(
+                AggregationLink::query()
+                    ->open()
+                    ->where('parent_epc_id', $case->getKey())
+                    ->where('child_epc_id', $bottleB->getKey())
+                    ->exists(),
+            );
         } finally {
             $this->cleanup($tenant);
         }

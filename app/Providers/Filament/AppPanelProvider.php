@@ -6,7 +6,9 @@ use App\Filament\App\Pages\Dashboard;
 use App\Filament\App\Pages\OrganizationSettings;
 use App\Http\Middleware\EnsureLegalAcceptance;
 use App\Http\Middleware\EnsureTenantIsActive;
+use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
+use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -104,6 +106,14 @@ class AppPanelProvider extends PanelProvider
                     ->knowledgeBasePanelId('knowledge-base')
                     ->modalPreviews()
                     ->slideOverPreviews()
+            )
+            ->plugin(
+                ActivityTimelinePlugin::make()
+                    ->registerNavigation(false)
+                    ->navigationGroup('Audit')
+                    ->causerIcons([
+                        User::class => 'heroicon-m-user',
+                    ])
             )
             ->userMenuItems([
                 Action::make('organizationSettings')

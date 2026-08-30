@@ -23,6 +23,7 @@ use App\Models\Transferring\TransferringSession;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantSettings;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -75,6 +76,9 @@ class NotifyWmsReceiveConfirmTest extends TestCase
     /** @var list<int> */
     private array $siteIds = [];
 
+    /** @var list<int> */
+    private array $extraEpcIds = [];
+
     private ?string $priorWmsUrl = null;
 
     private ?string $priorWmsKey = null;
@@ -82,6 +86,8 @@ class NotifyWmsReceiveConfirmTest extends TestCase
     private ?bool $priorWmsKilled = null;
 
     private ?ReceivingEdgeMode $priorEdgeMode = null;
+
+    private ?bool $priorJobRolesEnabled = null;
 
     #[Test]
     public function inbound_asn_complete_posts_receive_confirm_with_idempotency_and_scans(): void
@@ -101,6 +107,7 @@ class NotifyWmsReceiveConfirmTest extends TestCase
             $this->assertSame('completed', $session->status);
             $this->assertNotNull($session->receiving_events_generated_at);
             $this->assertNotNull($session->completed_at);
+            $this->assertNotNull($session->wms_receive_confirmed_at);
 
             $expectedKey = 'receive:'.self::DEMO2_TENANT_ID.':'.$session->getKey().':'
                 .$session->completed_at->toIso8601String();
@@ -118,6 +125,35 @@ class NotifyWmsReceiveConfirmTest extends TestCase
                     && is_array($payload['scans'])
                     && in_array(self::SSCC_URI, $payload['scans'], true);
             });
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function already_confirmed_session_skips_http(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->enableWmsReceiveConfirm();
+
+            Http::fake([
+                self::WMS_URL => Http::response(['ok' => true], 200),
+            ]);
+
+            $session = $this->completeInboundAsnSession();
+            $session->refresh();
+            $this->assertNotNull($session->wms_receive_confirmed_at);
+
+            Http::fake([
+                self::WMS_URL => Http::response(['ok' => true], 200),
+            ]);
+
+            (new NotifyWmsReceiveConfirm(self::DEMO2_TENANT_ID, (int) $session->getKey()))->handle();
+
+            Http::assertNothingSent();
+            $this->assertSame('completed', $session->fresh()->status);
         } finally {
             $this->cleanup();
         }
@@ -198,12 +234,13 @@ class NotifyWmsReceiveConfirmTest extends TestCase
     }
 
     #[Test]
-    public function http_500_keeps_session_completed(): void
+    public function http_500_keeps_session_completed_and_rethrows(): void
     {
         $this->initializeDemo2Tenant();
 
         try {
             $this->enableWmsReceiveConfirm();
+            Queue::fake();
 
             Http::fake([
                 self::WMS_URL => Http::response('WMS unavailable', 500),
@@ -215,8 +252,121 @@ class NotifyWmsReceiveConfirmTest extends TestCase
             $this->assertSame('completed', $session->status);
             $this->assertNotNull($session->completed_at);
             $this->assertNotNull($session->receiving_events_generated_at);
+            $this->assertNull($session->wms_receive_confirmed_at);
+
+            $job = new NotifyWmsReceiveConfirm(self::DEMO2_TENANT_ID, (int) $session->getKey());
+            $this->assertSame(3, $job->tries);
+
+            try {
+                $job->handle();
+                $this->fail('Expected WMS receive-confirm HTTP 500 to throw.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('HTTP 500', $e->getMessage());
+            }
+
+            $session->refresh();
+            $this->assertSame('completed', $session->status);
+            $this->assertNull($session->wms_receive_confirmed_at);
         } finally {
             $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function oversized_scan_payload_is_chunked_with_per_chunk_idempotency_keys(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->enableWmsReceiveConfirm();
+            Config::set('integrations.wms.receive_confirm_max_scans', 2);
+            Queue::fake();
+
+            Http::fake([
+                self::WMS_URL => Http::response(['ok' => true], 200),
+            ]);
+
+            $session = $this->completeInboundAsnSession();
+            $this->assertNull($session->fresh()->wms_receive_confirmed_at);
+
+            $this->appendConfirmedScanLines($session, 3);
+
+            (new NotifyWmsReceiveConfirm(self::DEMO2_TENANT_ID, (int) $session->getKey()))->handle();
+
+            $session->refresh();
+            $this->assertNotNull($session->wms_receive_confirmed_at);
+            $this->assertSame('completed', $session->status);
+
+            $baseKey = 'receive:'.self::DEMO2_TENANT_ID.':'.$session->getKey().':'
+                .$session->completed_at->toIso8601String();
+
+            Http::assertSentCount(3);
+            Http::assertSent(fn ($request): bool => $request->hasHeader('Idempotency-Key', $baseKey.'-chunk-0')
+                && count($request->data()['scans'] ?? []) === 2);
+            Http::assertSent(fn ($request): bool => $request->hasHeader('Idempotency-Key', $baseKey.'-chunk-1')
+                && count($request->data()['scans'] ?? []) === 2);
+            Http::assertSent(fn ($request): bool => $request->hasHeader('Idempotency-Key', $baseKey.'-chunk-2')
+                && count($request->data()['scans'] ?? []) === 1);
+        } finally {
+            Config::set('integrations.wms.receive_confirm_max_scans', 5000);
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function chunk_failure_does_not_stamp_confirmed_at(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->enableWmsReceiveConfirm();
+            Config::set('integrations.wms.receive_confirm_max_scans', 2);
+            Queue::fake();
+
+            Http::fake([
+                self::WMS_URL => Http::sequence()
+                    ->push(['ok' => true], 200)
+                    ->push('WMS unavailable', 500),
+            ]);
+
+            $session = $this->completeInboundAsnSession();
+            $this->appendConfirmedScanLines($session, 3);
+
+            try {
+                (new NotifyWmsReceiveConfirm(self::DEMO2_TENANT_ID, (int) $session->getKey()))->handle();
+                $this->fail('Expected mid-chunk HTTP failure to throw.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('HTTP 500', $e->getMessage());
+            }
+
+            $session->refresh();
+            $this->assertSame('completed', $session->status);
+            $this->assertNull($session->wms_receive_confirmed_at);
+            Http::assertSentCount(2);
+        } finally {
+            Config::set('integrations.wms.receive_confirm_max_scans', 5000);
+            $this->cleanup();
+        }
+    }
+
+    private function appendConfirmedScanLines(ReceivingSession $session, int $count): void
+    {
+        $now = now();
+
+        for ($i = 0; $i < $count; $i++) {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.WMSCHUNK'.str_pad((string) $i, 8, '0', STR_PAD_LEFT);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->extraEpcIds[] = (int) $epc->getKey();
+
+            ReceivingScanLine::query()->create([
+                'receiving_session_id' => $session->getKey(),
+                'epc_id' => $epc->getKey(),
+                'parent_epc_id' => null,
+                'line_role' => 'child',
+                'status' => 'confirmed',
+                'scan_raw' => $uri,
+                'confirmed_at' => $now,
+            ]);
         }
     }
 
@@ -404,6 +554,13 @@ class NotifyWmsReceiveConfirmTest extends TestCase
 
         tenancy()->initialize($tenant);
 
+        $settings = TenantSettings::forTenant($tenant);
+        $this->priorJobRolesEnabled = $settings->jobRolesEnabled();
+        if ($this->priorJobRolesEnabled) {
+            $settings->setJobRolesEnabled(false);
+            $tenant->save();
+        }
+
         if (blank(TenantSettings::forTenant($tenant)->gln())) {
             TenantSettings::forTenant($tenant)->saveOrganization([
                 'gln' => '0399991000008',
@@ -476,6 +633,14 @@ class NotifyWmsReceiveConfirmTest extends TestCase
             $this->custodyDocumentIds = [];
         }
 
+        if ($this->extraEpcIds !== []) {
+            ReceivingScanLine::query()->whereIn('epc_id', $this->extraEpcIds)->delete();
+            QuarantineHold::query()->whereIn('epc_id', $this->extraEpcIds)->delete();
+            DB::table('event_epcs')->whereIn('epc_id', $this->extraEpcIds)->delete();
+            Epc::query()->whereIn('id', $this->extraEpcIds)->delete();
+            $this->extraEpcIds = [];
+        }
+
         if ($this->epcId !== null) {
             ReceivingScanLine::query()->where('epc_id', $this->epcId)->delete();
             QuarantineHold::query()->where('epc_id', $this->epcId)->delete();
@@ -494,6 +659,10 @@ class NotifyWmsReceiveConfirmTest extends TestCase
         $settings = TenantSettings::forTenant(tenant());
         $settings->setReceivingEdgeMode($this->priorEdgeMode);
         $this->priorEdgeMode = null;
+        if ($this->priorJobRolesEnabled !== null) {
+            $settings->setJobRolesEnabled($this->priorJobRolesEnabled);
+            $this->priorJobRolesEnabled = null;
+        }
         tenant()->save();
 
         if ($this->priorWmsUrl !== null || $this->priorWmsKey !== null || $this->priorWmsKilled !== null) {

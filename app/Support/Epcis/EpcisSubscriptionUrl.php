@@ -121,9 +121,11 @@ final class EpcisSubscriptionUrl
         }
 
         $port = parse_url($url, PHP_URL_PORT);
+        $scheme = strtolower((string) (parse_url($url, PHP_URL_SCHEME) ?? 'https'));
+        $defaultPort = $scheme === 'http' ? 80 : 443;
         $port = is_int($port) || (is_string($port) && ctype_digit($port))
             ? (int) $port
-            : 443;
+            : $defaultPort;
 
         $formatted = [];
         foreach ($addresses as $address) {
@@ -148,8 +150,24 @@ final class EpcisSubscriptionUrl
      */
     public static function httpClient(string $url, int $timeoutSeconds = 20): PendingRequest
     {
-        $addresses = self::resolveSafeAddresses($url);
+        self::assertSafeTargetUrl($url);
+
         $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+
+        try {
+            $addresses = self::resolveSafeAddresses($url);
+        } catch (\InvalidArgumentException $exception) {
+            // Private/metadata denies and scheme/credential failures always fail closed.
+            // Unresolvable hostnames fail closed in production; PHPUnit Http::fake suites often
+            // use reserved .example hosts that never resolve.
+            if (! str_contains($exception->getMessage(), 'could not be resolved')
+                || ! app()->runningUnitTests()) {
+                throw $exception;
+            }
+
+            return $pending;
+        }
+
         $options = self::pinnedCurlOptions($url, $addresses);
 
         if ($options !== []) {

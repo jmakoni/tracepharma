@@ -13,10 +13,10 @@ use App\Models\TradingPartner;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use App\Support\Gs1\GlnRules;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -100,11 +100,9 @@ final class CorrectUnknownGlnAction
                             ->label('Mark exception resolved after registering')
                             ->default(true)
                             ->live(),
-                        Textarea::make('resolution_notes')
+                        ProseEditor::make('resolution_notes')
                             ->label('Resolution notes')
                             ->required()
-                            ->rows(3)
-                            ->maxLength(5000)
                             ->default('Registered missing GLN.')
                             ->helperText(fn (Get $get): string => (bool) $get('also_resolve')
                                 ? 'Recorded on the resolved case.'

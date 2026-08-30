@@ -15,6 +15,7 @@ use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
@@ -91,10 +92,8 @@ final class CorrectDocumentActions
                         ->maxSize($maxKb)
                         ->required()
                         ->storeFiles(false),
-                    Textarea::make('notes')
+                    ProseEditor::make('notes')
                         ->label('Notes')
-                        ->rows(2)
-                        ->maxLength(5000)
                         ->nullable(),
                 ])
                 ->action(function (array $data) use ($page): void {

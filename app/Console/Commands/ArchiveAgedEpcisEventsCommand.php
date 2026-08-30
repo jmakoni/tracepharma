@@ -36,10 +36,12 @@ class ArchiveAgedEpcisEventsCommand extends Command
                     $result = $archive->handle($dryRun);
 
                     $this->info(sprintf(
-                        '%s: would_archive=%d archived=%d%s',
+                        '%s: would_archive=%d archived=%d would_delete_orphans=%d deleted_orphans=%d%s',
                         $tenant->name,
                         $result['would_archive'],
                         $result['archived'],
+                        $result['would_delete_orphans'],
+                        $result['deleted_orphans'],
                         $dryRun ? ' (dry-run)' : '',
                     ));
                 });

@@ -155,6 +155,69 @@ class ClientPrintDispatchSsccBatchPrintTest extends TestCase
         }
     }
 
+    #[Test]
+    public function execute_fails_closed_when_send_to_printer_without_printer(): void
+    {
+        Queue::fake([PrintSsccLabelJob::class]);
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            $batch = SsccLabelBatch::query()->create([
+                'company_prefix' => '030116',
+                'extension_digit' => '0',
+                'allocation_mode' => SsccAllocationMode::Sequential,
+                'label_count' => 1,
+                'copies_per_label' => 1,
+                'label_printer_id' => null,
+                'send_to_printer' => true,
+                'status' => SsccLabelBatchStatus::Completed,
+                'commissioned_at' => now(),
+            ]);
+            $this->batchIds[] = (int) $batch->id;
+
+            $label = SsccLabel::query()->create([
+                'batch_id' => $batch->id,
+                'label_printer_id' => null,
+                'sscc_18' => '003011600002109999',
+                'sscc_urn' => 'urn:epc:id:sscc:030116.00000210999',
+                'extension_digit' => '0',
+                'company_prefix' => '030116',
+                'serial_reference' => '0000210999',
+                'serial_reference_int' => 210999,
+                'element_string' => '0003011600002109999',
+                'hrt' => '0003011600002109999',
+                'label_disk' => 'local',
+                'label_path' => 'sscc/fail-closed.pdf',
+                'commissioned_at' => now(),
+            ]);
+            $this->labelIds[] = (int) $label->id;
+            $batch->load('labels');
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessageMatches('/printer/i');
+
+            app(DispatchSsccBatchPrint::class)->execute($batch);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function resolve_bridge_fails_closed_when_printer_missing_and_no_override(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessageMatches('/printer|bridge/i');
+
+            app(DispatchSsccBatchPrint::class)->resolveBridgeForPrinter(null);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     /**
      * @return array{0: SsccLabelBatch, 1: SsccLabel}
      */

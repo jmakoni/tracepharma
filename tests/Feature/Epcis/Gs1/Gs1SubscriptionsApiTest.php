@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Tests\Feature\Epcis\Gs1;
 
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Models\Epcis\EpcisSubscription;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\SanctumAbilities;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -33,6 +36,8 @@ class Gs1SubscriptionsApiTest extends TestCase
 
         try {
             $user = User::factory()->create();
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user->assignRole(TenantRole::Owner->value);
             $token = $user->createToken('subs', [SanctumAbilities::EPCIS_SUBSCRIPTIONS])->plainTextToken;
             tenancy()->end();
 
@@ -78,6 +83,8 @@ class Gs1SubscriptionsApiTest extends TestCase
 
         try {
             $user = User::factory()->create();
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user->assignRole(TenantRole::Owner->value);
             $token = $user->createToken('subs', [SanctumAbilities::EPCIS_SUBSCRIPTIONS])->plainTextToken;
             tenancy()->end();
 
@@ -140,7 +147,7 @@ class Gs1SubscriptionsApiTest extends TestCase
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function tenantApiJson(string $method, string $uri, string $token, array $payload = []): \Illuminate\Testing\TestResponse
+    private function tenantApiJson(string $method, string $uri, string $token, array $payload = []): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;

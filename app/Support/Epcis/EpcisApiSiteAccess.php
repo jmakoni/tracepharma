@@ -40,7 +40,8 @@ final class EpcisApiSiteAccess
     }
 
     /**
-     * Fail closed for site-restricted token owners once ship-from/to is known.
+     * Fail closed for site-restricted token owners: unknown ship-from/to is denied,
+     * and known sites must pass SiteAccess.
      */
     public function assertStoreAllowed(User $user, string $absolutePath, string $direction): void
     {
@@ -52,7 +53,10 @@ final class EpcisApiSiteAccess
 
         if ($direction === 'outbound') {
             $shipFromSiteId = $sites['ship_from_site_id'];
-            if ($shipFromSiteId !== null && ! SiteAccess::canAccessShipFromSite($user, $shipFromSiteId)) {
+            if ($shipFromSiteId === null) {
+                throw new AuthorizationException('You do not have access to the ship-from site for this EPCIS document.');
+            }
+            if (! SiteAccess::canAccessShipFromSite($user, $shipFromSiteId)) {
                 throw new AuthorizationException('You do not have access to the ship-from site for this EPCIS document.');
             }
 
@@ -60,7 +64,10 @@ final class EpcisApiSiteAccess
         }
 
         $shipToSiteId = $sites['ship_to_site_id'];
-        if ($shipToSiteId !== null && ! SiteAccess::canAccessShipToSite($user, $shipToSiteId)) {
+        if ($shipToSiteId === null) {
+            throw new AuthorizationException('You do not have access to the ship-to site for this EPCIS document.');
+        }
+        if (! SiteAccess::canAccessShipToSite($user, $shipToSiteId)) {
             throw new AuthorizationException('You do not have access to the ship-to site for this EPCIS document.');
         }
     }

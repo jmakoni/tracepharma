@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Services\Epcis\Inbound\As2InboundMdnFactory;
 use App\Services\Epcis\Inbound\As2SmimeUnwrap;
 use App\Services\Integrations\InboundEpcisReceiver;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,8 @@ class As2InboundWebhookController
         string $tenantId,
         int $connectionId,
     ): JsonResponse|Response {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         TenantAccess::assertActive($tenant);

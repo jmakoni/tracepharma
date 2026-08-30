@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\KnowledgeBase\PublicAssetImageRenderer;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -55,6 +56,10 @@ class AdminKnowledgeBasePanelProvider extends PanelProvider
 
                         return $environment;
                     })
+            )
+            ->plugin(
+                TracepharmaBreezyCore::make()
+                    ->enableTwoFactorAuthentication()
             )
             ->middleware([
                 EncryptCookies::class,

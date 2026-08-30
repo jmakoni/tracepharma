@@ -25,12 +25,20 @@ final class JsonLd20Writer implements OutboundEpcisDocumentWriter
         return EpcisSchemaVersion::FORMAT_JSON;
     }
 
-    public function buildDocument(string $eventTime, string $eventsPayload, ?string $correlationId = null): string
-    {
+    public function buildDocument(
+        string $eventTime,
+        string $eventsPayload,
+        ?string $correlationId = null,
+        ?string $senderGln = null,
+        ?string $receiverGln = null,
+    ): string {
         $decoded = json_decode($eventsPayload, true);
         if (! is_array($decoded)) {
             throw new InvalidArgumentException('JsonLd20Writer expects a JSON array of events as eventsPayload.');
         }
+
+        // JSON-LD has no SBDH; sender/receiver GLNs are unused (XML path enforces them).
+        unset($senderGln, $receiverGln);
 
         return $this->encodeDocument($eventTime, $decoded, $correlationId);
     }

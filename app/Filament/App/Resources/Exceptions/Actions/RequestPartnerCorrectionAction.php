@@ -10,8 +10,8 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -53,11 +53,9 @@ final class RequestPartnerCorrectionAction
             ->modalHeading('Request partner correction')
             ->modalDescription('Adds a partner-visible note and moves the case toward Waiting (partner) where the current status allows it.')
             ->schema([
-                Textarea::make('body')
+                ProseEditor::make('body')
                     ->label('Note to trading partner')
                     ->required()
-                    ->rows(4)
-                    ->maxLength(5000)
                     ->helperText('Visible to trading partners when partner portals are enabled.'),
                 Toggle::make('email_supplier')
                     ->label('Also email supplier portal link')

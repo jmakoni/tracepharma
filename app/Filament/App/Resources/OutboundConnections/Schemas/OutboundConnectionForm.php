@@ -8,6 +8,7 @@ use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
 use App\Models\OutboundConnection;
 use App\Support\Integrations\OutboundTransportAvailability;
+use App\Support\SftpConnectionProviderFactory;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -163,7 +164,20 @@ class OutboundConnectionForm
                     ->schema([
                         TextInput::make('settings.host')
                             ->label('Host')
-                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                            ->rules([
+                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                    if ($value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    try {
+                                        SftpConnectionProviderFactory::assertSafeHost((string) $value);
+                                    } catch (\InvalidArgumentException $exception) {
+                                        $fail($exception->getMessage());
+                                    }
+                                },
+                            ]),
                         TextInput::make('settings.port')
                             ->numeric()
                             ->default(22),

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\EpcisEventsQueryController;
 use App\Http\Controllers\Api\V1\EpcisGs1SubscriptionsController;
 use App\Http\Controllers\Api\V1\EpcisInboundController;
 use App\Http\Controllers\Api\V1\EpcisOutboundController;
+use App\Http\Controllers\Api\V1\GuardianLotCloseController;
 use App\Http\Controllers\Api\V1\WmsShipConfirmController;
 use App\Http\Controllers\Webhooks\As2InboundWebhookController;
 use App\Http\Controllers\Webhooks\As2MdnWebhookController;
@@ -98,4 +99,12 @@ Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v
     Route::delete('epcis/subscriptions/{subscriptionID}', [EpcisGs1SubscriptionsController::class, 'destroy'])
         ->middleware('abilities:epcis:subscriptions')
         ->name('api.v1.epcis.subscriptions.destroy');
+});
+
+// Guardian (Systech) lot-close inbound: L3 API key auth (not Sanctum). Tenant
+// is resolved from the request host by InitializeTenancyForTenantHosts (api
+// middleware prepend), same as the webhook group above.
+Route::middleware('throttle:webhooks')->prefix('v1')->group(function (): void {
+    Route::post('l3/guardian/lot-close', GuardianLotCloseController::class)
+        ->name('api.v1.l3.guardian.lot-close');
 });

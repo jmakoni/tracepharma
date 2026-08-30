@@ -20,12 +20,18 @@ use Throwable;
 
 /**
  * POST a receive-confirm payload to the tenant WMS after inbound ASN / scan-first complete.
+ *
+ * Failures rethrow so the queue can retry ($tries + backoff). Session completion is
+ * independent — CompleteReceivingSession never reverts on WMS errors. Durable
+ * wms_receive_confirmed_at is stamped only after every chunk POST succeeds.
  */
 final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    public const MAX_SCANS_PER_POST = 5000;
+
+    public int $tries = 3;
 
     public int $uniqueFor = 3600;
 
@@ -49,6 +55,14 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
                 ->releaseAfter(30)
                 ->expireAfter(180),
         ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [30, 120, 300];
     }
 
     public function handle(): void
@@ -86,18 +100,40 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
                 return;
             }
 
-            try {
-                $response = $this->httpClient($settings)
-                    ->withHeaders([
-                        'Accept' => 'application/json',
-                        'Idempotency-Key' => $this->idempotencyKey($session),
-                    ])
-                    ->post($endpoint, $this->payload($session));
+            if ($session->wms_receive_confirmed_at !== null) {
+                return;
+            }
 
-                if (! $response->successful()) {
-                    throw new \RuntimeException(
-                        'WMS receive-confirm POST failed (HTTP '.$response->status().').',
-                    );
+            $scans = $this->confirmedScans($session);
+            $chunks = array_chunk($scans, $this->maxScansPerPost());
+            if ($chunks === []) {
+                $chunks = [[]];
+            }
+
+            $basePayload = $this->payloadWithoutScans($session);
+            $multiChunk = count($chunks) > 1;
+
+            try {
+                foreach ($chunks as $index => $chunkScans) {
+                    $idempotencyKey = $this->idempotencyKey($session);
+                    if ($multiChunk) {
+                        $idempotencyKey .= '-chunk-'.$index;
+                    }
+
+                    $response = $this->httpClient($settings)
+                        ->withHeaders([
+                            'Accept' => 'application/json',
+                            'Idempotency-Key' => $idempotencyKey,
+                        ])
+                        ->post($endpoint, array_merge($basePayload, [
+                            'scans' => array_values($chunkScans),
+                        ]));
+
+                    if (! $response->successful()) {
+                        throw new \RuntimeException(
+                            'WMS receive-confirm POST failed (HTTP '.$response->status().').',
+                        );
+                    }
                 }
             } catch (Throwable $e) {
                 Log::warning('WMS receive-confirm forward failed.', [
@@ -106,7 +142,14 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
                     'endpoint' => RedactsUrls::redactUrl($endpoint),
                     'error' => $e->getMessage(),
                 ]);
+
+                throw $e;
             }
+
+            ReceivingSession::query()
+                ->whereKey($session->getKey())
+                ->whereNull('wms_receive_confirmed_at')
+                ->update(['wms_receive_confirmed_at' => now()]);
         });
     }
 
@@ -118,11 +161,10 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
      *     asn: string|null,
      *     po: string|null,
      *     confirmed_parent_count: int,
-     *     confirmed_child_count: int,
-     *     scans: list<string>
+     *     confirmed_child_count: int
      * }
      */
-    private function payload(ReceivingSession $session): array
+    private function payloadWithoutScans(ReceivingSession $session): array
     {
         $session->loadMissing(['document', 'matchedDocument']);
         $document = $session->document ?? $session->matchedDocument;
@@ -137,7 +179,6 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
             'po' => filled($document?->customer_po) ? (string) $document->customer_po : null,
             'confirmed_parent_count' => (int) $session->confirmed_parent_count,
             'confirmed_child_count' => (int) $session->confirmed_child_count,
-            'scans' => $this->confirmedScans($session),
         ];
     }
 
@@ -150,6 +191,7 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
             ->where('receiving_session_id', $session->getKey())
             ->where('status', 'confirmed')
             ->with('epc')
+            ->orderBy('id')
             ->get()
             ->map(function (ReceivingScanLine $line): string {
                 $uri = $line->epc?->epc_uri;
@@ -165,6 +207,13 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
             ->all();
     }
 
+    private function maxScansPerPost(): int
+    {
+        $configured = (int) config('integrations.wms.receive_confirm_max_scans', self::MAX_SCANS_PER_POST);
+
+        return max(1, $configured > 0 ? $configured : self::MAX_SCANS_PER_POST);
+    }
+
     private function idempotencyKey(ReceivingSession $session): string
     {
         return 'receive:'.$this->tenantId.':'.$this->sessionId.':'
@@ -173,7 +222,10 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
 
     private function httpClient(TenantSettings $settings): PendingRequest
     {
-        $client = Http::timeout(30)->withoutRedirecting();
+        $endpoint = $settings->wmsReceiveConfirmUrl();
+        $client = filled($endpoint)
+            ? TenantSettings::wmsPinnedHttpClient($endpoint, 30)
+            : Http::timeout(30)->withoutRedirecting();
 
         $apiKey = $settings->wmsBridgeApiKey();
         if (filled($apiKey)) {

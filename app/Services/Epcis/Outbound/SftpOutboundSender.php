@@ -29,10 +29,37 @@ class SftpOutboundSender
         }
 
         $filesystem ??= $this->filesystemFor($connection);
-        $dir = trim((string) ($settings['outbound_path'] ?? 'outbound/epcis'), '/');
+        $dir = $this->normalizedOutboundPath((string) ($settings['outbound_path'] ?? 'outbound/epcis'));
         $path = ($dir === '' ? '' : $dir.'/').ltrim($filename, '/');
 
         $filesystem->write($path, $content);
+    }
+
+    /**
+     * Relative path under the SFTP adapter root only — reject traversal and absolute paths.
+     */
+    private function normalizedOutboundPath(string $outboundPath): string
+    {
+        $normalized = str_replace('\\', '/', $outboundPath);
+
+        // Leading "/" is stripped below (relative to adapter root). Reject Windows / UNC absolutes.
+        if (str_starts_with($normalized, '//') || preg_match('#^[A-Za-z]:/#', $normalized) === 1) {
+            throw new DomainException('SFTP outbound_path must be a relative path.');
+        }
+
+        if (str_contains($normalized, '..')) {
+            throw new DomainException('SFTP outbound_path must not contain parent-directory segments.');
+        }
+
+        $dir = trim($normalized, '/');
+
+        foreach ($dir === '' ? [] : explode('/', $dir) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                throw new DomainException('SFTP outbound_path must not contain parent-directory segments.');
+            }
+        }
+
+        return $dir;
     }
 
     private function filesystemFor(OutboundConnection $connection): Filesystem

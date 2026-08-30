@@ -17,6 +17,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Services\Tracing\BuildAssetTrace;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -229,7 +230,9 @@ class BuildAssetTraceTest extends TestCase
             $service = app(BuildAssetTrace::class);
             $this->assertSame(2, $service->eventsQuery($epc)->count());
             $this->assertSame(1, $service->childrenQuery($epc)->count());
-            $this->assertCount(2, $service->transactionsForEpc($epc));
+            $transactions = $service->transactionsForEpc($epc);
+            $this->assertFalse($transactions['truncated']);
+            $this->assertCount(2, $transactions['records']);
 
             AggregationLink::query()
                 ->where('parent_epc_id', $epc->getKey())
@@ -300,6 +303,212 @@ class BuildAssetTraceTest extends TestCase
 
             $errorDocument->forceFill(['processed_at' => now()->subHour()])->save();
             $this->assertSame(1, app(BuildAssetTrace::class)->eventsQuery($epc)->count());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function as_of_events_query_excludes_error_and_voided_documents_like_custody(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.ASOF'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->save();
+            $this->epcId = (int) $epc->getKey();
+
+            $goodDocument = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subHours(2),
+                'received_at' => now()->subHours(2),
+                'processed_at' => now()->subHours(2),
+            ]);
+            $this->documentId = (int) $goodDocument->getKey();
+
+            $goodEvent = EpcisEvent::query()->create([
+                'document_id' => $goodDocument->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => Carbon::parse('2026-08-01 10:00:00', 'UTC'),
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                'disposition' => 'urn:epcglobal:cbv:disp:active',
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $goodEvent->getKey(),
+                'epc_id' => $epc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $voidedDocument = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'voided',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subHour(),
+                'received_at' => now()->subHour(),
+                'processed_at' => now()->subHour(),
+            ]);
+            $voidedDocumentId = (int) $voidedDocument->getKey();
+
+            $voidedEvent = EpcisEvent::query()->create([
+                'document_id' => $voidedDocument->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => Carbon::parse('2026-08-01 11:00:00', 'UTC'),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+                'disposition' => 'urn:epcglobal:cbv:disp:in_transit',
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $voidedEvent->getKey(),
+                'epc_id' => $epc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $errorDocument = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'error',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subMinutes(30),
+                'received_at' => now()->subMinutes(30),
+                'processed_at' => now()->subMinutes(30),
+            ]);
+            $errorDocumentId = (int) $errorDocument->getKey();
+
+            $errorEvent = EpcisEvent::query()->create([
+                'document_id' => $errorDocument->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => Carbon::parse('2026-08-01 11:30:00', 'UTC'),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:receiving',
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $errorEvent->getKey(),
+                'epc_id' => $epc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $asOf = Carbon::parse('2026-08-01 12:00:00', 'UTC');
+            $service = app(BuildAssetTrace::class);
+
+            $asOfIds = $service->eventsQuery($epc, $asOf)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $this->assertSame([(int) $goodEvent->getKey()], $asOfIds);
+
+            $result = $service->handle($uri, $asOf);
+            $this->assertTrue($result['found']);
+            $this->assertCount(1, $result['timeline']);
+            $this->assertSame('commissioning', $result['timeline'][0]['business_step']);
+        } finally {
+            if (isset($voidedDocumentId)) {
+                $eventIds = EpcisEvent::query()->where('document_id', $voidedDocumentId)->pluck('id');
+                if ($eventIds->isNotEmpty()) {
+                    DB::table('event_epcs')->whereIn('event_id', $eventIds)->delete();
+                }
+                EpcisEvent::query()->where('document_id', $voidedDocumentId)->delete();
+                EpcisDocument::query()->whereKey($voidedDocumentId)->delete();
+            }
+            if (isset($errorDocumentId)) {
+                $eventIds = EpcisEvent::query()->where('document_id', $errorDocumentId)->pluck('id');
+                if ($eventIds->isNotEmpty()) {
+                    DB::table('event_epcs')->whereIn('event_id', $eventIds)->delete();
+                }
+                EpcisEvent::query()->where('document_id', $errorDocumentId)->delete();
+                EpcisDocument::query()->whereKey($errorDocumentId)->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function as_of_children_ignore_packing_links_established_after_t(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $suffix = (string) random_int(10000000, 99999999);
+            $parentUri = 'urn:epc:id:sscc:030116.01'.$suffix.'0';
+            $itemRef = substr($suffix, 0, 6);
+            $childEarlyUri = "urn:epc:id:sgtin:030116.3{$itemRef}.EARLY{$suffix}";
+            $childLateUri = "urn:epc:id:sgtin:030116.3{$itemRef}.LATE{$suffix}";
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'validated',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subDay(),
+                'received_at' => now()->subDay(),
+                'processed_at' => now()->subDay(),
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            $parent = Epc::fromUri($parentUri);
+            $parent->save();
+            $this->epcId = (int) $parent->getKey();
+
+            $childEarly = Epc::fromUri($childEarlyUri);
+            $childEarly->save();
+            $this->childEpcId = (int) $childEarly->getKey();
+
+            $childLate = Epc::fromUri($childLateUri);
+            $childLate->save();
+            $this->parentEpcId = (int) $childLate->getKey(); // reuse slot for cleanup
+
+            $packEarly = EpcisEvent::query()->create([
+                'document_id' => $document->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'AggregationEvent',
+                'event_time' => Carbon::parse('2026-08-01 09:00:00', 'UTC'),
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+            ]);
+            $packLate = EpcisEvent::query()->create([
+                'document_id' => $document->getKey(),
+                'ingest_generation' => 1,
+                'event_type' => 'AggregationEvent',
+                'event_time' => Carbon::parse('2026-08-01 14:00:00', 'UTC'),
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+            ]);
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $childEarly->getKey(),
+                'established_by_event_id' => $packEarly->getKey(),
+                'link_type' => 'aggregation',
+                'valid_from' => Carbon::parse('2026-08-01 09:00:00', 'UTC'),
+            ]);
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $childLate->getKey(),
+                'established_by_event_id' => $packLate->getKey(),
+                'link_type' => 'aggregation',
+                'valid_from' => Carbon::parse('2026-08-01 14:00:00', 'UTC'),
+            ]);
+
+            $asOf = Carbon::parse('2026-08-01 12:00:00', 'UTC');
+            $service = app(BuildAssetTrace::class);
+
+            $this->assertSame(2, $service->childrenQuery($parent)->count());
+            $this->assertSame(1, $service->childrenQuery($parent, $asOf)->count());
+            $this->assertSame(
+                [(int) $childEarly->getKey()],
+                $service->childrenQuery($parent, $asOf)->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+            );
+
+            $result = $service->handle($parentUri, $asOf);
+            $this->assertSame(1, $result['children_count']);
+            $this->assertCount(1, $result['children']);
+            $this->assertSame((int) $childEarly->getKey(), $result['children'][0]['id']);
         } finally {
             $this->cleanup();
         }
@@ -642,6 +851,74 @@ class BuildAssetTraceTest extends TestCase
             $this->assertSame('LA Smile receiving', $result['map_points'][2]['label']);
             $this->assertEqualsWithDelta(34.0522, $result['map_points'][2]['lat'], 0.0001);
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function tracking_table_and_transactions_hard_cap_with_truncated_flag(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $priorLimit = config('tracepharma.tracing.initial_timeline_events_limit');
+
+        try {
+            config(['tracepharma.tracing.initial_timeline_events_limit' => 3]);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.CAP'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->save();
+            $this->epcId = (int) $epc->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'status' => 'parsed',
+                'ingest_generation' => 1,
+                'creation_date' => now()->subHour(),
+                'received_at' => now()->subHour(),
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            $base = now()->subHours(10);
+            for ($i = 0; $i < 5; $i++) {
+                $event = EpcisEvent::query()->create([
+                    'document_id' => $document->getKey(),
+                    'ingest_generation' => 1,
+                    'event_type' => 'ObjectEvent',
+                    'event_time' => $base->copy()->addMinutes($i),
+                    'action' => 'OBSERVE',
+                    'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+                ]);
+                DB::table('event_epcs')->insert([
+                    'event_id' => $event->getKey(),
+                    'epc_id' => $epc->getKey(),
+                    'role' => 'epcList',
+                ]);
+                EventBizTransaction::query()->create([
+                    'event_id' => $event->getKey(),
+                    'type_uri' => 'urn:epcglobal:cbv:btt:desadv',
+                    'value' => 'ASN-CAP-'.$i,
+                ]);
+            }
+
+            $service = app(BuildAssetTrace::class);
+            $eventsPayload = $service->eventsForTrackingTable($epc->fresh());
+            $this->assertTrue($eventsPayload['truncated']);
+            $this->assertCount(3, $eventsPayload['records']);
+            $this->assertSame(3, $service->trackingTableLimit());
+
+            $times = $eventsPayload['records']->map(
+                fn (EpcisEvent $event): string => $event->event_time?->toDateTimeString() ?? '',
+            )->all();
+            $this->assertSame($times, collect($times)->sort()->values()->all(), 'Capped events stay ascending');
+
+            $txPayload = $service->transactionsForEpc($epc->fresh());
+            $this->assertTrue($txPayload['truncated']);
+            $this->assertLessThanOrEqual(3, $txPayload['records']->count());
+        } finally {
+            config(['tracepharma.tracing.initial_timeline_events_limit' => $priorLimit]);
             $this->cleanup();
         }
     }

@@ -31,6 +31,7 @@ class EpcisSubscriptionsTable
                 EditAction::make(),
                 Action::make('rotateSecret')
                     ->label('Rotate secret')
+                    ->authorize('update')
                     ->requiresConfirmation()
                     ->action(function (EpcisSubscription $record): void {
                         $secret = $record->rotateSecret();
@@ -43,6 +44,7 @@ class EpcisSubscriptionsTable
                     }),
                 Action::make('testPing')
                     ->label('Test ping')
+                    ->authorize('update')
                     ->action(function (EpcisSubscription $record): void {
                         try {
                             $targetUrl = (string) $record->target_url;

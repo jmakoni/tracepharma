@@ -2,8 +2,8 @@
 
 namespace App\Filament\App\Resources\Exceptions\Pages;
 
-use App\Actions\Fda3911\PrefillFda3911Report;
 use App\Actions\Exceptions\SendDscsaExceptionEmail;
+use App\Actions\Fda3911\PrefillFda3911Report;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionDisposition;
 use App\Enums\ExceptionStatus;
@@ -29,6 +29,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -226,11 +227,9 @@ class ViewException extends ViewRecord
                                 ->all();
                         })
                         ->required(),
-                    Textarea::make('notes')
+                    ProseEditor::make('notes')
                         ->label('Notes')
-                        ->rows(3)
-                        ->nullable()
-                        ->maxLength(5000),
+                        ->nullable(),
                 ])
                 ->action(function (array $data): void {
                     /** @var User $actor */
@@ -274,11 +273,9 @@ class ViewException extends ViewRecord
                 ->label('Add comment')
                 ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
                 ->schema([
-                    Textarea::make('body')
+                    ProseEditor::make('body')
                         ->label('Comment')
-                        ->required()
-                        ->rows(4)
-                        ->maxLength(5000),
+                        ->required(),
                 ])
                 ->action(function (array $data): void {
                     /** @var User $actor */
@@ -315,11 +312,9 @@ class ViewException extends ViewRecord
                 ->icon(Heroicon::OutlinedChatBubbleBottomCenterText)
                 ->color('info')
                 ->schema([
-                    Textarea::make('body')
+                    ProseEditor::make('body')
                         ->label('Note')
                         ->required()
-                        ->rows(4)
-                        ->maxLength(5000)
                         ->helperText('Visible to trading partners when partner portals are enabled.'),
                 ])
                 ->action(function (array $data): void {
@@ -548,12 +543,10 @@ class ViewException extends ViewRecord
                         ->visible(fn (): bool => $this->hasOpenQuarantineHolds()
                             && $this->getRecord()->disposition !== ExceptionDisposition::Illegitimate)
                         ->schema([
-                            Textarea::make('notes')
+                            ProseEditor::make('notes')
                                 ->label('Clearance notes')
                                 ->required()
-                                ->rows(3)
-                                ->helperText('Investigation summary supporting clearance.')
-                                ->maxLength(5000),
+                                ->helperText('Investigation summary supporting clearance.'),
                         ])
                         ->action(function (array $data): void {
                             /** @var User $actor */
@@ -602,12 +595,10 @@ class ViewException extends ViewRecord
                         ->visible(fn (): bool => $this->hasOpenQuarantineHolds()
                             && $this->getRecord()->disposition !== ExceptionDisposition::Illegitimate)
                         ->schema([
-                            Textarea::make('notes')
+                            ProseEditor::make('notes')
                                 ->label('Illegitimate determination notes')
                                 ->required()
-                                ->rows(3)
-                                ->helperText('Keeps holds open. Notify FDA and immediate trading partners within 24 hours (Form FDA 3911).')
-                                ->maxLength(5000),
+                                ->helperText('Keeps holds open. Notify FDA and immediate trading partners within 24 hours (Form FDA 3911).'),
                         ])
                         ->action(function (array $data): void {
                             /** @var User $actor */
@@ -740,11 +731,9 @@ class ViewException extends ViewRecord
                         })
                         ->searchable()
                         ->required(),
-                    Textarea::make('resolution_notes')
+                    ProseEditor::make('resolution_notes')
                         ->label('Resolution notes')
-                        ->required()
-                        ->rows(4)
-                        ->maxLength(5000),
+                        ->required(),
                 ])
                 ->action(function (array $data): void {
                     /** @var User $actor */

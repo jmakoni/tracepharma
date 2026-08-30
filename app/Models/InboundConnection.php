@@ -49,6 +49,7 @@ class InboundConnection extends Model
     {
         return LogOptions::defaults()
             ->logFillable()
+            ->logExcept(['credentials', 'inbound_token'])
             ->logOnlyDirty();
     }
 

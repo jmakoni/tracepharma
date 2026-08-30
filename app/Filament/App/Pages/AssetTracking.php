@@ -6,10 +6,11 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Filament\App\Pages\AssetTracking\Schemas\AssetTrackingInfolist;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\App\Resources\SerializationLots\SerializationLotResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\L3\SerializationLotContainerField;
 use App\Models\User;
-use App\Services\Custody\EpcCustodyGate;
 use App\Services\Tracing\BuildAssetTrace;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -76,6 +77,14 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
 
     public string $resultsTab = 'tracking';
 
+    /**
+     * Per-request memoization for {@see self::containerField()} — not Livewire-tracked,
+     * recomputed each render; reset on every new trace.
+     */
+    private ?SerializationLotContainerField $containerField = null;
+
+    private bool $containerFieldResolved = false;
+
     public static function canAccess(): bool
     {
         $features = TenantFeatures::forTenant(tenant());
@@ -131,6 +140,8 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         $epc = $resolved['epc'];
         if ($epc instanceof Epc && ! $this->canAccessEpc($epc)) {
             $this->trace = null;
+            $this->containerField = null;
+            $this->containerFieldResolved = false;
             $this->cacheSchema('content', null);
             $this->cachedHeaderActions = [];
             $this->resetTable();
@@ -150,6 +161,8 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         $asOfCarbon = $this->parseAsOfUtc();
         $this->trace = $builder->handle($scan, $asOfCarbon);
         $this->resultsTab = 'tracking';
+        $this->containerField = null;
+        $this->containerFieldResolved = false;
 
         // Filament caches the `content` schema for the request. If it was built
         // before this action (discoveredSchemaNames rebuild) or needs new
@@ -213,10 +226,8 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
             return SiteAccess::canAccessShipToSite($user, $siteId);
         }
 
-        if (app(EpcCustodyGate::class)->isTenantCommissioned($epc)) {
-            return SiteAccess::userSiteIds($user)->isNotEmpty();
-        }
-
+        // Unmapped last-seen site: only SitesAccessAll (Owners) — never fail-open to
+        // any user who merely has ≥1 site assignment.
         return SiteAccess::canAccessShipToSite($user, null);
     }
 
@@ -267,6 +278,45 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         $scan = trim($this->scan) !== '' ? trim($this->scan) : (string) ($this->trace['scan'] ?? '');
 
         return VerifyProduct::getUrl(filled($scan) ? ['barcode' => $scan] : []);
+    }
+
+    /**
+     * Guardian L3 per-container fields for the currently traced EPC, keyed by
+     * indexed `epc_uri` — never selects the sibling `fields` JSON column on
+     * list pages, only here on a single-EPC lookup.
+     */
+    public function containerField(): ?SerializationLotContainerField
+    {
+        if ($this->containerFieldResolved) {
+            return $this->containerField;
+        }
+
+        $this->containerFieldResolved = true;
+
+        if ($this->trace === null || ! ($this->trace['found'] ?? false)) {
+            return $this->containerField = null;
+        }
+
+        $epcUri = (string) ($this->trace['urn'] ?? '');
+        if ($epcUri === '') {
+            return $this->containerField = null;
+        }
+
+        return $this->containerField = SerializationLotContainerField::query()
+            ->where('epc_uri', $epcUri)
+            ->with('lot')
+            ->first();
+    }
+
+    public function containerFieldLotUrl(): ?string
+    {
+        $lot = $this->containerField()?->lot;
+
+        if ($lot === null || ! SerializationLotResource::canAccess()) {
+            return null;
+        }
+
+        return SerializationLotResource::getUrl('view', ['record' => $lot], panel: 'app');
     }
 
     public function openReceiveBarcode(): string
@@ -462,9 +512,14 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
     private function eventsTable(Table $table, Epc $epc): Table
     {
         $builder = app(BuildAssetTrace::class);
+        $payload = $builder->eventsForTrackingTable($epc, $this->parseAsOfUtc());
+        $limit = $builder->trackingTableLimit();
 
         return $table
-            ->records(fn (): Collection => $builder->eventsForTrackingTable($epc, $this->parseAsOfUtc())->values())
+            ->records(fn (): Collection => $payload['records']->values())
+            ->description($payload['truncated']
+                ? "Showing the {$limit} most recent events (older history truncated)."
+                : null)
             ->columns([
                 TextColumn::make('event_time')
                     ->label('Event time')
@@ -526,7 +581,7 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         $builder = app(BuildAssetTrace::class);
 
         return $table
-            ->query($builder->childrenQuery($epc))
+            ->query($builder->childrenQuery($epc, $this->parseAsOfUtc()))
             ->columns([
                 TextColumn::make('identifier')
                     ->label('Identifier')
@@ -572,9 +627,14 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
     private function transactionsTable(Table $table, Epc $epc): Table
     {
         $builder = app(BuildAssetTrace::class);
+        $payload = $builder->transactionsForEpc($epc);
+        $limit = $builder->trackingTableLimit();
 
         return $table
-            ->records(fn (): Collection => $builder->transactionsForEpc($epc)->values())
+            ->records(fn (): Collection => $payload['records']->values())
+            ->description($payload['truncated']
+                ? "Biz transactions from the {$limit} most recent events (older history truncated)."
+                : null)
             ->columns([
                 TextColumn::make('name')
                     ->label('Name'),

@@ -103,6 +103,7 @@ class ExceptionInfolist
                         ->placeholder('—'),
                     TextEntry::make('resolution_notes')
                         ->label('Notes')
+                        ->markdown()
                         ->placeholder('—')
                         ->columnSpanFull(),
                 ]),

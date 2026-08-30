@@ -8,6 +8,7 @@ use App\Models\TradingPartner;
 use App\Rules\RejectTenantGln;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Gs1\GlnRules;
+use App\Support\SftpConnectionProviderFactory;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -112,7 +113,20 @@ class InboundConnectionForm
                     ->visible(fn (Get $get): bool => $get('transport') === InboundTransport::Sftp->value)
                     ->schema([
                         TextInput::make('settings.host')
-                            ->label('Host'),
+                            ->label('Host')
+                            ->rules([
+                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                    if ($value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    try {
+                                        SftpConnectionProviderFactory::assertSafeHost((string) $value);
+                                    } catch (\InvalidArgumentException $exception) {
+                                        $fail($exception->getMessage());
+                                    }
+                                },
+                            ]),
                         TextInput::make('settings.port')
                             ->numeric()
                             ->default(22),

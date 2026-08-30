@@ -118,6 +118,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'l3_provider' => $settings->l3Provider(),
             'l3_endpoint_url' => $settings->l3EndpointUrl(),
             'l3_api_key' => null,
+            'l3_guardian_lot_close_enabled' => $settings->l3GuardianLotCloseEnabled(),
             'wms_bridge_api_key' => null,
             'wms_receive_confirm_url' => $settings->wmsReceiveConfirmUrl(),
             'dashboard_allow_user_customize' => $settings->dashboardAllowUserCustomize(),
@@ -438,6 +439,10 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                                 : '')
                             ->helperText('Write-only. Leave blank to keep the current key.')
                             ->columnSpanFull(),
+                        Toggle::make('l3_guardian_lot_close_enabled')
+                            ->label('Accept Guardian lot-close inbound')
+                            ->helperText('Archive DataFeed XML and auto-project commissioning/aggregation into TracePharma.')
+                            ->columnSpanFull(),
                     ]),
                 Section::make('WMS ship-confirm bridge')
                     ->compact()
@@ -520,6 +525,8 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             if (filled($data['l3_api_key'] ?? null)) {
                 $organization['l3_api_key'] = $data['l3_api_key'];
             }
+
+            $organization['l3_guardian_lot_close_enabled'] = (bool) ($data['l3_guardian_lot_close_enabled'] ?? false);
         }
 
         if ($this->showsWmsBridgeSection() && filled($data['wms_bridge_api_key'] ?? null)) {

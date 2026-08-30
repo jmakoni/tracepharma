@@ -3,12 +3,15 @@
 namespace App\Filament\App\Resources\LocationDevices\Schemas;
 
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\GlnRules;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class LocationDeviceForm
 {
@@ -21,7 +24,21 @@ class LocationDeviceForm
                 ->schema([
                     Select::make('site_id')
                         ->label('Site')
-                        ->relationship('site', 'name')
+                        ->relationship(
+                            'site',
+                            'name',
+                            modifyQueryUsing: function (Builder $query): Builder {
+                                $user = auth()->user();
+                                if ($user === null) {
+                                    return $query->whereRaw('0 = 1');
+                                }
+                                if ($user->can(Permissions::SitesAccessAll)) {
+                                    return $query;
+                                }
+
+                                return $query->whereIn('id', SiteAccess::userSiteIds($user));
+                            },
+                        )
                         ->default(fn (): ?int => CurrentSite::id())
                         ->searchable()
                         ->preload()

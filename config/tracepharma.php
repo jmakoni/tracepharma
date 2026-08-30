@@ -120,6 +120,14 @@ return [
     ],
 
     /*
+    | Guardian (Systech) lot-close inbound: raw DataFeed XML archive + limits.
+    | See app/Actions/L3/ReceiveGuardianLotFeed.php.
+    */
+    'guardian_lot_close' => [
+        'max_upload_mb' => (int) env('TRACEPHARMA_GUARDIAN_LOT_CLOSE_MAX_UPLOAD_MB', 50),
+    ],
+
+    /*
     | Centralized Systech / UniTrace EPCIS hub inbound. Partners POST once to
     | /api/webhooks/epcis/hub/{provider} on demo/stage/prod hub hosts; routing uses
     | SBDH receiver GLN. Hosts/tokens/providers may be overridden via platform_settings.

@@ -1,6 +1,6 @@
 # Guardian L3 lot-close ingest (manufacturer)
 
-**Status:** Saved for later — do not implement until explicitly scheduled.  
+**Status:** Implemented — bugfix applied; pending deploy.  
 **Cursor plan:** `Guardian L3 Lot Ingest-365df164.plan.md`  
 **Decided:** 2026-08-27  
 **Sample feed:** `/tmp/235-20260827084354691.xml` (Guardian proprietary `DataFeed`, ~25MB)
@@ -113,9 +113,9 @@ Do **not** invent a second event timeline. Hierarchy for ops remains `aggregatio
 
 ## Todos (when scheduled)
 
-- [ ] `l3-schema` — tenant migrations
-- [ ] `l3-webhook` — HTTPS receive + Bearer + idempotency + 202
-- [ ] `l3-parser-project` — stream parse → lot/fields → EPCIS → ProcessEpcisDocument
-- [ ] `l3-lots-ui` — Filament Serialization Lots ViewLot
-- [ ] `l3-asset-fields` — Asset Tracking Fields tab + lot link
-- [ ] `l3-tests-docs` — fixtures/tests + integrations doc
+- [x] `l3-schema` — tenant migrations
+- [x] `l3-webhook` — HTTPS receive + Bearer + idempotency + 202
+- [x] `l3-parser-project` — stream parse → lot/fields → EPCIS → ProcessEpcisDocument
+- [x] `l3-lots-ui` — Filament Serialization Lots ViewLot (`SerializationLotResource`, table, overview + Lot Control Data + Hierarchy tabs)
+- [x] `l3-asset-fields` — Asset Tracking Fields tab + lot link (`AssetTracking::containerField()`/`containerFieldLotUrl()`, `AssetTrackingInfolist` Fields tab)
+- [x] `l3-tests-docs` — fixtures/tests + integrations doc (`GuardianLotCloseIngestTest`, `SerializationLotsResourceTest`, `AssetTrackingPageTest` Fields tab tests, `docs/integrations/guardian-lot-close.md`, `docs/knowledge-base/en/operations/serialization-lots.md`)

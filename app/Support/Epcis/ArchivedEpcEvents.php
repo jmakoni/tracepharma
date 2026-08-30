@@ -39,6 +39,22 @@ final class ArchivedEpcEvents
                 $live->whereNull('superseded_at')
                     ->orWhere('superseded_at', '>', $asOfUtc->toDateTimeString());
             });
+
+            // H6: match ResolveEpcCustodyAsOf / hot as-of eventsQuery — exclude error/voided docs.
+            if (Schema::hasTable('epcis_documents')) {
+                $query->where(function ($documents): void {
+                    $documents->whereNull('document_id')
+                        ->orWhereExists(function ($exists): void {
+                            $exists->selectRaw('1')
+                                ->from('epcis_documents as doc')
+                                ->whereColumn('doc.id', 'epcis_events_archive.document_id')
+                                ->where(function ($docStatus): void {
+                                    $docStatus->whereNull('doc.status')
+                                        ->orWhereNotIn('doc.status', ['error', 'voided']);
+                                });
+                        });
+                });
+            }
         } else {
             $query->whereNull('superseded_at');
 

@@ -5,11 +5,11 @@ namespace App\Services\Vrs;
 use App\Exceptions\VrsConfigurationException;
 use App\Models\Tenant;
 use App\Services\Vrs\Contracts\VrsClient;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\TenantSettings;
 use App\Support\Vrs\VrsLogCorrelation;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -76,6 +76,51 @@ final class HttpVrsClient implements VrsClient
                 .'Set the Verification Router Service endpoint for this environment.',
             );
         }
+
+        self::assertEgressHostAllowed($baseUrl, $scheme, $host);
+    }
+
+    /**
+     * Deny loopback / link-local / metadata / private addresses for VRS egress.
+     * HTTPS uses the full subscription SSRF guard; HTTP uses WMS-style deny (RFC1918 allowed).
+     *
+     * @throws VrsConfigurationException
+     */
+    private static function assertEgressHostAllowed(string $baseUrl, string $scheme, string $host): void
+    {
+        if ($scheme === 'https') {
+            try {
+                EpcisSubscriptionUrl::assertSafeTargetUrl($baseUrl);
+                // Resolve when possible; unresolvable hosts fail closed outside unit tests.
+                if (! app()->runningUnitTests()) {
+                    EpcisSubscriptionUrl::assertSafeAtConnect($baseUrl);
+                } else {
+                    try {
+                        EpcisSubscriptionUrl::assertSafeAtConnect($baseUrl);
+                    } catch (\InvalidArgumentException $exception) {
+                        if (! str_contains($exception->getMessage(), 'could not be resolved')) {
+                            throw $exception;
+                        }
+                    }
+                }
+            } catch (\InvalidArgumentException $exception) {
+                throw new VrsConfigurationException($exception->getMessage(), 0, $exception);
+            }
+
+            return;
+        }
+
+        try {
+            TenantSettings::assertAndResolveWmsStyleHost($baseUrl);
+        } catch (\InvalidArgumentException $exception) {
+            throw new VrsConfigurationException(
+                str_contains(strtolower($exception->getMessage()), 'private or metadata')
+                    ? 'VRS_BASE_URL must not target a private or metadata host.'
+                    : $exception->getMessage(),
+                0,
+                $exception,
+            );
+        }
     }
 
     public function verify(
@@ -107,7 +152,10 @@ final class HttpVrsClient implements VrsClient
         ];
 
         try {
-            $pending = Http::timeout($timeout);
+            $scheme = strtolower((string) parse_url($baseUrl, PHP_URL_SCHEME));
+            $pending = $scheme === 'https'
+                ? EpcisSubscriptionUrl::httpClient($baseUrl, $timeout)
+                : TenantSettings::wmsStylePinnedHttpClient($baseUrl, $timeout);
 
             if (filled($apiKey)) {
                 $pending = $pending->withToken((string) $apiKey);

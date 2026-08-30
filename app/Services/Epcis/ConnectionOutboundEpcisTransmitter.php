@@ -23,6 +23,7 @@ use App\Support\Filesystem\SafeFilename;
 use App\Support\Integrations\As2MdnDispositionParser;
 use App\Support\Integrations\OutboundTransportAvailability;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -233,6 +234,11 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
 
                     return;
                 }
+            } elseif ($connection->transport === OutboundTransport::Https) {
+                // Persist HTTPS partner-ack evidence before marking sent so a crash
+                // between POST success and the document update can recover without
+                // a second POST (same role as AS2 TransmissionMdn rows).
+                $this->persistHttpsAckEvidence($document, $connection, $now);
             }
 
             $document->forceFill([
@@ -423,6 +429,28 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             'mdn_status' => $result->mdnStatus,
             'mdn_received_at' => $result->mdnReceivedAt,
             'mdn_payload' => $result->mdnPayload(),
+        ]);
+    }
+
+    /**
+     * HTTPS has no MDN MIME body; record a durable ack so recoverSentFromPersistedEvidence
+     * can mark the document sent without re-POSTing after a crash between HTTP success
+     * and the transmission_status update.
+     */
+    private function persistHttpsAckEvidence(
+        EpcisDocument $document,
+        OutboundConnection $connection,
+        Carbon $receivedAt,
+    ): void {
+        TransmissionMdn::query()->create([
+            'document_id' => $document->getKey(),
+            'trading_partner_id' => $connection->trading_partner_id,
+            'mdn_status' => 'https_ack',
+            'mdn_received_at' => $receivedAt,
+            'mdn_payload' => [
+                'transport' => 'https',
+                'outbound_connection_id' => $connection->getKey(),
+            ],
         ]);
     }
 

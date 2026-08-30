@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\LabelPrinters\Schemas;
 
 use App\Enums\LabelPrinterProtocol;
+use App\Services\Labeling\NetworkPrinterClient;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -37,7 +38,20 @@ class LabelPrinterForm
                             ->label('IP address or hostname')
                             ->maxLength(255)
                             ->required(fn (SchemaGet $get): bool => self::protocolIsNetwork($get('protocol')))
-                            ->visible(fn (SchemaGet $get): bool => self::protocolIsNetwork($get('protocol'))),
+                            ->visible(fn (SchemaGet $get): bool => self::protocolIsNetwork($get('protocol')))
+                            ->rule(function (): \Closure {
+                                return function (string $attribute, mixed $value, \Closure $fail): void {
+                                    if (! is_string($value) || $value === '') {
+                                        return;
+                                    }
+
+                                    try {
+                                        NetworkPrinterClient::assertSafePrinterHost($value);
+                                    } catch (\InvalidArgumentException $exception) {
+                                        $fail($exception->getMessage());
+                                    }
+                                };
+                            }),
                         TextInput::make('port')
                             ->numeric()
                             ->default(9100)

@@ -18,6 +18,7 @@ enum EpcisReceivedVia: string
     case SftpPoll = 'sftp_poll';
     case Api = 'api';
     case Cli = 'cli';
+    case GuardianLotClose = 'guardian_lot_close';
 
     public function label(): string
     {
@@ -29,6 +30,7 @@ enum EpcisReceivedVia: string
             self::SftpPoll => 'SFTP poll',
             self::Api => 'REST API',
             self::Cli => 'CLI / internal',
+            self::GuardianLotClose => 'Guardian lot-close',
         };
     }
 
@@ -47,6 +49,7 @@ enum EpcisReceivedVia: string
             self::As2Webhook->value,
             self::SftpPoll->value,
             self::Api->value,
+            self::GuardianLotClose->value,
         ];
     }
 

@@ -12,19 +12,50 @@ use App\Services\Labeling\SsccSerialPoolService;
 use App\Services\Labeling\ZplLabelRenderer;
 use App\Support\Labeling\SsccBatchPrintCompletion;
 use App\Support\Labeling\SsccPrintJobLabelGuard;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 
-class PrintSsccLabelJob implements ShouldQueue
+/**
+ * Network ZPL print for one SsccPrintJob.
+ *
+ * At-most-once approach (Finding 15):
+ * - ShouldBeUnique + WithoutOverlapping prevent concurrent workers reprinting.
+ * - Early return when status is already Printed.
+ * - Status is set to Printing before TCP. If the worker crashes after a successful
+ *   TCP write but before Printed, a retry sees Printing and finalizes without a
+ *   second TCP send (prefer missed status update over double physical print).
+ */
+class PrintSsccLabelJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
     public int $tries = 3;
 
+    public int $uniqueFor = 3600;
+
     public function __construct(
         public Tenant $tenant,
         public readonly int $printJobId,
     ) {}
+
+    public function uniqueId(): string
+    {
+        return 'sscc-print:'.$this->tenant->getTenantKey().':'.$this->printJobId;
+    }
+
+    /**
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping($this->uniqueId()))
+                ->releaseAfter(30)
+                ->expireAfter(180),
+        ];
+    }
 
     public function handle(
         ZplLabelRenderer $renderer,
@@ -46,6 +77,13 @@ class PrintSsccLabelJob implements ShouldQueue
             }
 
             if (SsccPrintJobLabelGuard::hasNewerJobForLabel($job)) {
+                return;
+            }
+
+            // Crash after TCP success left status Printing — do not send again.
+            if ($job->status === SsccPrintJobStatus::Printing) {
+                $this->markPrintedWithoutTcp($job, $poolService, $batchPrintCompletion);
+
                 return;
             }
 
@@ -107,34 +145,64 @@ class PrintSsccLabelJob implements ShouldQueue
                     return;
                 }
 
-                $printedAt = now();
-
-                $job->update([
-                    'status' => SsccPrintJobStatus::Printed,
-                    'printed_at' => $printedAt,
-                    'last_error' => null,
-                ]);
-
-                $label->update([
-                    'print_status' => SsccLabelPrintStatus::Printed,
-                    'printed_copies' => $job->copies,
-                    'printed_at' => $printedAt,
-                ]);
-
-                $pool = $poolService->lockOrCreate(
-                    $label->company_prefix,
-                    (int) $label->extension_digit,
-                );
-
-                $poolService->recordPrinted($pool, $label->serial_reference_int, $printedAt);
-
-                $batchPrintCompletion->refreshBatchPrintedAt($job->sscc_label_batch_id);
+                $this->markPrinted($job, $poolService, $batchPrintCompletion);
             } catch (\Throwable $exception) {
                 $this->failJob($job, $exception->getMessage());
 
                 throw $exception;
             }
         });
+    }
+
+    private function markPrintedWithoutTcp(
+        SsccPrintJob $job,
+        SsccSerialPoolService $poolService,
+        SsccBatchPrintCompletion $batchPrintCompletion,
+    ): void {
+        $job->refresh();
+
+        if (
+            SsccPrintJobLabelGuard::isSupersededJob($job)
+            || SsccPrintJobLabelGuard::hasNewerJobForLabel($job)
+            || $job->status === SsccPrintJobStatus::Failed
+            || $job->status === SsccPrintJobStatus::Printed
+        ) {
+            return;
+        }
+
+        $this->markPrinted($job, $poolService, $batchPrintCompletion);
+    }
+
+    private function markPrinted(
+        SsccPrintJob $job,
+        SsccSerialPoolService $poolService,
+        SsccBatchPrintCompletion $batchPrintCompletion,
+    ): void {
+        $printedAt = now();
+        $label = $job->label;
+
+        $job->update([
+            'status' => SsccPrintJobStatus::Printed,
+            'printed_at' => $printedAt,
+            'last_error' => null,
+        ]);
+
+        $label?->update([
+            'print_status' => SsccLabelPrintStatus::Printed,
+            'printed_copies' => $job->copies,
+            'printed_at' => $printedAt,
+        ]);
+
+        if ($label !== null) {
+            $pool = $poolService->lockOrCreate(
+                $label->company_prefix,
+                (int) $label->extension_digit,
+            );
+
+            $poolService->recordPrinted($pool, $label->serial_reference_int, $printedAt);
+        }
+
+        $batchPrintCompletion->refreshBatchPrintedAt($job->sscc_label_batch_id);
     }
 
     private function failJob(SsccPrintJob $job, string $message): void

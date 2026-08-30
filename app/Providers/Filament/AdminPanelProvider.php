@@ -3,7 +3,10 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Admin\Pages\Dashboard;
+use App\Models\Admin;
 use App\Support\Auth\TracepharmaBreezyCore;
+use Bityukov\CommandCenter\Filament\CommandCenterPlugin;
+use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -74,6 +77,15 @@ class AdminPanelProvider extends PanelProvider
                     ->knowledgeBasePanelId('admin-knowledge-base')
                     ->modalPreviews()
                     ->slideOverPreviews()
+            )
+            ->plugin(CommandCenterPlugin::make())
+            ->plugin(
+                ActivityTimelinePlugin::make()
+                    ->registerNavigation(false)
+                    ->navigationGroup('Audit')
+                    ->causerIcons([
+                        Admin::class => 'heroicon-m-user',
+                    ])
             )
             ->userMenuItems([
                 Action::make('adminHelp')

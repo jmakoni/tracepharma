@@ -8,6 +8,7 @@ use App\Actions\Integrations\ProcessAs2AsyncMdn;
 use App\Models\OutboundConnection;
 use App\Models\Tenant;
 use App\Support\Integrations\As2MdnWebhookAuthenticator;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,8 @@ final class As2MdnWebhookController
 
     public function handle(Request $request, string $tenantId, int $connectionId): JsonResponse
     {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         TenantAccess::assertActive($tenant);

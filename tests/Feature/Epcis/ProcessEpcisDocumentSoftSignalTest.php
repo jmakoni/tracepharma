@@ -132,6 +132,62 @@ class ProcessEpcisDocumentSoftSignalTest extends TestCase
     }
 
     #[Test]
+    public function reprocess_preserves_operational_lot_mismatch_but_rewrites_shared_ilmd_rows(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->assertFileExists($fixture);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_lot_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+            file_put_contents($tmp, $xml);
+
+            $document = app(ReceiveEpcisUpload::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'lot-mismatch-soft-clear.xml',
+                'dispatch' => false,
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            app(EpcisIngestionService::class)->process($document);
+
+            $operational = EpcisException::query()->create([
+                'document_id' => $document->id,
+                'exception_type' => 'LOT_MISMATCH',
+                'severity' => 'warning',
+                'description' => 'Operational lot mismatch from catalog hook.',
+                'status' => 'open',
+            ]);
+            $sharedIlmd = EpcisException::query()->create([
+                'document_id' => $document->id,
+                'exception_type' => 'LOT_MISMATCH',
+                'severity' => 'warning',
+                'description' => 'Shared EPC ILMD lot/expiry conflict: kept first-wins values (lot=OLD); incoming document had lot=NEW.',
+                'status' => 'open',
+            ]);
+
+            app(ReprocessEpcisDocument::class)->handle($document->fresh(), sync: true);
+
+            $this->assertTrue(
+                EpcisException::query()->whereKey($operational->getKey())->exists(),
+                'Operational LOT_MISMATCH must survive soft-signal clear',
+            );
+            $this->assertFalse(
+                EpcisException::query()->whereKey($sharedIlmd->getKey())->exists(),
+                'Shared-ILMD LOT_MISMATCH rows are owned by the rewrite path and may be cleared by description prefix',
+            );
+
+            @unlink($tmp);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function process_creates_sbdh_source_owning_party_mismatch_when_sender_gln_differs(): void
     {
         $this->initializeDemo2Tenant();

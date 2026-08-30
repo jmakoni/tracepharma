@@ -18,5 +18,11 @@ interface OutboundEpcisDocumentWriter
      *
      * @param  string  $eventsPayload  XML EventList children (1.2) or JSON events array string (2.0)
      */
-    public function buildDocument(string $eventTime, string $eventsPayload, ?string $correlationId = null): string;
+    public function buildDocument(
+        string $eventTime,
+        string $eventsPayload,
+        ?string $correlationId = null,
+        ?string $senderGln = null,
+        ?string $receiverGln = null,
+    ): string;
 }

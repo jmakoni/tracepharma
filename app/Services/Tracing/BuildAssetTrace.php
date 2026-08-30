@@ -34,7 +34,8 @@ use Illuminate\Support\Facades\Schema;
  *
  * Table-backed sections of the Filament page (events, children) should use
  * {@see self::eventsForTrackingTable()} / {@see self::childrenQuery()} rather than
- * relying on the small preview lists returned here.
+ * relying on the small preview lists returned here. Tracking table helpers are
+ * hard-capped ({@see self::trackingTableLimit()}) and may report truncated=true.
  */
 final class BuildAssetTrace
 {
@@ -176,10 +177,9 @@ final class BuildAssetTrace
         }
 
         $display = Gs1DualDisplay::forEpc($epc);
-        $childrenCount = AggregationLink::query()
-            ->open()
-            ->where('parent_epc_id', $epc->getKey())
-            ->count();
+        // H7: as-of children use aggregation_links temporal window (valid_from/valid_to),
+        // not live open() only — packing after T must not inflate as-of counts.
+        $childrenCount = $this->childrenQuery($epc, $asOfUtc)->count();
 
         return [
             'found' => true,
@@ -205,7 +205,7 @@ final class BuildAssetTrace
             'timeline' => $this->buildTimeline($displayEvents, $inferredFromByEventId),
             'map_points' => $this->buildMapPoints($epc, $displayEvents),
             'events' => $this->buildEventsSummary($displayEvents),
-            'children' => $this->buildChildrenPreview($epc),
+            'children' => $this->buildChildrenPreview($epc, asOf: $asOfUtc),
             'transactions' => $this->buildTransactions($displayEvents),
             'verify_url_params' => $this->verifyUrlParams($epc),
             'transformation_links' => $this->buildTransformationLinks($epc),
@@ -217,21 +217,35 @@ final class BuildAssetTrace
      * Hot + archived events for the Asset Tracking events table.
      * {@see self::eventsQuery()} stays hot-table only.
      *
-     * @return Collection<int, EpcisEvent>
+     * Hard-capped to {@see self::trackingTableLimit()} most recent events (by event_time, then id).
+     * When truncated is true, older events were omitted from the returned records.
+     *
+     * @return array{records: Collection<int, EpcisEvent>, truncated: bool}
      */
-    public function eventsForTrackingTable(Epc $epc, ?Carbon $asOf = null): Collection
+    public function eventsForTrackingTable(Epc $epc, ?Carbon $asOf = null): array
     {
         $hot = $this->eventsQuery($epc, $asOf)->with(['locations'])->get();
         $archived = $this->archivedEpcEvents->forEpc((int) $epc->getKey(), $asOf);
 
-        return $hot
+        $merged = $hot
             ->concat($archived)
             ->unique(fn (EpcisEvent $event): int => (int) $event->getKey())
-            ->sortBy([
-                fn (EpcisEvent $event): int => $event->event_time?->getTimestamp() ?? 0,
-                fn (EpcisEvent $event): int => (int) $event->getKey(),
-            ])
+            ->sort(function (EpcisEvent $a, EpcisEvent $b): int {
+                $timeCmp = ($a->event_time?->getTimestamp() ?? 0) <=> ($b->event_time?->getTimestamp() ?? 0);
+
+                return $timeCmp !== 0 ? $timeCmp : ((int) $a->getKey() <=> (int) $b->getKey());
+            })
             ->values();
+
+        return $this->capTrackingRecords($merged);
+    }
+
+    /**
+     * Hard cap reused by Asset Tracking table helpers (mirrors timeline initial limit).
+     */
+    public function trackingTableLimit(): int
+    {
+        return max(1, (int) config('tracepharma.tracing.initial_timeline_events_limit', 100));
     }
 
     /**
@@ -282,6 +296,22 @@ final class BuildAssetTrace
                 );
             }
 
+            // H6: match ResolveEpcCustodyAsOf — exclude error/voided document events from as-of set.
+            if (Schema::hasTable('epcis_documents')) {
+                $query->where(function ($status): void {
+                    $status->whereNull('epcis_events.document_id')
+                        ->orWhereExists(function ($exists): void {
+                            $exists->selectRaw('1')
+                                ->from('epcis_documents as doc')
+                                ->whereColumn('doc.id', 'epcis_events.document_id')
+                                ->where(function ($docStatus): void {
+                                    $docStatus->whereNull('doc.status')
+                                        ->orWhereNotIn('doc.status', ['error', 'voided']);
+                                });
+                        });
+                });
+            }
+
             return $query
                 ->orderBy('event_time')
                 ->orderBy('id');
@@ -312,32 +342,61 @@ final class BuildAssetTrace
     }
 
     /**
-     * Child Epcs currently aggregated under this parent (open aggregation links).
+     * Child Epcs aggregated under this parent.
+     *
+     * H7: when $asOf is set, use aggregation_links valid_from/valid_to so the
+     * children set matches custody-at-T (not live open links only). Preferring
+     * as-of-aware over hiding metrics because temporal columns already exist.
      *
      * @return Builder<Epc>
      */
-    public function childrenQuery(Epc $epc): Builder
+    public function childrenQuery(Epc $epc, ?Carbon $asOf = null): Builder
     {
         return Epc::query()
             ->with('ilmd')
-            ->whereIn('id', function ($query) use ($epc): void {
+            ->whereIn('id', function ($query) use ($epc, $asOf): void {
                 $query->select('child_epc_id')
                     ->from('aggregation_links')
-                    ->where('parent_epc_id', $epc->getKey())
-                    ->whereNull('valid_to');
+                    ->where('parent_epc_id', $epc->getKey());
+
+                if ($asOf !== null) {
+                    $asOfUtc = $asOf->copy()->utc()->toDateTimeString();
+                    $query->where('valid_from', '<=', $asOfUtc)
+                        ->where(function ($openAt) use ($asOfUtc): void {
+                            $openAt->whereNull('valid_to')
+                                ->orWhere('valid_to', '>', $asOfUtc);
+                        });
+                } else {
+                    $query->whereNull('valid_to');
+                }
             });
     }
 
     /**
-     * Distinct biz transactions (type_uri + value) across all events for this Epc.
+     * Distinct biz transactions (type_uri + value) across events for this Epc.
      *
-     * @return Collection<int, array{name: string, urn: string, value: string}>
+     * Built from a hard-capped event window ({@see self::trackingTableLimit()} most recent).
+     * When truncated is true, older events (and any transactions only on those events) were omitted.
+     *
+     * @return array{records: Collection<int, array{name: string, urn: string, value: string}>, truncated: bool}
      */
-    public function transactionsForEpc(Epc $epc): Collection
+    public function transactionsForEpc(Epc $epc): array
     {
         $events = $this->eventsQuery($epc)->with('bizTransactions')->get();
+        $sorted = $events
+            ->sort(function (EpcisEvent $a, EpcisEvent $b): int {
+                $timeCmp = ($a->event_time?->getTimestamp() ?? 0) <=> ($b->event_time?->getTimestamp() ?? 0);
 
-        return collect($this->buildTransactions($events));
+                return $timeCmp !== 0 ? $timeCmp : ((int) $a->getKey() <=> (int) $b->getKey());
+            })
+            ->values();
+
+        $capped = $this->capTrackingRecords($sorted);
+
+        return [
+            'records' => collect($this->buildTransactions($capped['records'])),
+            'truncated' => $capped['truncated'],
+        ];
     }
 
     /**
@@ -1144,14 +1203,14 @@ final class BuildAssetTrace
     }
 
     /**
-     * Lightweight preview of currently aggregated children.
+     * Lightweight preview of aggregated children (live or as-of).
      * The Filament children table queries {@see self::childrenQuery()} directly.
      *
      * @return list<array>
      */
-    private function buildChildrenPreview(Epc $epc, int $limit = 5): array
+    private function buildChildrenPreview(Epc $epc, int $limit = 5, ?Carbon $asOf = null): array
     {
-        return $this->childrenQuery($epc)
+        return $this->childrenQuery($epc, $asOf)
             ->limit($limit)
             ->get()
             ->map(function (Epc $child): array {
@@ -1267,12 +1326,32 @@ final class BuildAssetTrace
      */
     private function capTimelineEvents(Collection $events): Collection
     {
-        $limit = max(1, (int) config('tracepharma.tracing.initial_timeline_events_limit', 100));
+        $limit = $this->trackingTableLimit();
 
         if ($events->count() <= $limit) {
             return $events;
         }
 
         return $events->slice(-$limit)->values();
+    }
+
+    /**
+     * Keep the most recent {@see self::trackingTableLimit()} rows (collection already ascending).
+     *
+     * @param  Collection<int, EpcisEvent>  $events
+     * @return array{records: Collection<int, EpcisEvent>, truncated: bool}
+     */
+    private function capTrackingRecords(Collection $events): array
+    {
+        $limit = $this->trackingTableLimit();
+
+        if ($events->count() <= $limit) {
+            return ['records' => $events->values(), 'truncated' => false];
+        }
+
+        return [
+            'records' => $events->slice(-$limit)->values(),
+            'truncated' => true,
+        ];
     }
 }

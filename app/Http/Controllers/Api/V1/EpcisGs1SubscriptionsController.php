@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Epcis\DispatchEpcisSubscriptions;
 use App\Http\Controllers\Controller;
 use App\Models\Epcis\EpcisSubscription;
 use App\Models\User;
@@ -13,15 +14,17 @@ use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantFeatures;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * GS1-shaped subscription control subset (Phase 4): subscribe / list / unsubscribe.
  *
  * Honesty: `schedule` and `params` are accepted and stored for partner compatibility,
  * but delivery is event-triggered (inbound validated / outbound sent) via
- * {@see \App\Actions\Epcis\DispatchEpcisSubscriptions} — not a timed GS1 Query Control
+ * {@see DispatchEpcisSubscriptions} — not a timed GS1 Query Control
  * poller. `EQ_bizStep` in params is applied as a bizStep filter at create time.
  */
 final class EpcisGs1SubscriptionsController extends Controller
@@ -31,6 +34,8 @@ final class EpcisGs1SubscriptionsController extends Controller
         if ($denied = $this->assertIntegrations()) {
             return $denied;
         }
+
+        Gate::authorize('viewAny', EpcisSubscription::class);
 
         $rows = EpcisSubscription::query()
             ->orderByDesc('id')
@@ -46,6 +51,8 @@ final class EpcisGs1SubscriptionsController extends Controller
         if ($denied = $this->assertIntegrations()) {
             return $denied;
         }
+
+        Gate::authorize('create', EpcisSubscription::class);
 
         $data = $request->validate([
             'destination' => ['required', 'string', 'max:2048'],
@@ -127,6 +134,8 @@ final class EpcisGs1SubscriptionsController extends Controller
             ], 404);
         }
 
+        Gate::authorize('delete', $subscription);
+
         $subscription->delete();
 
         return response()->json([
@@ -165,7 +174,7 @@ final class EpcisGs1SubscriptionsController extends Controller
 
         try {
             TenantKillSwitches::forTenant(tenant())->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             return response()->json([
                 'type' => 'SecurityException',
                 'message' => $e->getMessage(),

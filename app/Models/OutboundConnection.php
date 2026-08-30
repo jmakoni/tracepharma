@@ -57,7 +57,7 @@ class OutboundConnection extends Model
     {
         return LogOptions::defaults()
             ->logFillable()
-            ->logExcept(['credentials'])
+            ->logExcept(['credentials', 'last_error'])
             ->logOnlyDirty();
     }
 

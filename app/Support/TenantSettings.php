@@ -7,11 +7,14 @@ use App\Enums\ClientPrintBridge;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Support\Dashboard\DashboardWidgetCatalog;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Tenancy\TenantKillSwitches;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
 
 /**
  * Typed accessors for tenant organization settings.
@@ -281,7 +284,7 @@ class TenantSettings
         );
     }
 
-    public function alertDigestLastSentAt(): ?\Illuminate\Support\Carbon
+    public function alertDigestLastSentAt(): ?Carbon
     {
         $raw = data_get($this->settingsBag(), 'notifications.alert_digest_last_sent_at');
 
@@ -290,15 +293,15 @@ class TenantSettings
         }
 
         try {
-            return \Illuminate\Support\Carbon::parse($raw);
+            return Carbon::parse($raw);
         } catch (\Throwable) {
             return null;
         }
     }
 
-    public function setAlertDigestLastSentAt(\Illuminate\Support\Carbon|string|null $at): self
+    public function setAlertDigestLastSentAt(Carbon|string|null $at): self
     {
-        $value = $at instanceof \Illuminate\Support\Carbon
+        $value = $at instanceof Carbon
             ? $at->toIso8601String()
             : (is_string($at) && $at !== '' ? $at : null);
 
@@ -327,9 +330,6 @@ class TenantSettings
         $this->tenant->saveQuietly();
     }
 
-    /**
-     * @param  mixed  $value
-     */
     private function putNestedSetting(string $path, mixed $value): self
     {
         if ($this->tenant === null) {
@@ -435,6 +435,28 @@ class TenantSettings
         return $this;
     }
 
+    /**
+     * Guardian (Systech) lot-close inbound: archive raw DataFeed XML and
+     * auto-project commissioning/aggregation into TracePharma. Manufacturer only.
+     */
+    public function l3GuardianLotCloseEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'l3.guardian_lot_close_enabled', false);
+    }
+
+    public function setL3GuardianLotCloseEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'l3.guardian_lot_close_enabled', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
     public function l3Provider(): ?string
     {
         $value = data_get($this->settingsBag(), 'l3.provider');
@@ -470,6 +492,11 @@ class TenantSettings
 
         $normalized = blank($url) ? null : trim($url);
         self::assertL3EndpointUrlWithoutUserinfo($normalized);
+
+        // Match ForwardCommissioningToL3 runtime guard (HTTPS + private/metadata deny).
+        if ($normalized !== null) {
+            EpcisSubscriptionUrl::assertSafeTargetUrl($normalized);
+        }
 
         $settings = $this->settingsBag();
         data_set($settings, 'l3.endpoint_url', $normalized);
@@ -513,8 +540,9 @@ class TenantSettings
 
         try {
             return Crypt::decryptString((string) $encrypted);
-        } catch (\Throwable) {
-            return null;
+        } catch (\Throwable $e) {
+            // Fail closed: corrupt ciphertext must not POST to L3 without auth.
+            throw new \RuntimeException('Tenant L3 API key could not be decrypted.', 0, $e);
         }
     }
 
@@ -748,6 +776,123 @@ class TenantSettings
         }
 
         return array_values(array_unique($addresses));
+    }
+
+    /**
+     * Pending HTTP client that resolves + pins the WMS URL (CURLOPT_RESOLVE).
+     * Uses WMS deny rules: loopback / link-local / metadata blocked; RFC1918 allowed.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function wmsPinnedHttpClient(string $url, int $timeoutSeconds = 30): PendingRequest
+    {
+        self::assertWmsReceiveConfirmHostAtConnect($url);
+
+        $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+
+        $host = self::unwrapIpv4MappedAddress((string) (parse_url($url, PHP_URL_HOST) ?? ''));
+        if ($host === '') {
+            return $pending;
+        }
+
+        $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false
+            ? [$host]
+            : self::resolveWmsHostAddresses($host);
+
+        $safe = [];
+        foreach ($addresses as $address) {
+            if (self::isDeniedWmsResolvedAddress($address)) {
+                throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
+            }
+            $safe[] = $address;
+        }
+
+        if ($safe === []) {
+            // Unresolvable hostnames (e.g. Http::fake .example suites) skip pin.
+            return $pending;
+        }
+
+        $options = EpcisSubscriptionUrl::pinnedCurlOptions($url, $safe);
+        if ($options !== []) {
+            $pending = $pending->withOptions($options);
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Resolve + deny loopback/link-local/metadata for on-prem HTTP(S) egress (VRS HTTP, etc.).
+     * RFC1918 remains allowed — stricter subscription HTTPS deny is NOT applied.
+     *
+     * @return list<string>
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function assertAndResolveWmsStyleHost(string $url): array
+    {
+        $parsed = parse_url($url);
+        if ($parsed === false || ! is_array($parsed)) {
+            throw new \InvalidArgumentException('URL is not valid.');
+        }
+
+        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('URL must use HTTP or HTTPS.');
+        }
+
+        $host = self::unwrapIpv4MappedAddress((string) ($parsed['host'] ?? ''));
+        if ($host === '') {
+            throw new \InvalidArgumentException('URL host is not valid.');
+        }
+
+        if ($host === 'localhost'
+            || str_ends_with($host, '.localhost')
+            || $host === 'metadata.google.internal'
+            || $host === 'metadata.goog') {
+            throw new \InvalidArgumentException('URL must not target a private or metadata host.');
+        }
+
+        $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false
+            ? [$host]
+            : self::resolveWmsHostAddresses($host);
+
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return [];
+            }
+
+            throw new \InvalidArgumentException('URL host could not be resolved.');
+        }
+
+        foreach ($addresses as $address) {
+            if (self::isDeniedWmsResolvedAddress($address)) {
+                throw new \InvalidArgumentException('URL must not target a private or metadata host.');
+            }
+        }
+
+        return array_values($addresses);
+    }
+
+    /**
+     * Pin DNS for on-prem HTTP(S) egress that allows RFC1918 (WMS-style deny).
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function wmsStylePinnedHttpClient(string $url, int $timeoutSeconds = 30): PendingRequest
+    {
+        $addresses = self::assertAndResolveWmsStyleHost($url);
+        $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+
+        if ($addresses === []) {
+            return $pending;
+        }
+
+        $options = EpcisSubscriptionUrl::pinnedCurlOptions($url, $addresses);
+        if ($options !== []) {
+            $pending = $pending->withOptions($options);
+        }
+
+        return $pending;
     }
 
     /**
@@ -1210,6 +1355,7 @@ class TenantSettings
      *     l3_provider?: string|null,
      *     l3_endpoint_url?: string|null,
      *     l3_api_key?: string|null,
+     *     l3_guardian_lot_close_enabled?: bool|null,
      *     wms_bridge_api_key?: string|null,
      *     wms_receive_confirm_url?: string|null,
      *     dashboard_allow_user_customize?: bool|null,
@@ -1272,6 +1418,7 @@ class TenantSettings
             'l3_provider',
             'l3_endpoint_url',
             'l3_api_key',
+            'l3_guardian_lot_close_enabled',
             'wms_bridge_api_key',
             'wms_receive_confirm_url',
             'dashboard_allow_user_customize',
@@ -1345,6 +1492,7 @@ class TenantSettings
                 'l3_api_key' => $this->setL3ApiKey(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
+                'l3_guardian_lot_close_enabled' => $this->setL3GuardianLotCloseEnabled((bool) $data[$key]),
                 'wms_bridge_api_key' => $this->setWmsBridgeApiKey(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),

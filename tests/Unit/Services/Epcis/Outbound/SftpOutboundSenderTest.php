@@ -67,4 +67,60 @@ class SftpOutboundSenderTest extends TestCase
             'credentials' => [],
         ]), '<x/>', 'a.xml');
     }
+
+    #[Test]
+    public function send_rejects_outbound_path_with_parent_directory_segments(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('parent-directory');
+
+        app(SftpOutboundSender::class)->send(new OutboundConnection([
+            'transport' => OutboundTransport::Sftp,
+            'settings' => [
+                'host' => 'sftp.example.test',
+                'outbound_path' => 'outbound/../secrets',
+            ],
+            'credentials' => ['username' => 'shipper'],
+        ]), '<x/>', 'a.xml');
+    }
+
+    #[Test]
+    public function send_rejects_windows_absolute_outbound_path(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('relative path');
+
+        app(SftpOutboundSender::class)->send(new OutboundConnection([
+            'transport' => OutboundTransport::Sftp,
+            'settings' => [
+                'host' => 'sftp.example.test',
+                'outbound_path' => 'C:/Windows/System32',
+            ],
+            'credentials' => ['username' => 'shipper'],
+        ]), '<x/>', 'a.xml');
+    }
+
+    #[Test]
+    public function send_allows_leading_slash_as_relative_to_adapter_root(): void
+    {
+        $filesystem = Mockery::mock(Filesystem::class);
+        $filesystem->shouldReceive('write')
+            ->once()
+            ->with('outbound/epcis/ship-1.xml', '<epcis/>');
+
+        $connection = new OutboundConnection([
+            'transport' => OutboundTransport::Sftp,
+            'settings' => [
+                'host' => 'sftp.example.test',
+                'outbound_path' => '/outbound/epcis',
+                'root' => '/',
+            ],
+            'credentials' => [
+                'username' => 'shipper',
+                'password' => 'secret',
+            ],
+        ]);
+
+        app(SftpOutboundSender::class)->send($connection, '<epcis/>', 'ship-1.xml', $filesystem);
+    }
 }

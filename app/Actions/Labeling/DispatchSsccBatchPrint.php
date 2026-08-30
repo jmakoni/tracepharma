@@ -34,11 +34,23 @@ class DispatchSsccBatchPrint
             );
         }
 
-        if ($batch->label_printer_id === null || ! $batch->send_to_printer) {
+        if (! $batch->send_to_printer) {
             return ['mode' => 'network', 'bridge' => ClientPrintBridge::NetworkTcp->value, 'jobs' => []];
         }
 
+        if ($batch->label_printer_id === null) {
+            throw new \InvalidArgumentException(
+                'Select a label printer before printing SSCC labels.',
+            );
+        }
+
         $printer = LabelPrinter::query()->find($batch->label_printer_id);
+        if ($printer === null) {
+            throw new \InvalidArgumentException(
+                'The selected label printer no longer exists. Choose another printer before printing.',
+            );
+        }
+
         $bridge = $this->resolveBridgeForPrinter($printer, $bridgeOverride);
 
         $tenant = $this->currentTenant();
@@ -150,7 +162,13 @@ class DispatchSsccBatchPrint
     public function resolveBridgeForPrinter(?LabelPrinter $printer, ?ClientPrintBridge $override = null): ClientPrintBridge
     {
         if ($printer === null) {
-            return $override ?? app(ResolveClientPrintBridge::class)->handle();
+            if ($override !== null) {
+                return $override;
+            }
+
+            throw new \InvalidArgumentException(
+                'A label printer is required to resolve the print bridge. Configure a printer before printing.',
+            );
         }
 
         $fromPrinter = match ($printer->protocolOrDefault()) {

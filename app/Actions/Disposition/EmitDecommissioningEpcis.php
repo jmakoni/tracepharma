@@ -225,7 +225,7 @@ final class EmitDecommissioningEpcis
         );
 
         $decommissionTime = $this->resolveDecommissionEventTime($document);
-        $this->closeOpenAggregationLinks($expandedLinkIds, $decommissionTime);
+        $this->closeOpenAggregationLinks($expandedLinkIds, $epcIds, $decommissionTime);
 
         return [
             'document' => $document,
@@ -439,16 +439,24 @@ final class EmitDecommissioningEpcis
     }
 
     /**
+     * Close open aggregation links that touch the decommissioned seed set only.
+     * BFS-expanded sibling/descendant links stay open for remaining live EPCs.
+     *
      * @param  list<int>  $linkIds
+     * @param  list<int>  $seedEpcIds
      */
-    private function closeOpenAggregationLinks(array $linkIds, string $validTo): void
+    private function closeOpenAggregationLinks(array $linkIds, array $seedEpcIds, string $validTo): void
     {
-        if ($linkIds === []) {
+        if ($linkIds === [] || $seedEpcIds === []) {
             return;
         }
 
         AggregationLink::query()
             ->whereIn('id', $linkIds)
+            ->where(function ($query) use ($seedEpcIds): void {
+                $query->whereIn('parent_epc_id', $seedEpcIds)
+                    ->orWhereIn('child_epc_id', $seedEpcIds);
+            })
             ->whereNull('valid_to')
             ->where('valid_from', '<=', $validTo)
             ->update(['valid_to' => $validTo]);

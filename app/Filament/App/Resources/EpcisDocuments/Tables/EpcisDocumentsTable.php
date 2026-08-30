@@ -11,9 +11,9 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Dscsa\DscsaComplianceReportGenerator;
 use App\Services\Dscsa\TransactionReportGenerator;
-use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\EpcisDocumentXmlDownload;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -366,6 +366,10 @@ class EpcisDocumentsTable
                 Action::make('refresh')
                     ->label('Refresh')
                     ->icon(Heroicon::OutlinedArrowPath)
+                    ->visible(fn (): bool => JobRoleAccess::allowsAny(
+                        Permissions::NavExceptions,
+                        Permissions::NavIntegrations,
+                    ))
                     ->action(function (EpcisDocument $record): void {
                         app(EnrichEpcisDocumentShippingFields::class)->handle($record);
 

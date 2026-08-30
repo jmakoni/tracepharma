@@ -5,10 +5,11 @@ namespace App\Http\Controllers\Webhooks;
 use App\Actions\Shipping\ProcessWmsShipConfirm;
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Tenant;
-use App\Support\TenantFeatures;
-use App\Support\TenantSettings;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,8 @@ final class WmsShipConfirmWebhookController
 
     public function handle(Request $request, string $tenantId): JsonResponse
     {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         $this->authorizeBridge($request, $tenant);
