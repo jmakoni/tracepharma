@@ -1,0 +1,164 @@
+- generic [active] [ref=f99e1]:
+  - link "Skip to content" [ref=f99e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f99e4]:
+    - link [ref=f99e6] [cursor=pointer]:
+      - /url: https://admin2.internal.vatengi.com/help
+      - img "TracePharma Admin Help logo" [ref=f99e7]
+    - generic [ref=f99e8]:
+      - generic [ref=f99e11]:
+        - generic [ref=f99e12]: Global search
+        - searchbox "Global search" [ref=f99e18]
+      - button "User menu" [ref=f99e21] [cursor=pointer]:
+        - img "Avatar of Platform Admin" [ref=f99e22]
+  - generic [ref=f99e23]:
+    - generic [ref=f99e24]:
+      - navigation "Sidebar navigation" [ref=f99e25]:
+        - list [ref=f99e26]:
+          - listitem [ref=f99e27]:
+            - list [ref=f99e28]:
+              - listitem [ref=f99e29]:
+                - link "Admin help" [ref=f99e30] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/intro
+              - listitem [ref=f99e34]:
+                - link "Demo and support" [ref=f99e35] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/demo-and-support
+              - listitem [ref=f99e39]:
+                - link "Tenants" [ref=f99e40] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/tenants
+              - listitem [ref=f99e44]:
+                - link "FDA registry" [ref=f99e45] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/registry
+                - list [ref=f99e49]:
+                  - listitem [ref=f99e50]:
+                    - link "Fda Establishments" [ref=f99e51] [cursor=pointer]:
+                      - /url: https://admin2.internal.vatengi.com/help/registry/fda-establishments
+                  - listitem [ref=f99e56]:
+                    - link "Fda Organizations" [ref=f99e57] [cursor=pointer]:
+                      - /url: https://admin2.internal.vatengi.com/help/registry/fda-organizations
+                  - listitem [ref=f99e63]:
+                    - link "Fda Products" [ref=f99e64] [cursor=pointer]:
+                      - /url: https://admin2.internal.vatengi.com/help/registry/fda-products
+                  - listitem [ref=f99e70]:
+                    - link "Fda Wdd" [ref=f99e71] [cursor=pointer]:
+                      - /url: https://admin2.internal.vatengi.com/help/registry/fda-wdd
+                  - listitem [ref=f99e77]:
+                    - link "Match Review" [ref=f99e78] [cursor=pointer]:
+                      - /url: https://admin2.internal.vatengi.com/help/registry/match-review
+              - listitem [ref=f99e83]:
+                - link "Platform operations" [ref=f99e84] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/operations
+              - listitem [ref=f99e88]:
+                - link "Platform" [ref=f99e89] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/platform
+      - listitem [ref=f99e93]:
+        - list [ref=f99e94]:
+          - listitem [ref=f99e95]:
+            - link "Back" [ref=f99e96] [cursor=pointer]:
+              - /url: https://admin2.internal.vatengi.com
+    - main [ref=f99e101]:
+      - generic [ref=f99e103]:
+        - generic [ref=f99e105]:
+          - navigation "Breadcrumb" [ref=f99e106]:
+            - list [ref=f99e107]:
+              - listitem [ref=f99e108]:
+                - link "Documentation" [ref=f99e109] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help
+              - listitem [ref=f99e110]:
+                - link "FDA registry" [ref=f99e113] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/registry
+              - listitem [ref=f99e114]:
+                - link "Fda Organizations" [ref=f99e117] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/registry/fda-organizations
+          - heading "Fda Organizations" [level=1] [ref=f99e118]
+        - generic [ref=f99e119]:
+          - article [ref=f99e121]:
+            - heading "Fda Organizations" [level=1] [ref=f99e122]:
+              - link [ref=f99e123] [cursor=pointer]:
+                - /url: "#fda-organizations"
+                - text: "#"
+              - text: Fda Organizations
+            - paragraph [ref=f99e124]: "Filament classes:"
+            - list [ref=f99e125]:
+              - listitem [ref=f99e126]:
+                - code [ref=f99e127]: App\Filament\Admin\Resources\Fda\FdaOrganizations\FdaOrganizationResource
+            - heading "When to use" [level=2] [ref=f99e128]:
+              - link [ref=f99e129] [cursor=pointer]:
+                - /url: "#when-to-use"
+                - text: "#"
+              - text: When to use
+            - paragraph [ref=f99e130]: Browse and maintain FDA organization registry rows (labels, relationships to establishments, products, WDD facilities).
+            - heading "Prerequisites" [level=2] [ref=f99e131]:
+              - link [ref=f99e132] [cursor=pointer]:
+                - /url: "#prerequisites"
+                - text: "#"
+              - text: Prerequisites
+            - list [ref=f99e133]:
+              - listitem [ref=f99e134]: Admin registry access.
+              - listitem [ref=f99e135]: Prefer import-backed updates over manual edits when possible.
+            - heading "Steps" [level=2] [ref=f99e136]:
+              - link [ref=f99e137] [cursor=pointer]:
+                - /url: "#steps"
+                - text: "#"
+              - text: Steps
+            - list [ref=f99e138]:
+              - listitem [ref=f99e139]:
+                - text: Open
+                - strong [ref=f99e140]: FDA organizations
+                - text: . Open the page and use Help for live UI.
+              - listitem [ref=f99e141]: Search by name or identifiers; open a record.
+              - listitem [ref=f99e142]: Review related establishments, products, and facilities via relation managers.
+              - listitem [ref=f99e143]: Route uncertain matches to match review rather than forcing links.
+            - heading "Related pages" [level=2] [ref=f99e144]:
+              - link [ref=f99e145] [cursor=pointer]:
+                - /url: "#related-pages"
+                - text: "#"
+              - text: Related pages
+            - list [ref=f99e146]:
+              - listitem [ref=f99e147]:
+                - link "fda-establishments.md" [ref=f99e148] [cursor=pointer]:
+                  - /url: ../registry/fda-establishments
+                - text: — establishments
+              - listitem [ref=f99e149]:
+                - link "fda-products.md" [ref=f99e150] [cursor=pointer]:
+                  - /url: ../registry/fda-products
+                - text: — products
+              - listitem [ref=f99e151]:
+                - link "fda-wdd.md" [ref=f99e152] [cursor=pointer]:
+                  - /url: ../registry/fda-wdd
+                - text: — WDD facilities and licenses
+              - listitem [ref=f99e153]:
+                - link "match-review.md" [ref=f99e154] [cursor=pointer]:
+                  - /url: ../registry/match-review
+                - text: — organization match queue
+            - heading "Notes" [level=2] [ref=f99e155]:
+              - link [ref=f99e156] [cursor=pointer]:
+                - /url: "#notes"
+                - text: "#"
+              - text: Notes
+            - list [ref=f99e157]:
+              - listitem [ref=f99e158]: Manual edits can be overwritten by later FDA imports — document intentional overrides.
+              - listitem [ref=f99e159]: View-only modes may apply depending on admin role.
+          - list [ref=f99e161]:
+            - listitem [ref=f99e162]:
+              - list [ref=f99e163]:
+                - listitem [ref=f99e164]:
+                  - link "Fda Organizations" [ref=f99e165] [cursor=pointer]:
+                    - /url: "#fda-organizations"
+                - listitem [ref=f99e167]:
+                  - link "When to use" [ref=f99e168] [cursor=pointer]:
+                    - /url: "#when-to-use"
+                - listitem [ref=f99e170]:
+                  - link "Prerequisites" [ref=f99e171] [cursor=pointer]:
+                    - /url: "#prerequisites"
+                - listitem [ref=f99e173]:
+                  - link "Steps" [ref=f99e174] [cursor=pointer]:
+                    - /url: "#steps"
+                - listitem [ref=f99e176]:
+                  - link "Related pages" [ref=f99e177] [cursor=pointer]:
+                    - /url: "#related-pages"
+                - listitem [ref=f99e179]:
+                  - link "Notes" [ref=f99e180] [cursor=pointer]:
+                    - /url: "#notes"
+  - generic:
+    - status
