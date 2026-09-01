@@ -13,10 +13,13 @@ use App\Jobs\Announcements\FanOutAnnouncementToTenant;
 use App\Models\Admin;
 use App\Models\Announcement;
 use App\Models\Tenant;
+use App\Models\TenantAnnouncement;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
 use Tests\TestCase;
 
 class PublishAnnouncementFanOutTest extends TestCase
@@ -89,6 +92,32 @@ class PublishAnnouncementFanOutTest extends TestCase
     }
 
     #[Test]
+    public function cannot_publish_retired_announcement(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $tenant = $this->ensureDemo2Tenant();
+        $admin = Admin::factory()->create();
+
+        $announcement = Announcement::query()->create([
+            'title' => 'Already retired',
+            'body' => '<p>No republish</p>',
+            'severity' => AnnouncementSeverity::Info,
+            'status' => AnnouncementStatus::Retired,
+            'retired_at' => now(),
+            'created_by_admin_id' => $admin->id,
+        ]);
+        $announcement->tenants()->sync([$tenant->getTenantKey() => ['fan_out_status' => 'succeeded']]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only draft announcements can be published.');
+
+        app(PublishAnnouncement::class)->handle($announcement->fresh());
+
+        $this->assertSame(AnnouncementStatus::Retired, $announcement->fresh()->status);
+    }
+
+    #[Test]
     public function publish_is_idempotent_for_bell_notifications(): void
     {
         config(['queue.default' => 'sync']);
@@ -120,6 +149,53 @@ class PublishAnnouncementFanOutTest extends TestCase
         $tenant->run(function () use ($user): void {
             $this->assertSame(1, DB::table('notifications')->where('notifiable_id', $user->getKey())->count());
         });
+    }
+
+    #[Test]
+    public function fan_out_failure_marks_pivot_failed_on_central(): void
+    {
+        config(['queue.default' => 'sync']);
+
+        $tenant = $this->ensureDemo2Tenant();
+        $admin = Admin::factory()->create();
+
+        $tenant->run(function (): void {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            DB::table('notifications')->delete();
+            DB::table('tenant_announcements')->delete();
+            User::factory()->create();
+        });
+
+        TenantAnnouncement::creating(function (): void {
+            throw new RuntimeException('Simulated fan-out failure');
+        });
+
+        $announcement = Announcement::query()->create([
+            'title' => 'Failure path',
+            'body' => '<p>Should fail</p>',
+            'severity' => AnnouncementSeverity::Info,
+            'status' => AnnouncementStatus::Published,
+            'published_at' => now(),
+            'created_by_admin_id' => $admin->id,
+        ]);
+        $announcement->tenants()->sync([$tenant->getTenantKey() => ['fan_out_status' => 'pending']]);
+
+        try {
+            FanOutAnnouncementToTenant::dispatchSync($announcement->id, (string) $tenant->getTenantKey());
+        } finally {
+            TenantAnnouncement::flushEventListeners();
+        }
+
+        if (tenancy()->initialized) {
+            tenancy()->end();
+        }
+
+        $this->assertDatabaseHas('announcement_tenant', [
+            'announcement_id' => $announcement->id,
+            'tenant_id' => $tenant->getTenantKey(),
+            'fan_out_status' => 'failed',
+            'fan_out_error' => 'Simulated fan-out failure',
+        ]);
     }
 
     #[Test]

@@ -22,6 +22,10 @@ final class PublishAnnouncement
             return;
         }
 
+        if ($announcement->status !== AnnouncementStatus::Draft) {
+            throw new InvalidArgumentException('Only draft announcements can be published.');
+        }
+
         $announcement->forceFill([
             'status' => AnnouncementStatus::Published,
             'published_at' => now(),
