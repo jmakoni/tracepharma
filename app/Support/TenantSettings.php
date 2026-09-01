@@ -87,6 +87,50 @@ class TenantSettings
     }
 
     /**
+     * When true, trading partners and their sites may use GLNs issued under the
+     * organization GS1 Company Prefix; SGLNs for those locations derive from it.
+     */
+    public function allowAssignPartnerGlnsFromPrefix(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'identity.allow_assign_partner_glns_from_prefix', false);
+    }
+
+    public function setAllowAssignPartnerGlnsFromPrefix(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'identity.allow_assign_partner_glns_from_prefix', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Organization prefix for encoding partner locations — only when explicitly allowed.
+     */
+    public function companyPrefixForPartnerEncoding(): ?string
+    {
+        return $this->allowAssignPartnerGlnsFromPrefix()
+            ? $this->companyPrefix()
+            : null;
+    }
+
+    public function glnIsUnderCompanyPrefix(?string $gln): bool
+    {
+        $normalized = \App\Support\Gs1\Sgln::normalizeGln($gln);
+        $prefix = self::normalizeCompanyPrefix($this->companyPrefix());
+
+        if ($normalized === null || $prefix === null) {
+            return false;
+        }
+
+        return str_starts_with(substr($normalized, 0, 12), $prefix);
+    }
+
+    /**
      * Digits-only GS1 company prefix, or null when blank.
      */
     public static function normalizeCompanyPrefix(?string $prefix): ?string
@@ -247,6 +291,117 @@ class TenantSettings
 
         $settings = $this->settingsBag();
         data_set($settings, 'access.pharmacy_simplified_nav', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * @return array{
+     *     enabled: bool,
+     *     sso_only: bool,
+     *     provider: string,
+     *     issuer: string,
+     *     client_id: string,
+     *     client_secret: string|null,
+     *     entra_tenant_id: string|null,
+     *     jit_default_role: string|null,
+     *     allowed_email_domains: list<string>
+     * }
+     */
+    public function ssoConfig(): array
+    {
+        $settings = $this->settingsBag();
+
+        $secret = data_get($settings, 'sso.client_secret');
+        $decrypted = null;
+        if (is_string($secret) && $secret !== '') {
+            try {
+                $decrypted = Crypt::decryptString($secret);
+            } catch (\Throwable) {
+                $decrypted = null;
+            }
+        }
+
+        $domains = data_get($settings, 'sso.allowed_email_domains', []);
+        $normalizedDomains = [];
+        if (is_array($domains)) {
+            foreach ($domains as $domain) {
+                if (is_string($domain) && trim($domain) !== '') {
+                    $normalizedDomains[] = strtolower(trim($domain));
+                }
+            }
+        }
+
+        return [
+            'enabled' => (bool) data_get($settings, 'sso.enabled', false),
+            'sso_only' => (bool) data_get($settings, 'sso.sso_only', false),
+            'provider' => (string) data_get($settings, 'sso.provider', 'entra'),
+            'issuer' => (string) data_get($settings, 'sso.issuer', ''),
+            'client_id' => (string) data_get($settings, 'sso.client_id', ''),
+            'client_secret' => $decrypted,
+            'entra_tenant_id' => filled(data_get($settings, 'sso.entra_tenant_id'))
+                ? (string) data_get($settings, 'sso.entra_tenant_id')
+                : null,
+            'jit_default_role' => filled(data_get($settings, 'sso.jit_default_role'))
+                ? (string) data_get($settings, 'sso.jit_default_role')
+                : null,
+            'allowed_email_domains' => $normalizedDomains,
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     enabled?: bool,
+     *     sso_only?: bool,
+     *     provider?: string,
+     *     issuer?: string,
+     *     client_id?: string,
+     *     client_secret?: string|null,
+     *     entra_tenant_id?: string|null,
+     *     jit_default_role?: string|null,
+     *     allowed_email_domains?: list<string>|string|null
+     * }  $data
+     */
+    public function saveSsoConfig(array $data): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        $current = $this->ssoConfig();
+
+        data_set($settings, 'sso.enabled', (bool) ($data['enabled'] ?? $current['enabled']));
+        data_set($settings, 'sso.sso_only', (bool) ($data['sso_only'] ?? $current['sso_only']));
+        data_set($settings, 'sso.provider', (string) ($data['provider'] ?? $current['provider']));
+        data_set($settings, 'sso.issuer', trim((string) ($data['issuer'] ?? $current['issuer'])));
+        data_set($settings, 'sso.client_id', trim((string) ($data['client_id'] ?? $current['client_id'])));
+
+        if (array_key_exists('client_secret', $data) && filled($data['client_secret'])) {
+            data_set($settings, 'sso.client_secret', Crypt::encryptString(trim((string) $data['client_secret'])));
+        }
+
+        $entra = $data['entra_tenant_id'] ?? $current['entra_tenant_id'];
+        data_set($settings, 'sso.entra_tenant_id', filled($entra) ? trim((string) $entra) : null);
+
+        $jitRole = $data['jit_default_role'] ?? $current['jit_default_role'];
+        data_set($settings, 'sso.jit_default_role', filled($jitRole) ? (string) $jitRole : null);
+
+        $domainsRaw = $data['allowed_email_domains'] ?? $current['allowed_email_domains'];
+        $domains = [];
+        if (is_string($domainsRaw)) {
+            $domainsRaw = preg_split('/[\s,]+/', $domainsRaw) ?: [];
+        }
+        if (is_array($domainsRaw)) {
+            foreach ($domainsRaw as $domain) {
+                if (is_string($domain) && trim($domain) !== '') {
+                    $domains[] = strtolower(trim($domain));
+                }
+            }
+        }
+        data_set($settings, 'sso.allowed_email_domains', array_values(array_unique($domains)));
+
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
@@ -1428,6 +1583,7 @@ class TenantSettings
             'alert_digest_enabled',
             'alert_digest_frequency',
             'email_portal_on_ship',
+            'allow_assign_partner_glns_from_prefix',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -1512,6 +1668,7 @@ class TenantSettings
                     is_string($data[$key]) ? $data[$key] : 'daily',
                 ),
                 'email_portal_on_ship' => $this->setEmailPortalOnShipEnabled((bool) $data[$key]),
+                'allow_assign_partner_glns_from_prefix' => $this->setAllowAssignPartnerGlnsFromPrefix((bool) $data[$key]),
             };
         }
 

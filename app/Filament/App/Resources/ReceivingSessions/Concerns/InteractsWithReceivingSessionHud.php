@@ -45,7 +45,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -582,7 +582,7 @@ trait InteractsWithReceivingSessionHud
             Notification::make()
                 ->title('Already complete')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->dispatch('scan-result', tone: 'error');
 
@@ -602,7 +602,7 @@ trait InteractsWithReceivingSessionHud
             Notification::make()
                 ->title('Scan required')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->dispatch('focus-scan');
             $this->dispatch('scan-result', tone: 'error');
@@ -627,7 +627,7 @@ trait InteractsWithReceivingSessionHud
                 ->title('Staged scan limit reached')
                 ->body(sprintf('Remove a staged scan or confirm before adding more (max %d).', self::MAX_STAGED_SCANS))
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->dispatch('focus-scan');
             $this->dispatch('scan-result', tone: 'error');
@@ -670,7 +670,7 @@ trait InteractsWithReceivingSessionHud
             Notification::make()
                 ->title('No staged scans')
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
@@ -684,7 +684,7 @@ trait InteractsWithReceivingSessionHud
             Notification::make()
                 ->title('Already complete')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->dispatch('scan-result', tone: 'error');
 
@@ -785,7 +785,7 @@ trait InteractsWithReceivingSessionHud
                 $notification->body(implode("\n", $failureLines));
             }
 
-            $notification->send();
+            $notification->ephemeral()->send();
 
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -813,7 +813,7 @@ trait InteractsWithReceivingSessionHud
                     Notification::make()
                         ->title('Already complete')
                         ->danger()
-                        ->send();
+                        ->ephemeral()->send();
 
                     $this->dispatch('scan-result', tone: 'error');
 
@@ -834,7 +834,7 @@ trait InteractsWithReceivingSessionHud
                     Notification::make()
                         ->title('Scan required')
                         ->danger()
-                        ->send();
+                        ->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('scan-result', tone: 'error');
@@ -863,7 +863,7 @@ trait InteractsWithReceivingSessionHud
                         ->title('Scan not confirmed')
                         ->body($e->getMessage())
                         ->danger()
-                        ->send();
+                        ->ephemeral()->send();
 
                     $this->getRecord()->refresh()->loadMissing(['document', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
                     $this->dispatch('scan-result', tone: 'error');
@@ -940,7 +940,7 @@ trait InteractsWithReceivingSessionHud
                     default => $notification->danger(),
                 };
 
-                $notification->send();
+                $notification->ephemeral()->send();
 
                 $this->dispatch('focus-scan');
                 $this->dispatch('scan-result', tone: $tone);
@@ -1230,7 +1230,7 @@ trait InteractsWithReceivingSessionHud
                         Notification::make()
                             ->title('No matched ASN')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1241,7 +1241,7 @@ trait InteractsWithReceivingSessionHud
                         Notification::make()
                             ->title('Matched ASN not found')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1260,7 +1260,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Could not open ASN receive')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1288,7 +1288,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Could not cancel scan-first session')
                                 ->body($e->getMessage())
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
                         }
                     }
 
@@ -1330,7 +1330,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Attach failed')
                             ->body('No invoice file was received.')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1341,7 +1341,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Attach failed')
                             ->body('Invoice file is missing or unreadable.')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1358,7 +1358,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Could not attach invoice')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1369,7 +1369,7 @@ trait InteractsWithReceivingSessionHud
                         ->title('Invoice attached')
                         ->body((string) $this->attachedInvoiceFilename())
                         ->success()
-                        ->send();
+                        ->ephemeral()->send();
                 }),
             Action::make('closeOpenTote')
                 ->label('Close tote')
@@ -1388,7 +1388,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Close tote blocked')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1398,7 +1398,7 @@ trait InteractsWithReceivingSessionHud
                     Notification::make()
                         ->title($result['short_closed'] ? 'Tote closed with shortage' : 'Tote closed')
                         ->success()
-                        ->send();
+                        ->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('receiving-scan-lines-updated')
@@ -1422,7 +1422,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Accept remaining blocked')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1442,7 +1442,7 @@ trait InteractsWithReceivingSessionHud
                         $notification->success();
                     }
 
-                    $notification->send();
+                    $notification->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('receiving-scan-lines-updated')
@@ -1480,7 +1480,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Complete blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1490,7 +1490,7 @@ trait InteractsWithReceivingSessionHud
                         Notification::make()
                             ->title('Receiving complete')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('receiving-scan-lines-updated')
                             ->to(ScanLinesRelationManager::class);
@@ -1523,7 +1523,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Close blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1534,7 +1534,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Transfer receive closed')
                             ->body('Shortfall recorded; received units were attested where scanned.')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('receiving-scan-lines-updated')
                             ->to(ScanLinesRelationManager::class);
@@ -1563,7 +1563,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Retry blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1575,13 +1575,13 @@ trait InteractsWithReceivingSessionHud
                             Notification::make()
                                 ->title('Receive EPCIS authored')
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
                         } else {
                             Notification::make()
                                 ->title('Receive EPCIS not authored')
                                 ->body('No received units to attest, or authoring is still blocked.')
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
                         }
 
                         $this->dispatch('receiving-scan-lines-updated')
@@ -1631,7 +1631,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Unpack blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1643,7 +1643,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Nothing to unpack')
                                 ->body('No open hierarchy links remain for confirmed parents.')
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1652,7 +1652,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Hierarchy unpacked')
                             ->body(sprintf('Closed %d aggregation link(s).', (int) ($result['closed_links'] ?? 0)))
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
                     }),
                 'receiving_unpack_hierarchy',
                 requireReason: false,
@@ -1680,7 +1680,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Reset blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1706,7 +1706,7 @@ trait InteractsWithReceivingSessionHud
                                 ? 'Confirmed progress cleared.'
                                 : 'Confirmed progress cleared. Expected ASN lines restored.')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('focus-scan');
                         $this->dispatch('receiving-scan-lines-updated')
@@ -1736,7 +1736,7 @@ trait InteractsWithReceivingSessionHud
                                 ->title('Cancel blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -1744,7 +1744,7 @@ trait InteractsWithReceivingSessionHud
                         Notification::make()
                             ->title('Receive cancelled')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->redirect(ReceivingSessionResource::getUrl(name: 'index', panel: 'app'));
                     }),
@@ -1781,7 +1781,7 @@ trait InteractsWithReceivingSessionHud
                             ->title('Print unavailable')
                             ->body('This receiving session has no inbound EPCIS document.')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -1792,7 +1792,7 @@ trait InteractsWithReceivingSessionHud
                         ->title('Label print queued')
                         ->body('An LPN label is being generated and sent to your default printer.')
                         ->success()
-                        ->send();
+                        ->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                 }),
@@ -1826,7 +1826,7 @@ trait InteractsWithReceivingSessionHud
                 ->title($successTitle)
                 ->body(sprintf('%d line(s) carried over from scan-first.', $copied))
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
 
         $this->notifyScanFirstCopyIssues($result, $copied > 0);
@@ -1861,6 +1861,6 @@ trait InteractsWithReceivingSessionHud
             ->title($hadCopies ? 'Some scans were not copied' : 'Scan-first copy had issues')
             ->body(implode("\n\n", $bodyParts))
             ->warning()
-            ->send();
+            ->ephemeral()->send();
     }
 }

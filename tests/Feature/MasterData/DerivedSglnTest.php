@@ -43,6 +43,8 @@ class DerivedSglnTest extends TestCase
 
     private ?string $priorCompanyPrefix = null;
 
+    private bool $priorAllowPartnerGlnsFromPrefix = false;
+
     #[Test]
     public function the_sgln_column_is_no_longer_a_generated_two_segment_urn(): void
     {
@@ -106,6 +108,64 @@ class DerivedSglnTest extends TestCase
                 'urn:epc:id:sgln:'.self::COMPANY_PREFIX.'.'.substr($deviceGln, 7, 5).'.0',
                 $device->fresh()->sgln,
             );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function a_partner_under_our_prefix_gets_sgln_when_assignment_is_allowed(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)
+                ->setAllowAssignPartnerGlnsFromPrefix(true);
+            $tenant->save();
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+
+            $this->useCompanyPrefix($tenant);
+
+            $gln = $this->uniqueGln('1');
+            $partner = TradingPartner::query()->create([
+                'name' => 'Derived Sgln Assigned Partner 094224',
+                'gln' => $gln,
+                'partner_type' => PartnerType::Pharmacy,
+                'is_active' => true,
+            ]);
+
+            $this->assertSame(
+                'urn:epc:id:sgln:'.self::COMPANY_PREFIX.'.'.substr($gln, 7, 5).'.0',
+                $partner->fresh()->sgln,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function a_partner_under_our_prefix_stays_without_sgln_when_assignment_is_off(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)
+                ->setAllowAssignPartnerGlnsFromPrefix(false);
+            $tenant->save();
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+
+            $this->useCompanyPrefix($tenant);
+
+            $partner = TradingPartner::query()->create([
+                'name' => 'Derived Sgln Blocked Partner 094224',
+                'gln' => $this->uniqueGln('6'),
+                'partner_type' => PartnerType::Pharmacy,
+                'is_active' => true,
+            ]);
+
+            $this->assertNull($partner->fresh()->sgln);
         } finally {
             $this->cleanup($tenant);
         }
@@ -215,6 +275,7 @@ class DerivedSglnTest extends TestCase
         $settings = TenantSettings::forTenant($tenant);
         $this->priorGln = $settings->gln();
         $this->priorCompanyPrefix = $settings->companyPrefix();
+        $this->priorAllowPartnerGlnsFromPrefix = $settings->allowAssignPartnerGlnsFromPrefix();
 
         return $tenant;
     }
@@ -229,7 +290,8 @@ class DerivedSglnTest extends TestCase
             $current = $tenant->fresh() ?? $tenant;
             TenantSettings::forTenant($current)
                 ->setGln($this->priorGln)
-                ->setCompanyPrefix($this->priorCompanyPrefix);
+                ->setCompanyPrefix($this->priorCompanyPrefix)
+                ->setAllowAssignPartnerGlnsFromPrefix($this->priorAllowPartnerGlnsFromPrefix);
             $current->save();
 
             tenancy()->end();
@@ -237,5 +299,6 @@ class DerivedSglnTest extends TestCase
 
         $this->priorGln = null;
         $this->priorCompanyPrefix = null;
+        $this->priorAllowPartnerGlnsFromPrefix = false;
     }
 }

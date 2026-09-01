@@ -16,7 +16,7 @@ use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;

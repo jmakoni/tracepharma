@@ -6,7 +6,7 @@ use App\Enums\TenantRole;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\SupportEngineerEmail;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;

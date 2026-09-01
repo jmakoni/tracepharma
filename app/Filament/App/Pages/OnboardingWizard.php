@@ -9,7 +9,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantOnboarding;
 use App\Support\TenantSettings;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;

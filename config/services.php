@@ -57,4 +57,29 @@ return [
         'zoom' => (int) env('PLACES_API_ZOOM', 13),
         'rate_per_minute' => (int) env('PLACES_API_RATE_PER_MINUTE', 30),
     ],
+
+    /*
+    | OIDC / Socialite drivers are configured at runtime from TenantSettings /
+    | PlatformSettings by App\Services\Auth\Oidc\OidcSocialiteFactory.
+    */
+    'azure' => [
+        'client_id' => env('AZURE_CLIENT_ID'),
+        'client_secret' => env('AZURE_CLIENT_SECRET'),
+        'redirect' => env('AZURE_REDIRECT_URI'),
+        'tenant' => env('AZURE_TENANT_ID', 'common'),
+    ],
+
+    'okta' => [
+        'client_id' => env('OKTA_CLIENT_ID'),
+        'client_secret' => env('OKTA_CLIENT_SECRET'),
+        'redirect' => env('OKTA_REDIRECT_URI'),
+        'base_url' => env('OKTA_BASE_URL'),
+    ],
+
+    'generic-oidc' => [
+        'client_id' => env('OIDC_CLIENT_ID'),
+        'client_secret' => env('OIDC_CLIENT_SECRET'),
+        'redirect' => env('OIDC_REDIRECT_URI'),
+        'issuer' => env('OIDC_ISSUER'),
+    ],
 ];

@@ -10,7 +10,7 @@ use App\Models\EpcisJob;
 use App\Models\User;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 
 /**

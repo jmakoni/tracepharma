@@ -25,7 +25,7 @@ use App\Support\Tracing\EpcContextLinks;
 use App\Support\Tracing\Gs1DualDisplay;
 use App\Support\Tracing\LocationDisplayResolver;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Group;

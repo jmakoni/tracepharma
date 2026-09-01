@@ -15,7 +15,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;

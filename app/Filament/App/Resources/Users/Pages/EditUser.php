@@ -11,7 +11,7 @@ use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\User;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 
 class EditUser extends EditRecord

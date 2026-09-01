@@ -28,7 +28,7 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -97,6 +97,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'organization_type' => $tenant?->profile?->tenantType()->label(),
             'gln' => $settings->gln(),
             'company_prefix' => $settings->companyPrefix(),
+            'allow_assign_partner_glns_from_prefix' => $settings->allowAssignPartnerGlnsFromPrefix(),
             'receiving_state' => $settings->receivingState(),
             'default_receive_site_id' => $settings->defaultReceiveSiteId(),
             'default_ship_from_site_id' => $settings->defaultShipFromSiteId(),
@@ -179,6 +180,11 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                                 };
                             })
                             ->helperText('6–11 digit GS1 Company Prefix used for SGLNs and SSCC number ranges. Ranges must match this GCP.'),
+                        Toggle::make('allow_assign_partner_glns_from_prefix')
+                            ->label('Allow assign partner GLNs from our prefix')
+                            ->helperText('When on, trading partners and their sites may use GLNs issued under your GS1 Company Prefix; SGLNs for those locations are derived from your prefix. When off, partner GLNs must use the partner\'s own GS1 identity — record their stated SGLN from EPCIS.')
+                            ->default(false)
+                            ->columnSpanFull(),
                         Select::make('receiving_state')
                             ->label('Preferred receiving state')
                             ->options(UsState::selectOptions())
@@ -480,6 +486,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         $organization = [
             'gln' => $data['gln'] ?? null,
             'company_prefix' => $data['company_prefix'] ?? null,
+            'allow_assign_partner_glns_from_prefix' => (bool) ($data['allow_assign_partner_glns_from_prefix'] ?? false),
             'receiving_state' => $data['receiving_state'] ?? null,
             'street_address' => $data['street_address'] ?? null,
             'street_address_2' => $data['street_address_2'] ?? null,

@@ -18,7 +18,7 @@ use App\Support\Transferring\TransferLayout;
 use App\Support\Transferring\TransferringSessionStatus;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use InvalidArgumentException;
 use Livewire\Attributes\Locked;
@@ -139,7 +139,7 @@ trait InteractsWithTransferringSessionHud
                         Notification::make()
                             ->title('Already complete')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -153,7 +153,7 @@ trait InteractsWithTransferringSessionHud
                             ->title('Receive at destination')
                             ->body('Use Receive at destination to open the transfer receive session.')
                             ->warning()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -169,7 +169,7 @@ trait InteractsWithTransferringSessionHud
                         Notification::make()
                             ->title('Scan required')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('focus-scan');
                         $this->dispatch('scan-result', tone: 'error');
@@ -209,7 +209,7 @@ trait InteractsWithTransferringSessionHud
                         default => $notification->danger(),
                     };
 
-                    $notification->send();
+                    $notification->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('scan-result', tone: $tone);
@@ -295,7 +295,7 @@ trait InteractsWithTransferringSessionHud
                                 ->title('Ship blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -317,7 +317,7 @@ trait InteractsWithTransferringSessionHud
                                 ->title('Transfer shipped')
                                 ->body('Shipping EPCIS event authored.')
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -332,7 +332,7 @@ trait InteractsWithTransferringSessionHud
                                 ->title('Transfer shipped')
                                 ->body('Shipping EPCIS event authored. Open Receive at destination to confirm arrival. '.$e->getMessage())
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -341,7 +341,7 @@ trait InteractsWithTransferringSessionHud
                             ->title('Transfer shipped')
                             ->body('Shipping EPCIS event authored. Continue at the destination receive session.')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->redirect(ReceivingSessionResource::getUrl('view', [
                             'record' => $receiving,

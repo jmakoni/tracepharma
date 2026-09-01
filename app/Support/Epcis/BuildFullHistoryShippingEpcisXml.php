@@ -170,7 +170,11 @@ final class BuildFullHistoryShippingEpcisXml
     private function partyFromSite(Site $site, string $fallbackName): array
     {
         $gln = Sgln::normalizeGln((string) $site->gln) ?? (string) $site->gln;
-        $sgln = $this->resolveSglnUrnForGln($gln, is_string($site->sgln) ? [$site->sgln] : []);
+        $sgln = $this->resolveSglnUrnForGln(
+            $gln,
+            is_string($site->sgln) ? [$site->sgln] : [],
+            partnerLocation: $site->trading_partner_id !== null,
+        );
         if ($sgln === null) {
             throw new DomainException(
                 'No SGLN on record for '.$fallbackName.' (GLN '.$gln.'). Record the site SGLN before sending.',
@@ -209,7 +213,7 @@ final class BuildFullHistoryShippingEpcisXml
             $candidates[] = $partnerSgln;
         }
 
-        $sgln = $this->resolveSglnUrnForGln($gln, $candidates);
+        $sgln = $this->resolveSglnUrnForGln($gln, $candidates, partnerLocation: true);
         if ($sgln === null) {
             throw new DomainException(
                 'No SGLN on record for '.$fallbackName.' (GLN '.$gln.'). Record the trading partner\'s own SGLN '
@@ -240,12 +244,17 @@ final class BuildFullHistoryShippingEpcisXml
      *
      * @param  list<string>  $candidates
      */
-    private function resolveSglnUrnForGln(string $gln, array $candidates): ?string
+    private function resolveSglnUrnForGln(string $gln, array $candidates, bool $partnerLocation = false): ?string
     {
+        $settings = TenantSettings::forTenant(tenant());
+        $prefix = $partnerLocation
+            ? $settings->companyPrefixForPartnerEncoding()
+            : $settings->companyPrefix();
+
         return SglnResolution::resolve(
             $gln,
             $candidates,
-            TenantSettings::forTenant(tenant())->companyPrefix(),
+            $prefix,
         );
     }
 

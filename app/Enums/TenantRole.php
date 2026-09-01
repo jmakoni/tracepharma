@@ -112,4 +112,26 @@ enum TenantRole: string
             ->mapWithKeys(fn (self $role): array => [$role->value => $role->label()])
             ->all();
     }
+
+    /**
+     * Least-privilege JIT default for SSO-created users (never Owner).
+     */
+    public static function jitDefaultForProfile(TenantProfile $profile): self
+    {
+        $roles = self::forProfile($profile);
+
+        foreach ([
+            self::ReceivingTechnician,
+            self::PackagingLineOperator,
+            self::OutboundPickAndPackLead,
+            self::MasterDataAdministrator,
+            self::SupportEngineer,
+        ] as $candidate) {
+            if (in_array($candidate, $roles, true)) {
+                return $candidate;
+            }
+        }
+
+        return self::SupportEngineer;
+    }
 }

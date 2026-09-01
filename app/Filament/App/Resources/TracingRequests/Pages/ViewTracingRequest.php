@@ -15,7 +15,7 @@ use App\Services\Tracing\TracingSlaService;
 use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use InvalidArgumentException;

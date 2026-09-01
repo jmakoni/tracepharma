@@ -13,7 +13,7 @@ use App\Support\Integrations\OutboundConnectionDefaultSync;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;

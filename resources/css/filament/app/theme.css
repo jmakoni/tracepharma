@@ -11,6 +11,7 @@
 @source '../../../../vendor/guava/filament-knowledge-base/src/**/*';
 @source '../../../../vendor/guava/filament-knowledge-base/resources/views/**/*';
 @source '../../../../vendor/bokshorn-it/filament-activity-timeline/resources/**/*.blade.php';
+@source '../../../../vendor/zvizvi/filament-notifications-tabs/resources/views/**/*.blade.php';
 
 /*
  * Topbar menus (profile + site) must paint above page content and floor sticky

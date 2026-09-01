@@ -3,10 +3,12 @@
 namespace App\Filament\App\Resources\Sites\Schemas;
 
 use App\Filament\App\Support\FdaPicker;
+use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
 use App\Support\Gs1\SglnRules;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -63,12 +65,20 @@ class SiteForm
                             ->rule(
                                 new RejectTenantGln,
                                 fn (Get $get): bool => filled($get('trading_partner_id')),
+                            )
+                            ->rule(
+                                new RejectPartnerGlnUnderOrgPrefix,
+                                fn (Get $get): bool => filled($get('trading_partner_id')),
                             ),
                         // Our own facilities get theirs from the organization company
-                        // prefix; a partner's location has to be told to us.
+                        // prefix; a partner's location has to be told to us unless we
+                        // allocate GLNs from our prefix.
                         SglnRules::input()
-                            ->helperText('Filled from the GLN for your own facilities. For a partner location, copy the SGLN '
-                                .'from their EPCIS — we do not guess where a partner\'s GS1 company prefix ends.'),
+                            ->helperText(fn (Get $get): string => filled($get('trading_partner_id'))
+                                ? (TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
+                                    ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy from the partner\'s EPCIS.'
+                                    : 'Copy the SGLN from the partner\'s EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.')
+                                : 'Filled from the GLN for your own facilities.'),
                         Toggle::make('is_headquarters')->default(false),
                         Toggle::make('is_active')->default(true),
                         TextInput::make('google_place_id')

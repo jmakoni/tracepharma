@@ -13,7 +13,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Exceptions\InvestigatorSlaClock;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;

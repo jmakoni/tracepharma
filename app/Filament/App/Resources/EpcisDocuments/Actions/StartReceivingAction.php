@@ -13,7 +13,7 @@ use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Http\RedirectResponse;
 use Livewire\Features\SupportRedirects\Redirector;

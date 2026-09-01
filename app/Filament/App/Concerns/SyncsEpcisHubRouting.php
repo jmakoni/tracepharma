@@ -4,7 +4,7 @@ namespace App\Filament\App\Concerns;
 
 use App\Actions\Integrations\RegisterEpcisHubRoute;
 use App\Models\InboundConnection;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 
 trait SyncsEpcisHubRouting
 {

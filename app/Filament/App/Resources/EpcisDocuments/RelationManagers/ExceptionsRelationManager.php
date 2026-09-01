@@ -15,7 +15,7 @@ use App\Support\Epcis\Exceptions\GroupDocumentExceptionSignals;
 use App\Support\Epcis\Validation\EpcisValidationCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;

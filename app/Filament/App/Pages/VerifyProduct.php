@@ -14,7 +14,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
 use App\Support\TenantFeatures;
 use App\Support\Vrs\VerificationScorecardMetrics;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;

@@ -29,7 +29,7 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -378,7 +378,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -402,7 +402,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
@@ -418,7 +418,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack completed with warnings')
                 ->body('SSCC batch #'.$batch->getKey().'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Created SSCC batch #'.$batch->getKey().'.');
 
@@ -426,7 +426,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack complete')
                 ->body('SSCC batch #'.$batch->getKey().' ready.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
 
         $this->redirect($this->batchUrl);
@@ -509,7 +509,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -531,7 +531,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
@@ -546,7 +546,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack completed with warnings')
                 ->body('SSCC '.$this->parentSscc18.'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Added children to SSCC '.$this->parentSscc18.'. Scan more or ship this SSCC.');
 
@@ -554,7 +554,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
                 ->title('Pack complete')
                 ->body('SSCC '.$this->parentSscc18.' updated.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
     }
 

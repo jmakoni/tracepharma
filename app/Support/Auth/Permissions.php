@@ -87,9 +87,26 @@ final class Permissions
         ];
     }
 
-    public static function navLabel(string $permission): string
+    /**
+     * @return list<string>
+     */
+    public static function adminPanelPermissions(): array
+    {
+        return [
+            self::AdminsManage,
+            self::CatalogManage,
+            self::TenantsManage,
+        ];
+    }
+
+    public static function label(string $permission): string
     {
         return match ($permission) {
+            self::UsersManage => 'Manage users',
+            self::SitesAccessAll => 'All sites',
+            self::AdminsManage => 'Manage admins',
+            self::CatalogManage => 'Manage catalog',
+            self::TenantsManage => 'Manage tenants',
             self::NavReceive => 'Receive',
             self::NavShip => 'Ship',
             self::NavExceptions => 'Exceptions',
@@ -103,5 +120,10 @@ final class Permissions
             self::ShipQuantityGateOverride => 'Ship quantity gate override',
             default => $permission,
         };
+    }
+
+    public static function navLabel(string $permission): string
+    {
+        return self::label($permission);
     }
 }

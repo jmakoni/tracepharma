@@ -25,24 +25,35 @@ final class DscsaComplianceReportGenerator
      */
     public function generate(EpcisDocument $document, ?User $actor = null): array
     {
-        $report = $this->builder->build($document, $actor);
-        $html = view('dscsa.compliance-report.document', ['report' => $report])->render();
+        // Dompdf holds the full HTML frame tree in memory; large serial lists OOM at low
+        // FPM limits (Filament then shows "Error while loading page").
+        $previousMemoryLimit = ini_get('memory_limit');
+        ini_set('memory_limit', '5G');
 
-        $options = new Options;
-        $options->set('isRemoteEnabled', false);
-        $options->set('isHtml5ParserEnabled', true);
-        $options->set('defaultFont', 'DejaVu Sans');
+        try {
+            $report = $this->builder->build($document, $actor);
+            $html = view('dscsa.compliance-report.document', ['report' => $report])->render();
 
-        $dompdf = new Dompdf($options);
-        $dompdf->loadHtml($html);
-        $dompdf->setPaper('letter', 'portrait');
-        $dompdf->render();
+            $options = new Options;
+            $options->set('isRemoteEnabled', false);
+            $options->set('isHtml5ParserEnabled', true);
+            $options->set('defaultFont', 'DejaVu Sans');
 
-        return [
-            'binary' => $dompdf->output(),
-            'filename' => $this->filename($report),
-            'data' => $report,
-        ];
+            $dompdf = new Dompdf($options);
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('letter', 'portrait');
+            $dompdf->render();
+
+            return [
+                'binary' => $dompdf->output(),
+                'filename' => $this->filename($report),
+                'data' => $report,
+            ];
+        } finally {
+            if (is_string($previousMemoryLimit) && $previousMemoryLimit !== '') {
+                ini_set('memory_limit', $previousMemoryLimit);
+            }
+        }
     }
 
     public function filename(ComplianceReportData $report): string

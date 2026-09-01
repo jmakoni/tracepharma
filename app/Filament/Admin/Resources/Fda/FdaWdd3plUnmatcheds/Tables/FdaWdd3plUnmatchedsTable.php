@@ -15,7 +15,7 @@ use App\Support\PartnerSlug;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;

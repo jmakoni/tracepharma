@@ -7,7 +7,7 @@ use App\Filament\Admin\Resources\Admins\AdminResource;
 use App\Filament\Resources\Pages\EditRecord;
 use App\Models\Admin;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 
 class EditAdmin extends EditRecord

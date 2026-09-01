@@ -27,7 +27,7 @@ use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;

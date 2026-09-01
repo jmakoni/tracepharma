@@ -9,7 +9,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;

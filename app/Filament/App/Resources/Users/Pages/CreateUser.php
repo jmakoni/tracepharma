@@ -10,7 +10,7 @@ use App\Filament\App\Resources\Users\Concerns\SyncsUserSiteMembership;
 use App\Filament\App\Resources\Users\UserResource;
 use App\Filament\Resources\Pages\CreateRecord;
 use App\Models\User;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Illuminate\Support\Str;
 
 class CreateUser extends CreateRecord

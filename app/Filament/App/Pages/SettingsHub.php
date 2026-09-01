@@ -15,7 +15,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantOnboarding;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;

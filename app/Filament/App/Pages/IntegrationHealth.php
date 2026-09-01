@@ -15,7 +15,7 @@ use App\Support\Integrations\OutboundTransportAvailability;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;

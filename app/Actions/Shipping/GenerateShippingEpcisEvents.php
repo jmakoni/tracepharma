@@ -468,12 +468,17 @@ final class GenerateShippingEpcisEvents
      *
      * @param  list<string>  $candidates  SGLN URNs on record for this location
      */
-    private function resolveSglnUrnForGln(string $gln, array $candidates): ?string
+    private function resolveSglnUrnForGln(string $gln, array $candidates, bool $partnerLocation = false): ?string
     {
+        $settings = TenantSettings::forTenant(tenant());
+        $prefix = $partnerLocation
+            ? $settings->companyPrefixForPartnerEncoding()
+            : $settings->companyPrefix();
+
         return SglnResolution::resolve(
             $gln,
             $candidates,
-            TenantSettings::forTenant(tenant())->companyPrefix(),
+            $prefix,
         );
     }
 
@@ -618,7 +623,7 @@ final class GenerateShippingEpcisEvents
             return $locationSgln;
         }
 
-        return $this->resolveSglnUrnForGln($owningGln, $candidates) ?? $locationSgln;
+        return $this->resolveSglnUrnForGln($owningGln, $candidates, partnerLocation: true) ?? $locationSgln;
     }
 
     private function reference(mixed $value): ?string

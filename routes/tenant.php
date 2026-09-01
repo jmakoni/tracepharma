@@ -13,6 +13,7 @@ declare(strict_types=1);
 */
 
 use App\Http\Controllers\CustomerPortalController;
+use App\Http\Controllers\Auth\OidcController;
 use App\Http\Controllers\EpcisSubscriptionDownloadController;
 use App\Http\Controllers\Labeling\ClientLabelPrintController;
 use App\Http\Controllers\RecallBroadcastAckPortalController;
@@ -31,6 +32,14 @@ Route::middleware([
     PreventAccessFromCentralDomains::class,
     EnsureTenantIsActive::class,
 ])->group(function () {
+    Route::get('/auth/oidc/redirect', [OidcController::class, 'redirectTenant'])
+        ->middleware(['throttle:20,1'])
+        ->name('tenant.oidc.redirect');
+
+    Route::get('/auth/oidc/callback', [OidcController::class, 'callbackTenant'])
+        ->middleware(['throttle:20,1'])
+        ->name('tenant.oidc.callback');
+
     Route::get('/impersonate/{token}', ImpersonateController::class)
         ->middleware(['throttle:10,1'])
         ->name('tenant.impersonate');

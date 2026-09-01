@@ -6,7 +6,7 @@ namespace App\Filament\App\Resources\EpcisSubscriptions\Pages;
 
 use App\Filament\App\Resources\EpcisSubscriptions\EpcisSubscriptionResource;
 use App\Models\Epcis\EpcisSubscription;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Str;
 

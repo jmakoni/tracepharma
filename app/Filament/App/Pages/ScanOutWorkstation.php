@@ -21,7 +21,7 @@ use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -244,7 +244,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
                             ->title('Could not open ship order')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -283,7 +283,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
                                 ->title('Send blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -292,7 +292,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
                         Notification::make()
                             ->title('Shipment sent')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
                     }),
                 'outbound_shipping_send',
                 requireReason: false,
@@ -322,7 +322,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
             Notification::make()
                 ->title('Session not found')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->clearSession();
 

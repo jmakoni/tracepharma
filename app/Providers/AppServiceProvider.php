@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Domain\Epcis\Validation\ValidationPipeline;
 use App\Listeners\LogTenantUserImpersonationEnded;
 use App\Models\Admin;
+use App\Services\Auth\Oidc\GenericOpenIdConnectProvider;
 use App\Services\Epcis\ConnectionOutboundEpcisTransmitter;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Services\Vrs\Contracts\VrsClient;
@@ -78,6 +79,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('command-center:prune-history', fn ($user) => $user instanceof Admin);
 
         Event::listen(Logout::class, LogTenantUserImpersonationEnded::class);
+
+        Event::listen(function (\SocialiteProviders\Manager\SocialiteWasCalled $event): void {
+            $event->extendSocialite('azure', \SocialiteProviders\Azure\Provider::class);
+            $event->extendSocialite('okta', \SocialiteProviders\Okta\Provider::class);
+            $event->extendSocialite('generic-oidc', GenericOpenIdConnectProvider::class);
+        });
 
         FilamentAsset::register([
             Css::make('tracepharma-filament')

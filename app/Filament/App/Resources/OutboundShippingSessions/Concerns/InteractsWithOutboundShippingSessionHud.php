@@ -14,7 +14,7 @@ use App\Support\TenantFeatures;
 use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Livewire\Attributes\Locked;
 use Throwable;
 
@@ -213,7 +213,7 @@ trait InteractsWithOutboundShippingSessionHud
                         Notification::make()
                             ->title('Session closed')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -229,7 +229,7 @@ trait InteractsWithOutboundShippingSessionHud
                         Notification::make()
                             ->title('Scan required')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('focus-scan');
                         $this->dispatch('scan-result', tone: 'error');
@@ -268,7 +268,7 @@ trait InteractsWithOutboundShippingSessionHud
                         default => $notification->danger(),
                     };
 
-                    $notification->send();
+                    $notification->ephemeral()->send();
 
                     if ($result['effect'] === 'confirmed') {
                         $this->notifyOpenParentHierarchyIfNeeded($this->getRecord());
@@ -322,7 +322,7 @@ trait InteractsWithOutboundShippingSessionHud
             ]);
         }
 
-        $notification->send();
+        $notification->ephemeral()->send();
     }
 
     private function setLastScan(

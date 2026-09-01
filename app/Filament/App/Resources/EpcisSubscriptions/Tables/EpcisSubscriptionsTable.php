@@ -8,7 +8,7 @@ use App\Models\Epcis\EpcisSubscription;
 use App\Support\Epcis\EpcisSubscriptionUrl;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;

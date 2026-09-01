@@ -14,7 +14,7 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;

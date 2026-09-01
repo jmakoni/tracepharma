@@ -11,6 +11,7 @@ use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Site;
 use App\Models\TradingPartner;
+use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\FdaTenantLink;
@@ -232,7 +233,8 @@ class SitesRelationManager extends RelationManager
                     TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
                     GlnRules::input()
                         ->unique(ignoreRecord: true)
-                        ->rule(new RejectTenantGln),
+                        ->rule(new RejectTenantGln)
+                        ->rule(new RejectPartnerGlnUnderOrgPrefix),
                     Toggle::make('is_headquarters')->default(false),
                     Toggle::make('is_active')->default(true),
                 ]),
@@ -265,7 +267,8 @@ class SitesRelationManager extends RelationManager
             TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
             GlnRules::input()
                 ->unique(ignoreRecord: true)
-                ->rule(new RejectTenantGln),
+                ->rule(new RejectTenantGln)
+                ->rule(new RejectPartnerGlnUnderOrgPrefix),
             Toggle::make('is_headquarters')->default(false),
             TextInput::make('city')->maxLength(255),
             TextInput::make('state')->maxLength(100),

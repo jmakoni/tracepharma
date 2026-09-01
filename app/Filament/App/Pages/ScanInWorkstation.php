@@ -24,7 +24,7 @@ use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -262,7 +262,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                             ->title('Could not open scan-first')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -304,7 +304,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                                 ->title('Complete blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -313,7 +313,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                         Notification::make()
                             ->title('Receiving complete')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->openNextInboundIfAvailable($session);
                     }),
@@ -343,7 +343,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         Notification::make()
             ->title('Opened next inbound')
             ->success()
-            ->send();
+            ->ephemeral()->send();
     }
 
     private function canCompleteManually(): bool
@@ -447,7 +447,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             Notification::make()
                 ->title('Session not found')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->clearSession();
 

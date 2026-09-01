@@ -10,7 +10,7 @@ use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;

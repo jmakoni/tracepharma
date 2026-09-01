@@ -32,7 +32,7 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;

@@ -27,7 +27,7 @@ use App\Support\Transferring\EpcOnOpenTransferringSession;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -323,7 +323,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                                     ->title('Decommission failed')
                                     ->body($exception->getMessage())
                                     ->danger()
-                                    ->send();
+                                    ->ephemeral()->send();
 
                                 return;
                             }
@@ -345,7 +345,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                                 ->title('Decommission failed')
                                 ->body($eligibilityError)
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -363,7 +363,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                                 ->title('Decommission failed')
                                 ->body($exception->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -385,21 +385,21 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                                 ->title('Decommissioned with aggregation drift')
                                 ->body($message)
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
                         } elseif ($decommissioned > 0) {
                             $this->flash('ok', $message);
                             Notification::make()
                                 ->title('Decommission complete')
                                 ->body($message)
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
                         } else {
                             $this->flash('warn', $message);
                             Notification::make()
                                 ->title('Nothing decommissioned')
                                 ->body($message)
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
                         }
                         $this->dispatch('focus-scan');
                     }),

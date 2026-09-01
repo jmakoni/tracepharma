@@ -11,7 +11,7 @@ use App\Support\Auth\Permissions;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;

@@ -13,7 +13,7 @@ use App\Support\Tenancy\TenantAccess;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 

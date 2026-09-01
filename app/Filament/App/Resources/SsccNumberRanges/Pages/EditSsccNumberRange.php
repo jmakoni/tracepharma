@@ -6,7 +6,7 @@ use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
 use App\Models\SsccNumberRange;
 use App\Support\Labeling\SsccNumberRangeValidator;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;

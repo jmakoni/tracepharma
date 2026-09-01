@@ -20,6 +20,8 @@ use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
+use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -35,7 +37,9 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->domain(config('tracepharma.admin_domain'))
             ->path('')
-            ->login()
+            ->login(\App\Filament\Admin\Pages\Auth\Login::class)
+            ->passwordReset()
+            ->authPasswordBroker('admins')
             ->authGuard('admin')
             ->brandName('TracePharma')
             ->brandLogo(asset('images/brand/logo.svg'))
@@ -52,6 +56,7 @@ class AdminPanelProvider extends PanelProvider
                 'gray' => Color::hex('#676C73'),
             ])
             ->topNavigation()
+            ->globalSearch(false)
             ->sidebarWidth('16rem')
             ->maxContentWidth(Width::Full)
             ->viteTheme('resources/css/filament/admin/theme.css')
@@ -86,6 +91,12 @@ class AdminPanelProvider extends PanelProvider
                     ->causerIcons([
                         Admin::class => 'heroicon-m-user',
                     ])
+            )
+            ->plugin(FilamentWatchdogPlugin::make())
+            ->databaseNotifications()
+            ->plugin(
+                FilamentNotificationsTabsPlugin::make()
+                    ->confirmDelete()
             )
             ->userMenuItems([
                 Action::make('adminHelp')

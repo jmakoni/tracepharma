@@ -13,7 +13,7 @@ use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 
