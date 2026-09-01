@@ -56,6 +56,10 @@ class OutboundConnectionResource extends Resource implements HasKnowledgeBase
 
     public static function canDelete(Model $record): bool
     {
+        if ($record instanceof OutboundConnection && $record->isSystemTemplate()) {
+            return false;
+        }
+
         return auth()->user()?->can('delete', $record) ?? false;
     }
 

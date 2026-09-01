@@ -10,8 +10,30 @@ TracePharma’s default outbound path is **HTTPS-first**. Use the transport that
 | **SFTP drop** | Outbound push | Production | Partner requires file drop to an SFTP path |
 | **AS2** | Outbound push | Production | Partner requires AS2 (with optional S/MIME) |
 | **EPCIS hub** (Systech / UniTrace) | Outbound via hub | Production | Partner is on a supported hub route |
-| **Customer portal** | Buyer pull (signed link) | Production | Dispensers without AS2 — TI after ship via signed portal |
+| **Email (EPCIS attachment)** | Outbound push | Production | Partner accepts TI as email attachment (explicit connection only — never ladder fallback) |
+| **Client portal** | Buyer pull (OTP app) | Production (templates seeded inactive) | Dispensers without AS2 — publish TI to partner portal; ladder fallback when no B2B |
+| **Customer portal (legacy signed link)** | Buyer pull (signed link) | Production | Legacy no-login signed URL; prefer Client portal OTP when enabled |
 | **Sanctum API** | Programmatic pull | Production | Integrator polls outbound documents |
+
+### System templates
+
+Every tenant can run `php artisan tenants:seed-outbound-templates` (also runs on tenant create) to ensure two **inactive** system rows exist:
+
+- `system_key=email_attachment` — Email (EPCIS attachment)
+- `system_key=client_portal` — Client portal
+
+Owners enable templates, set recipients / notify flags, and optionally mark default. System rows cannot be deleted.
+
+### Unpinned routing ladder
+
+When a document has no pinned `outbound_connection_id`:
+
+1. Partner-scoped active HTTPS / SFTP / AS2  
+2. Else global active HTTPS / SFTP / AS2  
+3. Else active Client portal connection  
+4. Else skip  
+
+**Email is never selected by the ladder** — only via explicit pin or an Email connection set as the partner/global default (`resolve()` for session defaults).
 
 ## Inbound (supplier → you)
 

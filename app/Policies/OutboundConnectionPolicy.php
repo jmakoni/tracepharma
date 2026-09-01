@@ -32,6 +32,10 @@ class OutboundConnectionPolicy
 
     public function delete(User $user, OutboundConnection $connection): bool
     {
+        if ($connection->isSystemTemplate()) {
+            return false;
+        }
+
         return $this->isDeleter($user);
     }
 

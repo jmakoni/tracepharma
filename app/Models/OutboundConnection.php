@@ -20,6 +20,10 @@ class OutboundConnection extends Model
 {
     use LogsActivity;
 
+    public const SYSTEM_KEY_EMAIL_ATTACHMENT = 'email_attachment';
+
+    public const SYSTEM_KEY_CLIENT_PORTAL = 'client_portal';
+
     /**
      * When true, saving may change conformance_state (promote / break-glass actions).
      */
@@ -32,6 +36,8 @@ class OutboundConnection extends Model
         'trading_partner_id',
         'is_active',
         'is_default',
+        'is_system',
+        'system_key',
         'conformance_state',
         'credentials',
         'settings',
@@ -47,6 +53,7 @@ class OutboundConnection extends Model
             'conformance_state' => OutboundConformanceState::class,
             'is_active' => 'boolean',
             'is_default' => 'boolean',
+            'is_system' => 'boolean',
             'credentials' => 'encrypted:array',
             'settings' => 'array',
             'last_sent_at' => 'datetime',
@@ -210,5 +217,10 @@ class OutboundConnection extends Model
         return $state instanceof OutboundConformanceState
             ? $state
             : OutboundConformanceState::Test;
+    }
+
+    public function isSystemTemplate(): bool
+    {
+        return (bool) $this->is_system;
     }
 }

@@ -268,4 +268,19 @@ class TenantFeatures
             default => false,
         };
     }
+
+    /**
+     * Opt-in client portal v2 (OTP auth + org membership). Default off.
+     */
+    public function supportsClientPortalV2(): bool
+    {
+        $tenant = tenant();
+        if ($tenant === null) {
+            return false;
+        }
+
+        $settings = $tenant->getAttribute('settings');
+
+        return (bool) data_get(is_array($settings) ? $settings : [], 'features.client_portal_v2', false);
+    }
 }

@@ -1,5 +1,15 @@
 <x-filament-panels::page>
     <div class="flex flex-col gap-4">
+        @if ($this->supportsClientPortalV2())
+            <div class="alert alert-success">
+                <span>
+                    OTP client portal is enabled for this tenant. Use
+                    <strong>Invite to client portal</strong> for email login membership.
+                    Legacy signed links below remain available as a fallback.
+                </span>
+            </div>
+        @endif
+
         @if ($this->issuedUrl)
             <div class="alert alert-info">
                 <div class="flex flex-col gap-1">

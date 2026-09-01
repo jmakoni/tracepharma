@@ -12,6 +12,9 @@ declare(strict_types=1);
 |
 */
 
+use App\Http\Controllers\ClientPortal\AuthController as ClientPortalAuthController;
+use App\Http\Controllers\ClientPortal\ShipmentController as ClientPortalShipmentController;
+use App\Http\Controllers\ClientPortal\TraceController as ClientPortalTraceController;
 use App\Http\Controllers\CustomerPortalController;
 use App\Http\Controllers\Auth\OidcController;
 use App\Http\Controllers\EpcisSubscriptionDownloadController;
@@ -21,6 +24,8 @@ use App\Http\Controllers\SetCurrentSiteController;
 use App\Http\Controllers\SupplierExceptionPortalController;
 use App\Http\Controllers\SupplierQuarantineController;
 use App\Http\Controllers\Tenant\ImpersonateController;
+use App\Http\Middleware\EnsureClientPortalV2Enabled;
+use App\Http\Middleware\EnsurePortalUserHasOrganization;
 use App\Http\Middleware\EnsureTenantIsActive;
 use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -90,6 +95,48 @@ Route::middleware([
         ->middleware(['signed', 'throttle:20,1'])
         ->whereNumber('document')
         ->name('tenant.customer-portal.download');
+
+    Route::prefix('client-portal')
+        ->middleware([EnsureClientPortalV2Enabled::class])
+        ->name('tenant.client-portal.')
+        ->group(function (): void {
+            Route::get('/login', [ClientPortalAuthController::class, 'showLogin'])
+                ->middleware(['throttle:30,1'])
+                ->name('login');
+            Route::post('/login', [ClientPortalAuthController::class, 'requestOtp'])
+                ->middleware(['throttle:10,1'])
+                ->name('login.request');
+            Route::get('/otp', [ClientPortalAuthController::class, 'showOtp'])
+                ->middleware(['throttle:30,1'])
+                ->name('otp');
+            Route::post('/otp', [ClientPortalAuthController::class, 'verifyOtp'])
+                ->middleware(['throttle:20,1'])
+                ->name('otp.verify');
+            Route::post('/logout', [ClientPortalAuthController::class, 'logout'])
+                ->middleware(['auth:portal', 'throttle:30,1'])
+                ->name('logout');
+
+            Route::middleware(['auth:portal', EnsurePortalUserHasOrganization::class])->group(function (): void {
+                Route::get('/', fn () => redirect()->route('tenant.client-portal.shipments.index'))
+                    ->name('home');
+                Route::get('/pending', [ClientPortalAuthController::class, 'pending'])
+                    ->name('pending');
+                Route::get('/shipments', [ClientPortalShipmentController::class, 'index'])
+                    ->middleware(['throttle:60,1'])
+                    ->name('shipments.index');
+                Route::get('/shipments/{document}', [ClientPortalShipmentController::class, 'show'])
+                    ->middleware(['throttle:60,1'])
+                    ->whereNumber('document')
+                    ->name('shipments.show');
+                Route::get('/shipments/{document}/download', [ClientPortalShipmentController::class, 'download'])
+                    ->middleware(['throttle:30,1'])
+                    ->whereNumber('document')
+                    ->name('shipments.download');
+                Route::get('/trace', [ClientPortalTraceController::class, 'index'])
+                    ->middleware(['throttle:30,1'])
+                    ->name('trace');
+            });
+        });
 
     Route::get('/epcis-subscription/documents/{document}/epcis-2.0', EpcisSubscriptionDownloadController::class)
         ->middleware(['signed', 'throttle:60,1'])

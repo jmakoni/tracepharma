@@ -13,8 +13,10 @@ use App\Models\OutboundConnection;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Services\Epcis\Outbound\As2OutboundSender;
 use App\Services\Epcis\Outbound\As2SendResult;
+use App\Services\Epcis\Outbound\EmailOutboundSender;
 use App\Services\Epcis\Outbound\HttpsOutboundSender;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
+use App\Services\Epcis\Outbound\PortalOutboundSender;
 use App\Services\Epcis\Outbound\SftpOutboundSender;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\LiveAcceptedEpcisEventId;
@@ -42,6 +44,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         private readonly HttpsOutboundSender $httpsSender,
         private readonly SftpOutboundSender $sftpSender,
         private readonly As2OutboundSender $as2Sender,
+        private readonly EmailOutboundSender $emailSender,
+        private readonly PortalOutboundSender $portalSender,
         private readonly As2MdnDispositionParser $dispositionParser,
         private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
         private readonly ValidateEpcis12Document $validateEpcis12Document,
@@ -209,6 +213,14 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 OutboundTransport::As2 => $this->as2Sender->send($connection, $content, $filename, $contentType),
                 OutboundTransport::Https => $this->httpsSender->send($connection, $content, $filename, $contentType),
                 OutboundTransport::Sftp => $this->sftpSender->send($connection, $content, $filename),
+                OutboundTransport::Email => $this->emailSender->send(
+                    $connection,
+                    $content,
+                    $filename,
+                    $contentType,
+                    $document,
+                ),
+                OutboundTransport::Portal => $this->portalSender->send($connection, $document),
             };
 
             $now = now();
@@ -371,7 +383,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             return $explicit;
         }
 
-        return $this->resolver->resolve(
+        return $this->resolver->resolveWithLadder(
             $document->trading_partner_id !== null ? (int) $document->trading_partner_id : null,
         );
     }
