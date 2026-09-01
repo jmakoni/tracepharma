@@ -24,6 +24,7 @@ use App\Support\TenantSettings;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\PermissionRegistrar;
@@ -75,11 +76,13 @@ class AnnouncementEndToEndTest extends TestCase
         $targetTenantIds = $this->targetTenantIds($demo2Tenant);
         $this->ensureTenantsMigrated($targetTenantIds);
 
-        $title = 'Platform maintenance tonight';
+        $title = 'Platform maintenance tonight '.Str::uuid();
 
+        $announcement = null;
         $appUser = null;
         $tenantAnnouncement = null;
 
+        try {
         $demo2Tenant->run(function () use (&$appUser): void {
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             DB::table('tenant_announcement_dismissals')->delete();
@@ -102,8 +105,8 @@ class AnnouncementEndToEndTest extends TestCase
             ->call('create')
             ->assertHasNoFormErrors();
 
-        $announcement = Announcement::query()->where('title', $title)->firstOrFail();
-        $this->assertSame(AnnouncementStatus::Draft, $announcement->status);
+        $announcement = Announcement::query()->where('title', $title)->sole();
+        $this->assertSame(AnnouncementStatus::Draft, $announcement->fresh()->status);
         $this->assertCount(count($targetTenantIds), $announcement->tenants()->get());
 
         Livewire::test(EditAnnouncement::class, ['record' => $announcement->getKey()])
@@ -205,6 +208,54 @@ class AnnouncementEndToEndTest extends TestCase
             $this->assertNotNull($notification);
             $this->assertNull($notification->read_at);
         });
+        } finally {
+            tenancy()->end();
+            $this->cleanupAnnouncementLifecycle($announcement, $targetTenantIds);
+        }
+    }
+
+    /**
+     * @param  list<string>  $targetTenantIds
+     */
+    private function cleanupAnnouncementLifecycle(?Announcement $announcement, array $targetTenantIds): void
+    {
+        if ($announcement === null) {
+            return;
+        }
+
+        foreach ($targetTenantIds as $tenantId) {
+            $tenant = Tenant::query()->find($tenantId);
+
+            if ($tenant === null) {
+                continue;
+            }
+
+            $tenant->run(function () use ($announcement): void {
+                $tenantAnnouncementIds = TenantAnnouncement::query()
+                    ->where('announcement_id', $announcement->id)
+                    ->pluck('id');
+
+                if ($tenantAnnouncementIds->isNotEmpty()) {
+                    DB::table('tenant_announcement_dismissals')
+                        ->whereIn('tenant_announcement_id', $tenantAnnouncementIds)
+                        ->delete();
+                }
+
+                DB::table('tenant_announcements')
+                    ->where('announcement_id', $announcement->id)
+                    ->delete();
+
+                DB::table('notifications')
+                    ->where('data->announcement_id', $announcement->id)
+                    ->delete();
+            });
+        }
+
+        DB::table('announcement_tenant')
+            ->where('announcement_id', $announcement->id)
+            ->delete();
+
+        Announcement::query()->whereKey($announcement->id)->delete();
     }
 
     /**
