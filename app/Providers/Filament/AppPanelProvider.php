@@ -22,6 +22,7 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
+use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -39,7 +40,9 @@ class AppPanelProvider extends PanelProvider
         return $panel
             ->id('app')
             ->path('')
-            ->login()
+            ->login(\App\Filament\App\Pages\Auth\Login::class)
+            ->passwordReset()
+            ->authPasswordBroker('users')
             ->authGuard('web')
             ->brandName('TracePharma')
             ->brandLogo(asset('images/brand/logo.svg'))
@@ -83,8 +86,7 @@ class AppPanelProvider extends PanelProvider
                         '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>'
                     )),
             ])
-            ->globalSearch(true)
-            ->globalSearchResourceOptIn()
+            ->globalSearch(false)
             ->discoverResources(in: app_path('Filament/App/Resources'), for: 'App\\Filament\\App\\Resources')
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\\Filament\\App\\Pages')
             ->pages([
@@ -114,6 +116,11 @@ class AppPanelProvider extends PanelProvider
                     ->causerIcons([
                         User::class => 'heroicon-m-user',
                     ])
+            )
+            ->databaseNotifications()
+            ->plugin(
+                FilamentNotificationsTabsPlugin::make()
+                    ->confirmDelete()
             )
             ->userMenuItems([
                 Action::make('organizationSettings')
@@ -150,7 +157,8 @@ class AppPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::TOPBAR_AFTER,
                 fn (): string => view('filament.app.hooks.impersonation-banner')->render()
-                    .view('filament.app.hooks.legal-acceptance-banner')->render(),
+                    .view('filament.app.hooks.legal-acceptance-banner')->render()
+                    .view('filament.app.hooks.tenant-announcement-banner')->render(),
             )
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
