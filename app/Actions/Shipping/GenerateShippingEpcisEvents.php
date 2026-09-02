@@ -4,6 +4,7 @@ namespace App\Actions\Shipping;
 
 use App\Actions\Epcis\SyncDocumentEpcsFromEvents;
 use App\Enums\EpcisAuthoredKind;
+use App\Enums\PartnerType;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -13,6 +14,7 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Services\Custody\EpcCustodyGate;
+use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisDocumentWriter;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
@@ -80,6 +82,7 @@ final class GenerateShippingEpcisEvents
         private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
         private readonly OutboundEpcisWriterResolver $writerResolver,
         private readonly JsonLd20Writer $jsonLd20Writer,
+        private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
     ) {}
 
     /**
@@ -193,6 +196,8 @@ final class GenerateShippingEpcisEvents
             $this->attachTransactionIdentity($shippingEvent, $tiTs);
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 
+            $directPurchaseStatement = $this->resolveOutboundDirectPurchaseStatement((bool) $session->dscsa_affirm);
+
             $payload = $isJson20
                 ? $this->buildJsonLd20(
                     epcsById: $epcsById,
@@ -204,6 +209,7 @@ final class GenerateShippingEpcisEvents
                     tiTs: $tiTs,
                     affirmTransactionStatement: (bool) $session->dscsa_affirm,
                     isDropShipment: (bool) $session->is_drop_shipment,
+                    directPurchaseStatement: $directPurchaseStatement,
                 )
                 : $this->buildXml(
                     epcsById: $epcsById,
@@ -215,6 +221,7 @@ final class GenerateShippingEpcisEvents
                     tiTs: $tiTs,
                     affirmTransactionStatement: (bool) $session->dscsa_affirm,
                     isDropShipment: (bool) $session->is_drop_shipment,
+                    directPurchaseStatement: $directPurchaseStatement,
                 );
 
             ShippingTiTsFragments::assertDropShipmentEmitted(
@@ -901,6 +908,7 @@ final class GenerateShippingEpcisEvents
         array $tiTs,
         bool $affirmTransactionStatement = false,
         bool $isDropShipment = false,
+        ?string $directPurchaseStatement = null,
     ): string {
         $parties = $tiTs['parties'];
 
@@ -941,6 +949,10 @@ final class GenerateShippingEpcisEvents
             $event['bizTransactionList'] = $bizTransactionList;
         }
 
+        if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
+            $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson($directPurchaseStatement));
+        }
+
         $json = $this->jsonLd20Writer->buildFromDomainEvents(
             [$event],
             $recordTime->clone()->utc()->format(DateTimeInterface::ATOM),
@@ -978,6 +990,7 @@ final class GenerateShippingEpcisEvents
         array $tiTs,
         bool $affirmTransactionStatement,
         bool $isDropShipment = false,
+        ?string $directPurchaseStatement = null,
     ): string {
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $eventTimeXml = $eventTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
@@ -1021,6 +1034,7 @@ final class GenerateShippingEpcisEvents
                 sourceLocationSgln: $parties['source_location']['sgln'],
                 destOwningSgln: $parties['dest_owning']['sgln'],
                 destLocationSgln: $parties['dest_location']['sgln'],
+                directPurchaseStatement: $directPurchaseStatement,
             ).
             '      </ObjectEvent>';
 
@@ -1072,6 +1086,22 @@ final class GenerateShippingEpcisEvents
         return $header !== ''
             ? "  <EPCISHeader>\n".$header."  </EPCISHeader>\n"
             : '';
+    }
+
+    private function resolveOutboundDirectPurchaseStatement(bool $affirmTransactionStatement): ?string
+    {
+        if (! $affirmTransactionStatement) {
+            return null;
+        }
+
+        $partnerType = $this->directPurchaseStatements->tenantProfileToPartnerType(tenant());
+        if ($partnerType !== PartnerType::Wholesaler) {
+            return null;
+        }
+
+        $sellerName = filled(tenant()?->name) ? (string) tenant()->name : 'Seller';
+
+        return $this->directPurchaseStatements->statementForSeller($partnerType, $sellerName);
     }
 
     private function timezoneOffset(?Site $site, Carbon $at): string

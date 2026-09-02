@@ -10,6 +10,7 @@ use App\Models\Epcis\EpcisSubscriptionDelivery;
 use App\Models\Tenant;
 use App\Services\Epcis\Outbound\CanonicalEventsToJsonLd20;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
@@ -63,7 +64,7 @@ final class DeliverEpcisSubscriptionJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $tenant->run(function () use ($projector): void {
+        TenantRunner::run($tenant, function () use ($projector): void {
             $subscription = EpcisSubscription::query()->find($this->subscriptionId);
             $document = EpcisDocument::query()->find($this->documentId);
 

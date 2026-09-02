@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Tenant;
 use App\Support\SanctumAbilities;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -30,7 +30,7 @@ class GrantDispenseCheckAbilityCommand extends Command
         $totalUpdated = 0;
 
         foreach ($tenants as $tenant) {
-            $updated = $tenant->run(fn (): int => $this->grantForCurrentTenant($dryRun));
+            $updated = TenantRunner::run($tenant, fn (): int => $this->grantForCurrentTenant($dryRun));
 
             $totalUpdated += $updated;
 

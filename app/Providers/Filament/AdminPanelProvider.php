@@ -2,9 +2,11 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Admin\Pages\Auth\Login;
 use App\Filament\Admin\Pages\Dashboard;
 use App\Models\Admin;
 use App\Support\Auth\TracepharmaBreezyCore;
+use App\Support\Filament\OptionalFilamentPlugins;
 use Bityukov\CommandCenter\Filament\CommandCenterPlugin;
 use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
@@ -20,24 +22,24 @@ use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
-use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
-use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
+use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->default()
             ->id('admin')
             ->domain(config('tracepharma.admin_domain'))
             ->path('')
-            ->login(\App\Filament\Admin\Pages\Auth\Login::class)
+            ->login(Login::class)
             ->passwordReset()
             ->authPasswordBroker('admins')
             ->authGuard('admin')
@@ -76,28 +78,48 @@ class AdminPanelProvider extends PanelProvider
                         relyingPartyId: (string) config('tracepharma.admin_domain'),
                         scopeToPanel: true,
                     )
-            )
-            ->plugin(
-                KnowledgeBaseCompanionPlugin::make()
-                    ->knowledgeBasePanelId('admin-knowledge-base')
-                    ->modalPreviews()
-                    ->slideOverPreviews()
-            )
-            ->plugin(CommandCenterPlugin::make())
-            ->plugin(
-                ActivityTimelinePlugin::make()
-                    ->registerNavigation(false)
-                    ->navigationGroup('Audit')
-                    ->causerIcons([
-                        Admin::class => 'heroicon-m-user',
-                    ])
-            )
-            ->plugin(FilamentWatchdogPlugin::make())
+            );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            KnowledgeBaseCompanionPlugin::class,
+            fn () => KnowledgeBaseCompanionPlugin::make()
+                ->knowledgeBasePanelId('admin-knowledge-base')
+                ->modalPreviews()
+                ->slideOverPreviews(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            CommandCenterPlugin::class,
+            fn () => CommandCenterPlugin::make(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            ActivityTimelinePlugin::class,
+            fn () => ActivityTimelinePlugin::make()
+                ->registerNavigation(false)
+                ->navigationGroup('Audit')
+                ->causerIcons([
+                    Admin::class => 'heroicon-m-user',
+                ]),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            FilamentNotificationsTabsPlugin::class,
+            fn () => FilamentNotificationsTabsPlugin::make()->confirmDelete(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            'MKWebDesign\\FilamentWatchdog\\FilamentWatchdogPlugin',
+            fn () => FilamentWatchdogPlugin::make(),
+        );
+
+        return $panel
             ->databaseNotifications()
-            ->plugin(
-                FilamentNotificationsTabsPlugin::make()
-                    ->confirmDelete()
-            )
             ->userMenuItems([
                 Action::make('adminHelp')
                     ->label('Admin help')

@@ -40,7 +40,6 @@ final class SiteAtpReadiness
     {
         $summaries = self::$summaries ??= new WeakMap;
 
-        /** @phpstan-ignore-next-line offsetAccess.notFound */
         return $summaries[$site] ??= self::computeSummary($site);
     }
 

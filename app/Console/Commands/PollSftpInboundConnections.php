@@ -8,6 +8,7 @@ use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class PollSftpInboundConnections extends Command
@@ -32,7 +33,7 @@ class PollSftpInboundConnections extends Command
                     return;
                 }
 
-                $tenant->run(function () use (&$count, $tenant): void {
+                TenantRunner::run($tenant, function () use (&$count, $tenant): void {
                     InboundConnection::query()
                         ->where('is_active', true)
                         ->where('transport', InboundTransport::Sftp)

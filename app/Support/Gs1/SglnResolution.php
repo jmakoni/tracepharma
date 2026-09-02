@@ -2,6 +2,8 @@
 
 namespace App\Support\Gs1;
 
+use App\Rules\ValidGln;
+
 /**
  * The SGLN URN to author for a GLN — never an invented one.
  *
@@ -77,7 +79,7 @@ final class SglnResolution
      */
     public static function fromCompanyPrefix(?string $gln, ?string $companyPrefix, string $extension = '0'): ?string
     {
-        $normalized = Sgln::normalizeGln($gln);
+        $normalized = ValidGln::normalize($gln);
         $prefix = preg_replace('/\D+/', '', (string) $companyPrefix) ?? '';
 
         if ($normalized === null || $prefix === '' || ! ctype_digit($extension)) {
@@ -102,7 +104,11 @@ final class SglnResolution
      */
     public static function fromPrefixLength(?string $gln, ?string $companyPrefix, string $extension = '0'): ?string
     {
-        $normalized = Sgln::normalizeGln($gln);
+        // Require a GS1 Mod-10 check digit so the URN round-trips to the same GLN.
+        // A 13-digit string with a wrong check digit still yields a URN from the
+        // first 12 digits — but that URN encodes a *different* GLN, and receiving
+        // / shipping authoring then refuses to build readPoint/bizLocation.
+        $normalized = ValidGln::normalize($gln);
         $prefix = preg_replace('/\D+/', '', (string) $companyPrefix) ?? '';
         $length = strlen($prefix);
 

@@ -3,11 +3,12 @@
 namespace App\Filament\App\Resources\SsccNumberRanges\Pages;
 
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
+use App\Filament\Notifications\Notification;
 use App\Models\SsccNumberRange;
 use App\Support\Labeling\SsccNumberRangeValidator;
 use Filament\Actions\DeleteAction;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -71,6 +72,8 @@ class EditSsccNumberRange extends EditRecord
                 ->send();
 
             $this->halt();
+
+            throw new Halt;
         } catch (Throwable $e) {
             report($e);
 
@@ -81,6 +84,8 @@ class EditSsccNumberRange extends EditRecord
                 ->send();
 
             $this->halt();
+
+            throw new Halt;
         }
     }
 }

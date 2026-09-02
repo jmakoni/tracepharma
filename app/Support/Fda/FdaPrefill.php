@@ -27,6 +27,7 @@ final class FdaPrefill
             'doing_business_as' => $organization->doing_business_as,
             'description' => $organization->description,
             'gln' => $organization->gln,
+            'duns_number' => $organization->duns_number,
             'partner_type' => $organization->partner_type,
             'street_address' => $organization->street_address,
             'street_address_2' => $organization->street_address_2,
@@ -58,6 +59,9 @@ final class FdaPrefill
             'name' => $establishment->name ?: $establishment->firm_name,
             'code' => $establishment->code,
             'gln' => $establishment->gln,
+            'duns_number' => $establishment->duns_number,
+            'dea_number' => $establishment->dea_number,
+            'hin_number' => $establishment->hin_number,
             'is_headquarters' => $establishment->is_headquarters,
             'street_address' => $establishment->street_address,
             'street_address_2' => $establishment->street_address_2,
@@ -85,6 +89,9 @@ final class FdaPrefill
             'name' => $facility->name ?: $facility->facility_name,
             'code' => $facility->code,
             'gln' => $facility->gln,
+            'duns_number' => $facility->duns_number,
+            'dea_number' => $facility->dea_number,
+            'hin_number' => $facility->hin_number,
             'is_headquarters' => $facility->is_headquarters,
             'street_address' => $facility->street_address,
             'street_address_2' => $facility->street_address_2,
@@ -162,7 +169,7 @@ final class FdaPrefill
     {
         $merged = array_merge($data, $prefill);
 
-        foreach (['gln', 'sgln'] as $key) {
+        foreach (['gln', 'sgln', 'duns_number', 'dea_number', 'hin_number'] as $key) {
             if (blank($merged[$key] ?? null) && filled($data[$key] ?? null)) {
                 $merged[$key] = $data[$key];
             }
@@ -176,7 +183,7 @@ final class FdaPrefill
      */
     public static function isBlankIdentityValue(string $key, mixed $value): bool
     {
-        return in_array($key, ['gln', 'sgln'], true) && blank($value);
+        return in_array($key, ['gln', 'sgln', 'duns_number', 'dea_number', 'hin_number'], true) && blank($value);
     }
 
     /**

@@ -40,7 +40,7 @@ class PrincipalResource extends Resource implements HasKnowledgeBase
     public static function canAccess(): bool
     {
         return TenantFeatures::forTenant(tenant())->supportsPrincipals()
-            && JobRoleAccess::allows(Permissions::NavMasterData);
+            && JobRoleAccess::allowsOwnerOrAny(Permissions::NavMasterData);
     }
 
     public static function form(Schema $schema): Schema

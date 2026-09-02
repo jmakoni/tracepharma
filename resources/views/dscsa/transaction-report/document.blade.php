@@ -37,6 +37,28 @@
             margin-bottom: 12px;
         }
 
+        .header-row {
+            display: table;
+            width: 100%;
+        }
+
+        .header-brand,
+        .header-title {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .header-brand {
+            width: 120px;
+            padding-right: 12px;
+        }
+
+        .header-logo {
+            max-width: 110px;
+            max-height: 48px;
+            height: auto;
+        }
+
         .title {
             font-family: DejaVu Serif, serif;
             font-size: 16pt;
@@ -162,7 +184,7 @@
 <body>
 @foreach ($report->pages as $page)
     <div class="page{{ $loop->first ? '' : ' page-break-before' }}">
-        @include('dscsa.transaction-report.lot-page', ['page' => $page, 'footer' => $report->footer])
+        @include('dscsa.transaction-report.lot-page', ['page' => $page, 'footer' => $report->footer, 'report' => $report])
     </div>
 @endforeach
 </body>

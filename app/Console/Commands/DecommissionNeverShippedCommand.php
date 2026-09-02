@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Support\Disposition\AssertDecommissionMassApproval;
 use App\Support\Disposition\FindNeverShippedCommissionedEpcs;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Throwable;
@@ -58,7 +59,7 @@ class DecommissionNeverShippedCommand extends Command
             &$tenantFailures,
         ): void {
             try {
-                $tenant->run(function () use (
+                TenantRunner::run($tenant, function () use (
                     $tenant,
                     $action,
                     $finder,

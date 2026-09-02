@@ -13,6 +13,7 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Site;
+use App\Rules\ValidGln;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
@@ -26,12 +27,12 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
-use InvalidArgumentException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -792,6 +793,12 @@ final class UnpackReceivingHierarchy
         $siteGln = Sgln::normalizeGln($site?->gln);
 
         if ($siteGln !== null) {
+            if (ValidGln::normalize($siteGln) === null) {
+                throw new DomainException(
+                    'Cannot author unpack EPCIS: site GLN fails the GS1 check digit (fix the site GLN so it matches its SGLN).',
+                );
+            }
+
             $candidates = [];
             $siteSgln = $site?->getAttribute('sgln');
             if (is_string($siteSgln) && $siteSgln !== '') {
@@ -806,7 +813,7 @@ final class UnpackReceivingHierarchy
 
             if ($sglnUrn === null) {
                 throw new DomainException(
-                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required).',
+                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required, or site GLN/SGLN mismatch).',
                 );
             }
 
@@ -1036,10 +1043,16 @@ final class UnpackReceivingHierarchy
         $siteGln = Sgln::normalizeGln($session->site?->gln);
 
         if ($siteGln !== null) {
+            if (ValidGln::normalize($siteGln) === null) {
+                throw new DomainException(
+                    'Cannot author unpack EPCIS: site GLN fails the GS1 check digit (fix the site GLN so it matches its SGLN).',
+                );
+            }
+
             $sglnUrn = $this->resolveSiteSglnUrn($session, $siteGln);
             if ($sglnUrn === null) {
                 throw new DomainException(
-                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required).',
+                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required, or site GLN/SGLN mismatch).',
                 );
             }
 

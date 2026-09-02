@@ -40,5 +40,6 @@ final readonly class LotPageData
         public ?string $ownershipNote,
         public string $legalStatement,
         public ?string $directPurchaseStatement,
+        public ?string $receivedPrevWholesalerStatement,
     ) {}
 }

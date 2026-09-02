@@ -235,6 +235,9 @@ class SitesRelationManager extends RelationManager
                         ->unique(ignoreRecord: true)
                         ->rule(new RejectTenantGln)
                         ->rule(new RejectPartnerGlnUnderOrgPrefix),
+                    TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+                    TextInput::make('dea_number')->label('DEA')->maxLength(20),
+                    TextInput::make('hin_number')->label('HIN')->maxLength(20),
                     Toggle::make('is_headquarters')->default(false),
                     Toggle::make('is_active')->default(true),
                 ]),
@@ -269,6 +272,9 @@ class SitesRelationManager extends RelationManager
                 ->unique(ignoreRecord: true)
                 ->rule(new RejectTenantGln)
                 ->rule(new RejectPartnerGlnUnderOrgPrefix),
+            TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+            TextInput::make('dea_number')->label('DEA')->maxLength(20),
+            TextInput::make('hin_number')->label('HIN')->maxLength(20),
             Toggle::make('is_headquarters')->default(false),
             TextInput::make('city')->maxLength(255),
             TextInput::make('state')->maxLength(100),

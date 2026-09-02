@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Resources\Tenants\Actions;
 
 use App\Actions\Admin\StartTenantUserImpersonation;
+use App\Filament\Notifications\Notification;
 use App\Models\Admin;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\Permissions;
 use App\Support\Tenancy\TenantAccess;
+use App\Support\Tenancy\TenantRunner;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 
@@ -86,7 +87,7 @@ final class ImpersonateTenantUserAction
      */
     private static function tenantUserOptions(Tenant $tenant): array
     {
-        return $tenant->run(function (): array {
+        return TenantRunner::run($tenant, function (): array {
             return User::query()
                 ->orderBy('name')
                 ->get(['id', 'name', 'email'])

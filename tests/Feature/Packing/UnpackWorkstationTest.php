@@ -14,12 +14,12 @@ use App\Models\Quarantine\QuarantineHold;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
 use DOMDocument;
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -409,7 +409,7 @@ class UnpackWorkstationTest extends TestCase
 
             [$parent, $childA] = $this->seedOpenHierarchy($site);
 
-            $held = Cache::lock('pack-child:'.$tenant->getKey().':'.$childA->getKey(), 30);
+            $held = EpcisCacheLock::lock('pack-child:'.$tenant->getKey().':'.$childA->getKey(), 30);
             $this->assertTrue($held->get());
 
             try {

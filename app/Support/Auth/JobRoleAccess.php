@@ -3,6 +3,7 @@
 namespace App\Support\Auth;
 
 use App\Enums\TenantRole;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Support\TenantSettings;
 use Illuminate\Support\Facades\Auth;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Auth;
  */
 final class JobRoleAccess
 {
-    public static function enabled(?\App\Models\Tenant $tenant = null): bool
+    public static function enabled(?Tenant $tenant = null): bool
     {
         return TenantSettings::forTenant($tenant ?? tenant())->jobRolesEnabled();
     }
@@ -75,6 +76,18 @@ final class JobRoleAccess
         }
 
         return false;
+    }
+
+    /**
+     * Owner escape hatch when job roles are off; otherwise enforce nav capabilities.
+     */
+    public static function allowsOwnerOrAny(string ...$capabilities): bool
+    {
+        if (! self::enabled()) {
+            return self::isOwner();
+        }
+
+        return self::allowsAny(...$capabilities);
     }
 
     /**

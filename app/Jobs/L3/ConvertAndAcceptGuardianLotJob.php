@@ -19,8 +19,8 @@ use App\Models\Tenant;
 use App\Services\L3\GuardianDataFeedParser;
 use App\Support\Epcis\EpcisTempFile;
 use App\Support\Gs1\Sgln;
-use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantSettings;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -91,7 +91,7 @@ final class ConvertAndAcceptGuardianLotJob implements ShouldBeUnique, ShouldQueu
     ): void {
         $tenant = Tenant::query()->findOrFail($this->tenantId);
 
-        $tenant->run(function () use ($parser, $author, $receiveEpcisUpload, $tenant): void {
+        TenantRunner::run($tenant, function () use ($parser, $author, $receiveEpcisUpload, $tenant): void {
             $feed = L3LotFeed::query()->find($this->feedId);
             if ($feed === null || $feed->isTerminal()) {
                 return;

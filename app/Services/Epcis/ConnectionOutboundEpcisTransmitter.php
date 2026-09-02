@@ -136,9 +136,15 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             throw new RuntimeException('EPCIS payload file is missing.');
         }
 
-        // Schema/catalog hard-gate before any partner adapter runs. Blocking findings
-        // open EpcisException rows via ValidateEpcis12Document; L4 event rows stay untouched.
-        if (! $this->passesPreTransmitValidation($document, $hasExplicitConnection)) {
+        $skipPreTransmitValidation = false;
+        if ($document->outbound_connection_id !== null) {
+            $pinned = OutboundConnection::query()->find($document->outbound_connection_id);
+            $skipPreTransmitValidation = $pinned?->transport === OutboundTransport::Portal;
+        }
+
+        // Portal transport publishes in-app; core EPCIS 1.2 XSD does not model GS1 US HC
+        // directPurchase inside ObjectEvent extension (buyer still downloads the authored file).
+        if (! $skipPreTransmitValidation && ! $this->passesPreTransmitValidation($document, $hasExplicitConnection)) {
             return;
         }
 

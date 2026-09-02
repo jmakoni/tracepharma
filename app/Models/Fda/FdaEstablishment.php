@@ -14,6 +14,8 @@ class FdaEstablishment extends FdaModel
         'name',
         'code',
         'duns_number',
+        'dea_number',
+        'hin_number',
         'gln',
         'sgln',
         'street_address',
@@ -64,5 +66,4 @@ class FdaEstablishment extends FdaModel
     {
         return $this->hasMany(FdaEstablishmentOperation::class);
     }
-
 }

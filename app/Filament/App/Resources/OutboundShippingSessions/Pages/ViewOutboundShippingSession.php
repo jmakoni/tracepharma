@@ -4,38 +4,30 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CancelOutboundShippingSession;
-use App\Actions\Shipping\CompleteOutboundShippingSession;
 use App\Actions\Shipping\DeclareOutboundShippingSplit;
 use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\OverrideOutboundShippingQuantityGate;
-use App\Actions\Shipping\UpdateOutboundShippingParty;
-use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
+use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingWizard;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
-use App\Models\OutboundConnection;
 use App\Models\Shipping\OutboundShippingSession;
-use App\Models\Site;
-use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Shipping\AtpGateBypass;
-use App\Support\Shipping\OutboundPortalPickupNotice;
 use App\Support\Shipping\OutboundShippingSessionStatus;
-use App\Support\Shipping\OutboundShipReadiness;
-use App\Support\Shipping\SearchShipToCustomers;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -48,41 +40,11 @@ class ViewOutboundShippingSession extends ViewRecord
     use InteractsWithOutboundShippingSessionHud {
         mount as mountOutboundShippingSessionHud;
     }
+    use InteractsWithOutboundShippingWizard;
 
     protected static string $resource = OutboundShippingSessionResource::class;
 
     protected string $view = 'filament.app.resources.outbound-shipping-sessions.pages.view-outbound-shipping-session';
-
-    public int $wizardStep = 1;
-
-    public ?int $trading_partner_id = null;
-
-    public ?int $ship_to_site_id = null;
-
-    public ?string $ship_to_gln = null;
-
-    public string $customerSearch = '';
-
-    /** @var list<array{site_id: int, trading_partner_id: int, company: string, address: string, gln: ?string, site_name: string}> */
-    public array $customerSuggestions = [];
-
-    public bool $customerDropdownOpen = false;
-
-    public ?int $outbound_connection_id = null;
-
-    public ?string $asn_number = null;
-
-    public ?string $customer_po = null;
-
-    public ?string $invoice_number = null;
-
-    public ?string $shipment_reference = null;
-
-    public ?int $expected_count = null;
-
-    public bool $dscsa_affirm = false;
-
-    public bool $is_drop_shipment = false;
 
     public function mount(int|string $record): void
     {
@@ -93,6 +55,25 @@ class ViewOutboundShippingSession extends ViewRecord
         if (request()->query('scan')) {
             $this->wizardStep = 1;
         }
+    }
+
+    protected function getOutboundShippingSession(): OutboundShippingSession
+    {
+        /** @var OutboundShippingSession */
+        return $this->getRecord();
+    }
+
+    protected function refreshOutboundShippingSession(): void
+    {
+        $this->refreshOutboundShippingSessionHud();
+    }
+
+    protected function afterOutboundShipmentSent(): void
+    {
+        $this->notifyOpenParentHierarchyIfNeeded($this->getOutboundShippingSession());
+
+        $this->dispatch('outbound-shipping-scan-lines-updated')
+            ->to(ScanLinesRelationManager::class);
     }
 
     public function getHeading(): string|Htmlable|null
@@ -112,51 +93,6 @@ class ViewOutboundShippingSession extends ViewRecord
         }
 
         return 'Ship order #'.$record->getKey();
-    }
-
-    /**
-     * @return list<array{key: string, label: string, status: string, detail: string}>
-     */
-    public function readinessBadges(): array
-    {
-        /** @var OutboundShippingSession $record */
-        $record = $this->getRecord();
-
-        if (! in_array($record->status, ['open', 'in_progress'], true)) {
-            return [];
-        }
-
-        // Draft customer fields on the Livewire form before Save — otherwise badges
-        // still say "Ship-to GLN or site required" after autocomplete selection.
-        $draft = $record->replicate();
-        $draft->setRelation('tradingPartner', $record->tradingPartner);
-        $draft->setRelation('shipToSite', $record->shipToSite);
-        $draft->forceFill([
-            'trading_partner_id' => $this->trading_partner_id,
-            'ship_to_site_id' => $this->ship_to_site_id,
-            'ship_to_gln' => $this->ship_to_gln,
-            'outbound_connection_id' => $this->outbound_connection_id,
-            'asn_number' => $this->asn_number ?? $record->asn_number,
-            'customer_po' => $this->customer_po ?? $record->customer_po,
-            'invoice_number' => $this->invoice_number ?? $record->invoice_number,
-            'dscsa_affirm' => $this->dscsa_affirm ?? $record->dscsa_affirm,
-        ]);
-
-        if ($this->ship_to_site_id !== null) {
-            $draft->setRelation(
-                'shipToSite',
-                Site::query()->with('tradingPartner')->find($this->ship_to_site_id),
-            );
-        }
-
-        if ($this->trading_partner_id !== null) {
-            $draft->setRelation(
-                'tradingPartner',
-                TradingPartner::query()->find($this->trading_partner_id),
-            );
-        }
-
-        return app(OutboundShipReadiness::class)->badges($draft);
     }
 
     public function statusLabel(): string
@@ -210,86 +146,6 @@ class ViewOutboundShippingSession extends ViewRecord
         };
     }
 
-    public function goToStep(int $step): void
-    {
-        if ($step >= 1 && $step <= 3) {
-            $this->wizardStep = $step;
-        }
-    }
-
-    public function savePartyAction(): Action
-    {
-        return Action::make('saveParty')
-            ->label('Save customer')
-            ->action(function (): void {
-                /** @var OutboundShippingSession $session */
-                $session = $this->getRecord();
-
-                try {
-                    app(UpdateOutboundShippingParty::class)->handle($session, [
-                        'trading_partner_id' => $this->trading_partner_id,
-                        'ship_to_site_id' => $this->ship_to_site_id,
-                        'ship_to_gln' => $this->ship_to_gln,
-                        'outbound_connection_id' => $this->outbound_connection_id,
-                    ]);
-                } catch (DomainException $e) {
-                    Notification::make()
-                        ->title('Save blocked')
-                        ->body($e->getMessage())
-                        ->danger()
-                        ->send();
-
-                    return;
-                }
-
-                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
-                $this->hydrateWizardFromRecord();
-
-                Notification::make()
-                    ->title('Customer saved')
-                    ->success()
-                    ->send();
-            });
-    }
-
-    public function saveReferencesAction(): Action
-    {
-        return Action::make('saveReferences')
-            ->label('Save references')
-            ->action(function (): void {
-                /** @var OutboundShippingSession $session */
-                $session = $this->getRecord();
-
-                try {
-                    app(UpdateOutboundShippingReferences::class)->handle($session, [
-                        'asn_number' => $this->asn_number,
-                        'customer_po' => $this->customer_po,
-                        'invoice_number' => $this->invoice_number,
-                        'shipment_reference' => $this->shipment_reference,
-                        'dscsa_affirm' => $this->dscsa_affirm,
-                        'is_drop_shipment' => $this->is_drop_shipment,
-                        'expected_count' => $this->expected_count ?? 0,
-                    ]);
-                } catch (DomainException $e) {
-                    Notification::make()
-                        ->title('Save blocked')
-                        ->body($e->getMessage())
-                        ->danger()
-                        ->send();
-
-                    return;
-                }
-
-                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
-                $this->hydrateWizardFromRecord();
-
-                Notification::make()
-                    ->title('References saved')
-                    ->success()
-                    ->send();
-            });
-    }
-
     public function declareSplitAction(): Action
     {
         return Action::make('declareSplit')
@@ -319,7 +175,7 @@ class ViewOutboundShippingSession extends ViewRecord
                     return;
                 }
 
-                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                $this->refreshOutboundShippingSession();
                 $this->hydrateWizardFromRecord();
 
                 Notification::make()
@@ -387,7 +243,7 @@ class ViewOutboundShippingSession extends ViewRecord
                     return;
                 }
 
-                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                $this->refreshOutboundShippingSession();
                 $this->hydrateWizardFromRecord();
 
                 Notification::make()
@@ -437,7 +293,7 @@ class ViewOutboundShippingSession extends ViewRecord
                     return;
                 }
 
-                $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                $this->refreshOutboundShippingSession();
 
                 Notification::make()
                     ->title('Added from receiving')
@@ -448,101 +304,6 @@ class ViewOutboundShippingSession extends ViewRecord
                 $this->dispatch('outbound-shipping-scan-lines-updated')
                     ->to(ScanLinesRelationManager::class);
             });
-    }
-
-    public function updatedCustomerSearch(string $value): void
-    {
-        $this->customerSuggestions = app(SearchShipToCustomers::class)->handle($value);
-        $this->customerDropdownOpen = $this->customerSuggestions !== [];
-    }
-
-    public function openCustomerDropdown(): void
-    {
-        // Focus/click shows the browse list; typing still filters via updatedCustomerSearch.
-        $this->customerSuggestions = app(SearchShipToCustomers::class)->handle('');
-        $this->customerDropdownOpen = $this->customerSuggestions !== [];
-    }
-
-    public function selectShipToCustomer(int $siteId): void
-    {
-        $site = Site::query()
-            ->with(['tradingPartner:id,name'])
-            ->whereKey($siteId)
-            ->where('is_active', true)
-            ->first();
-
-        if ($site === null || $site->trading_partner_id === null) {
-            return;
-        }
-
-        $this->trading_partner_id = (int) $site->trading_partner_id;
-        $this->ship_to_site_id = (int) $site->getKey();
-        $this->ship_to_gln = filled($site->gln) ? (string) $site->gln : null;
-        $this->outbound_connection_id = null;
-        $this->customerSearch = (string) ($site->tradingPartner?->name ?: $site->name);
-        $this->customerSuggestions = [];
-        $this->customerDropdownOpen = false;
-    }
-
-    public function clearShipToCustomer(): void
-    {
-        $this->trading_partner_id = null;
-        $this->ship_to_site_id = null;
-        $this->ship_to_gln = null;
-        $this->outbound_connection_id = null;
-        $this->customerSearch = '';
-        $this->customerSuggestions = [];
-        $this->customerDropdownOpen = false;
-    }
-
-    /**
-     * @return array{company: string, address: string}|null
-     */
-    public function selectedShipToSummary(): ?array
-    {
-        if ($this->ship_to_site_id === null) {
-            return null;
-        }
-
-        $site = Site::query()
-            ->with(['tradingPartner:id,name'])
-            ->whereKey($this->ship_to_site_id)
-            ->first();
-
-        if ($site === null) {
-            return null;
-        }
-
-        return [
-            'company' => (string) ($site->tradingPartner?->name ?: $site->name),
-            'address' => SearchShipToCustomers::formatAddress($site),
-        ];
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    public function outboundConnectionOptions(): array
-    {
-        $query = OutboundConnection::query()
-            ->where('is_active', true);
-
-        if ($this->trading_partner_id !== null) {
-            $partnerId = (int) $this->trading_partner_id;
-
-            $query->where(function ($builder) use ($partnerId): void {
-                $builder->whereNull('trading_partner_id')
-                    ->orWhere('trading_partner_id', $partnerId);
-            });
-        } else {
-            $query->whereNull('trading_partner_id');
-        }
-
-        return $query
-            ->orderByDesc('is_default')
-            ->orderBy('name')
-            ->pluck('name', 'id')
-            ->all();
     }
 
     public function content(Schema $schema): Schema
@@ -558,95 +319,7 @@ class ViewOutboundShippingSession extends ViewRecord
         return [
             $this->declareSplitAction(),
             $this->overrideQuantityGateAction(),
-            RegulatoryCompliance::apply(
-                Action::make('sendShipment')
-                    ->label('Send shipment')
-                    ->icon(Heroicon::OutlinedPaperAirplane)
-                    ->color('success')
-                    ->visible(fn (): bool => $this->isActive() || $this->getRecord()->needsShippingEpcis())
-                    ->disabled(fn (): bool => blank($this->asn_number)
-                        || (blank($this->customer_po) && blank($this->invoice_number))
-                        || ! $this->dscsa_affirm)
-                    ->requiresConfirmation()
-                    ->modalHeading('Send this shipment?')
-                    ->modalDescription('Authors the shipping EPCIS document and schedules outbound transmission to the partner.')
-                    ->modalSubmitActionLabel('Send shipment')
-                    ->action(function (): void {
-                        /** @var OutboundShippingSession $session */
-                        $session = $this->getRecord();
-
-                        try {
-                            if (blank($this->asn_number) || (blank($this->customer_po) && blank($this->invoice_number))) {
-                                throw new DomainException(
-                                    blank($this->asn_number)
-                                        ? 'ASN number is required.'
-                                        : 'Customer PO or invoice number is required.',
-                                );
-                            }
-
-                            if (! $this->dscsa_affirm) {
-                                throw new DomainException('TI/TS affirmation is required.');
-                            }
-
-                            app(UpdateOutboundShippingReferences::class)->handle($session, [
-                                'asn_number' => $this->asn_number,
-                                'customer_po' => $this->customer_po,
-                                'invoice_number' => $this->invoice_number,
-                                'shipment_reference' => $this->shipment_reference,
-                                'dscsa_affirm' => $this->dscsa_affirm,
-                                'is_drop_shipment' => $this->is_drop_shipment,
-                                'expected_count' => $this->expected_count ?? 0,
-                            ]);
-                            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
-                                'trading_partner_id' => $this->trading_partner_id,
-                                'ship_to_site_id' => $this->ship_to_site_id,
-                                'ship_to_gln' => $this->ship_to_gln,
-                                'outbound_connection_id' => $this->outbound_connection_id,
-                            ]);
-                            app(CompleteOutboundShippingSession::class)->handle($session->fresh(), auth()->id());
-                        } catch (AuthorizationException|InvalidArgumentException|DomainException $e) {
-                            $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
-                            $this->hydrateWizardFromRecord();
-
-                            Notification::make()
-                                ->title('Send blocked')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-
-                            return;
-                        }
-
-                        $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
-                        $this->hydrateWizardFromRecord();
-                        $this->wizardStep = 3;
-
-                        $copy = $this->shipCompleteCopy();
-                        $portalUrl = OutboundPortalPickupNotice::signedUrl($this->getRecord());
-                        $body = $copy['body'];
-                        if ($portalUrl !== null) {
-                            $body .= "\n\nCustomer portal: ".$portalUrl;
-                        }
-                        $notification = Notification::make()
-                            ->title($copy['title'])
-                            ->body($body);
-
-                        match ($copy['tone']) {
-                            'success' => $notification->success(),
-                            'warning' => $notification->warning(),
-                            default => $notification->danger(),
-                        };
-
-                        $notification->send();
-
-                        $this->notifyOpenParentHierarchyIfNeeded($this->getRecord());
-
-                        $this->dispatch('outbound-shipping-scan-lines-updated')
-                            ->to(ScanLinesRelationManager::class);
-                    }),
-                'outbound_shipping_send',
-                requireReason: false,
-            ),
+            $this->sendShipmentAction(),
             Action::make('cancelShipOrder')
                 ->label('Cancel')
                 ->icon(Heroicon::OutlinedXMark)
@@ -798,29 +471,5 @@ class ViewOutboundShippingSession extends ViewRecord
             requireReason: true,
             existingReasonField: 'corrective_reason',
         );
-    }
-
-    private function hydrateWizardFromRecord(): void
-    {
-        /** @var OutboundShippingSession $record */
-        $record = $this->getRecord();
-
-        $this->trading_partner_id = $record->trading_partner_id !== null ? (int) $record->trading_partner_id : null;
-        $this->ship_to_site_id = $record->ship_to_site_id !== null ? (int) $record->ship_to_site_id : null;
-        $this->ship_to_gln = $record->ship_to_gln;
-        $this->outbound_connection_id = $record->outbound_connection_id !== null ? (int) $record->outbound_connection_id : null;
-        $this->asn_number = $record->asn_number;
-        $this->customer_po = $record->customer_po;
-        $this->invoice_number = $record->invoice_number;
-        $this->shipment_reference = $record->shipment_reference;
-        $this->expected_count = $record->expected_count !== null ? (int) $record->expected_count : null;
-        $this->dscsa_affirm = (bool) $record->dscsa_affirm;
-        $this->is_drop_shipment = (bool) $record->is_drop_shipment;
-
-        $summary = $this->selectedShipToSummary();
-        $this->customerSearch = $summary['company']
-            ?? (string) ($record->tradingPartner?->name ?? '');
-        $this->customerSuggestions = [];
-        $this->customerDropdownOpen = false;
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models\Concerns;
 use App\Models\LocationDevice;
 use App\Models\Site;
 use App\Models\TradingPartner;
+use App\Rules\ValidGln;
 use App\Support\Gs1\OrganizationSglnPrefixes;
 use App\Support\Gs1\SglnResolution;
 use App\Support\TenantSettings;
@@ -46,6 +47,15 @@ trait DerivesSgln
         $gln = is_string($this->getAttribute('gln')) ? $this->getAttribute('gln') : null;
         $current = $this->getAttribute('sgln');
         $current = is_string($current) ? $current : null;
+
+        // Never invent an SGLN for a GLN that fails the GS1 check digit — the URN
+        // would encode a different GLN and break EPCIS authoring (readPoint/bizLocation).
+        if ($gln !== null && $gln !== '' && ValidGln::normalize($gln) === null) {
+            $this->setAttribute('sgln', null);
+
+            return;
+        }
+
         $settings = TenantSettings::forTenant(tenant());
         $orgPrefix = $settings->companyPrefix();
         $partnerPrefix = $settings->companyPrefixForPartnerEncoding();

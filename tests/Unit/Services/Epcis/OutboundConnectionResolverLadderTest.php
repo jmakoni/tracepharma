@@ -180,6 +180,47 @@ class OutboundConnectionResolverLadderTest extends TestCase
         }
     }
 
+    #[Test]
+    public function partner_without_b2b_skips_global_b2b_for_ladder(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = $this->createPartner('Portal only partner');
+
+            $globalHttps = OutboundConnection::query()->create([
+                'name' => 'Global HTTPS '.Str::random(4),
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'trading_partner_id' => null,
+                'is_active' => true,
+                'is_default' => true,
+                'settings' => ['endpoint_url' => 'https://global.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $globalHttps->getKey();
+
+            $portal = OutboundConnection::query()->create([
+                'name' => 'Partner portal '.Str::random(4),
+                'serialization_provider' => SerializationProvider::Other,
+                'transport' => OutboundTransport::Portal,
+                'trading_partner_id' => $partner->getKey(),
+                'is_active' => true,
+                'settings' => ['notify_on_publish' => true],
+            ]);
+            $this->connectionIds[] = (int) $portal->getKey();
+
+            $resolved = app(OutboundConnectionResolver::class)
+                ->resolveWithLadder((int) $partner->getKey());
+
+            $this->assertNotNull($resolved);
+            $this->assertSame($portal->getKey(), $resolved->getKey());
+            $this->assertSame(OutboundTransport::Portal, $resolved->transport);
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
     private function createPartner(string $name): TradingPartner
     {
         $partner = TradingPartner::query()->create([

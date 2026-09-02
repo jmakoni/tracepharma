@@ -13,6 +13,7 @@ use App\Services\Integrations\InboundEpcisReceiver;
 use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -40,7 +41,7 @@ class As2InboundWebhookController
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
 
-        return $tenant->run(function () use ($request, $connectionId): JsonResponse|Response {
+        return TenantRunner::run($tenant, function () use ($request, $connectionId): JsonResponse|Response {
             $connection = InboundConnection::query()
                 ->whereKey($connectionId)
                 ->where('is_active', true)

@@ -14,8 +14,8 @@ use App\Models\SsccLabelBatch;
 use App\Models\SsccPrintJob;
 use App\Models\Tenant;
 use App\Services\Labeling\ZplLabelRenderer;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Labeling\ResolveClientPrintBridge;
-use Illuminate\Support\Facades\Cache;
 
 class DispatchSsccBatchPrint
 {
@@ -201,7 +201,7 @@ class DispatchSsccBatchPrint
      */
     private function withLabelPrintLock(int $labelId, \Closure $callback)
     {
-        return Cache::lock('sscc-print-label:'.$labelId, 10)->block(5, $callback);
+        return EpcisCacheLock::lock('sscc-print-label:'.$labelId, 10)->block(5, $callback);
     }
 
     private function supersedeOpenJobsForLabel(int $labelId): void

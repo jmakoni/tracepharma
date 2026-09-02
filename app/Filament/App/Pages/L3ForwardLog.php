@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\App\Pages;
 
 use App\Enums\TenantProfile;
+use App\Filament\Notifications\Notification;
 use App\Jobs\Labeling\ForwardCommissioningToL3;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
@@ -13,7 +14,6 @@ use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Schemas\Components\EmbeddedTable;
@@ -69,7 +69,7 @@ class L3ForwardLog extends Page implements HasKnowledgeBase, HasTable
             return false;
         }
 
-        return JobRoleAccess::allowsAny(
+        return JobRoleAccess::allowsOwnerOrAny(
             Permissions::NavCompliance,
             Permissions::NavIntegrations,
         );

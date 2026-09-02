@@ -79,6 +79,9 @@ class SiteForm
                                     ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy from the partner\'s EPCIS.'
                                     : 'Copy the SGLN from the partner\'s EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.')
                                 : 'Filled from the GLN for your own facilities.'),
+                        TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+                        TextInput::make('dea_number')->label('DEA')->maxLength(20),
+                        TextInput::make('hin_number')->label('HIN')->maxLength(20),
                         Toggle::make('is_headquarters')->default(false),
                         Toggle::make('is_active')->default(true),
                         TextInput::make('google_place_id')

@@ -41,7 +41,7 @@ class BuyingGroupMemberResource extends Resource implements HasKnowledgeBase
     public static function canAccess(): bool
     {
         return TenantFeatures::forTenant(tenant())->supportsBuyingGroupNetwork()
-            && JobRoleAccess::allows(Permissions::NavCompliance);
+            && JobRoleAccess::allowsOwnerOrAny(Permissions::UsersManage);
     }
 
     public static function shouldRegisterNavigation(): bool

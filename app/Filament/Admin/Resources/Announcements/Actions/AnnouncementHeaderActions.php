@@ -6,9 +6,9 @@ use App\Actions\Announcements\PublishAnnouncement;
 use App\Actions\Announcements\RetireAnnouncement;
 use App\Enums\AnnouncementFanOutStatus;
 use App\Enums\AnnouncementStatus;
+use App\Filament\Notifications\Notification;
 use App\Jobs\Announcements\FanOutAnnouncementToTenant;
 use App\Models\Announcement;
-use App\Filament\Notifications\Notification;
 use Filament\Actions\Action;
 use Filament\Support\Icons\Heroicon;
 use InvalidArgumentException;
@@ -84,14 +84,20 @@ final class AnnouncementHeaderActions
             ->color('gray')
             ->visible(fn (Announcement $record): bool => $record->status === AnnouncementStatus::Published
                 && $record->tenants()
-                    ->wherePivot('fan_out_status', AnnouncementFanOutStatus::Failed->value)
+                    ->wherePivotIn('fan_out_status', [
+                        AnnouncementFanOutStatus::Failed->value,
+                        AnnouncementFanOutStatus::Processing->value,
+                    ])
                     ->exists())
             ->requiresConfirmation()
             ->modalHeading('Retry failed fan-out')
-            ->modalDescription('Re-dispatches fan-out jobs for tenants whose delivery failed.')
+            ->modalDescription('Re-dispatches fan-out jobs for tenants whose delivery failed or is stuck processing.')
             ->action(function (Announcement $record): void {
                 $failedTenants = $record->tenants()
-                    ->wherePivot('fan_out_status', AnnouncementFanOutStatus::Failed->value)
+                    ->wherePivotIn('fan_out_status', [
+                        AnnouncementFanOutStatus::Failed->value,
+                        AnnouncementFanOutStatus::Processing->value,
+                    ])
                     ->get();
 
                 if ($failedTenants->isEmpty()) {

@@ -21,6 +21,10 @@ class FdaEstablishmentsTable
                 TextColumn::make('name')->searchable()->placeholder(fn ($record) => $record->firm_name),
                 TextColumn::make('city')->searchable(),
                 TextColumn::make('state_province')->label('State')->searchable(),
+                FdaRegistryBadges::identifierColumn('gln', 'GLN')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('duns_number', 'DUNS')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('dea_number', 'DEA')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('hin_number', 'HIN')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('country_code')->label('Country'),
                 TextColumn::make('operations.operation_code')
                     ->label('Operations')

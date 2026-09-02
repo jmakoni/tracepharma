@@ -6,6 +6,7 @@ namespace App\Jobs\Announcements;
 
 use App\Models\Tenant;
 use App\Models\TenantAnnouncement;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -28,7 +29,7 @@ final class RetireAnnouncementOnTenant implements ShouldQueue
     {
         $tenant = Tenant::query()->findOrFail($this->tenantId);
 
-        $tenant->run(function (): void {
+        TenantRunner::run($tenant, function (): void {
             TenantAnnouncement::query()
                 ->where('announcement_id', $this->announcementId)
                 ->update(['is_active' => false]);

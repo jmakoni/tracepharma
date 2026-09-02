@@ -16,6 +16,7 @@ use App\Support\Auth\OidcProvider;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\PlatformSettings;
 use App\Support\TenantSettings;
+use Illuminate\Support\Str;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -29,6 +30,9 @@ class OidcSsoTest extends TestCase
     private const DEMO2_DATABASE = 'tenant_demo2_internal_vatengi_com';
 
     private static bool $demo2TenantReady = false;
+
+    /** @var list<int> */
+    private array $userIds = [];
 
     #[Test]
     public function tenant_jit_creates_user_and_assigns_default_role(): void
@@ -111,6 +115,178 @@ class OidcSsoTest extends TestCase
 
             app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
         } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_jit_rejects_when_allowed_email_domains_empty(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: [],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'oid-sub-empty-domains',
+                'name' => 'No Allowlist',
+                'email' => 'user@acme.test',
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('SSO allowed email domains must be configured');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_sso_rejects_existing_user_when_email_domain_is_not_allowed(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $email = 'bob-'.Str::uuid()->toString().'@legacy.test';
+
+            User::factory()->create([
+                'email' => $email,
+                'password' => 'password',
+            ]);
+
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'attacker-sub',
+                'name' => 'Attacker',
+                'email' => $email,
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Email domain is not allowed');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_sso_rejects_subject_mismatch_on_existing_bound_user(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $issuer = 'https://login.microsoftonline.com/example/v2.0';
+            $email = 'linked-'.Str::uuid()->toString().'@acme.test';
+
+            $subject = 'victim-subject-'.Str::uuid()->toString();
+
+            User::factory()->create([
+                'email' => $email,
+                'password' => 'password',
+                'oidc_issuer' => $issuer,
+                'oidc_subject' => $subject,
+            ]);
+            $this->userIds[] = (int) User::query()->where('email', $email)->value('id');
+
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: $issuer,
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'attacker-subject-'.Str::uuid()->toString(),
+                'name' => 'Attacker',
+                'email' => $email,
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('OIDC identity subject does not match the existing account binding.');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            $this->cleanupUsers();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_sso_links_password_user_without_existing_oidc_binding(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $issuer = 'https://login.microsoftonline.com/example/v2.0';
+            $email = 'password-only-'.Str::uuid()->toString().'@acme.test';
+
+            $existing = User::factory()->create([
+                'email' => $email,
+                'password' => 'password',
+            ]);
+            $this->userIds[] = (int) $existing->getKey();
+
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: $issuer,
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'new-oidc-subject-'.Str::uuid()->toString(),
+                'name' => 'Linked User',
+                'email' => $email,
+            ]);
+
+            $user = app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+
+            $this->assertTrue($user->is($existing->fresh()));
+            $this->assertSame($socialite->getId(), $user->oidc_subject);
+            $this->assertSame($issuer, $user->oidc_issuer);
+        } finally {
+            $this->cleanupUsers();
             tenancy()->end();
         }
     }
@@ -225,13 +401,16 @@ class OidcSsoTest extends TestCase
     }
 
     #[Test]
-    public function admin_sso_binds_existing_admin_by_email(): void
+    public function admin_sso_requires_prior_oidc_binding(): void
     {
+        $subject = 'admin-sub-'.Str::uuid()->toString();
+        $issuer = 'https://example.okta.com/'.Str::uuid()->toString();
+
         $admin = Admin::factory()->create([
-            'email' => 'oidc-admin-'.\Illuminate\Support\Str::uuid()->toString().'@tracepharma.test',
+            'email' => 'oidc-admin-'.Str::uuid()->toString().'@tracepharma.test',
+            'oidc_issuer' => $issuer,
+            'oidc_subject' => $subject,
         ]);
-        $subject = 'admin-sub-'.\Illuminate\Support\Str::uuid()->toString();
-        $issuer = 'https://example.okta.com/'.\Illuminate\Support\Str::uuid()->toString();
 
         $config = new OidcConnectionConfig(
             enabled: true,
@@ -258,6 +437,39 @@ class OidcSsoTest extends TestCase
         $this->assertTrue($resolved->is($admin->fresh()));
         $this->assertSame($subject, $resolved->oidc_subject);
         $this->assertSame($issuer, $resolved->oidc_issuer);
+    }
+
+    #[Test]
+    public function admin_sso_rejects_unbound_account(): void
+    {
+        Admin::factory()->create([
+            'email' => 'unbound-admin-'.Str::uuid()->toString().'@tracepharma.test',
+        ]);
+
+        $config = new OidcConnectionConfig(
+            enabled: true,
+            ssoOnly: false,
+            provider: OidcProvider::Okta,
+            issuer: 'https://example.okta.com/'.Str::uuid()->toString(),
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            entraTenantId: null,
+            jitDefaultRole: null,
+            allowedEmailDomains: [],
+            redirectUri: 'https://admin.example/auth/oidc/callback',
+            socialiteDriver: 'okta',
+        );
+
+        $socialite = (new SocialiteUser)->map([
+            'id' => 'new-subject',
+            'name' => 'Unknown Admin',
+            'email' => 'other-'.Str::uuid()->toString().'@tracepharma.test',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No platform admin account is provisioned');
+
+        app(OidcIdentityResolver::class)->resolveAdmin($socialite, $config);
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -300,5 +512,17 @@ class OidcSsoTest extends TestCase
         }
 
         return $tenant->fresh();
+    }
+
+    private function cleanupUsers(): void
+    {
+        if (! tenancy()->initialized || $this->userIds === []) {
+            $this->userIds = [];
+
+            return;
+        }
+
+        User::query()->whereIn('id', $this->userIds)->delete();
+        $this->userIds = [];
     }
 }

@@ -103,7 +103,7 @@ final class ReceiveEpcisUpload
         // check and each persist their own EpcisDocument row.
         // Named store (not Cache::__call): Stancl tags __call under tenancy.
         // Never the file store — php-fpm cannot write artisan-created SHA1 shards.
-        $document = EpcisCacheLock::store()->lock($this->epcisUploadHashLockKey($direction, $sha256), 60)->block(10, function () use (
+        $document = EpcisCacheLock::lock($this->epcisUploadHashLockKey($direction, $sha256), 60)->block(10, function () use (
             $sha256,
             $disk,
             $direction,
@@ -274,7 +274,7 @@ final class ReceiveEpcisUpload
             // Calling handle() directly skips the job's WithoutOverlapping queue
             // middleware, so an equivalent lock is taken here to keep a concurrent
             // reprocess of the same document from racing this synchronous run.
-            EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
+            EpcisCacheLock::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
                 $job->handle(app(EpcisIngestionService::class));
             });
 

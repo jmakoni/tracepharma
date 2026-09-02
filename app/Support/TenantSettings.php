@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
+use App\Support\Gs1\Sgln;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Tenancy\TenantKillSwitches;
 use Illuminate\Http\Client\PendingRequest;
@@ -120,7 +121,7 @@ class TenantSettings
 
     public function glnIsUnderCompanyPrefix(?string $gln): bool
     {
-        $normalized = \App\Support\Gs1\Sgln::normalizeGln($gln);
+        $normalized = Sgln::normalizeGln($gln);
         $prefix = self::normalizeCompanyPrefix($this->companyPrefix());
 
         if ($normalized === null || $prefix === null) {
@@ -1089,6 +1090,34 @@ class TenantSettings
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
+    }
+
+    public function vrsVerificationContactEmail(): ?string
+    {
+        $email = data_get($this->settingsBag(), 'vrs.verification_contact_email');
+
+        return is_string($email) && filled($email) ? strtolower(trim($email)) : null;
+    }
+
+    public function stateLicenseNumber(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'compliance.state_license_number');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function vendorNumber(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'integrations.vendor_number');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function manufacturerVerificationPortalTtlBusinessDays(): int
+    {
+        $days = data_get($this->settingsBag(), 'vrs.manufacturer_request_ttl_business_days', 4);
+
+        return max(1, (int) $days);
     }
 
     /**

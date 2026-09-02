@@ -28,6 +28,10 @@ class FdaWddFacilitiesTable
                 FdaRegistryBadges::facilityTypeColumn(),
                 TextColumn::make('city')->searchable(),
                 TextColumn::make('state_province')->label('State'),
+                FdaRegistryBadges::identifierColumn('gln', 'GLN')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('duns_number', 'DUNS')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('dea_number', 'DEA')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('hin_number', 'HIN')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('country_code')->label('Country'),
                 TextColumn::make('active_licenses_count')->label('Active licenses')->sortable(),
                 TextColumn::make('soonest_expiration_date')

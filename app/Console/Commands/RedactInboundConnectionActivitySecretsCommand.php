@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\InboundConnection;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -35,7 +36,7 @@ class RedactInboundConnectionActivitySecretsCommand extends Command
 
         foreach ($tenants as $tenant) {
             try {
-                $tenant->run(function () use (&$redacted): void {
+                TenantRunner::run($tenant, function () use (&$redacted): void {
                     $subjectType = (new InboundConnection)->getMorphClass();
 
                     Activity::query()

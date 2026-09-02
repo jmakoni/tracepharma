@@ -12,6 +12,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -119,6 +120,34 @@ class PrincipalResourceTest extends TestCase
             $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
             $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsPrincipals());
+            $this->assertFalse(PrincipalResource::canAccess());
+            Livewire::test(CreatePrincipal::class)->assertForbidden();
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function non_owner_cannot_access_principal_resource_when_job_roles_are_disabled(): void
+    {
+        $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $settings = TenantSettings::forTenant(tenant());
+            $settings->setJobRolesEnabled(false);
+            tenant()->save();
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
+
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::ReceivingTechnician->value);
+            $this->userIds[] = (int) $user->getKey();
+
+            $this->actingAs($user);
+
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsPrincipals());
             $this->assertFalse(PrincipalResource::canAccess());
             Livewire::test(CreatePrincipal::class)->assertForbidden();
         } finally {

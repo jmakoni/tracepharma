@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Models\Epcis\TransmissionMdn;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Throwable;
@@ -53,7 +54,7 @@ class EmitPendingMdnCatalogSignalsCommand extends Command
             &$failed,
         ): void {
             try {
-                $tenant->run(function () use (
+                TenantRunner::run($tenant, function () use (
                     $tenant,
                     $catalogSignal,
                     $dryRun,

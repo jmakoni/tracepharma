@@ -4694,7 +4694,7 @@ class OutboundShippingSessionTest extends TestCase
     public function desktop_blade_has_live_blur_and_enter_stage_scan_binding(): void
     {
         $blade = File::get(resource_path(
-            'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
+            'views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php',
         ));
 
         $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
@@ -4702,6 +4702,11 @@ class OutboundShippingSessionTest extends TestCase
         $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
         $this->assertStringNotContainsString('wire:model="scan"', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
+
+        $viewBlade = File::get(resource_path(
+            'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
+        ));
+        $this->assertStringNotContainsString('@php($shipComplete', $viewBlade);
     }
 
     private function ingestMinimalFixture(): EpcisDocument

@@ -5,10 +5,13 @@ namespace App\Jobs;
 use App\Models\Epcis\EpcisException;
 use App\Models\Tenant;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Optional post-ingest promote of a signal to an investigation case.
@@ -31,10 +34,15 @@ class PromoteEpcisExceptionToCaseJob implements ShouldQueue
         $tenant = Tenant::query()->find($this->tenantId);
 
         if ($tenant === null) {
+            Log::warning('PromoteEpcisExceptionToCaseJob skipped: tenant missing.', [
+                'tenant_id' => $this->tenantId,
+                'epcis_exception_id' => $this->epcisExceptionId,
+            ]);
+
             return;
         }
 
-        $tenant->run(function () use ($exceptions): void {
+        TenantRunner::run($tenant, function () use ($exceptions): void {
             $signal = EpcisException::query()->find($this->epcisExceptionId);
 
             if ($signal === null || $signal->case_id !== null) {
@@ -43,8 +51,21 @@ class PromoteEpcisExceptionToCaseJob implements ShouldQueue
 
             $allow = config('tracepharma.exceptions.auto_promote_types', []);
 
-            if ($allow !== [] && ! in_array($signal->exception_type, $allow, true)) {
-                return;
+            if ($allow !== []) {
+                $canonicalType = ExceptionService::legacySignalTypeMap()[$signal->exception_type]
+                    ?? $signal->exception_type;
+
+                $allowed = in_array($signal->exception_type, $allow, true)
+                    || in_array($canonicalType, $allow, true);
+
+                if (! $allowed) {
+                    Log::info('PromoteEpcisExceptionToCaseJob skipped: type not allowed.', [
+                        'exception_type' => $signal->exception_type,
+                        'allowed' => $allow,
+                    ]);
+
+                    return;
+                }
             }
 
             if ($allow === []) {
@@ -54,5 +75,14 @@ class PromoteEpcisExceptionToCaseJob implements ShouldQueue
             $signal->loadMissing('document');
             $exceptions->createFromSignal($signal);
         });
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        Log::error('PromoteEpcisExceptionToCaseJob failed.', [
+            'tenant_id' => $this->tenantId,
+            'epcis_exception_id' => $this->epcisExceptionId,
+            'message' => $exception->getMessage(),
+        ]);
     }
 }

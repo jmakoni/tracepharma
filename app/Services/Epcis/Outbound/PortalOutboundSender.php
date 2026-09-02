@@ -10,6 +10,7 @@ use App\Models\OutboundConnection;
 use App\Models\PortalPublication;
 use App\Models\TradingPartner;
 use App\Notifications\PortalPublicationReadyNotification;
+use App\Support\TenantAppUrl;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -94,7 +95,7 @@ final class PortalOutboundSender
 
         $notification = new PortalPublicationReadyNotification(
             tenantLabel: (string) (tenant()?->name ?? 'Your trading partner'),
-            loginUrl: route('tenant.client-portal.login'),
+            loginUrl: TenantAppUrl::forPath('/client-portal/login'),
             asnNumber: filled($document->asn_number) ? (string) $document->asn_number : null,
             customerPo: filled($document->customer_po) ? (string) $document->customer_po : null,
         );

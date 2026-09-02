@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Epcis;
 
 use App\Services\Epcis\Contracts\EpcisDocumentParser;
+use App\Support\Epcis\DscsaShippingExtensionParser;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\Validation\EpcisCbv20Mapper;
 use InvalidArgumentException;
@@ -206,6 +207,8 @@ final class EpcisJsonLd20Parser implements EpcisDocumentParser
             ];
         }
 
+        $extensionJson = $this->parseDscsaExtensionJson($event, $bizStep);
+
         return [
             'event_type' => $eventType,
             'event_id' => isset($event['eventID']) ? trim((string) $event['eventID']) : (isset($event['eventId']) ? trim((string) $event['eventId']) : null),
@@ -225,9 +228,35 @@ final class EpcisJsonLd20Parser implements EpcisDocumentParser
             'biz_transactions' => $bizTransactions,
             'parties' => [],
             'ilmd' => $ilmd,
-            'extension_json' => null,
+            'extension_json' => $extensionJson,
             'error_declaration' => null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>|null
+     */
+    private function parseDscsaExtensionJson(array $event, ?string $bizStep): ?array
+    {
+        if ($bizStep === null || ! str_contains(strtolower($bizStep), 'shipping')) {
+            return null;
+        }
+
+        $extension = $event['extension'] ?? null;
+        if (is_array($extension)) {
+            $parsed = DscsaShippingExtensionParser::parseJsonExtension($extension);
+            if ($parsed !== null && ! $parsed->isEmpty()) {
+                return ['dscsa' => $parsed->toArray()];
+            }
+        }
+
+        $parsed = DscsaShippingExtensionParser::parseJsonExtension($event);
+        if ($parsed !== null && ! $parsed->isEmpty()) {
+            return ['dscsa' => $parsed->toArray()];
+        }
+
+        return null;
     }
 
     /**

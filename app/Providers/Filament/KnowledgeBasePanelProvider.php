@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Http\Middleware\EnsureLegalAcceptance;
 use App\Http\Middleware\EnsureTenantIsActive;
 use App\Support\Auth\TracepharmaBreezyCore;
+use App\Support\Filament\OptionalFilamentPlugins;
 use App\Support\KnowledgeBase\PublicAssetImageRenderer;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -30,7 +31,7 @@ class KnowledgeBasePanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('knowledge-base')
             ->path('help')
             ->login()
@@ -50,16 +51,21 @@ class KnowledgeBasePanelProvider extends PanelProvider
                 'gray' => Color::hex('#676C73'),
             ])
             ->maxContentWidth(Width::Full)
-            ->viteTheme('resources/css/filament/app/theme.css')
-            ->plugin(
-                KnowledgeBasePlugin::make()
-                    ->articleClass('prose dark:prose-invert max-w-4xl')
-                    ->configureCommonMarkEnvironmentUsing(function (EnvironmentBuilderInterface $environment): EnvironmentBuilderInterface {
-                        $environment->addRenderer(Image::class, new PublicAssetImageRenderer, 10);
+            ->viteTheme('resources/css/filament/app/theme.css');
 
-                        return $environment;
-                    })
-            )
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            KnowledgeBasePlugin::class,
+            fn () => KnowledgeBasePlugin::make()
+                ->articleClass('prose dark:prose-invert max-w-4xl')
+                ->configureCommonMarkEnvironmentUsing(function (EnvironmentBuilderInterface $environment): EnvironmentBuilderInterface {
+                    $environment->addRenderer(Image::class, new PublicAssetImageRenderer, 10);
+
+                    return $environment;
+                }),
+        );
+
+        return $panel
             ->plugin(
                 TracepharmaBreezyCore::make()
                     ->enableTwoFactorAuthentication()

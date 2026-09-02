@@ -9,6 +9,7 @@ use App\Enums\SsccLabelBatchStatus;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -58,7 +59,7 @@ class ReconcileSsccBatchL3L4Command extends Command
             }
 
             try {
-                $tenant->run(function () use (
+                TenantRunner::run($tenant, function () use (
                     $tenant,
                     $reconcile,
                     $dryRun,

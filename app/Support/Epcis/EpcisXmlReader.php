@@ -758,6 +758,11 @@ final class EpcisXmlReader
                 $ilmd = $this->parseIlmdNode($ilmdNode);
             }
 
+            $dscsaExtensions = DscsaShippingExtensionParser::parseXmlExtension($extension);
+            if ($dscsaExtensions !== null && ! $dscsaExtensions->isEmpty()) {
+                $extensionJson['dscsa'] = $dscsaExtensions->toArray();
+            }
+
             foreach ($this->collectUnknownExtensionChildren($extension) as $localName => $value) {
                 $extensionJson[$localName] = $value;
             }
@@ -1003,7 +1008,10 @@ final class EpcisXmlReader
      */
     private function collectUnknownExtensionChildren(\SimpleXMLElement $extension): array
     {
-        $skip = ['sourceList', 'destinationList', 'ilmd'];
+        $skip = array_merge(
+            ['sourceList', 'destinationList', 'ilmd'],
+            DscsaShippingExtensionParser::dscsaExtensionSkipLocalNames(),
+        );
         $out = [];
 
         foreach ($this->allChildElements($extension) as $child) {
@@ -1163,7 +1171,6 @@ final class EpcisXmlReader
         $previous = libxml_use_internal_errors(true);
         $previousEntityLoader = null;
         if (\function_exists('libxml_disable_entity_loader')) {
-            /** @phpstan-ignore-next-line deprecated in PHP 8.0+, removed later — guarded by function_exists */
             $previousEntityLoader = @libxml_disable_entity_loader(true);
         }
 
@@ -1178,7 +1185,6 @@ final class EpcisXmlReader
             return $xml instanceof \SimpleXMLElement ? $xml : null;
         } finally {
             if (\function_exists('libxml_disable_entity_loader') && $previousEntityLoader !== null) {
-                /** @phpstan-ignore-next-line */
                 @libxml_disable_entity_loader((bool) $previousEntityLoader);
             }
             libxml_clear_errors();

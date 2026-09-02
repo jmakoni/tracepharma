@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Tenant;
 use App\Models\Verification;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -46,7 +47,7 @@ class ExportVrsReadinessLogCommand extends Command
 
         $query->cursor()->each(function (Tenant $tenant) use ($limit, &$tenantsPayload, &$totalRows, &$failed): void {
             try {
-                $tenant->run(function () use ($tenant, $limit, &$tenantsPayload, &$totalRows): void {
+                TenantRunner::run($tenant, function () use ($tenant, $limit, &$tenantsPayload, &$totalRows): void {
                     $rows = Verification::query()
                         ->orderByDesc('id')
                         ->limit($limit)

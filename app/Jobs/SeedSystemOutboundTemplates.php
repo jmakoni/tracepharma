@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Actions\Outbound\EnsureSystemOutboundTemplates;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -29,7 +30,7 @@ class SeedSystemOutboundTemplates implements ShouldQueue
         /** @var Tenant $tenant */
         $tenant = $this->tenant;
 
-        $tenant->run(function () use ($ensure): void {
+        TenantRunner::run($tenant, function () use ($ensure): void {
             $ensure->handle();
         });
     }

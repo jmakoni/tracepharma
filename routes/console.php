@@ -73,6 +73,16 @@ Schedule::command('epcis:fail-stale-jobs')
     ->withoutOverlapping()
     ->name('epcis-fail-stale-jobs');
 
+Schedule::command('exports:fail-stale')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->name('exports-fail-stale');
+
+Schedule::command('exports:purge-expired')
+    ->dailyAt('04:30')
+    ->withoutOverlapping()
+    ->name('exports-purge-expired');
+
 Schedule::command('sscc:check-pool-levels')
     ->daily()
     ->withoutOverlapping()

@@ -283,4 +283,39 @@ class TenantFeatures
 
         return (bool) data_get(is_array($settings) ? $settings : [], 'features.client_portal_v2', false);
     }
+
+    /**
+     * Manufacturer verification request portal (VRS fallback). Default off.
+     */
+    public function supportsManufacturerVerificationPortal(): bool
+    {
+        if (! $this->supportsVrs()) {
+            return false;
+        }
+
+        $tenant = tenant();
+        if ($tenant === null) {
+            return false;
+        }
+
+        $settings = $tenant->getAttribute('settings');
+
+        return (bool) data_get(is_array($settings) ? $settings : [], 'features.manufacturer_verification_portal', false);
+    }
+
+    /**
+     * Async Serialized Track & Trace export API (DSCSA compliance PDF).
+     */
+    public function supportsTrackAndTraceExport(): bool
+    {
+        return match ($this->profile) {
+            TenantProfile::Pharmacy,
+            TenantProfile::Manufacturer,
+            TenantProfile::DrugWholesaler,
+            TenantProfile::Prepackager,
+            TenantProfile::Logistics3pl,
+            TenantProfile::DentalMedicalSupply => true,
+            default => false,
+        };
+    }
 }

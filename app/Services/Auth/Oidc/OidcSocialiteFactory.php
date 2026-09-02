@@ -13,7 +13,7 @@ use SocialiteProviders\Manager\Config as SocialiteConfig;
 
 final class OidcSocialiteFactory
 {
-    public function make(OidcConnectionConfig $config): SocialiteProviderContract
+    public function make(OidcConnectionConfig $config, ?string $nonce = null): SocialiteProviderContract
     {
         $this->bindRuntimeConfig($config);
 
@@ -21,6 +21,10 @@ final class OidcSocialiteFactory
 
         if (method_exists($driver, 'setConfig')) {
             $driver->setConfig($this->socialiteConfig($config));
+        }
+
+        if ($nonce !== null) {
+            $driver = $driver->with(['nonce' => $nonce]);
         }
 
         return $driver->scopes($this->scopes($config->provider));

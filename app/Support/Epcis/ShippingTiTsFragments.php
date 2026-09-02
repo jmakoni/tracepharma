@@ -157,9 +157,9 @@ final class ShippingTiTsFragments
         string $sourceLocationSgln,
         string $destOwningSgln,
         string $destLocationSgln,
+        ?string $directPurchaseStatement = null,
     ): string {
-        return
-            "        <extension>\n".
+        $inner =
             "          <sourceList>\n".
             '            <source type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($sourceOwningSgln)."</source>\n".
             '            <source type="'.self::e(self::SDT_LOCATION).'">'.self::e($sourceLocationSgln)."</source>\n".
@@ -167,8 +167,39 @@ final class ShippingTiTsFragments
             "          <destinationList>\n".
             '            <destination type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($destOwningSgln)."</destination>\n".
             '            <destination type="'.self::e(self::SDT_LOCATION).'">'.self::e($destLocationSgln)."</destination>\n".
-            "          </destinationList>\n".
+            "          </destinationList>\n";
+
+        if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
+            $inner .= "          <extension>\n".
+                self::directPurchaseXml($directPurchaseStatement).
+                "          </extension>\n";
+        }
+
+        return
+            "        <extension>\n".
+            $inner.
             "        </extension>\n";
+    }
+
+    public static function directPurchaseXml(string $statement): string
+    {
+        return
+            "          <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
+            '            <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
+            "          </gs1ushc:directPurchase>\n";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function directPurchaseExtensionJson(string $statement): array
+    {
+        return [
+            'directPurchase' => [
+                'qualifier' => 'ENTIRELY_DIRECT',
+                'directPurchaseStatement' => $statement,
+            ],
+        ];
     }
 
     /**

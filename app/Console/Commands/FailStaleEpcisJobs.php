@@ -9,6 +9,7 @@ use App\Enums\EpcisJobStatus;
 use App\Models\EpcisJob;
 use App\Models\Tenant;
 use App\Support\EpcisJobs\EpcisJobSla;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Throwable;
@@ -33,7 +34,7 @@ class FailStaleEpcisJobs extends Command
 
         foreach ($tenants as $tenant) {
             try {
-                $tenant->run(function () use ($forceFail, &$failedJobs): void {
+                TenantRunner::run($tenant, function () use ($forceFail, &$failedJobs): void {
                     EpcisJob::query()
                         ->notArchived()
                         ->whereIn('status', [EpcisJobStatus::Sending, EpcisJobStatus::Processing])

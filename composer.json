@@ -30,6 +30,7 @@
         "league/html-to-markdown": "^5.1",
         "meilisearch/meilisearch-php": "^1.16",
         "mkwebdesign/filament-watchdog-v5": "*",
+        "occtherapist/advanced-table-export-for-filament": "*",
         "socialiteproviders/manager": "*",
         "socialiteproviders/microsoft-azure": "*",
         "socialiteproviders/okta": "*",
@@ -43,6 +44,7 @@
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
+        "larastan/larastan": "*",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
@@ -88,6 +90,15 @@
             "@test:prepare",
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
+        ],
+        "lint": [
+            "vendor/bin/pint --test"
+        ],
+        "analyse": [
+            "vendor/bin/phpstan analyse --memory-limit=512M"
+        ],
+        "analyse:full": [
+            "vendor/bin/phpstan analyse --memory-limit=1G -c phpstan-full.neon"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

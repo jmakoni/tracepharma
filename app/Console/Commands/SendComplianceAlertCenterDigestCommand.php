@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
 use App\Support\Auth\SupportEngineerEmail;
 use App\Support\Compliance\ComplianceAlertMetrics;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantSettings;
 use Illuminate\Console\Command;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -51,7 +52,7 @@ class SendComplianceAlertCenterDigestCommand extends Command
             &$failed,
         ): void {
             try {
-                $tenant->run(function () use ($tenant, $dryRun, $force, &$notified, &$skipped): void {
+                TenantRunner::run($tenant, function () use ($tenant, $dryRun, $force, &$notified, &$skipped): void {
                     $settings = TenantSettings::forTenant($tenant);
 
                     if (! $settings->alertDigestEnabled()) {

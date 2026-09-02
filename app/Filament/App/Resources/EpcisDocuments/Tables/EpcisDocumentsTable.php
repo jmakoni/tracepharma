@@ -5,11 +5,12 @@ namespace App\Filament\App\Resources\EpcisDocuments\Tables;
 use App\Actions\Epcis\EnrichEpcisDocumentShippingFields;
 use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Filament\App\Resources\EpcisDocuments\Actions\StartReceivingAction;
+use App\Filament\App\Support\QueueSerializedTrackTraceExport;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
-use App\Services\Dscsa\DscsaComplianceReportGenerator;
 use App\Services\Dscsa\TransactionReportGenerator;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -18,7 +19,6 @@ use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\TextInput;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
@@ -448,30 +448,13 @@ class EpcisDocumentsTable
                     ->icon(Heroicon::OutlinedViewfinderCircle)
                     ->disabled(fn (EpcisDocument $record): bool => ! in_array($record->status, ['parsed', 'validated'], true))
                     ->tooltip(fn (EpcisDocument $record): ?string => in_array($record->status, ['parsed', 'validated'], true)
-                        ? 'Download DSCSA Compliance Report PDF (serials by lot)'
+                        ? 'Queue DSCSA Compliance Report PDF (serials by lot). You will be notified when it is ready.'
                         : 'Document must be parsed or validated before generating a Compliance Report')
-                    ->action(function (EpcisDocument $record) {
+                    ->action(function (EpcisDocument $record): void {
                         /** @var User|null $actor */
                         $actor = auth()->user();
-                        $result = app(DscsaComplianceReportGenerator::class)->generate($record, $actor);
 
-                        activity()
-                            ->performedOn($record)
-                            ->causedBy($actor)
-                            ->withProperties([
-                                'lots' => count($result['data']->lots),
-                                'serials' => $result['data']->serialCount,
-                                'filename' => $result['filename'],
-                            ])
-                            ->log('Downloaded DSCSA Compliance Report');
-
-                        return response()->streamDownload(
-                            static function () use ($result): void {
-                                echo $result['binary'];
-                            },
-                            $result['filename'],
-                            ['Content-Type' => 'application/pdf'],
-                        );
+                        QueueSerializedTrackTraceExport::forDocument($record, $actor);
                     }),
             ]));
     }

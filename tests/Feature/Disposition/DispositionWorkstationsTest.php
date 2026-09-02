@@ -42,6 +42,7 @@ use App\Support\Disposition\AcquireDecommissionEpcLocks;
 use App\Support\Disposition\AcquireReturningEpcLocks;
 use App\Support\Disposition\AssertDecommissionMassApproval;
 use App\Support\Epcis\EpcHasCommissioningEvent;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Gs1\Gtin;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\ShippableEpcsAtSite;
@@ -51,7 +52,6 @@ use App\Support\TenantSettings;
 use Database\Seeders\ExceptionTypeSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -686,7 +686,7 @@ class DispositionWorkstationsTest extends TestCase
                 new AcquireCommissionEpcLocks(ttlSeconds: 60, waitSeconds: 1),
             );
 
-            $held = Cache::lock(AcquireCommissionEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
+            $held = EpcisCacheLock::lock(AcquireCommissionEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
             $this->assertTrue($held->get());
 
             try {
@@ -764,7 +764,7 @@ class DispositionWorkstationsTest extends TestCase
                 new AcquireDecommissionEpcLocks(ttlSeconds: 60, waitSeconds: 1),
             );
 
-            $held = Cache::lock(AcquireDecommissionEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
+            $held = EpcisCacheLock::lock(AcquireDecommissionEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
             $this->assertTrue($held->get());
 
             try {
@@ -861,7 +861,7 @@ class DispositionWorkstationsTest extends TestCase
                 new AcquireReturningEpcLocks(ttlSeconds: 60, waitSeconds: 1),
             );
 
-            $held = Cache::lock(AcquireReturningEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
+            $held = EpcisCacheLock::lock(AcquireReturningEpcLocks::key((string) $tenant->getKey(), $sharedId), 60);
             $this->assertTrue($held->get());
 
             try {

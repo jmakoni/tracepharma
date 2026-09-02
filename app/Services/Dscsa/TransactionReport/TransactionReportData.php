@@ -20,5 +20,7 @@ final readonly class TransactionReportData
         public string $shipmentId,
         public array $pages,
         public array $footer,
+        public ?string $logoDataUri = null,
+        public string $sellerDisplayName = 'Seller',
     ) {}
 }

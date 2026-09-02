@@ -6,6 +6,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
 use App\Models\Tenant;
 use App\Services\Epcis\EpcisIngestionService;
+use App\Services\Exceptions\PlatformSupportNotificationDispatcher;
 use App\Support\EpcisJobs\SyncInboundEpcisJobFromDocument;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,7 +32,7 @@ class ProcessEpcisDocumentJob implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        return (string) $this->tenant->getKey().':'.$this->documentId;
+        return 'process:'.$this->tenant->getKey().':'.$this->documentId;
     }
 
     /**
@@ -148,5 +149,11 @@ class ProcessEpcisDocumentJob implements ShouldBeUnique, ShouldQueue
                 );
             }
         });
+
+        app(PlatformSupportNotificationDispatcher::class)->dispatchForEpcisJobFailure(
+            (string) $this->tenant->getKey(),
+            $this->documentId,
+            Str::limit($e?->getMessage() ?? 'Job failed', 2000),
+        );
     }
 }

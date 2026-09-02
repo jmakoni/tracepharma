@@ -151,6 +151,7 @@ final class ProcessEpcisDocument
             $eventCount = 0;
             $batch = [];
             $documentEpcIds = [];
+            $dscsaPromoted = false;
 
             EpcisEvent::withoutSyncingToSearch(function () use (
                 $absolutePath,
@@ -161,10 +162,19 @@ final class ProcessEpcisDocument
                 &$eventCount,
                 &$batch,
                 &$documentEpcIds,
+                &$dscsaPromoted,
             ): void {
                 $parser->parseHeaderAndStream(
                     $absolutePath,
-                    function (array $eventData) use ($document, $epcIdByUri, $generation, &$eventCount, &$batch, &$documentEpcIds): void {
+                    function (array $eventData) use ($document, $epcIdByUri, $generation, &$eventCount, &$batch, &$documentEpcIds, &$dscsaPromoted): void {
+                        if (! $dscsaPromoted) {
+                            $bizStep = strtolower((string) ($eventData['biz_step'] ?? ''));
+                            if ($bizStep !== '' && str_contains($bizStep, 'shipping')) {
+                                app(PromoteDscsaShippingExtensions::class)->handle($document, $eventData);
+                                $dscsaPromoted = true;
+                            }
+                        }
+
                         $batch[] = $eventData;
                         if (count($batch) < self::EVENT_BATCH_SIZE) {
                             return;
@@ -668,6 +678,15 @@ final class ProcessEpcisDocument
             'dscsa_affirm' => $dscsaAffirm,
             'legal_notice' => $parsed['legal_notice'] ?? null,
         ];
+
+        if (Schema::hasColumn('epcis_documents', 'direct_purchase_statement')) {
+            $attributes['direct_purchase_qualifier'] = null;
+            $attributes['direct_purchase_statement'] = null;
+            $attributes['direct_purchase_indirect_epc_uris'] = null;
+            $attributes['received_prev_wholesaler_qualifier'] = null;
+            $attributes['received_prev_wholesaler_statement'] = null;
+            $attributes['received_prev_wholesaler_indirect_epc_uris'] = null;
+        }
 
         if (Schema::hasColumn('epcis_documents', 'document_uuid_synthesized')) {
             $attributes['document_uuid_synthesized'] = $synthesized;

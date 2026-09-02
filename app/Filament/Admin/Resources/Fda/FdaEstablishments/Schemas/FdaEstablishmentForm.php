@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Fda\FdaEstablishments\Schemas;
 
 use App\Filament\Admin\Support\FdaOrganizationSelect;
 use App\Support\Gs1\GlnRules;
+use App\Support\Gs1\SglnRules;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -20,13 +21,17 @@ class FdaEstablishmentForm
                 ->columns(2)
                 ->schema([
                     FdaOrganizationSelect::make(),
-                    TextInput::make('fei_number')->label('FEI')->maxLength(20),
+                    TextInput::make('fei_number')->label('FEI')->unique(ignoreRecord: true)->maxLength(20),
                     TextInput::make('name')->maxLength(255),
                     TextInput::make('firm_name')->required()->maxLength(255),
+                    TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
                     GlnRules::input()->unique(ignoreRecord: true),
+                    SglnRules::input(),
                     TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+                    TextInput::make('dea_number')->label('DEA')->maxLength(20),
+                    TextInput::make('hin_number')->label('HIN')->maxLength(20),
                     Toggle::make('is_currently_registered')->inline(false),
-                    Toggle::make('is_active')->inline(false),
+                    Toggle::make('is_active')->inline(false)->default(true),
                     DatePicker::make('expiration_date')->native(false),
                     Toggle::make('exclusion_flag')->inline(false),
                 ]),
@@ -38,7 +43,7 @@ class FdaEstablishmentForm
                     TextInput::make('city')->maxLength(100),
                     TextInput::make('state_province')->label('State / province')->maxLength(64),
                     TextInput::make('postal_code')->maxLength(20),
-                    TextInput::make('country_code')->maxLength(3),
+                    TextInput::make('country_code')->default('US')->maxLength(2),
                     TextInput::make('full_address')->columnSpanFull(),
                 ]),
             Section::make('Contacts')

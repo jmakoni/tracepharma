@@ -8,6 +8,7 @@ use App\Actions\Exceptions\SendDscsaExceptionEmail;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Tenant;
 use App\Support\Exceptions\InvestigatorSlaClock;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Throwable;
@@ -55,7 +56,7 @@ class NotifyAgingSupplierExceptionsCommand extends Command
             &$failed,
         ): void {
             try {
-                $tenant->run(function () use (
+                TenantRunner::run($tenant, function () use (
                     $tenant,
                     $sendEmail,
                     $clock,

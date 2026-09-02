@@ -10,6 +10,7 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\StrictRejectionDigest;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Exceptions\RoleDoesNotExist;
@@ -53,7 +54,7 @@ class SendStrictRejectionDigestCommand extends Command
             $processed++;
 
             try {
-                $tenant->run(function () use ($tenant, $dryRun, &$notified): void {
+                TenantRunner::run($tenant, function () use ($tenant, $dryRun, &$notified): void {
                     $exceptions = ExceptionCase::query()
                         ->whereHas('type', fn ($query) => $query->whereIn('code', self::DIGEST_TYPE_CODES))
                         ->whereIn('status', [

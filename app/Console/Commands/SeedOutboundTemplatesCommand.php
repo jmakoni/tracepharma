@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Outbound\EnsureSystemOutboundTemplates;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class SeedOutboundTemplatesCommand extends Command
@@ -32,7 +33,7 @@ class SeedOutboundTemplatesCommand extends Command
         }
 
         foreach ($tenants as $tenant) {
-            $result = $tenant->run(fn (): array => $ensure->handle());
+            $result = TenantRunner::run($tenant, fn (): array => $ensure->handle());
             $this->info(sprintf(
                 '[%s] created=%d existing=%d',
                 $tenant->getTenantKey(),

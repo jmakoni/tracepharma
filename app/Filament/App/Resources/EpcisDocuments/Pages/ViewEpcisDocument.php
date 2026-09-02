@@ -10,15 +10,16 @@ use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Filament\App\Resources\EpcisDocuments\Actions\StartReceivingAction;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
+use App\Filament\App\Support\QueueSerializedTrackTraceExport;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\User;
-use App\Services\Dscsa\DscsaComplianceReportGenerator;
 use App\Services\Dscsa\TransactionReportGenerator;
-use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\TenantFeatures;
@@ -27,7 +28,6 @@ use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
@@ -96,7 +96,7 @@ class ViewEpcisDocument extends ViewRecord
 
     protected function getHeaderActions(): array
     {
-        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 20480));
+        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 81920));
 
         return [
             Action::make('downloadXml')
@@ -199,32 +199,15 @@ class ViewEpcisDocument extends ViewRecord
                     ->icon(Heroicon::OutlinedViewfinderCircle)
                     ->disabled(fn (): bool => ! in_array($this->getRecord()->status, ['parsed', 'validated'], true))
                     ->tooltip(fn (): ?string => in_array($this->getRecord()->status, ['parsed', 'validated'], true)
-                        ? 'Download DSCSA Compliance Report PDF (serials by lot)'
+                        ? 'Queue DSCSA Compliance Report PDF (serials by lot). You will be notified when it is ready.'
                         : 'Document must be parsed or validated before generating a Compliance Report')
-                    ->action(function () {
+                    ->action(function (): void {
                         /** @var EpcisDocument $record */
                         $record = $this->getRecord();
                         /** @var User|null $actor */
                         $actor = auth()->user();
-                        $result = app(DscsaComplianceReportGenerator::class)->generate($record, $actor);
 
-                        activity()
-                            ->performedOn($record)
-                            ->causedBy($actor)
-                            ->withProperties([
-                                'lots' => count($result['data']->lots),
-                                'serials' => $result['data']->serialCount,
-                                'filename' => $result['filename'],
-                            ])
-                            ->log('Downloaded DSCSA Compliance Report');
-
-                        return response()->streamDownload(
-                            static function () use ($result): void {
-                                echo $result['binary'];
-                            },
-                            $result['filename'],
-                            ['Content-Type' => 'application/pdf'],
-                        );
+                        QueueSerializedTrackTraceExport::forDocument($record, $actor);
                     }),
                 Action::make('probeScan')
                     ->label('Probe scan')

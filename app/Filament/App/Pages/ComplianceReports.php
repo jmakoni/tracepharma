@@ -3,10 +3,11 @@
 namespace App\Filament\App\Pages;
 
 use App\Enums\ComplianceReportType;
+use App\Filament\App\Support\QueueSerializedTrackTraceExport;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Dscsa\AuditPackageZipGenerator;
-use App\Services\Dscsa\DscsaComplianceReportGenerator;
 use App\Services\Dscsa\TiHistoryExportGenerator;
 use App\Services\Dscsa\TransactionReportGenerator;
 use App\Support\Auth\JobRoleAccess;
@@ -15,7 +16,6 @@ use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -205,11 +205,17 @@ class ComplianceReports extends Page implements HasKnowledgeBase
             return null;
         }
 
+        if ($reportType === ComplianceReportType::DscsaComplianceReport) {
+            QueueSerializedTrackTraceExport::forDocument($document, $actor);
+
+            return null;
+        }
+
         $result = match ($reportType) {
             ComplianceReportType::TransactionReport => app(TransactionReportGenerator::class)->generate($document, $actor),
-            ComplianceReportType::DscsaComplianceReport => app(DscsaComplianceReportGenerator::class)->generate($document, $actor),
             ComplianceReportType::TiHistory => app(TiHistoryExportGenerator::class)->generate($document, $actor),
             ComplianceReportType::AuditPackage => app(AuditPackageZipGenerator::class)->generate($document, $actor),
+            ComplianceReportType::DscsaComplianceReport => throw new \LogicException('DSCSA compliance report is queued asynchronously.'),
         };
 
         $contentType = $result['content_type'] ?? $reportType->contentType();

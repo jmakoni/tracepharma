@@ -9,8 +9,10 @@ use App\Services\Auth\Oidc\OidcAuthenticator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
-class OidcController extends Controller
+final class OidcController extends Controller
 {
+    private const SSO_FAILURE_MESSAGE = 'SSO sign-in failed. Please try again or contact your administrator.';
+
     public function redirectTenant(OidcAuthenticator $authenticator)
     {
         return $authenticator->redirectForTenant();
@@ -25,7 +27,7 @@ class OidcController extends Controller
 
             return redirect()
                 ->to('/login')
-                ->withErrors(['email' => $e->getMessage() ?: 'SSO sign-in failed.']);
+                ->withErrors(['email' => self::SSO_FAILURE_MESSAGE]);
         }
     }
 
@@ -43,7 +45,7 @@ class OidcController extends Controller
 
             return redirect()
                 ->to('/login')
-                ->withErrors(['email' => $e->getMessage() ?: 'SSO sign-in failed.']);
+                ->withErrors(['email' => self::SSO_FAILURE_MESSAGE]);
         }
     }
 }

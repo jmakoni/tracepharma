@@ -68,7 +68,7 @@ return [
     ],
 
     'epcis' => [
-        'max_upload_kb' => (int) env('TRACEPHARMA_EPCIS_MAX_UPLOAD_KB', 20480), // raise with PHP-FPM upload_max_filesize for 50–100MB
+        'max_upload_kb' => (int) env('TRACEPHARMA_EPCIS_MAX_UPLOAD_KB', 81920), // 80MB — keep in sync with livewire.php, PHP-FPM, and nginx
         // Inbound uploads may still use EPCIS_INBOUND_DISK via TRACEPHARMA_EPCIS_PAYLOAD_DISK.
         // On S3, inbound keys are hub-style: inbound/{uuid}.xml
         'payload_disk' => env('TRACEPHARMA_EPCIS_PAYLOAD_DISK', env('EPCIS_INBOUND_DISK', env('FILESYSTEM_DISK', 'local'))),
@@ -125,6 +125,20 @@ return [
     */
     'guardian_lot_close' => [
         'max_upload_mb' => (int) env('TRACEPHARMA_GUARDIAN_LOT_CLOSE_MAX_UPLOAD_MB', 50),
+    ],
+
+    /*
+    | Async data exports (Serialized Track & Trace PDF, etc.).
+    */
+    'exports' => [
+        'disk' => env('TRACEPHARMA_EXPORTS_DISK', 'tenant_exports'),
+        'chunk_size' => (int) env('TRACEPHARMA_EXPORT_CHUNK_SIZE', 1000),
+        'max_rows' => (int) env('TRACEPHARMA_EXPORT_MAX_ROWS', 500_000),
+        'compliance_report_max_serials' => (int) env('TRACEPHARMA_DSCSA_COMPLIANCE_REPORT_MAX_SERIALS', 50_000),
+        'url_ttl_minutes' => (int) env('TRACEPHARMA_EXPORT_URL_TTL_MINUTES', 60),
+        'retention_days' => (int) env('TRACEPHARMA_EXPORT_RETENTION_DAYS', 7),
+        'queue' => env('TRACEPHARMA_EXPORT_QUEUE', 'default'),
+        'stale_processing_hours' => (int) env('TRACEPHARMA_EXPORT_STALE_PROCESSING_HOURS', 2),
     ],
 
     /*

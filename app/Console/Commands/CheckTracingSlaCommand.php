@@ -10,6 +10,7 @@ use App\Models\TracingRequest;
 use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
 use App\Services\Tracing\TracingSlaService;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Exceptions\RoleDoesNotExist;
@@ -39,7 +40,7 @@ class CheckTracingSlaCommand extends Command
 
         $query->cursor()->each(function (Tenant $tenant) use ($slaService, $dryRun, &$notified, &$failed): void {
             try {
-                $tenant->run(function () use ($tenant, $slaService, $dryRun, &$notified): void {
+                TenantRunner::run($tenant, function () use ($tenant, $slaService, $dryRun, &$notified): void {
                     $overdue = $slaService->findOverdue();
 
                     if ($overdue->isEmpty()) {

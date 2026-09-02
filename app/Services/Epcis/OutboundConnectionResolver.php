@@ -93,11 +93,7 @@ final class OutboundConnectionResolver
                 return $partnerScoped;
             }
 
-            return (clone $base)
-                ->whereNull('trading_partner_id')
-                ->orderByDesc('is_default')
-                ->orderBy('id')
-                ->first();
+            return null;
         }
 
         return $base->whereNull('trading_partner_id')

@@ -15,8 +15,11 @@ class FdaWddFacility extends FdaModel
         'name',
         'alternate_name',
         'code',
+        'duns_number',
         'gln',
         'sgln',
+        'dea_number',
+        'hin_number',
         'street_address',
         'street_address_2',
         'city',
@@ -58,5 +61,4 @@ class FdaWddFacility extends FdaModel
     {
         return $this->hasMany(FdaWddLicense::class);
     }
-
 }

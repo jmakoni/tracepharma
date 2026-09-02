@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\DataExportController;
 use App\Http\Controllers\Api\V1\DispenseCheckController;
 use App\Http\Controllers\Api\V1\EpcisCaptureController;
 use App\Http\Controllers\Api\V1\EpcisDocumentsController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Api\V1\EpcisGs1SubscriptionsController;
 use App\Http\Controllers\Api\V1\EpcisInboundController;
 use App\Http\Controllers\Api\V1\EpcisOutboundController;
 use App\Http\Controllers\Api\V1\GuardianLotCloseController;
+use App\Http\Controllers\Api\V1\TrackTraceExportController;
 use App\Http\Controllers\Api\V1\WmsShipConfirmController;
 use App\Http\Controllers\Webhooks\As2InboundWebhookController;
 use App\Http\Controllers\Webhooks\As2MdnWebhookController;
@@ -99,6 +101,14 @@ Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v
     Route::delete('epcis/subscriptions/{subscriptionID}', [EpcisGs1SubscriptionsController::class, 'destroy'])
         ->middleware('abilities:epcis:subscriptions')
         ->name('api.v1.epcis.subscriptions.destroy');
+
+    Route::post('exports/track-and-trace', [TrackTraceExportController::class, 'store'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.exports.track-and-trace.store');
+
+    Route::get('exports/{export}', [DataExportController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.exports.show');
 });
 
 // Guardian (Systech) lot-close inbound: L3 API key auth (not Sanctum). Tenant

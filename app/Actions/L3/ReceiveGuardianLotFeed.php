@@ -105,9 +105,9 @@ final class ReceiveGuardianLotFeed
 
             $tenantId = (string) $tenant->getKey();
 
-            return EpcisCacheLock::store()->lock($this->shaLockKey($tenantId, $sha256), 30)->block(
+            return EpcisCacheLock::lock($this->shaLockKey($tenantId, $sha256), 30)->block(
                 10,
-                fn (): L3LotFeed => EpcisCacheLock::store()->lock($this->messageIdLockKey($tenantId, (string) $messageId), 30)->block(
+                fn (): L3LotFeed => EpcisCacheLock::lock($this->messageIdLockKey($tenantId, (string) $messageId), 30)->block(
                     10,
                     function () use ($messageId, $sha256, $tmpPath, $tenantId): L3LotFeed {
                         // MessageID first, then SHA alone — never OR them: an OR

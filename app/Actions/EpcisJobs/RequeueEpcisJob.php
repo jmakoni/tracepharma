@@ -55,6 +55,8 @@ final class RequeueEpcisJob
 
         $this->logger->info($job, 'Requeue requested; creating a new job receipt.');
 
+        $supersededJobId = (int) $job->getKey();
+
         if ($job->kind === EpcisJobKind::InboundProcess) {
             // Reset document then enqueue a new inbound ledger + ProcessEpcisDocumentJob.
             $this->reprocessInbound->handle(
@@ -72,12 +74,29 @@ final class RequeueEpcisJob
                 ->first();
 
             if ($newJob === null) {
-                return $this->enqueueInbound->handle($document->fresh() ?? $document, false, $requestedBy);
+                $newJob = $this->enqueueInbound->handle($document->fresh() ?? $document, false, $requestedBy);
             }
+
+            $this->archiveSupersededJob($supersededJobId);
 
             return $newJob;
         }
 
-        return $this->enqueue->handle($document->fresh() ?? $document, $requestedBy, forceRequeue: true);
+        $newJob = $this->enqueue->handle($document->fresh() ?? $document, $requestedBy, forceRequeue: true);
+        $this->archiveSupersededJob($supersededJobId);
+
+        return $newJob;
+    }
+
+    private function archiveSupersededJob(int $jobId): void
+    {
+        $superseded = EpcisJob::query()->find($jobId);
+
+        if ($superseded === null || $superseded->archived_at !== null) {
+            return;
+        }
+
+        $superseded->forceFill(['archived_at' => now()])->save();
+        $this->logger->info($superseded, 'Archived after requeue.');
     }
 }

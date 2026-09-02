@@ -12,12 +12,12 @@ class PrincipalPolicy
 
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->isMaintainer($user);
     }
 
     public function view(User $user, Principal $principal): bool
     {
-        return true;
+        return $this->isMaintainer($user);
     }
 
     public function create(User $user): bool

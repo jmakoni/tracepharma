@@ -15,6 +15,7 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\Epcis\TransmissionMdn;
 use App\Models\OutboundConnection;
+use App\Models\PortalOrganization;
 use App\Models\PortalOtpChallenge;
 use App\Models\PortalPublication;
 use App\Models\PortalUser;
@@ -160,7 +161,9 @@ class ClientPortalOtpAndPublicationsTest extends TestCase
         $tenant = $this->initializeDemo2Tenant();
         $this->enableClientPortalV2($tenant);
         Notification::fake();
-        URL::forceRootUrl('http://'.self::DEMO2_DOMAIN);
+        // Simulate demo deploy where APP_URL is the central/admin host.
+        config(['app.url' => 'https://admin2.internal.vatengi.com']);
+        URL::forceRootUrl('https://admin2.internal.vatengi.com');
         config(['logging.default' => 'null']);
 
         try {
@@ -200,13 +203,22 @@ class ClientPortalOtpAndPublicationsTest extends TestCase
             $this->assertNull($publication->revoked_at);
             $this->publicationIds[] = (int) $publication->getKey();
 
-            $org = \App\Models\PortalOrganization::query()
+            $org = PortalOrganization::query()
                 ->where('trading_partner_id', $partner->getKey())
                 ->first();
             $this->assertNotNull($org);
             $this->portalOrganizationIds[] = (int) $org->getKey();
 
-            Notification::assertSentOnDemand(PortalPublicationReadyNotification::class);
+            Notification::assertSentOnDemand(
+                PortalPublicationReadyNotification::class,
+                function (PortalPublicationReadyNotification $notification): bool {
+                    $this->assertStringContainsString(self::DEMO2_DOMAIN, $notification->loginUrl);
+                    $this->assertStringContainsString('/client-portal/login', $notification->loginUrl);
+                    $this->assertStringNotContainsString('admin2.internal.vatengi.com', $notification->loginUrl);
+
+                    return filled($notification->loginUrl);
+                },
+            );
         } finally {
             $this->cleanup();
             $this->restoreClientPortalV2($tenant);
@@ -257,7 +269,7 @@ class ClientPortalOtpAndPublicationsTest extends TestCase
             $this->assertNotNull($publication);
             $this->publicationIds[] = (int) $publication->getKey();
 
-            $orgB = \App\Models\PortalOrganization::query()
+            $orgB = PortalOrganization::query()
                 ->where('trading_partner_id', $partnerB->getKey())
                 ->first();
             if ($orgB !== null) {
@@ -597,7 +609,7 @@ class ClientPortalOtpAndPublicationsTest extends TestCase
             DB::table('portal_organization_user')
                 ->whereIn('portal_organization_id', $this->portalOrganizationIds)
                 ->delete();
-            \App\Models\PortalOrganization::query()
+            PortalOrganization::query()
                 ->whereIn('id', $this->portalOrganizationIds)
                 ->delete();
         }
@@ -625,7 +637,7 @@ class ClientPortalOtpAndPublicationsTest extends TestCase
 
         if ($this->partnerIds !== []) {
             // Orgs cascade from partners may already be deleted; drop leftovers.
-            \App\Models\PortalOrganization::query()
+            PortalOrganization::query()
                 ->whereIn('trading_partner_id', $this->partnerIds)
                 ->delete();
             TradingPartner::query()->whereIn('id', $this->partnerIds)->delete();

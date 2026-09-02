@@ -1261,7 +1261,7 @@ final class EpcisCatalogBusinessRules
             return;
         }
 
-        $maxBytes = ((int) config('tracepharma.epcis.max_upload_kb', 20480)) * 1024;
+        $maxBytes = ((int) config('tracepharma.epcis.max_upload_kb', 81920)) * 1024;
         $size = filesize($path);
         if ($size !== false && $maxBytes > 0 && $size > $maxBytes) {
             $this->add(
@@ -1287,6 +1287,7 @@ final class EpcisCatalogBusinessRules
 
         $exists = EpcisDocument::query()
             ->where('file_sha256', $document->file_sha256)
+            ->where('direction', $document->direction)
             ->whereKeyNot($document->getKey())
             ->exists();
 

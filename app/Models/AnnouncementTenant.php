@@ -5,9 +5,12 @@ namespace App\Models;
 use App\Enums\AnnouncementFanOutStatus;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use Stancl\Tenancy\Database\Concerns\CentralConnection;
 
 class AnnouncementTenant extends Pivot
 {
+    use CentralConnection;
+
     protected $table = 'announcement_tenant';
 
     public $incrementing = true;

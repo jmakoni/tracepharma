@@ -6,9 +6,9 @@ namespace App\Jobs;
 
 use App\Actions\Receiving\QueueReceivingLpnLabelPrint;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Log;
 
 class GenerateReceivingLpnLabelJob implements ShouldQueue
 {
@@ -25,7 +25,7 @@ class GenerateReceivingLpnLabelJob implements ShouldQueue
     {
         $tenant = Tenant::query()->findOrFail($this->tenantId);
 
-        $tenant->run(function () use ($queueReceivingLpnLabelPrint): void {
+        TenantRunner::run($tenant, function () use ($queueReceivingLpnLabelPrint): void {
             $label = $queueReceivingLpnLabelPrint->execute($this->epcisDocumentId);
 
             Log::info('Receiving LPN label queued for print.', [

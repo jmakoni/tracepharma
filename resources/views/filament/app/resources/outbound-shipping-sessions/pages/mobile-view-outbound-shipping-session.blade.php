@@ -68,11 +68,10 @@
                     role="menu"
                 >
                     <a
-                        href="{{ $desktopUrl }}"
+                        href="{{ $this->scanOutDeskUrl() }}"
                         class="tp-floor-receive__menu-item"
                         role="menuitem"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >Customer &amp; send</a>
+                    >Customer &amp; send on Scan Out</a>
                     <a
                         href="{{ $desktopUrl }}"
                         class="tp-floor-receive__menu-item"
@@ -86,11 +85,10 @@
         <p class="px-4 text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
 
         @if ($isCompleted)
-            @php($shipComplete = $this->shipCompleteCopy())
             <div class="tp-floor-receive__complete">
-                <div class="tp-floor-receive__complete-title">{{ $shipComplete['title'] }}</div>
+                <div class="tp-floor-receive__complete-title">{{ $this->shipCompleteCopy()['title'] }}</div>
                 <p class="tp-floor-receive__complete-body">
-                    {{ $shipComplete['body'] }}
+                    {{ $this->shipCompleteCopy()['body'] }}
                 </p>
                 <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
                     Back to ship orders

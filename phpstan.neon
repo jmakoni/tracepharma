@@ -1,0 +1,14 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app/Support/Epcis/EpcisCacheLock.php
+        - app/Support/Filament
+        - app/Support/Packing/AcquirePackChildLocks.php
+        - app/Support/Disposition/AcquireCommissionEpcLocks.php
+        - app/Support/Disposition/AcquireDecommissionEpcLocks.php
+        - app/Support/Disposition/AcquireReturningEpcLocks.php
+        - app/Services/Auth/Oidc/OidcIdTokenValidator.php
+    level: 5
+    tmpDir: /tmp/tracepharma-phpstan

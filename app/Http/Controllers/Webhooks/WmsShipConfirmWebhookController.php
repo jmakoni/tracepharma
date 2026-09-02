@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
@@ -32,7 +33,7 @@ final class WmsShipConfirmWebhookController
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::WMS_WEBHOOKS);
 
-        return $tenant->run(function () use ($request): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request): JsonResponse {
             if (! TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()) {
                 return response()->json(['message' => 'Outbound shipping is not available for this tenant profile.'], 403);
             }

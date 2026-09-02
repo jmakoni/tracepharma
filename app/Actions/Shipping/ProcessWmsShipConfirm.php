@@ -4,12 +4,12 @@ namespace App\Actions\Shipping;
 
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * WMS ship-confirm bridge: open a ship order, confirm scans, optionally set party/refs,
@@ -73,7 +73,7 @@ final class ProcessWmsShipConfirm
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
         $lockKey = 'wms-ship-confirm:'.$tenantId.':'.$idempotencyKey;
 
-        return Cache::lock($lockKey, 120)->block(10, function () use ($payload, $idempotencyKey, $complete): array {
+        return EpcisCacheLock::lock($lockKey, 120)->block(10, function () use ($payload, $idempotencyKey, $complete): array {
             $existing = OutboundShippingSession::query()
                 ->where('wms_idempotency_key', $idempotencyKey)
                 ->first();

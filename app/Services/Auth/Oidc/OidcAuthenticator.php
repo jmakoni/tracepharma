@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Auth\Oidc;
 
-use App\Models\Admin;
-use App\Models\User;
 use App\Support\Auth\OidcConnectionConfig;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
-use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
-use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirect;
 
 final class OidcAuthenticator
@@ -28,28 +24,32 @@ final class OidcAuthenticator
     {
         $config = $this->requireTenantConfig();
 
+        $nonce = $this->state->freshNonce();
+
         $this->state->put([
             'plane' => 'tenant',
             'tenant_id' => (string) tenant()->getTenantKey(),
             'provider' => $config->provider->value,
-            'nonce' => $this->state->freshNonce(),
+            'nonce' => $nonce,
         ]);
 
-        return $this->socialite->make($config)->redirect();
+        return $this->socialite->make($config, $nonce)->redirect();
     }
 
     public function redirectForAdmin(): SymfonyRedirect
     {
         $config = $this->requireAdminConfig();
 
+        $nonce = $this->state->freshNonce();
+
         $this->state->put([
             'plane' => 'admin',
             'tenant_id' => null,
             'provider' => $config->provider->value,
-            'nonce' => $this->state->freshNonce(),
+            'nonce' => $nonce,
         ]);
 
-        return $this->socialite->make($config)->redirect();
+        return $this->socialite->make($config, $nonce)->redirect();
     }
 
     public function handleTenantCallback(): RedirectResponse
@@ -70,6 +70,7 @@ final class OidcAuthenticator
         }
 
         $socialiteUser = $this->socialite->make($config)->user();
+        app(OidcIdTokenValidator::class)->assertNonceMatches($socialiteUser, $payload['nonce']);
         $user = $this->identities->resolveTenantUser($socialiteUser, $config);
 
         return $this->loginAndRedirect($user, 'web', 'app');
@@ -89,6 +90,7 @@ final class OidcAuthenticator
         }
 
         $socialiteUser = $this->socialite->make($config)->user();
+        app(OidcIdTokenValidator::class)->assertNonceMatches($socialiteUser, $payload['nonce']);
         $admin = $this->identities->resolveAdmin($socialiteUser, $config);
 
         return $this->loginAndRedirect($admin, 'admin', 'admin');
@@ -135,23 +137,8 @@ final class OidcAuthenticator
 
         session(['auth.via' => 'oidc']);
 
-        if ($user instanceof User || $user instanceof Admin) {
-            $this->confirmBreezyTwoFactor($user);
-        }
-
         Filament::setCurrentPanel(Filament::getPanel($panelId));
 
         return redirect()->intended(Filament::getUrl());
-    }
-
-    private function confirmBreezyTwoFactor(User|Admin $user): void
-    {
-        if (! in_array(TwoFactorAuthenticatable::class, class_uses_recursive($user), true)) {
-            return;
-        }
-
-        if (method_exists($user, 'hasEnabledTwoFactor') && $user->hasEnabledTwoFactor()) {
-            $user->confirmTwoFactorAuthentication();
-        }
     }
 }

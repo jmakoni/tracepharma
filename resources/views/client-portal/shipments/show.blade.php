@@ -8,17 +8,49 @@
             <div>
                 <a href="{{ route('tenant.client-portal.shipments.index') }}" class="link link-hover text-sm">← Shipments</a>
                 <h1 class="text-2xl font-semibold mt-2">Shipment detail</h1>
-                <p class="text-sm opacity-70 font-mono mt-1">
-                    {{ $document->original_filename ?: $document->document_uuid }}
+                <p class="text-sm opacity-70 mt-1">
+                    {{ \App\Support\Portal\PortalShipmentDisplay::label($document) }}
+                    @if ($subtitle = \App\Support\Portal\PortalShipmentDisplay::subtitle($document))
+                        <span class="font-mono text-xs opacity-60"> · {{ $subtitle }}</span>
+                    @endif
                 </p>
             </div>
-            @if ($downloadAvailable)
-                <a
-                    href="{{ route('tenant.client-portal.shipments.download', ['document' => $document->getKey()]) }}"
-                    class="btn btn-primary"
-                >Download EPCIS</a>
-            @endif
+            <div class="flex flex-wrap gap-2">
+                @include('client-portal.shipments.partials.export-document-dropdown', ['document' => $document])
+                @if ($downloadAvailable)
+                    <a
+                        href="{{ route('tenant.client-portal.shipments.download', ['document' => $document->getKey()]) }}"
+                        class="btn btn-primary"
+                    >Download EPCIS</a>
+                @endif
+                @if ($reportsAvailable)
+                    <a
+                        href="{{ route('tenant.client-portal.shipments.track-trace', ['document' => $document->getKey()]) }}"
+                        class="btn btn-outline"
+                        title="Download Transaction Report PDF (one page per lot)"
+                    >Track &amp; Trace</a>
+                    <form
+                        method="post"
+                        action="{{ route('tenant.client-portal.shipments.serialized-track-trace', ['document' => $document->getKey()]) }}"
+                        class="inline"
+                    >
+                        @csrf
+                        <button
+                            type="submit"
+                            class="btn btn-outline"
+                            title="Queue DSCSA Compliance Report PDF (serials by lot). You will be emailed when it is ready."
+                        >Serialized Track &amp; Trace</button>
+                    </form>
+                @endif
+            </div>
         </div>
+
+        @if (session('status'))
+            <div class="alert alert-success" role="status">{{ session('status') }}</div>
+        @endif
+        @if (session('error'))
+            <div class="alert alert-error" role="alert">{{ session('error') }}</div>
+        @endif
 
         <div class="card bg-base-100 shadow">
             <div class="card-body gap-2">

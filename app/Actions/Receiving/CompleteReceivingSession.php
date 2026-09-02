@@ -16,6 +16,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\OutboundShipmentInTransit;
 use App\Support\Logging\RedactsUrls;
+use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\TenantSettings;
 use DomainException;
@@ -359,9 +360,31 @@ final class CompleteReceivingSession
                     $e,
                 );
             }
+
+            $this->markTransferReceiveSessionEventsGenerated($session, $transfer->fresh() ?? $transfer);
         }
 
         return $session->refresh();
+    }
+
+    /**
+     * Transfer-receive custody is authored on the linked transferring session's
+     * document; mirror that timestamp onto the receive session so
+     * {@see EpcOnAnotherOpenReceivingSession} releases
+     * confirmed EPCs for ship/transfer/disposition.
+     */
+    private function markTransferReceiveSessionEventsGenerated(
+        ReceivingSession $session,
+        TransferringSession $transfer,
+    ): void {
+        if ($session->receiving_events_generated_at !== null || $transfer->receive_events_generated_at === null) {
+            return;
+        }
+
+        $session->forceFill([
+            'receiving_events_generated_at' => $transfer->receive_events_generated_at,
+            'receiving_epcis_document_id' => $transfer->transfer_epcis_document_id,
+        ])->save();
     }
 
     /**

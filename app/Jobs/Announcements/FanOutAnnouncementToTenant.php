@@ -12,6 +12,7 @@ use App\Models\AnnouncementTenant;
 use App\Models\Tenant;
 use App\Models\TenantAnnouncement;
 use App\Models\User;
+use App\Support\Tenancy\TenantRunner;
 use Filament\Notifications\DatabaseNotification as FilamentDatabaseNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -45,29 +46,37 @@ final class FanOutAnnouncementToTenant implements ShouldQueue
         $tenantException = null;
 
         try {
-            $tenant->run(function () use ($announcement): void {
-                TenantAnnouncement::query()->updateOrCreate(
-                    ['announcement_id' => $announcement->id],
-                    [
-                        'title' => $announcement->title,
-                        'body' => $announcement->body,
-                        'severity' => $announcement->severity,
-                        'published_at' => $announcement->published_at,
-                        'starts_at' => $announcement->starts_at,
-                        'ends_at' => $announcement->ends_at,
-                        'is_active' => true,
-                    ],
-                );
+            TenantRunner::run($tenant, function () use ($announcement): void {
+                DB::transaction(function () use ($announcement): void {
+                    TenantAnnouncement::query()->updateOrCreate(
+                        ['announcement_id' => $announcement->id],
+                        [
+                            'title' => $announcement->title,
+                            'body' => $announcement->body,
+                            'severity' => $announcement->severity,
+                            'published_at' => $announcement->published_at,
+                            'starts_at' => $announcement->starts_at,
+                            'ends_at' => $announcement->ends_at,
+                            'is_active' => true,
+                        ],
+                    );
 
-                foreach (User::query()->get() as $user) {
-                    $this->sendAnnouncementBellNotification($user, $announcement);
-                }
+                    foreach (User::query()->get() as $user) {
+                        $this->sendAnnouncementBellNotification($user, $announcement);
+                    }
+                });
             });
         } catch (Throwable $exception) {
             $tenantException = $exception;
-        } finally {
-            if (tenancy()->initialized) {
-                tenancy()->end();
+
+            try {
+                TenantRunner::run($tenant, function () use ($announcement): void {
+                    TenantAnnouncement::query()
+                        ->where('announcement_id', $announcement->id)
+                        ->update(['is_active' => false]);
+                });
+            } catch (Throwable) {
+                // Best-effort rollback of a partial banner row.
             }
         }
 

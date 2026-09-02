@@ -40,9 +40,9 @@ Verified still OK from prior fix: outbound + `validated` gate, sha256 lock, dete
 
 **Root cause:** Receive redispatches `failed`, but job treats `failed` as terminal and returns immediately.
 
-- [ ] Write failing test: create `failed` feed with archived payload; POST same MessageID (or dispatch job after receive); assert job runs real work — not silent no-op.
-- [ ] Fix: on job start, if status is `failed`, reset to `processing` (clear `error_summary`) before work; keep `accepted` as true terminal skip.
-- [ ] Run `php artisan test tests/Feature/L3/GuardianLotCloseIngestTest.php`.
+- [x] Write failing test: create `failed` feed with archived payload; POST same MessageID (or dispatch job after receive); assert job runs real work — not silent no-op.
+- [x] Fix: on job start, if status is `failed`, reset to `processing` (clear `error_summary`) before work; keep `accepted` as true terminal skip.
+- [x] Run `php artisan test tests/Feature/L3/GuardianLotCloseIngestTest.php`.
 
 ---
 
@@ -52,9 +52,9 @@ Verified still OK from prior fix: outbound + `validated` gate, sha256 lock, dete
 
 **Locked policy:** Leave accepted lot untouched; fail the new feed without overwriting accepted lot fields/container rows.
 
-- [ ] Test: seed accepted lot for `(lot_number, unit_gtin14)` linked to feed A; run failing conversion for feed B same lot keys; assert lot stays `accepted` with original `epcis_document_id`.
-- [ ] Implement: if existing lot status is `accepted` and `feed_id` differs, throw before overwrite.
-- [ ] Catch block must not set `status=failed` on lots that remain accepted / unrelated `feed_id`.
+- [x] Test: seed accepted lot for `(lot_number, unit_gtin14)` linked to feed A; run failing conversion for feed B same lot keys; assert lot stays `accepted` with original `epcis_document_id`.
+- [x] Implement: if existing lot status is `accepted` and `feed_id` differs, throw before overwrite.
+- [x] Catch block must not set `status=failed` on lots that remain accepted / unrelated `feed_id`.
 
 ---
 
@@ -62,8 +62,8 @@ Verified still OK from prior fix: outbound + `validated` gate, sha256 lock, dete
 
 **Files:** Job (+ receive already gated)
 
-- [ ] At job start (with kill-switch re-check): require Manufacturer profile, `l3Enabled`, `l3GuardianLotCloseEnabled`, provider Systech; on failure mark feed `failed` and return.
-- [ ] Test: receive OK, then flip provider/profile/toggle; job marks failed without projecting.
+- [x] At job start (with kill-switch re-check): require Manufacturer profile, `l3Enabled`, `l3GuardianLotCloseEnabled`, provider Systech; on failure mark feed `failed` and return.
+- [x] Test: receive OK, then flip provider/profile/toggle; job marks failed without projecting.
 
 ---
 
@@ -71,8 +71,8 @@ Verified still OK from prior fix: outbound + `validated` gate, sha256 lock, dete
 
 **Files:** `app/Actions/L3/AuthorGuardianLotEpcisDocument.php`
 
-- [ ] Treat blank Type like unsupported Type — throw.
-- [ ] Test: strip `<Type>` from one Bottle in fixture → feed `failed`.
+- [x] Treat blank Type like unsupported Type — throw.
+- [x] Test: strip `<Type>` from one Bottle in fixture → feed `failed`.
 
 ---
 
@@ -80,18 +80,18 @@ Verified still OK from prior fix: outbound + `validated` gate, sha256 lock, dete
 
 **Files:** `app/Services/Epcis/Outbound/OutboundEpcisXmlBuilder.php`, shipping SBDH helpers for pattern
 
-- [ ] When `correlationId` present, emit `EPCISHeader` with `sbdh:StandardBusinessDocumentHeader` first, then `extension` (match shipping authoring).
-- [ ] Unit/feature: `buildDocument(..., correlationId: 'x')` passes XSD validation.
-- [ ] Optionally restore Guardian document-level correlation once builder is fixed.
+- [x] When `correlationId` present, emit `EPCISHeader` with `sbdh:StandardBusinessDocumentHeader` first, then `extension` (match shipping authoring).
+- [x] Unit/feature: `buildDocument(..., correlationId: 'x')` passes XSD validation.
+- [x] Optionally restore Guardian document-level correlation once builder is fixed.
 
 ---
 
 ### Task 6: Verification + docs
 
-- [ ] `php artisan test tests/Feature/L3/ tests/Feature/AssetTrackingPageTest.php` (+ any new builder unit test)
-- [ ] Update `docs/integrations/guardian-lot-close.md` retry semantics if needed
-- [ ] CHANGELOG Unreleased Fixed bullets
-- [ ] Do not deploy unless asked
+- [x] `php artisan test tests/Feature/L3/ tests/Feature/AssetTrackingPageTest.php` (+ any new builder unit test)
+- [x] Update `docs/integrations/guardian-lot-close.md` retry semantics if needed
+- [x] CHANGELOG Unreleased Fixed bullets
+- [x] Do not deploy unless asked
 
 ---
 

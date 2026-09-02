@@ -4,7 +4,9 @@ namespace App\Services\Dscsa\ComplianceReport;
 
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
+use App\Services\Dscsa\Support\ComplianceReportBranding;
 use App\Services\Dscsa\Support\EpcisShipmentReportContext;
+use DomainException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +24,7 @@ final class ComplianceReportDataBuilder
     public function __construct(
         private readonly EpcisShipmentReportContext $context,
         private readonly SerialSelector $serialSelector,
+        private readonly ComplianceReportBranding $branding,
     ) {}
 
     public function build(EpcisDocument $document, ?User $actor = null): ComplianceReportData
@@ -32,7 +35,13 @@ final class ComplianceReportDataBuilder
         $processedDate = $this->context->formatDate($document->creation_date);
         $legalStatement = $this->context->legalStatement($document);
         $shipping = $this->context->resolveShippingContext($document);
-        $directPurchase = $this->context->directPurchaseStatement($document, $shipping['seller_name']);
+        $directPurchase = $this->context->directPurchaseStatement(
+            $document,
+            $shipping['seller_name'],
+            $shipping['seller_gln'],
+        );
+        $receivedPrevWholesaler = $this->context->receivedPrevWholesalerStatement($document);
+        $branding = $this->branding->resolve($shipping['seller_gln'], $shipping['seller_name']);
         $productClasses = $document->fileProductClassesByGtin();
         $lotGroups = $this->context->lotGroups($document);
         $footer = $this->context->footer($actor);
@@ -52,10 +61,18 @@ final class ComplianceReportDataBuilder
         $lotSections = [];
         $totalSerials = 0;
         $lots = [];
+        $maxSerials = max(1, (int) config('tracepharma.exports.compliance_report_max_serials', 50_000));
 
         foreach ($lotGroups as $lot => $meta) {
             $lots[] = (string) $lot;
             $serials = $this->serialSelector->forLot($document, (string) $lot, $meta['sgtin_ids']);
+
+            if ($totalSerials + count($serials) > $maxSerials) {
+                throw new DomainException(
+                    "This document has more than {$maxSerials} serialized units. Use a narrower export or contact support.",
+                );
+            }
+
             $totalSerials += count($serials);
             $lotSections[] = [
                 'lot' => (string) $lot,
@@ -111,6 +128,7 @@ final class ComplianceReportDataBuilder
                     ownershipNote: $shipping['ownership_note'],
                     legalStatement: $legalStatement,
                     directPurchaseStatement: $directPurchase,
+                    receivedPrevWholesalerStatement: $receivedPrevWholesaler,
                     sellerName: $shipping['seller_name'],
                     serialRows: $chunk,
                     pageNumber: $pageNumber,
@@ -128,6 +146,8 @@ final class ComplianceReportDataBuilder
             footer: $footer,
             lots: $lots,
             serialCount: $totalSerials,
+            logoDataUri: $branding['logoDataUri'],
+            sellerDisplayName: $branding['sellerDisplayName'],
         );
     }
 

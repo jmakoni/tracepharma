@@ -5,6 +5,8 @@
 # SKIP_MIGRATE=1  — refresh caches but skip migrate / tenants:migrate
 # Live vatengi-era DBs need scripts/deploy/reconcile-central-schema.sh first.
 # Do not run a full tenants:migrate against renamed tenant histories.
+# EPCIS upload limits: also install scripts/deploy/php/99-tracepharma-uploads.ini into
+# /etc/php/8.5/fpm/conf.d/ and reload PHP-FPM (see docs/nginx for client_max_body_size).
 set -euo pipefail
 
 TARGET="${1:-}"

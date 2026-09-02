@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
+use App\Filament\App\Pages\ScanOutWorkstation;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Models\Shipping\OutboundShippingScanLine;
@@ -71,6 +72,11 @@ class MobileViewOutboundShippingSession extends ViewRecord
     public function shippingListUrl(): string
     {
         return OutboundShippingSessionResource::getUrl(name: 'index', panel: 'app');
+    }
+
+    public function scanOutDeskUrl(): string
+    {
+        return ScanOutWorkstation::urlForSession((int) $this->getRecord()->getKey(), ['step' => 2]);
     }
 
     public function cartBadgeCount(): int

@@ -6,6 +6,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Dscsa\ComplianceReport\ComplianceReportData;
 use App\Services\Dscsa\ComplianceReport\ComplianceReportDataBuilder;
+use App\Support\MemoryLimit;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -27,8 +28,7 @@ final class DscsaComplianceReportGenerator
     {
         // Dompdf holds the full HTML frame tree in memory; large serial lists OOM at low
         // FPM limits (Filament then shows "Error while loading page").
-        $previousMemoryLimit = ini_get('memory_limit');
-        ini_set('memory_limit', '5G');
+        $previousMemoryLimit = MemoryLimit::raise('5G');
 
         try {
             $report = $this->builder->build($document, $actor);
@@ -50,9 +50,7 @@ final class DscsaComplianceReportGenerator
                 'data' => $report,
             ];
         } finally {
-            if (is_string($previousMemoryLimit) && $previousMemoryLimit !== '') {
-                ini_set('memory_limit', $previousMemoryLimit);
-            }
+            MemoryLimit::restore($previousMemoryLimit);
         }
     }
 

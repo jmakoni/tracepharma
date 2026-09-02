@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Epcis\ArchiveAgedEpcisEvents;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Throwable;
@@ -32,7 +33,7 @@ class ArchiveAgedEpcisEventsCommand extends Command
 
         $query->cursor()->each(function (Tenant $tenant) use ($archive, $dryRun, &$tenantFailures): void {
             try {
-                $tenant->run(function () use ($tenant, $archive, $dryRun): void {
+                TenantRunner::run($tenant, function () use ($tenant, $archive, $dryRun): void {
                     $result = $archive->handle($dryRun);
 
                     $this->info(sprintf(

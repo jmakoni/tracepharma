@@ -7,6 +7,7 @@ use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
@@ -22,7 +23,6 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -57,7 +57,7 @@ final class CorrectDocumentActions
 
     public static function uploadCorrectedFile(ViewException $page): Action
     {
-        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 20480));
+        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 81920));
 
         return RegulatoryCompliance::apply(
             Action::make('uploadCorrectedFile')

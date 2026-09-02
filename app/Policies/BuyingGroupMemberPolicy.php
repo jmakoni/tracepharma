@@ -12,12 +12,12 @@ class BuyingGroupMemberPolicy
 
     public function viewAny(User $user): bool
     {
-        return true;
+        return $this->isMaintainer($user);
     }
 
     public function view(User $user, BuyingGroupMember $member): bool
     {
-        return true;
+        return $this->isMaintainer($user);
     }
 
     public function create(User $user): bool

@@ -2,12 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\App\Pages\Auth\Login;
 use App\Filament\App\Pages\Dashboard;
 use App\Filament\App\Pages\OrganizationSettings;
 use App\Http\Middleware\EnsureLegalAcceptance;
 use App\Http\Middleware\EnsureTenantIsActive;
 use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
+use App\Support\Filament\OptionalFilamentPlugins;
 use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
@@ -22,7 +24,6 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
-use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -30,17 +31,19 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use OccTherapist\AdvancedTableExportForFilament\AdvancedTableExportForFilamentPlugin;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
+use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AppPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('app')
             ->path('')
-            ->login(\App\Filament\App\Pages\Auth\Login::class)
+            ->login(Login::class)
             ->passwordReset()
             ->authPasswordBroker('users')
             ->authGuard('web')
@@ -102,26 +105,44 @@ class AppPanelProvider extends PanelProvider
                         relyingPartyName: (string) config('app.name'),
                         scopeToPanel: true,
                     )
-            )
-            ->plugin(
-                KnowledgeBaseCompanionPlugin::make()
-                    ->knowledgeBasePanelId('knowledge-base')
-                    ->modalPreviews()
-                    ->slideOverPreviews()
-            )
-            ->plugin(
-                ActivityTimelinePlugin::make()
-                    ->registerNavigation(false)
-                    ->navigationGroup('Audit')
-                    ->causerIcons([
-                        User::class => 'heroicon-m-user',
-                    ])
-            )
+            );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            KnowledgeBaseCompanionPlugin::class,
+            fn () => KnowledgeBaseCompanionPlugin::make()
+                ->knowledgeBasePanelId('knowledge-base')
+                ->modalPreviews()
+                ->slideOverPreviews(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            ActivityTimelinePlugin::class,
+            fn () => ActivityTimelinePlugin::make()
+                ->registerNavigation(false)
+                ->navigationGroup('Audit')
+                ->causerIcons([
+                    User::class => 'heroicon-m-user',
+                ]),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            FilamentNotificationsTabsPlugin::class,
+            fn () => FilamentNotificationsTabsPlugin::make()->confirmDelete(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            AdvancedTableExportForFilamentPlugin::class,
+            fn () => AdvancedTableExportForFilamentPlugin::make()
+                ->maxPdfRows((int) config('advanced-table-export-for-filament.max_pdf_rows', 200))
+                ->maxExportRows((int) config('advanced-table-export-for-filament.max_export_rows', 2000)),
+        );
+
+        return $panel
             ->databaseNotifications()
-            ->plugin(
-                FilamentNotificationsTabsPlugin::make()
-                    ->confirmDelete()
-            )
             ->userMenuItems([
                 Action::make('organizationSettings')
                     ->label('Organization Settings')

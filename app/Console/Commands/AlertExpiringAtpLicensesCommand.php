@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
 use App\Support\MasterData\AlertableAtpLicenses;
 use App\Support\MasterData\AtpLicenseExpiry;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Exceptions\RoleDoesNotExist;
@@ -40,7 +41,7 @@ class AlertExpiringAtpLicensesCommand extends Command
 
         $query->cursor()->each(function (Tenant $tenant) use ($dryRun, &$notified, &$failed): void {
             try {
-                $tenant->run(function () use ($tenant, $dryRun, &$notified): void {
+                TenantRunner::run($tenant, function () use ($tenant, $dryRun, &$notified): void {
                     $licenses = AlertableAtpLicenses::query();
 
                     if ($licenses->isEmpty()) {

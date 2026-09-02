@@ -9,7 +9,6 @@ use App\Enums\TenantRole;
 use App\Models\Admin;
 use App\Models\User;
 use App\Support\Auth\OidcConnectionConfig;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 
@@ -31,6 +30,9 @@ final class OidcIdentityResolver
         }
 
         if ($user !== null) {
+            $this->assertEmailDomainAllowed($email, $config);
+            $this->assertOidcBindingCompatible($user, $issuer, $subject);
+
             $user->forceFill([
                 'oidc_issuer' => $issuer,
                 'oidc_subject' => $subject,
@@ -70,10 +72,6 @@ final class OidcIdentityResolver
             ->where('oidc_issuer', $issuer)
             ->where('oidc_subject', $subject)
             ->first();
-
-        if ($admin === null) {
-            $admin = Admin::query()->whereRaw('LOWER(email) = ?', [Str::lower($email)])->first();
-        }
 
         if ($admin === null) {
             throw new \RuntimeException('No platform admin account is provisioned for this identity.');
@@ -119,13 +117,26 @@ final class OidcIdentityResolver
     private function assertEmailDomainAllowed(string $email, OidcConnectionConfig $config): void
     {
         if ($config->allowedEmailDomains === []) {
-            return;
+            throw new \RuntimeException('SSO allowed email domains must be configured before sign-in.');
         }
 
         $domain = Str::lower(Str::after($email, '@'));
 
         if (! in_array($domain, $config->allowedEmailDomains, true)) {
             throw new \RuntimeException('Email domain is not allowed for SSO JIT provisioning.');
+        }
+    }
+
+    private function assertOidcBindingCompatible(User $user, string $issuer, string $subject): void
+    {
+        if (filled($user->oidc_subject) && $user->oidc_subject !== $subject) {
+            throw new \RuntimeException('OIDC identity subject does not match the existing account binding.');
+        }
+
+        $existingIssuer = filled($user->oidc_issuer) ? rtrim((string) $user->oidc_issuer, '/') : null;
+
+        if ($existingIssuer !== null && $existingIssuer !== $issuer) {
+            throw new \RuntimeException('OIDC identity issuer does not match the existing account binding.');
         }
     }
 

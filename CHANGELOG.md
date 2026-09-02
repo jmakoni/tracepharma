@@ -4,9 +4,21 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.5.0] — 2026-09-02
+
+GTM follow-on cut: async exports, manufacturer verification-request portal, DSCSA shipping extensions, FDA DEA/HIN facility create, ship wizard UX, impersonation hardening, and audit-driven reliability fixes.
+
 ### Added
 
-- Manufacturer **Guardian L3 lot-close ingest** — HTTPS webhook archives DataFeed XML, auto-projects commissioning + aggregation into EPCIS/`epcs`, Serialization Lots UX, Asset Tracking Fields tab (toggle: Org Settings → Accept Guardian lot-close inbound)
+- **F-1.5.1** — Async **Track & Trace / data exports** (tenant `data_exports`, queue jobs, API + signed download, Filament queue, stale/purge commands, site-scoped caps)
+- **F-1.5.2** — Client portal **shipments export** and portal track/trace PDF export paths
+- **F-1.5.3** — Manufacturer **verification-request portal** (cases/responses, secure unlock, mail notifications, routes/middleware)
+- **F-1.5.4** — EPCIS **DSCSA shipping / direct-purchase extensions** (parser, promote on ingest, document columns, compliance/transaction report statements)
+- **F-1.5.5** — FDA **DEA/HIN/DUNS** on establishments & WDD + tenant sites/partners; Admin **Create** for Establishments/WDD (`CatalogManage`); create-time freeze + address-fingerprint uniqueness/US country defaults
+- **F-1.5.6** — Outbound **ship wizard / scan-out** UX (wizard steps + session concerns)
+- **F-1.5.7** — Tenant user **impersonation `public_id`** (opaque URL id + server-side token store)
+- **F-1.5.8** — GTM hardening from bug audits (`TenantRunner` on jobs/webhooks, OIDC id_token/nonce binding, export FK `restrictOnDelete`, optional Filament plugins, PHPStan baseline, related security/reliability fixes)
+- **F-1.5.9** — Manufacturer **Guardian L3 lot-close ingest** — HTTPS webhook archives DataFeed XML, auto-projects commissioning + aggregation into EPCIS/`epcs`, Serialization Lots UX, Asset Tracking Fields tab (toggle: Org Settings → Accept Guardian lot-close inbound)
 
 ### Fixed
 
@@ -15,6 +27,8 @@ All notable releases of TracePharma are documented here.
 - Guardian lot-close (residual): failed-feed resubmit actually reprocesses (`failed` → `processing`, not terminal skip); accepted lots are not overwritten by a later failed re-ingest; job re-checks Manufacturer/L3/Systech/kill-switch at run time; missing/null container `Type` fails closed
 - Outbound EPCIS builder: correlation header emits SBDH-first `EPCISHeader` (GS1 EPCIS 1.2 XSD-valid); Guardian lot-close restores document-level correlation
 - Webhooks rate limiter scoped by host+IP (was a single global bucket)
+- FDA Create: WDD duplicate address fingerprint returns form validation instead of SQL unique crash; admin-entered DEA/HIN frozen on create so later `fillFromFda` cannot overwrite
+- Refuse SGLN derivation / authoring when GLN fails GS1 check digit (Round 3)
 
 ## [1.4.0] — 2026-08-28
 
@@ -115,6 +129,7 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.5.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.5.0
 [1.4.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.4.0
 [1.3.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.2.0
