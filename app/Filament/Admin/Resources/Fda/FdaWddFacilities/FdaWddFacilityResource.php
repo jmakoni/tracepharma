@@ -85,7 +85,7 @@ class FdaWddFacilityResource extends Resource implements HasKnowledgeBase
      */
     public static function getGloballySearchableAttributes(): array
     {
-        return ['name', 'facility_name', 'gln', 'code', 'duns_number', 'dea_number', 'hin_number'];
+        return ['name', 'facility_name', 'gln', 'code', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number', 'street_address'];
     }
 
     public static function getDocumentation(): array|string

@@ -54,9 +54,10 @@ class SiteTradingPartnerIdentifierPersistTest extends TestCase
                 ->fillForm([
                     'name' => 'Identifier Site '.$suffix,
                     'gln' => $gln,
-                    'duns_number' => '803736404',
+                    'duns_number' => '80373640412345',
                     'dea_number' => 'RS1234563',
                     'hin_number' => 'H123456789',
+                    'chemical_reg_number' => 'CR-SITE-001',
                     'is_active' => true,
                 ])
                 ->call('create')
@@ -66,9 +67,10 @@ class SiteTradingPartnerIdentifierPersistTest extends TestCase
             $this->assertNotNull($site);
             $this->siteIds[] = (int) $site->id;
 
-            $this->assertSame('803736404', $site->duns_number);
+            $this->assertSame('80373640412345', $site->duns_number);
             $this->assertSame('RS1234563', $site->dea_number);
             $this->assertSame('H123456789', $site->hin_number);
+            $this->assertSame('CR-SITE-001', $site->chemical_reg_number);
             $this->assertSame($gln, $site->gln);
         } finally {
             $this->cleanup();
@@ -97,17 +99,19 @@ class SiteTradingPartnerIdentifierPersistTest extends TestCase
             Livewire::test(ViewTradingPartner::class, ['record' => $partner->getKey()])
                 ->mountAction('edit')
                 ->fillForm([
-                    'duns_number' => '012430880',
+                    'duns_number' => '01243088098765',
                     'dea_number' => 'RW9876543',
                     'hin_number' => 'H987654321',
+                    'chemical_reg_number' => 'CR-PARTNER-001',
                 ])
                 ->callMountedAction()
                 ->assertHasNoActionErrors();
 
             $partner->refresh();
-            $this->assertSame('012430880', $partner->duns_number);
+            $this->assertSame('01243088098765', $partner->duns_number);
             $this->assertSame('RW9876543', $partner->dea_number);
             $this->assertSame('H987654321', $partner->hin_number);
+            $this->assertSame('CR-PARTNER-001', $partner->chemical_reg_number);
             $this->assertSame($gln, $partner->gln);
         } finally {
             $this->cleanup();

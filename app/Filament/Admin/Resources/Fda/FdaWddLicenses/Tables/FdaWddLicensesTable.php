@@ -33,6 +33,10 @@ class FdaWddLicensesTable
                     ->placeholder(fn (FdaWddLicense $record): ?string => $record->facility?->facility_name)
                     ->searchable(),
                 TextColumn::make('facility.organization.name')->label('Organization')->searchable(),
+                TextColumn::make('facility.street_address')
+                    ->label('Street')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             );
         }
 
@@ -46,7 +50,7 @@ class FdaWddLicensesTable
         if ($standalone) {
             $table
                 ->modifyQueryUsing(fn (Builder $query) => $query->with(['facility.organization']))
-                ->searchPlaceholder('License number, facility, or organization')
+                ->searchPlaceholder('License number, facility, organization, or street')
                 ->recordUrl(fn (FdaWddLicense $record): ?string => $record->fda_wdd_facility_id
                     ? FdaWddFacilityResource::getUrl('view', ['record' => $record->fda_wdd_facility_id])
                     : null)

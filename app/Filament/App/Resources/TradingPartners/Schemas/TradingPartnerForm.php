@@ -84,10 +84,11 @@ class TradingPartnerForm
                                             ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy the partner\'s stated SGLN from their EPCIS.'
                                             : 'Copy the partner\'s stated SGLN from their EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.'),
                                 ]),
-                                Grid::make(['default' => 3])->schema([
-                                    TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+                                Grid::make(['default' => 4])->schema([
+                                    TextInput::make('duns_number')->label('DUNS')->maxLength(14),
                                     TextInput::make('dea_number')->label('DEA')->maxLength(20),
                                     TextInput::make('hin_number')->label('HIN')->maxLength(20),
+                                    TextInput::make('chemical_reg_number')->label('Chemical Reg')->maxLength(30),
                                 ]),
                                 Grid::make(['default' => 2])->schema([
                                     Select::make('partner_type')

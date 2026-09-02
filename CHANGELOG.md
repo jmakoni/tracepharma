@@ -4,6 +4,22 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.5.1] — 2026-09-02
+
+FDA identifier expansion and registry list search.
+
+### Added
+
+- **F-1.5.10** — **Chemical Reg** (`chemical_reg_number`) on FDA establishments & WDD facilities and tenant sites/trading partners; forms/infolists/tables, create-time freeze, FdaPrefill, activity log
+- **F-1.5.11** — **DUNS** column/UI length **9 → 14** on orgs, establishments, WDD, match reviews, and tenant sites/partners; `normalizeDuns` rejects >14 digits
+- **F-1.5.12** — Admin FDA **street-address search** on Organizations, Establishments, WDD, 3PL staging, licenses (`facility.street_address`), org relation managers; global search attrs
+
+### Fixed
+
+- Match-review inserts no longer crash on 14-char DUNS (`fda_organization_match_reviews.duns_number` widened)
+- Tenant Chemical Reg migrate no longer adds the column without DUNS/DEA/HIN; repair migration heals skewed tenants
+- WDD create freeze proven against `fillFromFda` overwrite for Chemical Reg / DUNS / DEA / HIN
+
 ## [1.5.0] — 2026-09-02
 
 GTM follow-on cut: async exports, manufacturer verification-request portal, DSCSA shipping extensions, FDA DEA/HIN facility create, ship wizard UX, impersonation hardening, and audit-driven reliability fixes.

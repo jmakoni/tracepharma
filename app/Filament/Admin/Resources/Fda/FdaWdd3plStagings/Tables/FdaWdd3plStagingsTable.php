@@ -29,6 +29,7 @@ class FdaWdd3plStagingsTable
                     ->fontFamily(FontFamily::Mono),
                 TextColumn::make('license_state'),
                 TextColumn::make('state')->toggleable(),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('city')->toggleable(),
                 TextColumn::make('reporting_year')->toggleable(),
                 TextColumn::make('contact_phone')

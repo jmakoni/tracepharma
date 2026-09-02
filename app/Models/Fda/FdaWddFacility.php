@@ -20,6 +20,7 @@ class FdaWddFacility extends FdaModel
         'sgln',
         'dea_number',
         'hin_number',
+        'chemical_reg_number',
         'street_address',
         'street_address_2',
         'city',

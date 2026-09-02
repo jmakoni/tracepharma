@@ -25,6 +25,7 @@ class FdaEstablishmentInfolist
                     FdaRegistryBadges::identifierEntry('duns_number', 'DUNS'),
                     FdaRegistryBadges::identifierEntry('dea_number', 'DEA'),
                     FdaRegistryBadges::identifierEntry('hin_number', 'HIN'),
+                    FdaRegistryBadges::identifierEntry('chemical_reg_number', 'Chemical Reg'),
                     FdaRegistryBadges::establishmentEntry(),
                     FdaRegistryBadges::activeEntry(),
                     TextEntry::make('organization.name')

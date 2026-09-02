@@ -29,6 +29,7 @@ class EstablishmentsRelationManager extends RelationManager
             ->columns([
                 FdaRegistryBadges::identifierColumn('fei_number', 'FEI'),
                 TextColumn::make('name')->searchable()->placeholder(fn ($record) => $record->firm_name),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('city'),
                 TextColumn::make('state_province')->label('State'),
                 FdaRegistryBadges::establishmentColumn(),

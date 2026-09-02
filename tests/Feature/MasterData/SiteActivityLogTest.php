@@ -47,7 +47,8 @@ class SiteActivityLogTest extends TestCase
                 'gln' => '0614141777770',
                 'dea_number' => 'RS1234563',
                 'hin_number' => 'H123456789',
-                'duns_number' => '803736404',
+                'duns_number' => '80373640412345',
+                'chemical_reg_number' => 'CR-LOG-001',
                 'is_active' => false,
                 'city' => 'Springfield',
                 'zipcode' => '62701',
@@ -66,7 +67,8 @@ class SiteActivityLogTest extends TestCase
             $this->assertSame('0614141777770', $attributes['gln'] ?? null);
             $this->assertSame('RS1234563', $attributes['dea_number'] ?? null);
             $this->assertSame('H123456789', $attributes['hin_number'] ?? null);
-            $this->assertSame('803736404', $attributes['duns_number'] ?? null);
+            $this->assertSame('80373640412345', $attributes['duns_number'] ?? null);
+            $this->assertSame('CR-LOG-001', $attributes['chemical_reg_number'] ?? null);
             $this->assertFalse((bool) ($attributes['is_active'] ?? true));
             $this->assertSame('Springfield', $attributes['city'] ?? null);
             $this->assertSame('62701', $attributes['zipcode'] ?? null);

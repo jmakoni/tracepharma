@@ -16,6 +16,7 @@ class FdaEstablishment extends FdaModel
         'duns_number',
         'dea_number',
         'hin_number',
+        'chemical_reg_number',
         'gln',
         'sgln',
         'street_address',

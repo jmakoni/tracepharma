@@ -70,9 +70,10 @@ class FdaFacilityCreateTest extends TestCase
                 'name' => 'Manual Est '.$suffix,
                 'gln' => $gln,
                 'sgln' => $sgln,
-                'duns_number' => '803736404',
+                'duns_number' => '80373640412345',
                 'dea_number' => 'RS1234563',
                 'hin_number' => 'H123456789',
+                'chemical_reg_number' => 'CR-EST-001',
                 'street_address' => '1 Manual Est Way '.$suffix,
                 'city' => 'Melville',
                 'state_province' => 'NY',
@@ -90,23 +91,27 @@ class FdaFacilityCreateTest extends TestCase
         $this->assertNull($row->fei_number);
         $this->assertSame($gln, $row->gln);
         $this->assertSame($sgln, $row->sgln);
-        $this->assertSame('803736404', $row->duns_number);
+        $this->assertSame('80373640412345', $row->duns_number);
         $this->assertSame('RS1234563', $row->dea_number);
         $this->assertSame('H123456789', $row->hin_number);
+        $this->assertSame('CR-EST-001', $row->chemical_reg_number);
 
         $this->assertContains('dea_number', $row->manuallyEditedFields());
         $this->assertContains('hin_number', $row->manuallyEditedFields());
         $this->assertContains('duns_number', $row->manuallyEditedFields());
+        $this->assertContains('chemical_reg_number', $row->manuallyEditedFields());
         $this->assertContains('gln', $row->manuallyEditedFields());
 
         $row->fillFromFda([
             'dea_number' => 'RC0000000',
             'hin_number' => 'HIN000000',
+            'chemical_reg_number' => 'CR-OVERWRITE',
             'city' => 'Feed City',
         ]);
         $row->refresh();
         $this->assertSame('RS1234563', $row->dea_number);
         $this->assertSame('H123456789', $row->hin_number);
+        $this->assertSame('CR-EST-001', $row->chemical_reg_number);
         $this->assertSame('Feed City', $row->city);
     }
 
@@ -127,9 +132,10 @@ class FdaFacilityCreateTest extends TestCase
                 'name' => 'Manual WDD '.$suffix,
                 'gln' => $gln,
                 'sgln' => $sgln,
-                'duns_number' => '012430880',
+                'duns_number' => '01243088098765',
                 'dea_number' => 'RW9876543',
                 'hin_number' => 'H987654321',
+                'chemical_reg_number' => 'CR-WDD-001',
                 'street_address' => '53 Summit View Ln '.$suffix,
                 'city' => 'Bristol',
                 'state_province' => 'VA',
@@ -146,11 +152,28 @@ class FdaFacilityCreateTest extends TestCase
 
         $this->assertSame($gln, $row->gln);
         $this->assertSame($sgln, $row->sgln);
-        $this->assertSame('012430880', $row->duns_number);
+        $this->assertSame('01243088098765', $row->duns_number);
         $this->assertSame('RW9876543', $row->dea_number);
         $this->assertSame('H987654321', $row->hin_number);
+        $this->assertSame('CR-WDD-001', $row->chemical_reg_number);
         $this->assertContains('dea_number', $row->manuallyEditedFields());
         $this->assertContains('hin_number', $row->manuallyEditedFields());
+        $this->assertContains('duns_number', $row->manuallyEditedFields());
+        $this->assertContains('chemical_reg_number', $row->manuallyEditedFields());
+
+        $row->fillFromFda([
+            'dea_number' => 'RC0000000',
+            'hin_number' => 'HIN000000',
+            'duns_number' => '99988877766655',
+            'chemical_reg_number' => 'CR-OVERWRITE',
+            'city' => 'Feed City',
+        ]);
+        $row->refresh();
+        $this->assertSame('RW9876543', $row->dea_number);
+        $this->assertSame('H987654321', $row->hin_number);
+        $this->assertSame('01243088098765', $row->duns_number);
+        $this->assertSame('CR-WDD-001', $row->chemical_reg_number);
+        $this->assertSame('Feed City', $row->city);
     }
 
     #[Test]

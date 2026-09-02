@@ -79,7 +79,7 @@ class FdaOrganizationResource extends Resource implements HasKnowledgeBase
      */
     public static function getGloballySearchableAttributes(): array
     {
-        return ['name', 'canonical_name', 'gln', 'duns_number'];
+        return ['name', 'canonical_name', 'gln', 'duns_number', 'street_address'];
     }
 
     public static function getDocumentation(): array|string

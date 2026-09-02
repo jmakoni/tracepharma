@@ -16,6 +16,7 @@ final class FreezeManualFdaCreateFields
     private const IDENTITY_FIELDS = [
         'dea_number',
         'hin_number',
+        'chemical_reg_number',
         'duns_number',
         'gln',
         'sgln',

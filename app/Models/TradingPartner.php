@@ -94,6 +94,7 @@ class TradingPartner extends Model
         'duns_number',
         'dea_number',
         'hin_number',
+        'chemical_reg_number',
         'partner_type',
         'street_address',
         'street_address_2',
@@ -204,7 +205,7 @@ class TradingPartner extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
+            ->logOnly(['name', 'gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }

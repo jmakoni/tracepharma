@@ -33,6 +33,7 @@ class WddFacilitiesRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('name')->searchable()->placeholder(fn ($record) => $record->facility_name),
                 FdaRegistryBadges::facilityTypeColumn(),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('city'),
                 TextColumn::make('state_province')->label('State'),
                 TextColumn::make('active_licenses_count')->label('Active licenses'),
