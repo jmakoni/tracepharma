@@ -2,6 +2,7 @@
 
 namespace App\Filament\Admin\Resources\Fda\FdaEstablishments;
 
+use App\Filament\Admin\Resources\Fda\FdaEstablishments\Pages\CreateFdaEstablishment;
 use App\Filament\Admin\Resources\Fda\FdaEstablishments\Pages\EditFdaEstablishment;
 use App\Filament\Admin\Resources\Fda\FdaEstablishments\Pages\ListFdaEstablishments;
 use App\Filament\Admin\Resources\Fda\FdaEstablishments\Pages\ViewFdaEstablishment;
@@ -10,19 +11,30 @@ use App\Filament\Admin\Resources\Fda\FdaEstablishments\Schemas\FdaEstablishmentF
 use App\Filament\Admin\Resources\Fda\FdaEstablishments\Schemas\FdaEstablishmentInfolist;
 use App\Filament\Admin\Resources\Fda\FdaEstablishments\Tables\FdaEstablishmentsTable;
 use App\Filament\Admin\Support\ViewOnlyFdaRegistryResource;
+use App\Models\Admin;
 use App\Models\Fda\FdaEstablishment;
+use App\Support\Auth\Permissions;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaEstablishmentResource extends Resource
+class FdaEstablishmentResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
     protected static ?string $model = FdaEstablishment::class;
+
+    public static function canCreate(): bool
+    {
+        $admin = auth('admin')->user();
+
+        return $admin instanceof Admin
+            && $admin->can(Permissions::CatalogManage);
+    }
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingStorefront;
 
@@ -62,6 +74,7 @@ class FdaEstablishmentResource extends Resource
     {
         return [
             'index' => ListFdaEstablishments::route('/'),
+            'create' => CreateFdaEstablishment::route('/create'),
             'view' => ViewFdaEstablishment::route('/{record}'),
             'edit' => EditFdaEstablishment::route('/{record}/edit'),
         ];
@@ -72,6 +85,11 @@ class FdaEstablishmentResource extends Resource
      */
     public static function getGloballySearchableAttributes(): array
     {
-        return ['fei_number', 'name', 'firm_name', 'gln'];
+        return ['fei_number', 'name', 'firm_name', 'gln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number', 'street_address'];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.fda-establishments';
     }
 }

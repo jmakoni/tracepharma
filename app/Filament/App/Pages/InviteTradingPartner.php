@@ -12,15 +12,16 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use UnitEnum;
 
-class InviteTradingPartner extends Page
+class InviteTradingPartner extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedUserPlus;
 
@@ -124,5 +125,10 @@ class InviteTradingPartner extends Page
                 $this->email = '';
                 $this->transport = 'https';
             });
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.partner-onboarding';
     }
 }

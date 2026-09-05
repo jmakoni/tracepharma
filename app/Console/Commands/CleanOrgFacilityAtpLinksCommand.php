@@ -9,6 +9,7 @@ use App\Models\Fda\FdaWddLicense;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -42,7 +43,7 @@ class CleanOrgFacilityAtpLinksCommand extends Command
 
         foreach ($tenants as $tenant) {
             /** @var array{licenses: int, sites: int} $counts */
-            $counts = $tenant->run(fn (): array => $this->clean($dryRun));
+            $counts = TenantRunner::run($tenant, fn (): array => $this->clean($dryRun));
 
             $totals['licenses'] += $counts['licenses'];
             $totals['sites'] += $counts['sites'];

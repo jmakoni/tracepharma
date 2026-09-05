@@ -110,7 +110,7 @@ final class UpdateOutboundShippingParty
         }
 
         if ($connectionId === null && $partnerId !== null) {
-            $defaultConnection = $this->connectionResolver->resolve($partnerId);
+            $defaultConnection = $this->connectionResolver->resolveWithLadder($partnerId);
             $connectionId = $defaultConnection?->getKey();
         }
 
@@ -229,5 +229,4 @@ final class UpdateOutboundShippingParty
             ));
         }
     }
-
 }

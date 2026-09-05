@@ -4,12 +4,15 @@ namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\EnrichEpcisDocumentShippingFields;
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Enums\TenantProfile;
 use App\Filament\App\Resources\EpcisDocuments\Pages\ListEpcisDocuments;
 use App\Filament\App\Resources\EpcisDocuments\Tables\EpcisDocumentsTable;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Site;
 use App\Models\Tenant;
+use App\Support\TenantSettings;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,6 +57,47 @@ class EnrichEpcisDocumentShippingFieldsTest extends TestCase
             $this->assertNotNull($enriched->ship_from_gln);
             $this->assertNotNull($enriched->ship_to_gln);
         } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function enrich_skips_inbound_ship_to_site_when_matching_disabled(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $settings = TenantSettings::forTenant(tenant());
+        $prior = $settings->matchInboundShipToSite();
+
+        try {
+            $settings->setMatchInboundShipToSite(false);
+
+            $document = EpcisDocument::query()
+                ->where('direction', 'inbound')
+                ->whereNotNull('ship_to_gln')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($document === null) {
+                $this->markTestSkipped('Demo2 has no inbound document with ship_to_gln.');
+            }
+
+            $partnerSite = Site::factory()->create([
+                'code' => 'ENR-PART-'.fake()->unique()->numerify('###'),
+            ]);
+
+            $document->forceFill([
+                'ship_to_site_id' => $partnerSite->getKey(),
+            ])->save();
+
+            $enriched = app(EnrichEpcisDocumentShippingFields::class)->handle($document->fresh());
+
+            $this->assertNotNull($enriched->ship_to_gln);
+            $this->assertNull($enriched->ship_to_site_id);
+
+            $partnerSite->delete();
+        } finally {
+            $settings->setMatchInboundShipToSite($prior);
             tenancy()->end();
         }
     }
@@ -121,6 +165,49 @@ class EnrichEpcisDocumentShippingFieldsTest extends TestCase
             $this->assertSame('0096295000993', $document->ship_to_gln);
 
             @unlink($tmp);
+        } finally {
+            $this->cleanupIngestFixtures();
+        }
+    }
+
+    #[Test]
+    public function reprocess_keeps_asn_and_po_when_prior_generation_is_superseded(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/minimal_with_shipping_refs.xml');
+            $this->assertFileExists($fixture);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_ship_rp_');
+            $this->assertNotFalse($tmp);
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $uuid = (string) str()->uuid();
+            $xml = str_replace('22222222-3333-4444-5555-666666666666', $uuid, $xml);
+            file_put_contents($tmp, $xml);
+
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'minimal_with_shipping_refs.xml',
+            ]);
+            $this->documentId = (int) $document->getKey();
+            @unlink($tmp);
+
+            $this->assertSame('PO-TEST-7174', $document->customer_po);
+            $this->assertSame('ASN-TEST-4787', $document->asn_number);
+
+            $reprocessed = app(ReprocessEpcisDocument::class)->handle(
+                $document,
+                sync: true,
+                force: true,
+                authorizeExceptionsRole: false,
+            );
+
+            $this->assertSame('validated', $reprocessed->status);
+            $this->assertGreaterThan(1, (int) $reprocessed->ingest_generation);
+            $this->assertSame('PO-TEST-7174', $reprocessed->customer_po);
+            $this->assertSame('ASN-TEST-4787', $reprocessed->asn_number);
         } finally {
             $this->cleanupIngestFixtures();
         }

@@ -11,15 +11,16 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use UnitEnum;
 
-class InspectionPack extends Page
+class InspectionPack extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
@@ -113,5 +114,10 @@ class InspectionPack extends Page
         $user = auth()->user();
 
         return $user instanceof User ? $user : null;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.recall-and-inspection';
     }
 }

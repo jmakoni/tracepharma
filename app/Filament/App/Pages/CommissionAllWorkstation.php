@@ -10,19 +10,20 @@ use App\Models\Site;
 use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcHasCommissioningEvent;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -30,7 +31,7 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class CommissionAllWorkstation extends Page
+class CommissionAllWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedPlusCircle;
 
@@ -57,7 +58,7 @@ class CommissionAllWorkstation extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsCommissioning())
+        return TenantFeatures::forTenant(tenant())->supportsCommissioning()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
@@ -327,5 +328,10 @@ class CommissionAllWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.commission';
     }
 }

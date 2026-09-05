@@ -335,18 +335,28 @@ class EpcisIngestionPipelineTest extends TestCase
             $this->assertSame($firstEventCount, (int) $reprocessed->event_count);
             $this->assertNotNull($reprocessed->last_processed_at);
             $this->assertGreaterThanOrEqual(2, (int) $reprocessed->ingest_generation);
-            // Superseded generations are pruned; only the active projection remains.
-            $this->assertSame(
-                $firstEventCount,
-                EpcisEvent::query()->where('document_id', $reprocessed->id)->count(),
-            );
-            $this->assertSame(
-                $firstEventCount,
-                EpcisEvent::query()
-                    ->where('document_id', $reprocessed->id)
-                    ->where('ingest_generation', $reprocessed->ingest_generation)
-                    ->count(),
-            );
+
+            $priorGen = (int) $reprocessed->ingest_generation - 1;
+            $priorEvents = EpcisEvent::query()
+                ->where('document_id', $reprocessed->id)
+                ->where('ingest_generation', $priorGen)
+                ->get();
+            $this->assertGreaterThanOrEqual($firstEventCount, $priorEvents->count());
+            $this->assertTrue($priorEvents->every(fn (EpcisEvent $event): bool => $event->superseded_at !== null));
+
+            $activeEvents = EpcisEvent::query()
+                ->where('document_id', $reprocessed->id)
+                ->where('ingest_generation', $reprocessed->ingest_generation)
+                ->get();
+            $this->assertSame($firstEventCount, $activeEvents->count());
+            $this->assertTrue($activeEvents->every(fn (EpcisEvent $event): bool => $event->superseded_at === null));
+
+            // RCA: superseded event PK still returns original bizStep / times / EPCs.
+            $rca = $priorEvents->first();
+            $this->assertNotNull($rca);
+            $this->assertNotNull($rca->biz_step);
+            $this->assertNotNull($rca->event_time);
+            $this->assertGreaterThan(0, $rca->eventEpcs()->count());
 
             @unlink($tmp);
         } finally {

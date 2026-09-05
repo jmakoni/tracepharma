@@ -4,8 +4,8 @@ namespace App\Services\Epcis\Outbound;
 
 use App\Enums\As2MdnAckMode;
 use App\Models\OutboundConnection;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\Integrations\As2MdnDispositionParser;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -21,8 +21,12 @@ final class As2OutboundSender
         private readonly As2MdnDispositionParser $dispositionParser,
     ) {}
 
-    public function send(OutboundConnection $connection, string $content, string $filename): As2SendResult
-    {
+    public function send(
+        OutboundConnection $connection,
+        string $content,
+        string $filename,
+        ?string $contentType = null,
+    ): As2SendResult {
         $settings = $connection->settings ?? [];
         $endpoint = $settings['as2_url'] ?? null;
         $as2From = $settings['as2_from'] ?? null;
@@ -31,6 +35,8 @@ final class As2OutboundSender
         if (! is_string($endpoint) || $endpoint === '') {
             throw new RuntimeException('AS2 outbound connection is missing settings.as2_url.');
         }
+
+        EpcisSubscriptionUrl::assertSafeTargetUrl($endpoint);
 
         if (! is_string($as2From) || $as2From === '' || ! is_string($as2To) || $as2To === '') {
             throw new RuntimeException('AS2 outbound connection is missing settings.as2_from or settings.as2_to.');
@@ -44,8 +50,9 @@ final class As2OutboundSender
         $canSign = filled($credentials['signing_cert_pem'] ?? null) && filled($credentials['signing_key_pem'] ?? null);
         $canEncrypt = filled($credentials['partner_encrypt_cert_pem'] ?? null);
 
+        $payloadContentType = $contentType ?? 'application/xml';
         $body = $content;
-        $contentType = 'application/xml';
+        $contentType = $payloadContentType;
         $smimeApplied = false;
 
         if ($canSign || $canEncrypt) {
@@ -55,6 +62,7 @@ final class As2OutboundSender
                     signingCertPem: $canSign ? (string) $credentials['signing_cert_pem'] : null,
                     signingKeyPem: $canSign ? (string) $credentials['signing_key_pem'] : null,
                     partnerEncryptCertPem: $canEncrypt ? (string) $credentials['partner_encrypt_cert_pem'] : null,
+                    contentType: $payloadContentType,
                 );
 
                 $body = $envelope->body;
@@ -81,14 +89,14 @@ final class As2OutboundSender
             $headers['Disposition-Notification-To'] = $dispositionNotificationTo;
         }
 
-        $response = Http::timeout(60)
+        $response = EpcisSubscriptionUrl::httpClient($endpoint, 60)
             ->withHeaders($headers)
             ->withBody($body, $contentType)
             ->post($endpoint);
 
         if (! $response->successful()) {
             throw new RuntimeException(
-                "AS2 outbound POST failed (HTTP {$response->status()}): ".substr($response->body(), 0, 500),
+                "AS2 outbound POST failed (HTTP {$response->status()}).",
             );
         }
 

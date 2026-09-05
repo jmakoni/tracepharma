@@ -7,21 +7,27 @@ use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Pages\AssetTracking;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\App\Resources\SerializationLots\SerializationLotResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\L3\SerializationLot;
+use App\Models\L3\SerializationLotContainerField;
 use App\Models\Product;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Site;
+use App\Models\SsccLabel;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Gs1\ElementString;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -45,6 +51,10 @@ class AssetTrackingPageTest extends TestCase
     private ?int $sessionId = null;
 
     private ?int $siteId = null;
+
+    private ?int $guardianLotId = null;
+
+    private ?int $guardianDocumentId = null;
 
     #[Test]
     public function pharmacy_tenant_can_access_asset_tracking_page(): void
@@ -93,7 +103,7 @@ class AssetTrackingPageTest extends TestCase
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             $user = User::factory()->create();
             $user->assignRole(TenantRole::Owner->value);
-            $user->givePermissionTo(\App\Support\Auth\Permissions::SitesAccessAll);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
             $this->actingAs($user);
 
             [$scan, $gtin14, $serial] = $this->seedTracedSgtin();
@@ -129,7 +139,7 @@ class AssetTrackingPageTest extends TestCase
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             $user = User::factory()->create();
             $user->assignRole(TenantRole::Owner->value);
-            $user->givePermissionTo(\App\Support\Auth\Permissions::SitesAccessAll);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
             $this->actingAs($user);
 
             $suffix = (string) random_int(10000000, 99999999);
@@ -183,7 +193,7 @@ class AssetTrackingPageTest extends TestCase
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             $user = User::factory()->create();
             $user->assignRole(TenantRole::Owner->value);
-            $user->givePermissionTo(\App\Support\Auth\Permissions::SitesAccessAll);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
             $this->actingAs($user);
 
             [$scan, $gtin14, $serial] = $this->seedTracedSgtin();
@@ -351,6 +361,211 @@ class AssetTrackingPageTest extends TestCase
         }
     }
 
+    #[Test]
+    public function fields_tab_shows_guardian_container_fields_and_lot_link_when_present(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $priorProfile = $tenant->profile;
+        $tenant->forceFill(['profile' => TenantProfile::Manufacturer])->save();
+        tenancy()->initialize($tenant->fresh());
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
+            $this->actingAs($user);
+
+            [$scan] = $this->seedTracedSgtin();
+            $epc = Epc::query()->find($this->epcId);
+            $this->assertNotNull($epc);
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'direction' => 'inbound',
+                'creation_date' => now(),
+                'received_at' => now(),
+                'status' => 'parsed',
+                'original_filename' => 'guardian-lot-close.xml',
+            ]);
+            $this->guardianDocumentId = (int) $document->getKey();
+
+            $lot = SerializationLot::query()->create([
+                'lot_number' => 'FIELDS-LOT-1',
+                'unit_gtin14' => $epc->gtin14,
+                'product_name' => 'Guardian Fields Product',
+                'pallet_count' => 0,
+                'case_count' => 0,
+                'unit_count' => 1,
+                'status' => 'accepted',
+                'epcis_document_id' => $document->getKey(),
+            ]);
+            $this->guardianLotId = (int) $lot->getKey();
+
+            SerializationLotContainerField::query()->create([
+                'lot_id' => $lot->getKey(),
+                'epc_uri' => $epc->epc_uri,
+                'container_type' => 'Bottle',
+                'parent_epc_uri' => null,
+                'fields' => [
+                    'GS1_XML' => '<gs1/>',
+                    'RawSeq' => '000123',
+                ],
+            ]);
+
+            $component = Livewire::test(AssetTracking::class)
+                ->set('scan', $scan)
+                ->call('runTrace')
+                ->assertSet('trace.found', true)
+                ->assertSee('Fields')
+                ->assertSee('FIELDS-LOT-1')
+                ->assertSee('GS1_XML')
+                ->assertSee('RawSeq');
+
+            $expectedLotUrl = SerializationLotResource::getUrl('view', ['record' => $lot], panel: 'app');
+            $this->assertSame($expectedLotUrl, $component->instance()->containerFieldLotUrl());
+        } finally {
+            if (tenancy()->initialized) {
+                tenant()?->forceFill(['profile' => $priorProfile])->save();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function fields_tab_stays_hidden_when_no_container_fields_exist(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
+            $this->actingAs($user);
+
+            [$scan] = $this->seedTracedSgtin();
+
+            $component = Livewire::test(AssetTracking::class)
+                ->set('scan', $scan)
+                ->call('runTrace')
+                ->assertSet('trace.found', true)
+                ->assertDontSee('Fields');
+
+            $this->assertNull($component->instance()->containerField());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function site_scoped_user_cannot_trace_unmapped_tenant_commissioned_epc(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+
+            $site = Site::query()->ownedByOrganization()->first();
+            if ($site === null) {
+                $site = Site::query()->create([
+                    'name' => 'AT Site '.Str::uuid(),
+                    'gln' => '030116'.random_int(100000, 999999).'0',
+                    'is_organization_facility' => true,
+                ]);
+                $this->siteId = (int) $site->getKey();
+            }
+
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::ReceivingTechnician->value);
+            $user->syncSites([(int) $site->getKey()], (int) $site->getKey());
+            $this->assertFalse($user->can(Permissions::SitesAccessAll));
+            $this->actingAs($user);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $sscc = Epc::fromUri('urn:epc:id:sscc:030116.01'.$suffix.'0');
+            $sscc->save();
+            $this->epcId = (int) $sscc->getKey();
+            $ssccUrn = (string) $sscc->epc_uri;
+
+            SsccLabel::query()->create([
+                'sscc_18' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'sscc_urn' => $ssccUrn,
+                'extension_digit' => '0',
+                'company_prefix' => '030116',
+                'serial_reference' => substr($suffix, 0, 10),
+                'serial_reference_int' => (int) $suffix,
+                'element_string' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'hrt' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'label_disk' => 'local',
+                'label_path' => 'at-test.pdf',
+                'commissioned_at' => now(),
+            ]);
+
+            Livewire::test(AssetTracking::class)
+                ->set('scan', (string) $sscc->ai_00)
+                ->call('runTrace')
+                ->assertSet('trace', null)
+                ->assertNotified();
+        } finally {
+            if (tenancy()->initialized) {
+                SsccLabel::query()
+                    ->where('label_path', 'at-test.pdf')
+                    ->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function sites_access_all_can_trace_unmapped_tenant_commissioned_epc(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $user->givePermissionTo(Permissions::SitesAccessAll);
+            $this->actingAs($user);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $sscc = Epc::fromUri('urn:epc:id:sscc:030116.01'.$suffix.'0');
+            $sscc->save();
+            $this->epcId = (int) $sscc->getKey();
+
+            SsccLabel::query()->create([
+                'sscc_18' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'sscc_urn' => (string) $sscc->epc_uri,
+                'extension_digit' => '0',
+                'company_prefix' => '030116',
+                'serial_reference' => substr($suffix, 0, 10),
+                'serial_reference_int' => (int) $suffix,
+                'element_string' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'hrt' => (string) ($sscc->sscc18 ?: $sscc->ai_00),
+                'label_disk' => 'local',
+                'label_path' => 'at-test-all.pdf',
+                'commissioned_at' => now(),
+            ]);
+
+            Livewire::test(AssetTracking::class)
+                ->set('scan', (string) $sscc->ai_00)
+                ->call('runTrace')
+                ->assertSet('trace.found', true);
+        } finally {
+            if (tenancy()->initialized) {
+                SsccLabel::query()
+                    ->where('label_path', 'at-test-all.pdf')
+                    ->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
     /**
      * @return array{0: string, 1: string, 2: string} [scan, gtin14, serial]
      */
@@ -462,6 +677,15 @@ class AssetTrackingPageTest extends TestCase
             return;
         }
 
+        if ($this->guardianLotId !== null) {
+            // Container fields cascade-delete with the lot (FK cascadeOnDelete).
+            SerializationLot::query()->whereKey($this->guardianLotId)->delete();
+        }
+
+        if ($this->guardianDocumentId !== null) {
+            EpcisDocument::query()->whereKey($this->guardianDocumentId)->delete();
+        }
+
         if ($this->sessionId !== null) {
             ReceivingScanLine::query()->where('receiving_session_id', $this->sessionId)->delete();
             ReceivingSession::query()->whereKey($this->sessionId)->delete();
@@ -492,6 +716,8 @@ class AssetTrackingPageTest extends TestCase
         $this->documentId = null;
         $this->productId = null;
         $this->siteId = null;
+        $this->guardianLotId = null;
+        $this->guardianDocumentId = null;
 
         tenancy()->end();
     }

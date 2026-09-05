@@ -33,7 +33,7 @@ final class UpdateOutboundShippingReferences
             SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
         }
 
-        $session->forceFill([
+        $fill = [
             'asn_number' => Arr::has($data, 'asn_number')
                 ? ($data['asn_number'] !== null && $data['asn_number'] !== '' ? (string) $data['asn_number'] : null)
                 : $session->asn_number,
@@ -49,7 +49,27 @@ final class UpdateOutboundShippingReferences
             'dscsa_affirm' => Arr::has($data, 'dscsa_affirm')
                 ? (bool) $data['dscsa_affirm']
                 : $session->dscsa_affirm,
-        ])->save();
+            'is_drop_shipment' => Arr::has($data, 'is_drop_shipment')
+                ? (bool) $data['is_drop_shipment']
+                : $session->is_drop_shipment,
+        ];
+
+        if (Arr::has($data, 'expected_count')) {
+            $newExpected = max(0, (int) $data['expected_count']);
+            $currentExpected = (int) $session->expected_count;
+            $hasConfirmedScans = (int) $session->confirmed_count > 0
+                || $session->scanLines()->where('status', 'confirmed')->exists();
+
+            if ($hasConfirmedScans && $newExpected < $currentExpected) {
+                throw new DomainException(
+                    'Cannot lower expected unit count after scanning. Declare a split/partial shipment instead.',
+                );
+            }
+
+            $fill['expected_count'] = $newExpected;
+        }
+
+        $session->forceFill($fill)->save();
 
         return $session->refresh();
     }

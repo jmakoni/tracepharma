@@ -2,11 +2,13 @@
 
 namespace App\Filament\App\Resources\Exceptions\Actions;
 
+use App\Actions\Epcis\AuthorizeMissingDocumentProducts;
 use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\MasterData\AddFdaPackagesToTradingPartner;
 use App\Actions\MasterData\AuthorizeFdaPackagingForPartner;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
 use App\Models\Exceptions\ExceptionCase;
@@ -18,13 +20,13 @@ use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Fda\FdaTenantLink;
+use App\Support\Filament\ProseEditor;
+use Database\Seeders\ExceptionCaseSeeder;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Utilities\Get;
@@ -39,7 +41,7 @@ use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
- * Authorize a missing GTIN into the assortment from the Rx catalog (or deep-link to FDA Products).
+ * Authorize a missing GTIN for receiving from the Rx catalog (or deep-link to FDA Products).
  */
 final class CorrectUnknownGtinAction
 {
@@ -51,7 +53,7 @@ final class CorrectUnknownGtinAction
 
                 return $profile->primaryActionKey() === ExceptionCorrectionProfile::ACTION_ADD_PRODUCT
                     ? $profile->primaryActionLabel()
-                    : 'Add product to assortment';
+                    : 'Authorize product';
             })
             ->icon(Heroicon::OutlinedCube)
             ->color('primary')
@@ -59,10 +61,17 @@ final class CorrectUnknownGtinAction
                 /** @var ExceptionCase $record */
                 $record = $page->getRecord();
 
-                return $record->status?->isOpen() === true
-                    && self::profileFor($page)->showsMasterDataProductForm();
+                if ($record->status?->isOpen() !== true
+                    || ! self::profileFor($page)->showsMasterDataProductForm()) {
+                    return false;
+                }
+
+                $fingerprint = ExceptionCorrectionProfile::extractGtinFromDescription($record->description);
+
+                return $fingerprint === null
+                    || ! AssortmentFromCatalog::productAuthorizedForGtin($fingerprint);
             })
-            ->modalHeading('Add product to assortment')
+            ->modalHeading('Authorize product for receiving')
             ->modalWidth(Width::FiveExtraLarge);
 
         if (RegulatoryCompliance::enabled()) {
@@ -86,7 +95,7 @@ final class CorrectUnknownGtinAction
                     }
 
                     $data = $action->getData();
-                    RegulatoryCompliance::assert($data, 'exception_correct_unknown_gtin');
+                    RegulatoryCompliance::assert($data, 'exception_correct_unknown_gtin', $action);
 
                     $reason = trim((string) ($data['resolution_notes'] ?? ''));
                     if ($reason === '') {
@@ -112,7 +121,7 @@ final class CorrectUnknownGtinAction
             $actor = auth()->user();
             /** @var ExceptionCase $record */
             $record = $page->getRecord();
-            $notes = (string) ($data['resolution_notes'] ?? 'Added missing GTIN to product assortment via catalog authorization.');
+            $notes = (string) ($data['resolution_notes'] ?? 'Authorized missing GTIN for receiving via catalog.');
 
             $gtin = (string) ($data['gtin'] ?? '');
             $fingerprint = ExceptionCorrectionProfile::extractGtinFromDescription($record->description);
@@ -161,15 +170,23 @@ final class CorrectUnknownGtinAction
             $addPackagesAction = app(AddFdaPackagesToTradingPartner::class);
 
             if ($addPackagesAction->requiresLabelerScope($partner)) {
+                $autoLinked = AssortmentFromCatalog::tryLinkManufacturerPartnerToCatalogLabeler($partner, $packaging);
+                if ($autoLinked) {
+                    $partner->refresh();
+                }
+
                 $listing = $packaging->relationLoaded('product') ? $packaging->product : $packaging->product()->first();
-                $labelerMismatch = FdaTenantLink::organizationId($partner) === null
-                    || $listing?->fda_organization_id === null
-                    || (int) FdaTenantLink::organizationId($partner) !== (int) $listing->fda_organization_id;
+                $partnerOrgId = FdaTenantLink::organizationId($partner);
+                $listingOrgId = $listing?->fda_organization_id !== null ? (int) $listing->fda_organization_id : null;
+                $labelerMismatch = $partnerOrgId === null
+                    || $listingOrgId === null
+                    || $partnerOrgId !== $listingOrgId;
 
                 if ($labelerMismatch) {
                     Notification::make()
                         ->title('No product authorized')
-                        ->body('No matching FDA package for this manufacturer labeler. Link the partner to an FDA organization or choose a different receive-from partner.')
+                        ->body(AssortmentFromCatalog::manufacturerLabelerLinkIssue($partner, $packaging)
+                            ?? 'No matching FDA package for this manufacturer labeler. Link the partner to an FDA organization or choose a different receive-from partner.')
                         ->warning()
                         ->send();
 
@@ -201,24 +218,29 @@ final class CorrectUnknownGtinAction
                 return;
             }
 
-            if ((bool) ($data['also_resolve'] ?? false)) {
-                $resolved = self::tryResolve($record, $actor, $notes);
+            $alsoResolve = (bool) ($data['also_resolve'] ?? false);
+            $alsoReprocess = (bool) ($data['also_reprocess'] ?? false) && $record->document_id !== null;
+            $reprocessOutcome = null;
 
-                if (! $resolved) {
-                    $page->refreshRecord();
-
-                    return;
-                }
+            if ($alsoReprocess) {
+                $reprocessOutcome = self::tryReprocess($record, $page);
             }
 
-            if ((bool) ($data['also_reprocess'] ?? false) && $record->document_id !== null) {
-                self::tryReprocess($record, $page);
+            $resolved = false;
 
-                // Re-process recreates open epcis_exceptions; re-close signals
-                // that this resolved case already addressed.
-                if ((bool) ($data['also_resolve'] ?? false)) {
-                    app(ExceptionService::class)->closeMatchingDocumentSignals($record->fresh() ?? $record);
-                }
+            if ($alsoResolve) {
+                $resolved = self::tryResolveAfterAuthorize(
+                    $record,
+                    $actor,
+                    $notes,
+                    $gtin,
+                    $alsoReprocess,
+                    $reprocessOutcome,
+                );
+            }
+
+            if ($resolved) {
+                app(ExceptionService::class)->closeMatchingDocumentSignals($record->fresh() ?? $record);
             }
 
             $page->refreshRecord();
@@ -290,7 +312,23 @@ final class CorrectUnknownGtinAction
                             return AssortmentFromCatalog::receiveFromPartnerOptions($catalogFor($get));
                         })
                         ->default(fn (): ?int => AssortmentFromCatalog::preferredPartnerId($record, $defaultCatalog))
-                        ->helperText('Partner you receive this product from. Manufacturer first when available.')
+                        ->helperText(function (Get $get) use ($catalogFor): string {
+                            $packaging = $catalogFor($get);
+                            $partnerId = $get('trading_partner_id');
+
+                            if ($packaging !== null && filled($partnerId)) {
+                                $partner = TradingPartner::query()->find($partnerId);
+                                $linkIssue = $partner !== null
+                                    ? AssortmentFromCatalog::manufacturerLabelerLinkIssue($partner, $packaging)
+                                    : null;
+
+                                if ($linkIssue !== null) {
+                                    return $linkIssue;
+                                }
+                            }
+
+                            return 'Partner you receive this product from. Manufacturer first when available.';
+                        })
                         ->visible(fn (Get $get): bool => $catalogFor($get) !== null),
                     Placeholder::make('catalog_match')
                         ->label('FDA package match')
@@ -331,12 +369,10 @@ final class CorrectUnknownGtinAction
                         ->dehydrated()
                         ->visible(fn (Get $get): bool => $record->document_id !== null
                             && $catalogFor($get) !== null),
-                    Textarea::make('resolution_notes')
+                    ProseEditor::make('resolution_notes')
                         ->label('Resolution notes')
                         ->required()
-                        ->rows(3)
-                        ->maxLength(5000)
-                        ->default('Added missing GTIN to product assortment via catalog authorization.')
+                        ->default('Authorized missing GTIN for receiving via catalog.')
                         ->helperText(function (Get $get) use ($catalogFor): string {
                             if ($catalogFor($get) === null) {
                                 return 'Required for the compliance gate. Use Open FDA Products above when this GTIN is not in catalog.';
@@ -366,7 +402,7 @@ final class CorrectUnknownGtinAction
             return 'Product linked to partner';
         }
 
-        return 'Product already in assortment';
+        return 'Product already authorized for receiving';
     }
 
     /**
@@ -396,13 +432,16 @@ final class CorrectUnknownGtinAction
         return $parts !== [] ? implode('. ', $parts).'.' : 'Receive-from updated for '.$name.'.';
     }
 
-    private static function tryReprocess(ExceptionCase $record, ViewException $page): void
+    /**
+     * @return 'completed'|'queued'|'skipped_receiving'|'failed'|'no_document'
+     */
+    private static function tryReprocess(ExceptionCase $record, ViewException $page): string
     {
         $record->loadMissing('document');
         $document = $record->document;
 
         if ($document === null) {
-            return;
+            return 'no_document';
         }
 
         $sync = Queue::getDefaultDriver() === 'sync';
@@ -416,7 +455,7 @@ final class CorrectUnknownGtinAction
                 ->warning()
                 ->send();
 
-            return;
+            return 'skipped_receiving';
         }
 
         try {
@@ -428,7 +467,7 @@ final class CorrectUnknownGtinAction
                 ->warning()
                 ->send();
 
-            return;
+            return 'failed';
         }
 
         if ($sync || $document->status === 'parsed') {
@@ -438,7 +477,7 @@ final class CorrectUnknownGtinAction
                 ->success()
                 ->send();
 
-            return;
+            return 'completed';
         }
 
         Notification::make()
@@ -446,6 +485,90 @@ final class CorrectUnknownGtinAction
             ->body('The document will be processed in the background.')
             ->success()
             ->send();
+
+        return 'queued';
+    }
+
+    /**
+     * Resolve only when there is nothing left to re-validate, or after re-process
+     * confirms the GTIN is no longer unknown on the linked document.
+     *
+     * @param  'completed'|'queued'|'skipped_receiving'|'failed'|'no_document'|null  $reprocessOutcome
+     */
+    private static function tryResolveAfterAuthorize(
+        ExceptionCase $record,
+        User $actor,
+        string $notes,
+        string $gtin,
+        bool $alsoReprocess,
+        ?string $reprocessOutcome,
+    ): bool {
+        if ($record->document_id === null) {
+            return self::tryResolve($record, $actor, $notes);
+        }
+
+        if ($reprocessOutcome === 'skipped_receiving') {
+            Notification::make()
+                ->title('Product authorized — case left open')
+                ->body('Finish receiving, then re-process the linked document to clear UNKNOWN_GTIN and close this case.')
+                ->warning()
+                ->send();
+
+            return false;
+        }
+
+        if ($alsoReprocess && in_array($reprocessOutcome, ['failed', 'no_document'], true)) {
+            Notification::make()
+                ->title('Product authorized — case left open')
+                ->body('Re-process the linked document after the failure is cleared, then resolve this case.')
+                ->warning()
+                ->send();
+
+            return false;
+        }
+
+        if (! $alsoReprocess) {
+            Notification::make()
+                ->title('Product authorized — case left open')
+                ->body('Re-process the linked EPCIS document to confirm UNKNOWN_GTIN is cleared, then resolve this case.')
+                ->warning()
+                ->send();
+
+            return false;
+        }
+
+        if (! AssortmentFromCatalog::productAuthorizedForGtin($gtin)) {
+            Notification::make()
+                ->title('Product authorized — case left open')
+                ->body('The GTIN is not yet in product master. Resolve after authorization completes.')
+                ->warning()
+                ->send();
+
+            return false;
+        }
+
+        $record->loadMissing('document');
+        $document = $record->document;
+
+        if ($document !== null) {
+            $stillUnknown = AuthorizeMissingDocumentProducts::unknownGtinsForDocument($document->fresh() ?? $document);
+            $stillUnknownNormalized = collect($stillUnknown)
+                ->map(fn (string $value): string => ltrim(AssortmentFromCatalog::normalizeGtinDigits($value), '0') ?: '0')
+                ->all();
+            $gtinNormalized = ltrim(AssortmentFromCatalog::normalizeGtinDigits($gtin), '0') ?: '0';
+
+            if (in_array($gtinNormalized, $stillUnknownNormalized, true)) {
+                Notification::make()
+                    ->title('Product authorized — case left open')
+                    ->body('The linked document still reports this GTIN as unknown. Re-process again after master data is ready.')
+                    ->warning()
+                    ->send();
+
+                return false;
+            }
+        }
+
+        return self::tryResolve($record, $actor, $notes);
     }
 
     private static function profileFor(ViewException $page): ExceptionCorrectionProfile
@@ -474,6 +597,8 @@ final class CorrectUnknownGtinAction
 
     private static function tryResolve(ExceptionCase $record, User $actor, string $notes): bool
     {
+        ExceptionCaseSeeder::ensureResolutionCatalog();
+
         $rootCauseId = ExceptionRootCause::query()->where('code', 'internal_mapping_error')->value('id');
         $resolutionActionId = ExceptionActionModel::query()->where('code', 'update_master_data')->value('id');
 

@@ -1,0 +1,336 @@
+- generic [active] [ref=f88e1]:
+  - link "Skip to content" [ref=f88e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f88e4]:
+    - link [ref=f88e6] [cursor=pointer]:
+      - /url: https://demo2.internal.vatengi.com/help
+      - img "TracePharma Help logo" [ref=f88e7]
+    - generic [ref=f88e8]:
+      - generic [ref=f88e11]:
+        - generic [ref=f88e12]: Global search
+        - searchbox "Global search" [ref=f88e18]
+      - button "User menu" [ref=f88e21] [cursor=pointer]:
+        - img "Avatar of Demo Owner" [ref=f88e22]
+  - generic [ref=f88e23]:
+    - generic [ref=f88e24]:
+      - navigation "Sidebar navigation" [ref=f88e25]:
+        - list [ref=f88e26]:
+          - listitem [ref=f88e27]:
+            - list [ref=f88e28]:
+              - listitem [ref=f88e29]:
+                - link "Welcome" [ref=f88e30] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/intro
+              - listitem [ref=f88e34]:
+                - link "CBV biz steps" [ref=f88e35] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/cbv-biz-steps
+              - listitem [ref=f88e39]:
+                - link "Operator workflows" [ref=f88e40] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/workflows
+                - list [ref=f88e44]:
+                  - listitem [ref=f88e45]:
+                    - link "Shell and site" [ref=f88e46] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/shell-and-site
+                  - listitem [ref=f88e51]:
+                    - link "Asset tracking" [ref=f88e52] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/asset-tracking
+                  - listitem [ref=f88e58]:
+                    - link "Break and pack" [ref=f88e59] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/break-pack
+                  - listitem [ref=f88e65]:
+                    - link "Commission" [ref=f88e66] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/commission
+                  - listitem [ref=f88e72]:
+                    - link "Decommission" [ref=f88e73] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/decommission
+                  - listitem [ref=f88e79]:
+                    - link "Outbound shipping" [ref=f88e80] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/outbound-shipping
+                  - listitem [ref=f88e86]:
+                    - link "Pack" [ref=f88e87] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/pack
+                  - listitem [ref=f88e93]:
+                    - link "Pharmacy outbound" [ref=f88e94] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/pharmacy-outbound
+                  - listitem [ref=f88e100]:
+                    - link "Receiving issues" [ref=f88e101] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/receiving-issues
+                  - listitem [ref=f88e107]:
+                    - link "Receiving" [ref=f88e108] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/receiving
+                  - listitem [ref=f88e114]:
+                    - link "Repack transform" [ref=f88e115] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/repack-transform
+                  - listitem [ref=f88e121]:
+                    - link "Return" [ref=f88e122] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/return
+                  - listitem [ref=f88e128]:
+                    - link "Saleable return" [ref=f88e129] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/saleable-return
+                  - listitem [ref=f88e135]:
+                    - link "Transferring" [ref=f88e136] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/transferring
+                  - listitem [ref=f88e142]:
+                    - link "Unpack" [ref=f88e143] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/unpack
+                  - listitem [ref=f88e149]:
+                    - link "Verify product" [ref=f88e150] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/workflows/verify-product
+              - listitem [ref=f88e155]:
+                - link "Capture findings" [ref=f88e156] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/findings
+      - listitem [ref=f88e160]:
+        - list [ref=f88e161]:
+          - listitem [ref=f88e162]:
+            - link "Back" [ref=f88e163] [cursor=pointer]:
+              - /url: https://demo2.internal.vatengi.com
+    - main [ref=f88e168]:
+      - generic [ref=f88e170]:
+        - generic [ref=f88e172]:
+          - navigation "Breadcrumb" [ref=f88e173]:
+            - list [ref=f88e174]:
+              - listitem [ref=f88e175]:
+                - link "Documentation" [ref=f88e176] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help
+              - listitem [ref=f88e177]:
+                - link "Operator workflows" [ref=f88e180] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/workflows
+              - listitem [ref=f88e181]:
+                - link "Decommission" [ref=f88e184] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/workflows/decommission
+          - heading "Decommission" [level=1] [ref=f88e185]
+        - generic [ref=f88e186]:
+          - article [ref=f88e188]:
+            - heading "Decommission" [level=1] [ref=f88e189]:
+              - link [ref=f88e190] [cursor=pointer]:
+                - /url: "#decommission"
+                - text: "#"
+              - text: Decommission
+            - list [ref=f88e191]:
+              - listitem [ref=f88e192]:
+                - strong [ref=f88e193]: "Slug / URL:"
+                - code [ref=f88e194]: /decommission-workstation
+              - listitem [ref=f88e195]:
+                - strong [ref=f88e196]: "Filament:"
+                - code [ref=f88e197]: App\Filament\App\Pages\DecommissionWorkstation
+              - listitem [ref=f88e198]:
+                - strong [ref=f88e199]: "Who:"
+                - code [ref=f88e200]: supportsCommissioning()
+                - text: and
+                - code [ref=f88e201]: NavShip
+                - text: (same gate as commission)
+              - listitem [ref=f88e202]:
+                - strong [ref=f88e203]: "Produces:"
+                - code [ref=f88e204]: decommissioning
+                - text: +
+                - strong [ref=f88e205]: reason-mapped disposition
+                - text: (ObjectEvent)
+            - heading "When to use" [level=2] [ref=f88e206]:
+              - link [ref=f88e207] [cursor=pointer]:
+                - /url: "#when-to-use"
+                - text: "#"
+              - text: When to use
+            - paragraph [ref=f88e208]:
+              - text: "Remove on-hand product from salable inventory — destroyed, expired, recalled, returned to destruction path, suspect/illegitimate, or QA reject. Subheading:"
+              - emphasis [ref=f88e209]: Scan on-hand EPCs at the selected site, choose a reason, then author decommissioning ObjectEvents.
+            - heading "Prerequisites" [level=2] [ref=f88e210]:
+              - link [ref=f88e211] [cursor=pointer]:
+                - /url: "#prerequisites"
+                - text: "#"
+              - text: Prerequisites
+            - list [ref=f88e212]:
+              - listitem [ref=f88e213]: Site selected; EPCs on hand and operable for decommissioning.
+              - listitem [ref=f88e214]: Decommission reason chosen at confirm time.
+              - listitem [ref=f88e215]:
+                - strong [ref=f88e216]: "Mass SoD:"
+                - text: when effective count exceeds threshold, a
+                - strong [ref=f88e217]: second approver
+                - text: with
+                - code [ref=f88e218]: DecommissionMassApprove
+                - text: permission is required (cannot self-approve).
+            - heading "Mass decommission / SoD" [level=2] [ref=f88e219]:
+              - link [ref=f88e220] [cursor=pointer]:
+                - /url: "#mass-decommission--sod"
+                - text: "#"
+              - text: Mass decommission / SoD
+            - paragraph [ref=f88e221]:
+              - code [ref=f88e222]: AssertDecommissionMassApproval
+              - text: "applies:"
+            - table [ref=f88e224]:
+              - rowgroup [ref=f88e225]:
+                - row [ref=f88e226]:
+                  - columnheader "Setting" [ref=f88e227]
+                  - columnheader "Default" [ref=f88e228]
+                  - columnheader "Meaning" [ref=f88e229]
+              - rowgroup [ref=f88e230]:
+                - row [ref=f88e231]:
+                  - cell [ref=f88e232]:
+                    - code [ref=f88e233]: tracepharma.decommission.mass_threshold
+                  - cell "10" [ref=f88e234]
+                  - cell "Batch + recent count must stay ≤ threshold" [ref=f88e235]
+                - row [ref=f88e236]:
+                  - cell [ref=f88e237]:
+                    - code [ref=f88e238]: tracepharma.decommission.mass_window_hours
+                  - cell "8" [ref=f88e239]
+                  - cell "Rolling window for recent decommissions at site" [ref=f88e240]
+            - paragraph [ref=f88e241]:
+              - strong [ref=f88e242]: Effective count
+              - text: = this batch size + distinct EPCs decommissioned at the same site within the window.
+            - paragraph [ref=f88e243]:
+              - text: When effective count
+              - strong [ref=f88e244]: ">"
+              - text: threshold, the confirm modal requires
+              - strong [ref=f88e245]: second approver email + password
+              - text: (different user with mass-approve permission).
+            - heading "Reason → disposition" [level=2] [ref=f88e246]:
+              - link [ref=f88e247] [cursor=pointer]:
+                - /url: "#reason--disposition"
+                - text: "#"
+              - text: Reason → disposition
+            - paragraph [ref=f88e248]:
+              - code [ref=f88e249]: biz_step
+              - text: is always
+              - strong [ref=f88e250]:
+                - code [ref=f88e251]: decommissioning
+              - text: . Disposition follows
+              - code [ref=f88e252]: DecommissionReason
+              - text: ":"
+            - table [ref=f88e254]:
+              - rowgroup [ref=f88e255]:
+                - row [ref=f88e256]:
+                  - columnheader "UI reason" [ref=f88e257]
+                  - columnheader "CBV disposition" [ref=f88e258]
+              - rowgroup [ref=f88e259]:
+                - row [ref=f88e260]:
+                  - cell "Destroyed" [ref=f88e261]
+                  - cell [ref=f88e262]:
+                    - code [ref=f88e263]: destroyed
+                - row [ref=f88e264]:
+                  - cell "Expired" [ref=f88e265]
+                  - cell [ref=f88e266]:
+                    - code [ref=f88e267]: expired
+                - row [ref=f88e268]:
+                  - cell "Recalled" [ref=f88e269]
+                  - cell [ref=f88e270]:
+                    - code [ref=f88e271]: recalled
+                - row [ref=f88e272]:
+                  - cell "Returned" [ref=f88e273]
+                  - cell [ref=f88e274]:
+                    - code [ref=f88e275]: returned
+                - row [ref=f88e276]:
+                  - cell "Suspect / illegitimate" [ref=f88e277]
+                  - cell [ref=f88e278]:
+                    - code [ref=f88e279]: inactive
+                - row [ref=f88e280]:
+                  - cell "QA reject / never shipped" [ref=f88e281]
+                  - cell [ref=f88e282]:
+                    - code [ref=f88e283]: disposed
+            - paragraph [ref=f88e284]: Helper text in the modal shows the disposition URN when a reason is selected.
+            - heading "Steps (with screenshots)" [level=2] [ref=f88e285]:
+              - link [ref=f88e286] [cursor=pointer]:
+                - /url: "#steps-with-screenshots"
+                - text: "#"
+              - text: Steps (with screenshots)
+            - list [ref=f88e287]:
+              - listitem [ref=f88e288]:
+                - text: Open
+                - strong [ref=f88e289]: Decommission
+                - text: from Operations nav.
+            - paragraph [ref=f88e290]:
+              - img "Decommission workstation" [ref=f88e291]
+            - paragraph [ref=f88e292]:
+              - img "Decommission desk (full)" [ref=f88e293]
+            - list [ref=f88e294]:
+              - listitem [ref=f88e295]: Scan on-hand SSCC/SGTINs into the confirmed list.
+              - listitem [ref=f88e296]:
+                - text: Click
+                - strong [ref=f88e297]: Complete decommission
+                - text: ; select reason (and second approver if mass threshold exceeded).
+              - listitem [ref=f88e298]:
+                - code [ref=f88e299]: EmitDecommissioningEpcis
+                - text: authors ObjectEvents.
+            - heading "Authored EPCIS checklist" [level=2] [ref=f88e300]:
+              - link [ref=f88e301] [cursor=pointer]:
+                - /url: "#authored-epcis-checklist"
+                - text: "#"
+              - text: Authored EPCIS checklist
+            - list [ref=f88e302]:
+              - listitem [ref=f88e303]: "[ ] ObjectEvent per decommissioned EPC"
+              - listitem [ref=f88e304]:
+                - text: "[ ]"
+                - code [ref=f88e305]: bizStep
+                - text: ":"
+                - code [ref=f88e306]: urn:epcglobal:cbv:bizstep:decommissioning
+              - listitem [ref=f88e307]:
+                - text: "[ ]"
+                - code [ref=f88e308]: disposition
+                - text: ": matches reason table above ("
+                - code [ref=f88e309]: urn:epcglobal:cbv:disp:…
+                - text: )
+              - listitem [ref=f88e310]: "[ ] Mass approval audit when threshold exceeded"
+              - listitem [ref=f88e311]: "[ ] Custody terminal disposition updated"
+            - heading "Related pages" [level=2] [ref=f88e312]:
+              - link [ref=f88e313] [cursor=pointer]:
+                - /url: "#related-pages"
+                - text: "#"
+              - text: Related pages
+            - list [ref=f88e314]:
+              - listitem [ref=f88e315]:
+                - link "return.md" [ref=f88e316] [cursor=pointer]:
+                  - /url: ../workflows/return
+                - text: — return to vendor (disposition
+                - code [ref=f88e317]: returned
+                - text: via returning flow)
+              - listitem [ref=f88e318]:
+                - link "commission.md" [ref=f88e319] [cursor=pointer]:
+                  - /url: ../workflows/commission
+                - text: — inverse action
+              - listitem [ref=f88e320]:
+                - link "cbv-biz-steps.md" [ref=f88e321] [cursor=pointer]:
+                  - /url: ../cbv-biz-steps
+                - text: — disposition vs biz_step distinction
+            - heading "Notes / known quirks" [level=2] [ref=f88e322]:
+              - link [ref=f88e323] [cursor=pointer]:
+                - /url: "#notes--known-quirks"
+                - text: "#"
+              - text: Notes / known quirks
+            - list [ref=f88e324]:
+              - listitem [ref=f88e325]:
+                - text: Do not confuse
+                - strong [ref=f88e326]: disposition
+                - text: (lifecycle state) with
+                - strong [ref=f88e327]: biz_step
+                - text: (always decommissioning here).
+              - listitem [ref=f88e328]: Blocks EPCs on open receive, ship, or transfer sessions.
+              - listitem [ref=f88e329]: "Modal shows effective count breakdown: batch + recent at site."
+          - list [ref=f88e331]:
+            - listitem [ref=f88e332]:
+              - list [ref=f88e333]:
+                - listitem [ref=f88e334]:
+                  - link "Decommission" [ref=f88e335] [cursor=pointer]:
+                    - /url: "#decommission"
+                - listitem [ref=f88e337]:
+                  - link "When to use" [ref=f88e338] [cursor=pointer]:
+                    - /url: "#when-to-use"
+                - listitem [ref=f88e340]:
+                  - link "Prerequisites" [ref=f88e341] [cursor=pointer]:
+                    - /url: "#prerequisites"
+                - listitem [ref=f88e343]:
+                  - link "Mass decommission / SoD" [ref=f88e344] [cursor=pointer]:
+                    - /url: "#mass-decommission--sod"
+                - listitem [ref=f88e346]:
+                  - link "Reason → disposition" [ref=f88e347] [cursor=pointer]:
+                    - /url: "#reason--disposition"
+                - listitem [ref=f88e349]:
+                  - link "Steps (with screenshots)" [ref=f88e350] [cursor=pointer]:
+                    - /url: "#steps-with-screenshots"
+                - listitem [ref=f88e352]:
+                  - link "Authored EPCIS checklist" [ref=f88e353] [cursor=pointer]:
+                    - /url: "#authored-epcis-checklist"
+                - listitem [ref=f88e355]:
+                  - link "Related pages" [ref=f88e356] [cursor=pointer]:
+                    - /url: "#related-pages"
+                - listitem [ref=f88e358]:
+                  - link "Notes / known quirks" [ref=f88e359] [cursor=pointer]:
+                    - /url: "#notes--known-quirks"
+  - generic:
+    - status

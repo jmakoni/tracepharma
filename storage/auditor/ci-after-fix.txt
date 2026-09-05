@@ -1,0 +1,83 @@
+Laravel Auditor Report
+------------------------------------------------------------
+Generated: 2026-09-04 18:13:00
+Project: TracePharma
+Laravel: v13.30.1 | PHP: 8.5.10
+Findings: 11
+ HIGH 3
+ MEDIUM 6
+ LOW 2
+[HIGH] Livewire 4.3.3 has a known DOM XSS advisory (Security, confidence: Confirmed)
+ Rule: AUD-DEP-001
+ Evidence: livewire/livewire
+ Evidence: storage/auditor/project_info.json
+ composer audit reports CVE-2026-81887 for livewire/livewire 4.3.3 (DOM-based XSS during client-side state handling). The app runs Filament panels on Livewire across app, admin, and knowledge-base surfaces.
+ Recommendation: Upgrade livewire/livewire past 4.3.3 (and re-test Filament panels) once a patched release is available that satisfies Filament constraints.
+[HIGH] Filament 5.7.4 MFA code reuse advisory (2FA enabled on panels) (Security, confidence: Confirmed)
+ Rule: AUD-DEP-001
+ Evidence: filament/filament
+ Evidence: app/Providers/Filament/AppPanelProvider.php:107
+ Evidence: app/Providers/Filament/AdminPanelProvider.php:79
+ composer audit reports CVE-2026-84306: Filament app MFA codes can still be used after a newer code has been used (affected <5.7.6). All TracePharma Filament panels enable two-factor authentication.
+ Recommendation: Upgrade filament/filament to >=5.7.6 (also picks up the low-severity password-validity disclosure fix in 5.7.5+).
+[HIGH] league/commonmark 2.8.3 has multiple high-severity DoS/XSS advisories (Security, confidence: High)
+ Rule: AUD-DEP-001
+ Evidence: league/commonmark
+ Installed league/commonmark 2.8.3 is flagged by composer audit for multiple high-severity advisories (DoS and AttributesExtension XSS/filter bypasses), including CVE-2026-71488 and CVE-2026-71478. Exact exploitability depends on whether untrusted Markdown is parsed with vulnerable extensions.
+ Recommendation: Upgrade league/commonmark to a patched release (>=2.10.0 or the advisory-specific floors) via Composer constraint resolution; confirm Filament/mail Markdown paths still work.
+[MEDIUM] CompleteReceivingSession skips site access when site_id is null (Security, confidence: Confirmed)
+ Rule: AUD-SEC-001
+ Symbol: CompleteReceivingSession::handle
+ Evidence: app/Actions/Receiving/CompleteReceivingSession.php:62
+ Evidence: app/Actions/Receiving/CancelReceivingSession.php:60
+ CompleteReceivingSession only calls SiteAccess::assertCanAccessSite when session.site_id is non-null. CancelReceivingSession denies null-site completions without SitesAccessAll. A user with NavReceive can complete a null-site transfer/ASN session that cancel would block.
+ Recommendation: Align CompleteReceivingSession with CancelReceivingSession: require SitesAccessAll (or equivalent) when site_id is null, or refuse completion until a site is assigned.
+[MEDIUM] SyncDestinationGlnMismatchReceiveImpact::handle mass-promotes all open signals (Performance, confidence: Confirmed)
+ Rule: AUD-PER-012
+ Symbol: SyncDestinationGlnMismatchReceiveImpact::handle
+ Evidence: app/Actions/Exceptions/SyncDestinationGlnMismatchReceiveImpact.php:28
+ Evidence: app/Support/TenantSettings.php:1189
+ handle(true) loads every open DESTINATION_* EpcisException without a case_id and promotes each via ExceptionService::createFromSignal. TenantSettings setter now only updates ExceptionType.receive_impact, but the unbounded handle() path remains callable and previously caused multi-minute InnoDB load in demo2.
+ Recommendation: Chunk/limit promote, or remove mass promote and rely solely on lazy promoteIfBlocking / ReceivingGate rederive; document that handle(true) must not be used on large tenants.
+[MEDIUM] Announcement fan-out loads all tenant users without chunking (Performance, confidence: Confirmed)
+ Rule: AUD-PER-012
+ Symbol: FanOutAnnouncementToTenant::handle
+ Evidence: app/Jobs/Announcements/FanOutAnnouncementToTenant.php:64
+ Evidence: app/Jobs/Announcements/FanOutAnnouncementToTenant.php:25
+ FanOutAnnouncementToTenant iterates User::query()->get() to send bell notifications for every user in the tenant. The job also has no tries/timeout properties.
+ Recommendation: Use cursor()/chunkById() for notification fan-out; set tries and timeout aligned with queue retry_after.
+[MEDIUM] Core App Filament models lack Eloquent policies (Security, confidence: High)
+ Rule: AUD-FIL-001
+ Evidence: storage/auditor/policies_authorization.json
+ Evidence: app/Policies/ReceivingSessionPolicy.php
+ policies_authorization lists 18 policy files but none for User, EpcisDocument, or ExceptionCase. Those Filament resources rely on canAccess / job-role checks rather than Gate::authorize / model policies. ReceivingSessionPolicy is the positive control.
+ Recommendation: Add UserPolicy, EpcisDocumentPolicy, and ExceptionCasePolicy (mirroring ReceivingSessionPolicy patterns) and wire Filament can* methods / authorize() on critical actions.
+[MEDIUM] Account security flags are mass-assignable on User/Admin/PortalUser (Security, confidence: High)
+ Rule: AUD-SEC-002
+ Evidence: app/Models/User.php:33
+ Evidence: app/Models/Admin.php:36
+ Evidence: app/Models/PortalUser.php:17
+ User and Admin fillable include is_active and must_change_password; PortalUser includes is_active. session_version is correctly not fillable. Filament forms intentionally write these fields, but any other fill()/create() from request-shaped arrays can flip account usability.
+ Recommendation: Remove security flags from fillable and set them only via dedicated methods (disable/enable/forcePasswordChange) or guarded admin form dehydrators.
+[MEDIUM] Long-running jobs declare timeouts far above database queue retry_after default (Laravel conventions, confidence: High)
+ Rule: AUD-QUE-001
+ Evidence: config/queue.php:16
+ Evidence: config/queue.php:38
+ Evidence: app/Jobs/ProcessEpcisDocumentJob.php:22
+ config/queue.php defaults QUEUE_CONNECTION to database with retry_after 90 seconds, while ProcessEpcisDocumentJob and other jobs set timeout of 600-3600. If an environment falls back to the database driver without raising DB_QUEUE_RETRY_AFTER, in-flight jobs can be released and duplicated.
+ Recommendation: Keep production on redis/Horizon with retry_after greater than max job timeout; raise database retry_after if database driver is ever used; assert this in deploy checks.
+[LOW] Recall broadcast ack routes omit signed middleware (controller-only check) (Security, confidence: High)
+ Rule: AUD-SEC-001
+ Evidence: routes/tenant.php:89
+ Evidence: app/Http/Controllers/RecallBroadcastAckPortalController.php:19
+ tenant recall-broadcast-ack GET/POST use only throttle middleware; signature validation is enforced inside RecallBroadcastAckPortalController. Neighboring supplier-exception routes use signed middleware on the route definition.
+ Recommendation: Add signed middleware to match supplier-exception routes while keeping the controller check.
+[LOW] No policy/authorization tests for EpcisDocument or ExceptionCase Filament access (Testing, confidence: Medium)
+ Rule: AUD-TST-003
+ Evidence: storage/auditor/tests.json
+ Evidence: tests/Feature/Auth/
+ Strong SiteAccess and AccountSecurity test coverage exists, but there are no dedicated policy tests for EpcisDocument/ExceptionCase/User Filament authorization boundaries (policies themselves are missing).
+ Recommendation: After adding policies, add Feature tests that deny/allow view/update/delete for job roles and site scopes.
+
+ INFO CI passed: no open findings at or above high. 
+

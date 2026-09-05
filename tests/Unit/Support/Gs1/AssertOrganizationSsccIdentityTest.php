@@ -53,12 +53,44 @@ class AssertOrganizationSsccIdentityTest extends TestCase
     }
 
     #[Test]
+    public function it_allows_company_prefix_shared_with_trading_partner_gln_when_assignment_enabled(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            tenancy()->initialize($tenant);
+
+            TenantSettings::forTenant($tenant)
+                ->setAllowAssignPartnerGlnsFromPrefix(true);
+            $tenant->save();
+
+            $partner = TradingPartner::query()->create([
+                'name' => 'Prefix Partner Allowed '.Str::random(6),
+                'gln' => '0377771000004',
+                'partner_type' => PartnerType::Manufacturer,
+                'is_active' => true,
+            ]);
+            $this->partnerIds[] = (int) $partner->id;
+
+            app(AssertOrganizationSsccIdentity::class)->handle('0377771999995', '0377771');
+
+            $this->assertTrue(true);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function it_rejects_company_prefix_shared_with_trading_partner_gln(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
         try {
             tenancy()->initialize($tenant);
+
+            TenantSettings::forTenant($tenant)
+                ->setAllowAssignPartnerGlnsFromPrefix(false);
+            $tenant->save();
 
             $partner = TradingPartner::query()->create([
                 'name' => 'Prefix Partner '.Str::random(6),

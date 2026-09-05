@@ -15,7 +15,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
@@ -114,12 +114,14 @@ class OutboundEpcisDocumentsTable
                     ->boolean()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('event_count')
-                    ->label('Events')
+                    ->label('Events (file)')
+                    ->tooltip('Count stored from the partner TI payload (commission/pack/ship). Live DB events for shipping docs may be the shipping ObjectEvent only — use Download EPCIS for the full TI file.')
                     ->numeric()
                     ->alignEnd()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('epc_count')
                     ->label('EPCs')
+                    ->tooltip('EPC membership on the authored shipping document projection.')
                     ->numeric()
                     ->alignEnd()
                     ->toggleable(isToggledHiddenByDefault: true),

@@ -16,11 +16,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class VerificationResource extends Resource
+class VerificationResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Verification::class;
 
@@ -40,7 +41,7 @@ class VerificationResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsVrs())
+        return TenantFeatures::forTenant(tenant())->supportsVrs()
             && JobRoleAccess::allows(Permissions::NavVerify);
     }
 
@@ -106,5 +107,10 @@ class VerificationResource extends Resource
             'index' => ListVerifications::route('/'),
             'view' => ViewVerification::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.verifications';
     }
 }

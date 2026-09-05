@@ -188,6 +188,7 @@ final class EnsureCatalogPartiesFromEpcisLocations
             }
 
             $stats['tenant_partners_ensured']++;
+            $this->recordPublishedSgln($gln, $location);
 
             return;
         }
@@ -205,6 +206,7 @@ final class EnsureCatalogPartiesFromEpcisLocations
 
             app(CreateHqSiteForTradingPartner::class)->handle($existing);
             $stats['tenant_partners_ensured']++;
+            $this->recordPublishedSgln($gln, $location);
 
             return;
         }
@@ -228,6 +230,7 @@ final class EnsureCatalogPartiesFromEpcisLocations
 
         $stats['partners_created']++;
         $stats['tenant_partners_ensured']++;
+        $this->recordPublishedSgln($gln, $location);
     }
 
     /**

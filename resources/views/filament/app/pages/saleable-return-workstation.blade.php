@@ -1,5 +1,26 @@
 <x-filament-panels::page>
     <div class="flex flex-col gap-4">
+        @php($score = $this->scorecard())
+        <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 w-full">
+            <div class="stat py-3">
+                <div class="stat-title">VRS verified (24h)</div>
+                <div class="stat-value text-2xl text-success">{{ $score['vrs_verified'] }}</div>
+            </div>
+            <div class="stat py-3">
+                <div class="stat-title">VRS blocked (24h)</div>
+                <div class="stat-value text-2xl text-error">{{ $score['vrs_blocked'] }}</div>
+            </div>
+            <div class="stat py-3">
+                <div class="stat-title">Returning EPCIS today</div>
+                <div class="stat-value text-2xl">{{ $score['returning_authored_today'] }}</div>
+            </div>
+            <div class="stat py-3">
+                <div class="stat-title">Session confirmed</div>
+                <div class="stat-value text-2xl">{{ $score['session_confirmed'] }}</div>
+                <div class="stat-desc">VRS must pass before credit</div>
+            </div>
+        </div>
+
         <div
             x-data="{ flashTone: null }"
             x-on:scan-result.window="

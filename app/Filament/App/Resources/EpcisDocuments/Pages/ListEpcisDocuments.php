@@ -8,6 +8,7 @@ use App\Enums\EpcisReceivedVia;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Support\EpcisSchemaSearchForm;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -26,7 +27,6 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\View\View;
@@ -70,11 +70,13 @@ class ListEpcisDocuments extends ListRecords
     {
         parent::mount();
 
+        // Header actions are cached after mount(); mountAction() here silently no-ops.
+        // Set defaultAction so the page wire:init mounts Find / Recall after boot.
         if (
             request()->boolean('findRecall')
             && TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
         ) {
-            $this->mountAction('findRecall');
+            $this->defaultAction = 'findRecall';
         }
     }
 
@@ -187,7 +189,7 @@ class ListEpcisDocuments extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        $maxKb = (int) config('tracepharma.epcis.max_upload_kb', 20480);
+        $maxKb = (int) config('tracepharma.epcis.max_upload_kb', 81920);
 
         return [
             Action::make('findRecall')
@@ -906,6 +908,14 @@ class ListEpcisDocuments extends ListRecords
         $trueTotal = (int) $result['total'];
         $truncated = (bool) $result['truncated'];
         $filename = 'find-recall-'.$type.'-'.now()->format('Ymd-His').'.csv';
+
+        if ($truncated) {
+            Notification::make()
+                ->title('Export limited to 1,000 rows')
+                ->body('Exported '.$exportedCount.' of '.$trueTotal.' matches. Refine your search for a complete CSV, or use the track-and-trace export API for larger extracts.')
+                ->warning()
+                ->send();
+        }
 
         return $this->streamFindRecallCsv($type, $rows, $exportedCount, $trueTotal, $truncated, $filename);
     }

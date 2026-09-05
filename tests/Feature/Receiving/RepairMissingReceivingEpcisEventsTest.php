@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\RepairMissingReceivingEpcisEvents;
@@ -19,10 +20,12 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class RepairMissingReceivingEpcisEventsTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -102,6 +105,9 @@ class RepairMissingReceivingEpcisEventsTest extends TestCase
 
         app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, userId: null, autoConfirmChildren: true);
         $session->refresh();
+        if ($session->status !== 'completed') {
+            $session = app(CompleteReceivingSession::class)->handle($session);
+        }
         $this->assertNotNull($session->receiving_epcis_document_id);
         $this->receivingDocumentId = (int) $session->receiving_epcis_document_id;
 
@@ -164,6 +170,8 @@ class RepairMissingReceivingEpcisEventsTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
     }

@@ -2,28 +2,27 @@
 
 namespace App\Filament\App\Pages;
 
-use App\Actions\Epcis\ResolveEpcFromScan;
-use App\Actions\Shipping\CompleteOutboundShippingSession;
-use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
-use App\Filament\Support\RegulatoryCompliance;
-use App\Models\Epcis\Epc;
-use App\Models\Shipping\OutboundShippingScanLine;
+use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
+use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingWizard;
+use App\Filament\Notifications\Notification;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\User;
+use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
-use App\Support\Gs1\ElementString;
-use App\Support\Recalls\OpenRecallFlag;
+use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -32,8 +31,11 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class ScanOutWorkstation extends Page
+class ScanOutWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithOutboundShippingSessionHud;
+    use InteractsWithOutboundShippingWizard;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
 
     protected static ?string $navigationLabel = 'Scan Out';
@@ -49,12 +51,21 @@ class ScanOutWorkstation extends Page
     #[Url(as: 'session')]
     public ?int $sessionId = null;
 
-    public string $scan = '';
+    public bool $showSitePicker = false;
 
-    public ?string $lastScanMessage = null;
+    public function mount(): void
+    {
+        $sessionId = $this->sessionId ?? request()->integer('session');
 
-    /** @var 'ok'|'warn'|'error'|null */
-    public ?string $lastScanTone = null;
+        if ($sessionId > 0) {
+            $this->loadSession((int) $sessionId);
+        }
+    }
+
+    public function getSubheading(): string|Htmlable|null
+    {
+        return 'Desktop ship desk — scan, set customer, and send from one wizard.';
+    }
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -72,23 +83,11 @@ class ScanOutWorkstation extends Page
         return static::canAccess();
     }
 
-    public static function urlForSession(int $sessionId): string
+    public static function urlForSession(int $sessionId, array $parameters = []): string
     {
-        return static::getUrl(['session' => $sessionId], panel: 'app');
-    }
+        $parameters['session'] = $sessionId;
 
-    public function mount(): void
-    {
-        $sessionId = $this->sessionId ?? request()->integer('session');
-
-        if ($sessionId > 0) {
-            $this->loadSession((int) $sessionId);
-        }
-    }
-
-    public function getSubheading(): string|Htmlable|null
-    {
-        return 'Desktop ship desk. Same ship orders as Ship Order — later we keep one screen.';
+        return static::getUrl($parameters, panel: 'app');
     }
 
     public function selectSession(int|string|null $sessionId): void
@@ -109,7 +108,7 @@ class ScanOutWorkstation extends Page
      */
     public function openSessions(): Collection
     {
-        return $this->sessionsQuery()
+        return $this->openSessionsQuery()
             ->with(['tradingPartner', 'site'])
             ->limit(50)
             ->get();
@@ -122,9 +121,35 @@ class ScanOutWorkstation extends Page
         }
 
         return $this->sessionsQuery()
-            ->with(['tradingPartner', 'site', 'shipToSite'])
+            ->with(['tradingPartner', 'site', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection'])
             ->whereKey($this->sessionId)
             ->first();
+    }
+
+    protected function outboundShippingSession(): OutboundShippingSession
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            throw new \RuntimeException('No outbound shipping session loaded.');
+        }
+
+        return $session;
+    }
+
+    protected function getOutboundShippingSession(): OutboundShippingSession
+    {
+        return $this->outboundShippingSession();
+    }
+
+    protected function refreshOutboundShippingSession(): void
+    {
+        $this->refreshOutboundShippingSessionHud();
+    }
+
+    protected function afterOutboundScanConfirmed(): void
+    {
+        $this->hydrateWizardFromRecord();
     }
 
     public function statusLabel(): string
@@ -132,83 +157,120 @@ class ScanOutWorkstation extends Page
         return OutboundShippingSessionStatus::label($this->session()?->status);
     }
 
-    public function confirmedLineCount(): int
+    public function statusBadgeColor(): string
     {
-        if ($this->sessionId === null) {
-            return 0;
-        }
-
-        return OutboundShippingScanLine::query()
-            ->where('outbound_shipping_session_id', $this->sessionId)
-            ->where('status', 'confirmed')
-            ->count();
+        return match ($this->session()?->status) {
+            'completed' => 'success',
+            'in_progress' => 'info',
+            'open' => 'warning',
+            'cancelled' => 'gray',
+            default => 'outline',
+        };
     }
 
-    public function confirmScanAction(): Action
+    public function atpOutboundGateDisabled(): bool
     {
-        return Action::make('confirmScan')
-            ->label('Confirm')
-            ->action(function (): void {
-                $session = $this->session();
-                if ($session === null) {
-                    $this->flashScan('error', 'Open a ship order first.');
+        return AtpGateBypass::isBypassed();
+    }
 
-                    return;
-                }
+    /**
+     * @return array<int, string>
+     */
+    public function shipFromSiteOptions(): array
+    {
+        $options = EligibleReceiveSites::organizationOptions();
+        $user = auth()->user();
 
-                if (! $session->canScan()) {
-                    $this->flashScan('error', 'This ship order cannot accept more scans.');
+        if (! $user instanceof User || $user->can(Permissions::SitesAccessAll)) {
+            return $options;
+        }
 
-                    return;
-                }
+        $allowed = SiteAccess::userSiteIds($user)->all();
 
-                $scan = ElementString::normalize(trim($this->scan));
-                $this->scan = $scan;
+        return array_filter(
+            $options,
+            fn (string $name, int $id): bool => in_array($id, $allowed, true),
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
 
-                if ($scan === '') {
-                    $this->flashScan('error', 'Scan an SSCC or SGTIN to ship.');
+    public function defaultShipFromSiteId(): ?int
+    {
+        return CurrentSite::preferredId(
+            TenantSettings::forTenant(tenant())->defaultShipFromSiteId(),
+            $this->shipFromSiteOptions(),
+        );
+    }
 
-                    return;
-                }
+    public function beginNewShipOrder(): void
+    {
+        $options = $this->shipFromSiteOptions();
 
-                if (! $this->assertSessionSiteAccess($session)) {
-                    return;
-                }
+        if ($options === []) {
+            Notification::make()
+                ->title('No ship-from sites')
+                ->body('You do not have access to any eligible ship-from sites.')
+                ->danger()
+                ->ephemeral()
+                ->send();
 
-                $resolved = app(ResolveEpcFromScan::class)->handle($scan);
-                $epc = $resolved['epc'] ?? null;
-                if ($epc instanceof Epc) {
-                    $recallBlock = app(OpenRecallFlag::class)->blocks($epc);
-                    if ($recallBlock !== null) {
-                        $this->flashScan('error', $recallBlock);
+            return;
+        }
 
-                        return;
-                    }
-                }
+        if (count($options) === 1) {
+            $this->openNewSession((int) array_key_first($options));
 
-                try {
-                    $result = app(ConfirmOutboundShippingScan::class)->handle(
-                        $session,
-                        $scan,
-                        auth()->id(),
-                    );
-                } catch (InvalidArgumentException|DomainException $e) {
-                    $this->flashScan('error', $e->getMessage());
+            return;
+        }
 
-                    return;
-                }
+        $this->showSitePicker = true;
+    }
 
-                $this->scan = '';
-                $this->sessionId = (int) $session->getKey();
+    public function cancelNewShipOrder(): void
+    {
+        $this->showSitePicker = false;
+    }
 
-                if (! ($result['ok'] ?? false)) {
-                    $this->flashScan('error', (string) ($result['message'] ?? 'Scan not confirmed.'));
+    public function openNewSession(int $siteId): void
+    {
+        $this->showSitePicker = false;
 
-                    return;
-                }
+        if (! array_key_exists($siteId, $this->shipFromSiteOptions())) {
+            Notification::make()
+                ->title('Invalid site')
+                ->body('That ship-from site is not available.')
+                ->danger()
+                ->ephemeral()
+                ->send();
 
-                $this->flashScan('ok', (string) $result['message']);
-            });
+            return;
+        }
+
+        try {
+            $session = app(OpenOutboundShippingSession::class)->handle(
+                siteId: $siteId,
+                openedBy: auth()->id(),
+            );
+        } catch (AuthorizationException|InvalidArgumentException|DomainException $e) {
+            Notification::make()
+                ->title('Could not open ship order')
+                ->body($e->getMessage())
+                ->danger()
+                ->ephemeral()
+                ->send();
+
+            return;
+        }
+
+        $this->loadSession((int) $session->getKey());
+        $this->wizardStep = 1;
+
+        Notification::make()
+            ->title('Ship order opened')
+            ->body('Ship from '.$session->site?->name)
+            ->success()
+            ->ephemeral()
+            ->send();
     }
 
     protected function getHeaderActions(): array
@@ -218,83 +280,10 @@ class ScanOutWorkstation extends Page
                 ->label('New ship order')
                 ->icon(Heroicon::OutlinedPlus)
                 ->color('primary')
-                ->visible(fn (): bool => $this->sessionId === null)
-                ->action(function (): void {
-                    try {
-                        $session = app(OpenOutboundShippingSession::class)->handle(
-                            openedBy: auth()->id(),
-                        );
-                    } catch (InvalidArgumentException|DomainException $e) {
-                        Notification::make()
-                            ->title('Could not open ship order')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-
-                        return;
-                    }
-
-                    $this->sessionId = (int) $session->getKey();
-                    $this->lastScanMessage = null;
-                    $this->lastScanTone = null;
-                    $this->scan = '';
-                }),
-            RegulatoryCompliance::apply(
-                Action::make('sendShipment')
-                    ->label('Send shipment')
-                    ->icon(Heroicon::OutlinedPaperAirplane)
-                    ->color('success')
-                    ->visible(fn (): bool => $this->session()?->canSend() ?? false)
-                    ->disabled(fn (): bool => $this->sendIsMissingRequiredRefs())
-                    ->requiresConfirmation()
-                    ->modalHeading('Send this shipment?')
-                    ->modalDescription('Authors the shipping EPCIS document and schedules outbound transmission to the partner.')
-                    ->modalSubmitActionLabel('Send shipment')
-                    ->action(function (): void {
-                        $session = $this->session();
-                        if ($session === null) {
-                            return;
-                        }
-
-                        if (! $this->assertSessionSiteAccess($session)) {
-                            return;
-                        }
-
-                        try {
-                            app(CompleteOutboundShippingSession::class)->handle($session, auth()->id());
-                        } catch (AuthorizationException|InvalidArgumentException|DomainException $e) {
-                            $this->flashScan('error', $e->getMessage());
-                            Notification::make()
-                                ->title('Send blocked')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-
-                            return;
-                        }
-
-                        $this->flashScan('ok', 'Shipment sent');
-                        Notification::make()
-                            ->title('Shipment sent')
-                            ->success()
-                            ->send();
-                    }),
-                'outbound_shipping_send',
-                requireReason: false,
-            ),
+                ->visible(fn (): bool => $this->sessionId === null && ! $this->showSitePicker)
+                ->action(fn (): mixed => $this->beginNewShipOrder()),
+            $this->sendShipmentAction(),
         ];
-    }
-
-    private function sendIsMissingRequiredRefs(): bool
-    {
-        $session = $this->session();
-        if ($session === null) {
-            return true;
-        }
-
-        return blank($session->asn_number)
-            || (blank($session->customer_po) && blank($session->invoice_number))
-            || ! $session->dscsa_affirm;
     }
 
     private function loadSession(int $sessionId): void
@@ -307,6 +296,7 @@ class ScanOutWorkstation extends Page
             Notification::make()
                 ->title('Session not found')
                 ->danger()
+                ->ephemeral()
                 ->send();
 
             $this->clearSession();
@@ -314,16 +304,54 @@ class ScanOutWorkstation extends Page
             return;
         }
 
+        $user = auth()->user();
+        if ($user instanceof User && $session->site_id !== null) {
+            try {
+                SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
+            } catch (AuthorizationException $e) {
+                Notification::make()
+                    ->title('Access denied')
+                    ->body($e->getMessage())
+                    ->danger()
+                    ->ephemeral()
+                    ->send();
+
+                $this->clearSession();
+
+                return;
+            }
+        }
+
         $this->sessionId = (int) $session->getKey();
+        $this->showSitePicker = false;
         $this->scan = '';
+        $this->lastScanMessage = null;
+        $this->lastScanTone = null;
+        $this->loadOutboundShippingSessionRelations();
+        $this->hydrateWizardFromRecord();
+
+        if (request()->query('scan')) {
+            $this->wizardStep = 1;
+        }
     }
 
     private function clearSession(): void
     {
         $this->sessionId = null;
+        $this->showSitePicker = false;
         $this->scan = '';
         $this->lastScanMessage = null;
         $this->lastScanTone = null;
+        $this->wizardStep = 1;
+    }
+
+    /**
+     * @return Builder<OutboundShippingSession>
+     */
+    private function openSessionsQuery(): Builder
+    {
+        return $this->sessionsQuery()
+            ->whereIn('status', ['open', 'in_progress']);
     }
 
     /**
@@ -332,7 +360,6 @@ class ScanOutWorkstation extends Page
     private function sessionsQuery(): Builder
     {
         $query = OutboundShippingSession::query()
-            ->whereIn('status', ['open', 'in_progress'])
             ->latest('opened_at')
             ->latest('id');
 
@@ -349,32 +376,8 @@ class ScanOutWorkstation extends Page
         return $query->whereIn('site_id', SiteAccess::userSiteIds($user));
     }
 
-    private function assertSessionSiteAccess(OutboundShippingSession $session): bool
+    public static function getDocumentation(): array|string
     {
-        $user = auth()->user();
-        if (! $user instanceof User || $session->site_id === null) {
-            return true;
-        }
-
-        try {
-            SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
-        } catch (AuthorizationException $e) {
-            $this->flashScan('error', $e->getMessage());
-
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * @param  'ok'|'warn'|'error'  $tone
-     */
-    private function flashScan(string $tone, string $message): void
-    {
-        $this->lastScanTone = $tone;
-        $this->lastScanMessage = $message;
-        $this->dispatch('focus-scan');
-        $this->dispatch('scan-result', tone: $tone);
+        return 'workflows.outbound-shipping';
     }
 }

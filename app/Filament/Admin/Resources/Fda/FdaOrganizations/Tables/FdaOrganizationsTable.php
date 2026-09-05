@@ -30,13 +30,14 @@ class FdaOrganizationsTable
                 FdaRegistryBadges::partnerTypeColumn(),
                 FdaRegistryBadges::identifierColumn('gln', 'GLN'),
                 FdaRegistryBadges::identifierColumn('duns_number', 'DUNS'),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('establishments_count')->label('Establishments')->sortable(),
                 TextColumn::make('wdd_facilities_count')->label('WDD facilities')->sortable(),
                 TextColumn::make('products_count')->label('Products')->sortable(),
                 FdaRegistryBadges::activeColumn(),
             ])
             ->defaultSort('name')
-            ->searchPlaceholder('Name, GLN, or DUNS')
+            ->searchPlaceholder('Name, GLN, DUNS, or street')
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)
             ->extremePaginationLinks()

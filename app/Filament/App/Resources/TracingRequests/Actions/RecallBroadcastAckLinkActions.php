@@ -9,7 +9,7 @@ use App\Models\TracingRequestNotification;
 use App\Services\Tracing\RecallBroadcastAckService;
 use Filament\Actions\Action;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Gate;

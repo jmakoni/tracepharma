@@ -19,9 +19,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaOrganizationResource extends Resource
+class FdaOrganizationResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -78,6 +79,11 @@ class FdaOrganizationResource extends Resource
      */
     public static function getGloballySearchableAttributes(): array
     {
-        return ['name', 'canonical_name', 'gln', 'duns_number'];
+        return ['name', 'canonical_name', 'gln', 'duns_number', 'street_address'];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.fda-organizations';
     }
 }

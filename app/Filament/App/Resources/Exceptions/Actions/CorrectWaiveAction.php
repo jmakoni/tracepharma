@@ -11,10 +11,10 @@ use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -75,11 +75,9 @@ final class CorrectWaiveAction
                                 ->value('id'))
                             ->searchable()
                             ->required(),
-                        Textarea::make('notes')
+                        ProseEditor::make('notes')
                             ->label('Waiver notes')
                             ->required()
-                            ->rows(4)
-                            ->maxLength(5000)
                             ->helperText('Document why this is accepted without a data correction.'),
                     ];
                 })

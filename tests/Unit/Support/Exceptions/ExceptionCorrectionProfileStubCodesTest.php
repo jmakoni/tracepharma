@@ -14,25 +14,30 @@ class ExceptionCorrectionProfileStubCodesTest extends TestCase
         $codes = ExceptionCorrectionProfile::operatorHiddenStubCodes();
 
         $this->assertSame([
-            'PARTNER_REJECTED_FILE',
-            'MISSING_MDN',
-            'LATE_MDN',
-            'L2_L3_RECONCILIATION_FAILURE',
-            'L3_TRANSMISSION_FAILURE',
-            'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
             // Superseded at runtime by SERIAL_SHIPPED_NOT_COMMISSIONED / MISSING_COMMISSIONING.
             'SHIP_BEFORE_COMMISSION',
         ], $codes);
 
+        $this->assertNotContains('AUTO_DECOMMISSION_FAILED', $codes);
+        $this->assertNotContains('PARTNER_REJECTED_FILE', $codes);
+        $this->assertNotContains('MISSING_MDN', $codes);
+        $this->assertNotContains('LATE_MDN', $codes);
+        $this->assertNotContains('L3_TRANSMISSION_FAILURE', $codes);
+        $this->assertNotContains('L2_L3_RECONCILIATION_FAILURE', $codes);
         $this->assertNotContains('UNCLASSIFIED', $codes);
         $this->assertNotContains('UNKNOWN_GTIN', $codes);
+
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('AUTO_DECOMMISSION_FAILED'));
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('L3_TRANSMISSION_FAILURE'));
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('L2_L3_RECONCILIATION_FAILURE'));
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('PARTNER_REJECTED_FILE'));
     }
 
     #[Test]
     public function is_operator_hidden_stub_code_normalizes_and_excludes_unclassified(): void
     {
-        $this->assertTrue(ExceptionCorrectionProfile::isOperatorHiddenStubCode('missing_mdn'));
+        $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('missing_mdn'));
         $this->assertTrue(ExceptionCorrectionProfile::isOperatorHiddenStubCode(' TIMING_INVERSION '));
         $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('UNCLASSIFIED'));
         $this->assertFalse(ExceptionCorrectionProfile::isOperatorHiddenStubCode('UNKNOWN_GTIN'));

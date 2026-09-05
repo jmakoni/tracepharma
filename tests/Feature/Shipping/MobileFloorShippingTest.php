@@ -12,6 +12,7 @@ use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionR
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileViewOutboundShippingSession;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingSession;
+use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
@@ -22,6 +23,7 @@ use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -189,6 +191,51 @@ class MobileFloorShippingTest extends TestCase
 
             $session->refresh();
             $this->assertSame(1, (int) $session->confirmed_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function mobile_remove_recent_scan_line_unconfirms_scan(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            // Ingest uses payload_disk (phpunit: local). Fake after tenancy so writes
+            // are not blocked by an unwritable tenant-suffixed storage root.
+            Storage::fake((string) config('tracepharma.epcis.payload_disk', 'local'));
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $site = $this->createShipSite($tenant);
+            $this->makeEpcShippableAtSite($site);
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $component = Livewire::test(MobileViewOutboundShippingSession::class, ['record' => $session->getKey()])
+                ->call('stageScan', self::SSCC_URI);
+
+            $line = OutboundShippingScanLine::query()
+                ->where('outbound_shipping_session_id', $session->getKey())
+                ->where('status', 'confirmed')
+                ->first();
+
+            $this->assertNotNull($line);
+
+            $component->call('removeRecentScanLine', (int) $line->getKey());
+
+            $this->assertSame(
+                0,
+                OutboundShippingScanLine::query()
+                    ->where('outbound_shipping_session_id', $session->getKey())
+                    ->where('status', 'confirmed')
+                    ->count(),
+            );
+            $this->assertSame(0, (int) $session->fresh()->confirmed_count);
         } finally {
             $this->cleanup($tenant);
         }

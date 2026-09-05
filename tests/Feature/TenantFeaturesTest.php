@@ -35,6 +35,9 @@ class TenantFeaturesTest extends TestCase
         $this->assertFalse($f->supportsInboundIntegrations());
         $this->assertFalse($f->supportsMasterData());
         $this->assertFalse($f->supportsComplianceCases());
+        $this->assertTrue($f->supportsPartnerReadiness());
+        $this->assertTrue($f->supportsComplianceAlertCenter());
+        $this->assertTrue($f->supportsBuyingGroupNetwork());
     }
 
     public function test_pharmacy_supports_compliance_cases(): void
@@ -43,6 +46,7 @@ class TenantFeaturesTest extends TestCase
 
         $this->assertTrue($f->supportsComplianceCases());
         $this->assertTrue($f->supportsInboundIntegrations());
+        $this->assertFalse($f->supportsBuyingGroupNetwork());
     }
 
     public function test_pharmacy_supports_packing_without_outbound_sscc_ship(): void
@@ -76,6 +80,21 @@ class TenantFeaturesTest extends TestCase
 
         $this->assertFalse($f->supportsOutboundIntegrations());
         $this->assertFalse($f->supportsSsccLabeling());
+    }
+
+    public function test_logistics_3pl_supports_principals(): void
+    {
+        $this->assertTrue((new TenantFeatures(TenantProfile::Logistics3pl))->supportsPrincipals());
+        $this->assertFalse((new TenantFeatures(TenantProfile::DrugWholesaler))->supportsPrincipals());
+        $this->assertFalse((new TenantFeatures(TenantProfile::Pharmacy))->supportsPrincipals());
+    }
+
+    public function test_only_prepackager_supports_repack_transform(): void
+    {
+        $this->assertTrue((new TenantFeatures(TenantProfile::Prepackager))->supportsRepackTransform());
+        $this->assertFalse((new TenantFeatures(TenantProfile::Pharmacy))->supportsRepackTransform());
+        $this->assertFalse((new TenantFeatures(TenantProfile::DrugWholesaler))->supportsRepackTransform());
+        $this->assertFalse((new TenantFeatures(TenantProfile::Manufacturer))->supportsRepackTransform());
     }
 
     #[DataProvider('fullOpsProfiles')]

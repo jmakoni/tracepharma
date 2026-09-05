@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\Exceptions\Actions;
 
+use App\Actions\Exceptions\StartInvestigatorSla;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
@@ -9,9 +10,10 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use Filament\Forms\Components\Toggle;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 
@@ -51,12 +53,15 @@ final class RequestPartnerCorrectionAction
             ->modalHeading('Request partner correction')
             ->modalDescription('Adds a partner-visible note and moves the case toward Waiting (partner) where the current status allows it.')
             ->schema([
-                Textarea::make('body')
+                ProseEditor::make('body')
                     ->label('Note to trading partner')
                     ->required()
-                    ->rows(4)
-                    ->maxLength(5000)
                     ->helperText('Visible to trading partners when partner portals are enabled.'),
+                Toggle::make('email_supplier')
+                    ->label('Also email supplier portal link')
+                    ->default(fn (): bool => filled($page->getRecord()->tradingPartner?->email))
+                    ->visible(fn (): bool => filled($page->getRecord()->tradingPartner?->email))
+                    ->helperText('Sends the DSCSA exception notice with a link to the supplier exception portal.'),
             ])
             ->action(function (array $data) use ($page): void {
                 /** @var User $actor */
@@ -83,11 +88,20 @@ final class RequestPartnerCorrectionAction
 
                 self::moveTowardWaitingPartner($record->fresh() ?? $record, $actor);
 
+                $emailBody = null;
+                if (($data['email_supplier'] ?? false) === true) {
+                    // Same path as Investigator SLA desk: send portal email and start/refresh the 72h due_at overlay.
+                    $result = app(StartInvestigatorSla::class)->handle($record->fresh() ?? $record, $actor);
+                    $emailBody = ($result['sent'] ?? false)
+                        ? 'Supplier portal email sent. 72-hour investigator clock is running.'
+                        : ('Partner note saved; email not sent: '.($result['error'] ?? 'unable to send.'));
+                }
+
                 $page->refreshRecord();
 
                 Notification::make()
                     ->title('Partner correction requested')
-                    ->body('Partner-visible note added.')
+                    ->body($emailBody ?? 'Partner-visible note added.')
                     ->success()
                     ->send();
             });

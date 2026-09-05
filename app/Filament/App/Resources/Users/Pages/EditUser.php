@@ -4,21 +4,26 @@ namespace App\Filament\App\Resources\Users\Pages;
 
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\Users\Concerns\RestrictsOwnerRoleAssignment;
+use App\Filament\App\Resources\Users\Concerns\RestrictsSupportEngineerAssignment;
 use App\Filament\App\Resources\Users\Concerns\SyncsUserSiteMembership;
 use App\Filament\App\Resources\Users\UserResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\User;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 
 class EditUser extends EditRecord
 {
     use RestrictsOwnerRoleAssignment;
+    use RestrictsSupportEngineerAssignment;
     use SyncsUserSiteMembership;
 
     protected static string $resource = UserResource::class;
+
+    /** @var array{is_active?: bool, must_change_password?: bool} */
+    private array $accountSecurityAttributes = [];
 
     protected function beforeSave(): void
     {
@@ -26,6 +31,15 @@ class EditUser extends EditRecord
         $record = $this->getRecord();
 
         $this->assertOwnerRoleAssignmentAllowed($record);
+        $this->assertSupportEngineerAssignmentAllowed($record);
+
+        if (auth()->user()?->is($record) && array_key_exists('is_active', $this->data) && ! $this->data['is_active']) {
+            $this->data['is_active'] = true;
+            Notification::make()
+                ->title('Cannot disable your own account')
+                ->danger()
+                ->send();
+        }
     }
 
     /**
@@ -50,8 +64,10 @@ class EditUser extends EditRecord
         $record = $this->getRecord();
 
         $data = $this->preserveOwnerRoleForNonOwnerActor($data, $record);
+        $data = $this->preserveSupportEngineerRoleForNonOwnerActor($data, $record);
+        $data = $this->extractSiteMembershipFromFormData($data);
 
-        return $this->extractSiteMembershipFromFormData($data);
+        return $this->extractAccountSecurityFromFormData($data);
     }
 
     protected function getHeaderActions(): array
@@ -80,6 +96,10 @@ class EditUser extends EditRecord
         /** @var User $record */
         $record = $this->getRecord();
 
+        if ($this->accountSecurityAttributes !== []) {
+            $record->forceFill($this->accountSecurityAttributes)->save();
+        }
+
         $this->syncSiteMembershipIfNeeded($record);
 
         if (! $record->hasRole(TenantRole::Owner->value) && $this->ownerCount() === 0) {
@@ -91,6 +111,24 @@ class EditUser extends EditRecord
                 ->warning()
                 ->send();
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function extractAccountSecurityFromFormData(array $data): array
+    {
+        $this->accountSecurityAttributes = [];
+
+        foreach (['is_active', 'must_change_password'] as $key) {
+            if (array_key_exists($key, $data)) {
+                $this->accountSecurityAttributes[$key] = (bool) $data[$key];
+                unset($data[$key]);
+            }
+        }
+
+        return $data;
     }
 
     private function wouldRemoveLastOwner(Model $record): bool

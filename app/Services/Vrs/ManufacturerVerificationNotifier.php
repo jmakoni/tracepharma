@@ -56,7 +56,12 @@ final class ManufacturerVerificationNotifier
         return null;
     }
 
-    private function resolveManufacturerPartner(string $gtin14): ?TradingPartner
+    public function resolveManufacturerPartnerId(string $gtin14): ?int
+    {
+        return $this->resolveManufacturerPartner($gtin14)?->getKey();
+    }
+
+    public function resolveManufacturerPartner(string $gtin14): ?TradingPartner
     {
         $productPartner = $this->resolveProductManufacturerPartner($gtin14);
 

@@ -5,8 +5,11 @@ namespace App\Filament\App\Pages;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\DeleteReceivingSession;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
+use App\Filament\Notifications\Notification;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
@@ -15,6 +18,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Floor\UnsubmittedSessionDelete;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Receiving\ReceivingPolicy;
@@ -24,10 +28,10 @@ use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +40,7 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class ScanInWorkstation extends Page
+class ScanInWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedInboxArrowDown;
 
@@ -245,7 +249,7 @@ class ScanInWorkstation extends Page
 
     protected function getHeaderActions(): array
     {
-        return [
+        $actions = [
             Action::make('startScanFirst')
                 ->label('Start scan-first')
                 ->icon(Heroicon::OutlinedPlus)
@@ -261,7 +265,7 @@ class ScanInWorkstation extends Page
                             ->title('Could not open scan-first')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -303,7 +307,7 @@ class ScanInWorkstation extends Page
                                 ->title('Complete blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -312,14 +316,40 @@ class ScanInWorkstation extends Page
                         Notification::make()
                             ->title('Receiving complete')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->openNextInboundIfAvailable($session);
                     }),
                 'receiving_complete_scan_first',
                 requireReason: false,
             ),
+            UnsubmittedSessionDeleteAction::forReceivingHud(
+                fn (): bool => $this->session()?->canHardDelete() ?? false,
+                function (): int {
+                    $session = $this->session();
+
+                    return $session !== null
+                        ? UnsubmittedSessionDelete::confirmedScanCountReceiving($session)
+                        : 0;
+                },
+                function (): void {
+                    $session = $this->session();
+                    if ($session === null) {
+                        return;
+                    }
+
+                    if (! $this->assertSessionSiteAccess($session)) {
+                        return;
+                    }
+
+                    app(DeleteReceivingSession::class)->handle($session, auth()->id());
+                    $this->clearSession();
+                },
+                static::getUrl(panel: 'app'),
+            ),
         ];
+
+        return $actions;
     }
 
     private function openNextInboundIfAvailable(ReceivingSession $completed): void
@@ -342,7 +372,7 @@ class ScanInWorkstation extends Page
         Notification::make()
             ->title('Opened next inbound')
             ->success()
-            ->send();
+            ->ephemeral()->send();
     }
 
     private function canCompleteManually(): bool
@@ -446,7 +476,7 @@ class ScanInWorkstation extends Page
             Notification::make()
                 ->title('Session not found')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->clearSession();
 
@@ -515,5 +545,10 @@ class ScanInWorkstation extends Page
         $this->lastScanMessage = $message;
         $this->dispatch('focus-scan');
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.receiving';
     }
 }

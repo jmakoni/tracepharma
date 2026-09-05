@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Integrations;
 
+use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Enums\OutboundTransport;
 use App\Models\Epcis\TransmissionMdn;
 use App\Models\OutboundConnection;
@@ -15,6 +16,7 @@ final class ProcessAs2AsyncMdn
 {
     public function __construct(
         private readonly As2MdnDispositionParser $dispositionParser,
+        private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
     ) {}
 
     /**
@@ -83,6 +85,16 @@ final class ProcessAs2AsyncMdn
                 'mdn_received_at' => now(),
                 'mdn_payload' => $payload,
             ])->save();
+
+            if ($mdnStatus === 'failed') {
+                $document = $mdn->document;
+                if ($document !== null) {
+                    $disposition = is_string($payload['disposition'] ?? null)
+                        ? (string) $payload['disposition']
+                        : 'MDN failed';
+                    $this->catalogSignal->partnerRejected($document, $disposition);
+                }
+            }
 
             return [
                 'status' => $mdnStatus,

@@ -20,28 +20,33 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use InvalidArgumentException;
 use Throwable;
 use UnitEnum;
 
-class OperationsHub extends Page
+class OperationsHub extends Page implements HasKnowledgeBase
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-home';
 
     protected static ?string $navigationLabel = 'Operations Hub';
@@ -49,8 +54,6 @@ class OperationsHub extends Page
     protected static ?string $title = 'Operations Hub';
 
     protected static ?int $navigationSort = 1;
-
-    protected static bool $shouldRegisterNavigation = true;
 
     protected static string|UnitEnum|null $navigationGroup = 'Operations';
 
@@ -62,7 +65,7 @@ class OperationsHub extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->hasAnyOperations())
+        return TenantFeatures::forTenant(tenant())->hasAnyOperations()
             && JobRoleAccess::allowsAny(
                 Permissions::NavReceive,
                 Permissions::NavShip,
@@ -74,9 +77,9 @@ class OperationsHub extends Page
     /**
      * Active receive sessions for the topbar-selected site (max 5).
      *
-     * @return \Illuminate\Support\Collection<int, ReceivingSession>
+     * @return Collection<int, ReceivingSession>
      */
-    public function activeReceivingSessions(): \Illuminate\Support\Collection
+    public function activeReceivingSessions(): Collection
     {
         if (! ReceivingSessionResource::canAccess()) {
             return collect();
@@ -98,7 +101,7 @@ class OperationsHub extends Page
             ->get()
             ->when(
                 $user instanceof User,
-                fn (\Illuminate\Support\Collection $sessions) => $sessions->filter(
+                fn (Collection $sessions) => $sessions->filter(
                     fn (ReceivingSession $session): bool => Gate::forUser($user)->allows('view', $session),
                 ),
             )
@@ -175,7 +178,7 @@ class OperationsHub extends Page
             $url = $this->resourceIndexUrl(EpcisDocumentResource::class);
 
             if ($url !== null) {
-                $this->redirect($url.(str_contains($url, '?') ? '&' : '?').'findRecall=1');
+                $this->redirect($url.(str_contains($url, '?') ? '&' : '?').'action=findRecall');
 
                 return;
             }
@@ -536,7 +539,7 @@ class OperationsHub extends Page
                 'label' => 'Find / Recall',
                 'description' => 'Find units by GTIN/lot, or shipments by ASN/PO, then quarantine matches.',
                 'url' => $inboundUrl !== null
-                    ? $inboundUrl.(str_contains($inboundUrl, '?') ? '&' : '?').'findRecall=1'
+                    ? $inboundUrl.(str_contains($inboundUrl, '?') ? '&' : '?').'action=findRecall'
                     : null,
             ]);
         }
@@ -619,5 +622,10 @@ class OperationsHub extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.shell-and-site';
     }
 }

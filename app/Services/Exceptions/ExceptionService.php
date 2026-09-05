@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Quarantine\QuarantineService;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseContent;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -475,7 +476,7 @@ final class ExceptionService
     public function transition(
         ExceptionCase $case,
         ExceptionStatus $to,
-        User $actor,
+        ?User $actor = null,
         ?string $notes = null,
     ): ExceptionCase {
         $from = $case->status;
@@ -903,7 +904,7 @@ final class ExceptionService
         string $body,
         ExceptionActivityVisibility $visibility = ExceptionActivityVisibility::Internal,
     ): ExceptionCase {
-        if (blank($body)) {
+        if (ProseContent::isBlank($body)) {
             throw ValidationException::withMessages([
                 'body' => 'Comment cannot be empty.',
             ]);

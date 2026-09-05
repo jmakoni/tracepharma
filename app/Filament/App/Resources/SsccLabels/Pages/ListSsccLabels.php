@@ -16,7 +16,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;

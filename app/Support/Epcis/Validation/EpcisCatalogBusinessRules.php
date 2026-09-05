@@ -989,7 +989,8 @@ final class EpcisCatalogBusinessRules
     }
 
     /**
-     * COMMISSION_AFTER_SHIP, DECOMMISSION_AFTER_SHIP, EVENTS_OUT_OF_ORDER, RETURNS_NOT_LINKED —
+     * COMMISSION_AFTER_SHIP, DECOMMISSION_AFTER_SHIP, EVENTS_OUT_OF_ORDER,
+     * PACK_HIERARCHY_TIME_INVERSION, RETURNS_NOT_LINKED —
      * all derived from a single pass over per-EPC event times within this document.
      *
      * @param  Collection<int, mixed>  $events
@@ -1122,6 +1123,8 @@ final class EpcisCatalogBusinessRules
             }
         }
 
+        $this->checkPackHierarchyTimeInversion($ctx, $eventsById, $packingEventIds, $findings);
+
         if ($returnEvents->isNotEmpty()) {
             $returnRows = $this->epcListRows($this->eventIds($returnEvents));
             foreach ($returnRows as $row) {
@@ -1137,6 +1140,72 @@ final class EpcisCatalogBusinessRules
                         'warning',
                     );
                 }
+            }
+        }
+    }
+
+    /**
+     * PACK_HIERARCHY_TIME_INVERSION — EPC packed into a higher parent before its own
+     * child packing event (e.g. inner→SSCC before EA→inner).
+     *
+     * @param  Collection<int|string, mixed>  $eventsById
+     * @param  list<int>  $packingEventIds
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkPackHierarchyTimeInversion(
+        EpcisValidationContext $ctx,
+        Collection $eventsById,
+        array $packingEventIds,
+        array &$findings,
+    ): void {
+        if ($packingEventIds === [] || ! Schema::hasTable('event_epcs')) {
+            return;
+        }
+
+        $earliestChild = [];
+        $earliestParent = [];
+
+        foreach (array_chunk($packingEventIds, 1000) as $chunk) {
+            $rows = DB::table('event_epcs')
+                ->whereIn('event_id', $chunk)
+                ->whereIn('role', ['childEPC', 'parentID'])
+                ->get(['event_id', 'epc_id', 'role']);
+
+            foreach ($rows as $row) {
+                $event = $eventsById->get((int) $row->event_id);
+                if ($event === null || $event->event_time === null) {
+                    continue;
+                }
+
+                $epcId = (int) $row->epc_id;
+                $time = $event->event_time;
+                $eventId = (int) $event->getKey();
+
+                if ($row->role === 'parentID') {
+                    if (! isset($earliestParent[$epcId]) || $time->lessThan($earliestParent[$epcId]['time'])) {
+                        $earliestParent[$epcId] = ['time' => $time, 'event_id' => $eventId];
+                    }
+                } elseif (! isset($earliestChild[$epcId]) || $time->lessThan($earliestChild[$epcId]['time'])) {
+                    $earliestChild[$epcId] = ['time' => $time, 'event_id' => $eventId];
+                }
+            }
+        }
+
+        foreach ($earliestChild as $epcId => $child) {
+            if (! isset($earliestParent[$epcId])) {
+                continue;
+            }
+
+            $parent = $earliestParent[$epcId];
+            if ($child['time']->lessThan($parent['time'])) {
+                $this->add(
+                    $findings,
+                    $ctx,
+                    'PACK_HIERARCHY_TIME_INVERSION',
+                    'Packing timestamps are inverted for this EPC: it was packed into a parent before its own child packing event.',
+                    $child['event_id'],
+                    (int) $epcId,
+                );
             }
         }
     }
@@ -1261,7 +1330,7 @@ final class EpcisCatalogBusinessRules
             return;
         }
 
-        $maxBytes = ((int) config('tracepharma.epcis.max_upload_kb', 20480)) * 1024;
+        $maxBytes = ((int) config('tracepharma.epcis.max_upload_kb', 81920)) * 1024;
         $size = filesize($path);
         if ($size !== false && $maxBytes > 0 && $size > $maxBytes) {
             $this->add(
@@ -1287,6 +1356,7 @@ final class EpcisCatalogBusinessRules
 
         $exists = EpcisDocument::query()
             ->where('file_sha256', $document->file_sha256)
+            ->where('direction', $document->direction)
             ->whereKeyNot($document->getKey())
             ->exists();
 

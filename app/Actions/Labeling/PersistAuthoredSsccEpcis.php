@@ -10,10 +10,11 @@ use App\Jobs\Labeling\ForwardCommissioningToL3;
 use App\Jobs\ProcessEpcisDocumentJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Services\Epcis\EpcisIngestionService;
+use App\Support\Epcis\EpcisCacheLock;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisStoragePath;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\TenantSettings;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -56,7 +57,7 @@ final class PersistAuthoredSsccEpcis
         // Serialize the duplicate check + insert per hash: without this lock, two
         // concurrent authoring calls for the same payload can both pass the "no
         // existing document" check and each persist their own EpcisDocument row.
-        $document = Cache::lock($this->epcisUploadHashLockKey($sha256), 60)->block(10, function () use (
+        $document = EpcisCacheLock::lock($this->epcisUploadHashLockKey('outbound', $sha256), 60)->block(10, function () use (
             $xml,
             $payloadPath,
             $preferredDisk,
@@ -65,6 +66,7 @@ final class PersistAuthoredSsccEpcis
         ): EpcisDocument {
             $existing = EpcisDocument::query()
                 ->where('file_sha256', $sha256)
+                ->where('direction', 'outbound')
                 ->whereNotIn('status', ['error', 'voided'])
                 ->first();
 
@@ -74,15 +76,21 @@ final class PersistAuthoredSsccEpcis
 
             [$disk, $storedPath] = $this->persistPayload($xml, $payloadPath, $preferredDisk);
 
+            $trimmed = ltrim($xml);
+            $isJson = $trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[');
+            $schemaVersion = $isJson
+                ? (EpcisSchemaVersion::peekJson(substr($xml, 0, 8192)) ?? EpcisSchemaVersion::V20)
+                : EpcisSchemaVersion::V12;
+
             return EpcisDocument::query()->create([
                 'document_uuid' => (string) Str::uuid(),
-                'schema_version' => '1.2',
+                'schema_version' => $schemaVersion,
                 'creation_date' => now(),
                 'direction' => 'outbound',
                 'authored_kind' => $meta['authored_kind'],
                 'trading_partner_id' => isset($meta['trading_partner_id']) ? (int) $meta['trading_partner_id'] : null,
                 'ship_from_site_id' => isset($meta['ship_from_site_id']) ? (int) $meta['ship_from_site_id'] : null,
-                'format' => 'xml',
+                'format' => $isJson ? EpcisSchemaVersion::FORMAT_JSON : EpcisSchemaVersion::FORMAT_XML,
                 'original_filename' => $meta['original_filename'] ?? basename($payloadPath),
                 'file_sha256' => $sha256,
                 'payload_disk' => $disk,
@@ -206,7 +214,7 @@ final class PersistAuthoredSsccEpcis
             // Calling handle() directly skips the job's WithoutOverlapping queue
             // middleware, so an equivalent lock is taken here to keep a concurrent
             // reprocess of the same document from racing this synchronous run.
-            Cache::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
+            EpcisCacheLock::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
                 $job->handle(app(EpcisIngestionService::class));
             });
 
@@ -216,11 +224,11 @@ final class PersistAuthoredSsccEpcis
         ProcessEpcisDocumentJob::dispatch($tenant, (int) $document->getKey())->afterCommit();
     }
 
-    private function epcisUploadHashLockKey(string $sha256): string
+    private function epcisUploadHashLockKey(string $direction, string $sha256): string
     {
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
 
-        return 'epcis-upload-hash:'.$tenantId.':'.$sha256;
+        return 'epcis-upload-hash:'.$tenantId.':'.$direction.':'.$sha256;
     }
 
     private function epcisProcessLockKey(EpcisDocument $document): string

@@ -1,13 +1,13 @@
 @extends('marketing.layout')
 
 @section('title', 'Drug manufacturers — TracePharma')
-@section('meta_description', 'Level 4 traceability for drug manufacturers: SGTIN allocation to plant-floor systems, outbound EPCIS, wholesaler ACK monitoring, saleable returns, and plant floor telemetry.')
+@section('meta_description', 'Level 4 traceability for drug manufacturers: L3 commissioning forward, outbound EPCIS, wholesaler ACK monitoring, saleable returns, and operations scorecards.')
 
 @section('content')
     <x-marketing.page-hero
         eyebrow="Solutions · Drug manufacturers"
         title="Your L4 hub from packaging line to wholesaler dock"
-        description="Before TracePharma, serialization IT teams often reconcile L3 commissioning in spreadsheets while supply chain chases stale wholesaler ACKs by email. TracePharma connects plant-floor serialization to corporate traceability—allocate SGTIN ranges, reconcile commissioning events, ship DSCSA-compliant EPCIS, and monitor downstream partner health without a global network middleman."
+        description="Before TracePharma, serialization IT teams often reconcile L3 commissioning in spreadsheets while supply chain chases stale wholesaler ACKs by email. TracePharma connects plant-floor serialization to corporate traceability—forward authored commissioning EPCIS to your L3 endpoint, ship DSCSA-compliant outbound, and monitor downstream partner health without a global network middleman."
     >
         <x-slot:breadcrumb>
             <a href="{{ route('marketing.home') }}">Home</a> / Industries / Drug manufacturers
@@ -29,11 +29,11 @@
         <x-marketing.pipeline-steps
             class="mt-8"
             :steps="[
-                ['phase' => 'Allocate', 'title' => 'SGTIN serial pools', 'description' => 'Reserve serial ranges per GTIN and packaging line from your L4 authority.'],
-                ['phase' => 'Provision', 'title' => 'Hand off to L3', 'description' => 'Export or push allocations to your plant-floor serialization system—file or API, your choice.'],
-                ['phase' => 'Reconcile', 'title' => 'Commissioning match', 'description' => 'Inbound commissioning EPCIS reconciles against allocated ranges and flags gaps.'],
+                ['phase' => 'Configure', 'title' => 'L3 forward URL', 'description' => 'Set your plant-floor or enterprise L3 HTTPS endpoint and credentials in Organization settings.'],
+                ['phase' => 'Author', 'title' => 'Commissioning EPCIS', 'description' => 'TracePharma authors commissioning documents as the L4 corporate hub.'],
+                ['phase' => 'Forward', 'title' => 'Hand off to L3', 'description' => 'ForwardCommissioningToL3 POSTs commissioning XML to your endpoint—idempotent, no allocation export API.'],
                 ['phase' => 'Ship', 'title' => 'Outbound EPCIS', 'description' => 'Generate shipping events with TI, TH, and TS for wholesaler customers.'],
-                ['phase' => 'Monitor', 'title' => 'ACK & scorecard', 'description' => 'Track customer acknowledgement health and plant floor throughput.'],
+                ['phase' => 'Monitor', 'title' => 'ACK & scorecard', 'description' => 'Track customer acknowledgement health and operations scorecard metrics.'],
             ]"
         />
     </section>
@@ -42,7 +42,7 @@
         <div class="grid gap-8 lg:grid-cols-2 lg:items-start">
             <x-marketing.l4-stack />
             <div class="text-sm leading-relaxed text-tp-muted">
-                <p>TracePharma holds serial authority at L4 and hands ranges to your L3 line systems. Outbound EPCIS flows to wholesaler customers; national regulatory hubs (L5) remain outside our product—you connect partners directly.</p>
+                <p>TracePharma remains the L4 hub while your plant-floor L3 stays in place. Configure commissioning forward in Organization settings; outbound EPCIS flows to wholesaler customers. National regulatory hubs (L5) remain outside our product—you connect partners directly.</p>
                 <a href="{{ route('marketing.compare.lspedia') }}" class="mt-4 inline-flex font-semibold text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">Compare vs LSPedia OneScan →</a>
             </div>
         </div>
@@ -62,8 +62,8 @@
                 :modules="[
                     [
                         'icon' => 'L3↔L4',
-                        'title' => 'L3 serial provisioning',
-                        'description' => 'Reserve serial ranges per GTIN and packaging line from your L4 authority—so plant-floor systems never commission outside approved pools.',
+                        'title' => 'L3 commissioning forward',
+                        'description' => 'Configure an L3 HTTPS endpoint in Organization settings; authored commissioning EPCIS can POST to that endpoint (idempotent)—no public allocation API.',
                         'href' => route('marketing.features.show', 'serialization'),
                     ],
                     [
@@ -84,9 +84,9 @@
                         'description' => 'Receive return EPCIS from wholesalers and reconcile returned serials—so saleable returns stay tied to original outbound history.',
                     ],
                     [
-                        'icon' => 'PLT',
-                        'title' => 'Plant floor telemetry',
-                        'description' => 'Packaging line heartbeat via API—so operations scorecards tie outbound volume to line throughput, not guesswork.',
+                        'icon' => 'OPS',
+                        'title' => 'Operations scorecards',
+                        'description' => 'Outbound volume, ACK health, and commissioning forward status—so serialization IT sees partner and handoff health without a line-heartbeat API.',
                     ],
                     [
                         'icon' => 'TRC',
@@ -113,7 +113,7 @@
                     'title' => 'Outbound transaction data',
                     'description' => 'Every shipment carries the TI, TH, and TS your customers need for DSCSA receiving and verification.',
                     'items' => [
-                        'EPCIS 1.2 and 2.0 outbound generation',
+                        'EPCIS 1.2 GA outbound; 2.0 JSON-LD capture + query-as-2.0; outbound 1.2 default (partner opt-in for 2.0)',
                         'Customer partner GLN routing',
                         'Consolidated and quick outbound paths',
                     ],
@@ -187,6 +187,6 @@
 
     <x-marketing.cta-banner
         title="See manufacturer workflows live"
-        description="Request a manufacturer demo—we'll walk through L3 serial allocation, outbound ship to a wholesaler customer, ACK monitoring, and saleable return receive on a demo tenant."
+        description="Request a manufacturer demo—we'll walk through L3 commissioning forward, outbound ship to a wholesaler customer, ACK monitoring, and saleable return receive on a demo tenant."
     />
 @endsection

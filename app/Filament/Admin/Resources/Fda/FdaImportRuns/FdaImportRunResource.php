@@ -13,9 +13,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class FdaImportRunResource extends Resource
+class FdaImportRunResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -30,6 +32,11 @@ class FdaImportRunResource extends Resource
     protected static ?string $navigationLabel = 'Import Runs';
 
     protected static ?string $modelLabel = 'Import Run';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function infolist(Schema $schema): Schema
     {
@@ -47,5 +54,10 @@ class FdaImportRunResource extends Resource
             'index' => ListFdaImportRuns::route('/'),
             'view' => ViewFdaImportRun::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.fda-imports';
     }
 }

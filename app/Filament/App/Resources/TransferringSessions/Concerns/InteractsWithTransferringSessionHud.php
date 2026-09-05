@@ -11,14 +11,17 @@ use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Transferring\TransferringSession;
+use App\Support\Fda\ScheduledProductPresence;
+use App\Support\Fda\ScheduledSessionChip;
 use App\Support\Gs1\ElementString;
+use App\Support\TenantSettings;
 use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use App\Support\Transferring\TransferLayout;
 use App\Support\Transferring\TransferringSessionStatus;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use InvalidArgumentException;
 use Livewire\Attributes\Locked;
@@ -44,11 +47,20 @@ trait InteractsWithTransferringSessionHud
     #[Locked]
     public bool $confirmScanInFlight = false;
 
+    public ?string $chipDeaSchedule = null;
+
+    public ?bool $chipDeaMissingParty = null;
+
+    public ?string $chipDeaLabel = null;
+
+    public ?string $chipDeaColor = null;
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
 
         $this->getRecord()->loadMissing(['fromSite', 'toSite', 'transferDocument', 'receivingSession']);
+        $this->hydrateDeaScheduleChip();
 
         if ($scan = request()->query('scan')) {
             $this->scan = (string) $scan;
@@ -139,7 +151,7 @@ trait InteractsWithTransferringSessionHud
                         Notification::make()
                             ->title('Already complete')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -153,7 +165,7 @@ trait InteractsWithTransferringSessionHud
                             ->title('Receive at destination')
                             ->body('Use Receive at destination to open the transfer receive session.')
                             ->warning()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -169,7 +181,7 @@ trait InteractsWithTransferringSessionHud
                         Notification::make()
                             ->title('Scan required')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('focus-scan');
                         $this->dispatch('scan-result', tone: 'error');
@@ -192,6 +204,7 @@ trait InteractsWithTransferringSessionHud
 
                     $this->scan = '';
                     $this->getRecord()->refresh()->loadMissing(['fromSite', 'toSite', 'transferDocument', 'receivingSession']);
+                    $this->hydrateDeaScheduleChip();
 
                     $this->setLastScan(
                         $tone,
@@ -209,7 +222,7 @@ trait InteractsWithTransferringSessionHud
                         default => $notification->danger(),
                     };
 
-                    $notification->send();
+                    $notification->ephemeral()->send();
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('scan-result', tone: $tone);
@@ -295,7 +308,7 @@ trait InteractsWithTransferringSessionHud
                                 ->title('Ship blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -315,9 +328,19 @@ trait InteractsWithTransferringSessionHud
                         if (! ReceivingSessionResource::canAccess()) {
                             Notification::make()
                                 ->title('Transfer shipped')
-                                ->body('Shipping EPCIS event authored.')
+                                ->body('Shipping EPCIS event authored. Open Receive at destination when goods arrive.')
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
+
+                            return;
+                        }
+
+                        if (! TenantSettings::forTenant(tenant())->autoOpenReceiveAfterTransferShip()) {
+                            Notification::make()
+                                ->title('Transfer shipped')
+                                ->body('Shipping EPCIS event authored. Open Receive at destination to confirm arrival.')
+                                ->success()
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -332,7 +355,7 @@ trait InteractsWithTransferringSessionHud
                                 ->title('Transfer shipped')
                                 ->body('Shipping EPCIS event authored. Open Receive at destination to confirm arrival. '.$e->getMessage())
                                 ->warning()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -341,7 +364,7 @@ trait InteractsWithTransferringSessionHud
                             ->title('Transfer shipped')
                             ->body('Shipping EPCIS event authored. Continue at the destination receive session.')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->redirect(ReceivingSessionResource::getUrl('view', [
                             'record' => $receiving,
@@ -351,5 +374,33 @@ trait InteractsWithTransferringSessionHud
                 requireReason: false,
             ),
         ];
+    }
+
+    private function hydrateDeaScheduleChip(): void
+    {
+        /** @var TransferringSession $session */
+        $session = $this->getRecord();
+        $gtins = $session->scanLines()
+            ->with('epc:id,gtin14')
+            ->get()
+            ->pluck('epc.gtin14')
+            ->filter(fn ($gtin): bool => filled($gtin))
+            ->map(fn ($gtin): string => (string) $gtin)
+            ->unique()
+            ->values()
+            ->all();
+
+        $presence = ScheduledProductPresence::forGtins($gtins);
+        $highest = $presence['highest'];
+
+        $missing = false;
+        if ($presence['has_scheduled']) {
+            $missing = ! ScheduledSessionChip::siteHasDea($session->toSite);
+        }
+
+        $this->chipDeaSchedule = $highest;
+        $this->chipDeaMissingParty = $presence['has_scheduled'] ? $missing : null;
+        $this->chipDeaLabel = ScheduledSessionChip::label($highest, $missing, 'No DEA on destination');
+        $this->chipDeaColor = ScheduledSessionChip::badgeColor($highest);
     }
 }

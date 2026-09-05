@@ -26,6 +26,53 @@ class PersistAuthoredSsccEpcisTest extends TestCase
 
     private ?int $documentId = null;
 
+    private ?int $inboundDocumentId = null;
+
+    #[Test]
+    public function allows_same_sha256_for_inbound_and_outbound_authored_documents(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Storage::fake('local');
+            config(['tracepharma.epcis.payload_disk' => 'local']);
+
+            $xml = '<?xml version="1.0" encoding="UTF-8"?><EPCISDocument test="'.Str::uuid().'"/>';
+            $sha256 = hash('sha256', $xml);
+
+            EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'inbound-dup.xml',
+                'file_sha256' => $sha256,
+                'payload_disk' => 'local',
+                'payload_path' => 'epcis/inbound/inbound-dup.xml',
+                'status' => 'received',
+                'event_count' => 0,
+                'epc_count' => 0,
+                'received_at' => now(),
+            ]);
+            $this->inboundDocumentId = (int) EpcisDocument::query()->where('file_sha256', $sha256)->where('direction', 'inbound')->value('id');
+
+            $path = 'epcis/outbound/sscc-direction-scope-'.Str::uuid().'.xml';
+
+            $document = app(PersistAuthoredSsccEpcis::class)->handle($xml, $path, [
+                'dispatch' => false,
+                'original_filename' => 'outbound-dup.xml',
+                'authored_kind' => EpcisAuthoredKind::SsccAggregation,
+            ]);
+
+            $this->documentId = (int) $document->getKey();
+            $this->assertSame('outbound', $document->direction);
+            $this->assertSame($sha256, $document->file_sha256);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     #[Test]
     public function falls_back_to_local_disk_when_preferred_disk_fails(): void
     {
@@ -94,6 +141,11 @@ class PersistAuthoredSsccEpcisTest extends TestCase
             if ($this->documentId !== null) {
                 EpcisDocument::query()->whereKey($this->documentId)->delete();
                 $this->documentId = null;
+            }
+
+            if ($this->inboundDocumentId !== null) {
+                EpcisDocument::query()->whereKey($this->inboundDocumentId)->delete();
+                $this->inboundDocumentId = null;
             }
 
             tenancy()->end();

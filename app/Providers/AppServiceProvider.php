@@ -3,6 +3,11 @@
 namespace App\Providers;
 
 use App\Domain\Epcis\Validation\ValidationPipeline;
+use App\Listeners\LogTenantUserImpersonationEnded;
+use App\Models\Admin;
+use App\Policies\ActivityPolicy;
+use App\Policies\RolePolicy;
+use App\Services\Auth\Oidc\GenericOpenIdConnectProvider;
 use App\Services\Epcis\ConnectionOutboundEpcisTransmitter;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Services\Vrs\Contracts\VrsClient;
@@ -23,14 +28,16 @@ use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
-use App\Listeners\LogTenantUserImpersonationEnded;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\ServiceProvider;
+use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -61,8 +68,8 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) config('services.places.rate_per_minute', 30));
         });
 
-        RateLimiter::for('webhooks', function () {
-            return Limit::perMinute(120);
+        RateLimiter::for('webhooks', function (Request $request) {
+            return Limit::perMinute(120)->by($request->getHost().'|'.($request->ip() ?: 'unknown'));
         });
 
         RateLimiter::for('marketing-leads', function (Request $request) {
@@ -71,7 +78,20 @@ class AppServiceProvider extends ServiceProvider
 
         $this->configureFilamentActions();
 
+        Gate::define('command-center:access', fn ($user) => $user instanceof Admin);
+        Gate::define('command-center:manage-commands', fn ($user) => $user instanceof Admin);
+        Gate::define('command-center:prune-history', fn ($user) => $user instanceof Admin);
+
+        Gate::policy(Role::class, RolePolicy::class);
+        Gate::policy(Activity::class, ActivityPolicy::class);
+
         Event::listen(Logout::class, LogTenantUserImpersonationEnded::class);
+
+        Event::listen(function (\SocialiteProviders\Manager\SocialiteWasCalled $event): void {
+            $event->extendSocialite('azure', \SocialiteProviders\Azure\Provider::class);
+            $event->extendSocialite('okta', \SocialiteProviders\Okta\Provider::class);
+            $event->extendSocialite('generic-oidc', GenericOpenIdConnectProvider::class);
+        });
 
         FilamentAsset::register([
             Css::make('tracepharma-filament')

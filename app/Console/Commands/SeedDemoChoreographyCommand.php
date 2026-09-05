@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Actions\Demo\SeedMasterData;
 use App\Actions\Demo\SeedOperationalChoreography;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class SeedDemoChoreographyCommand extends Command
@@ -35,7 +36,7 @@ class SeedDemoChoreographyCommand extends Command
         $includePack = (bool) $this->option('pack');
         $includeReturn = (bool) $this->option('return');
 
-        $result = $tenant->run(function () use (
+        $result = TenantRunner::run($tenant, function () use (
             $completeShip,
             $includeTransfer,
             $includeUnpack,

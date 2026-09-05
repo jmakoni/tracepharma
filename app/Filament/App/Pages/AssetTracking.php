@@ -6,25 +6,26 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Filament\App\Pages\AssetTracking\Schemas\AssetTrackingInfolist;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\App\Resources\SerializationLots\SerializationLotResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\L3\SerializationLotContainerField;
 use App\Models\User;
-use App\Services\Custody\EpcCustodyGate;
 use App\Services\Tracing\BuildAssetTrace;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
-use App\Support\Auth\JobRoleAccess;
-use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\CbvStatusColor;
 use App\Support\Tracing\EpcContextLinks;
 use App\Support\Tracing\Gs1DualDisplay;
 use App\Support\Tracing\LocationDisplayResolver;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Group;
@@ -40,11 +41,13 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class AssetTracking extends Page implements HasTable
+class AssetTracking extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -63,11 +66,24 @@ class AssetTracking extends Page implements HasTable
     public string $scan = '';
 
     /**
+     * Optional UTC instant for point-in-time custody (ISO-8601 or datetime-local).
+     */
+    public ?string $asOf = null;
+
+    /**
      * @var array<string, mixed>|null
      */
     public ?array $trace = null;
 
     public string $resultsTab = 'tracking';
+
+    /**
+     * Per-request memoization for {@see self::containerField()} — not Livewire-tracked,
+     * recomputed each render; reset on every new trace.
+     */
+    private ?SerializationLotContainerField $containerField = null;
+
+    private bool $containerFieldResolved = false;
 
     public static function canAccess(): bool
     {
@@ -86,6 +102,11 @@ class AssetTracking extends Page implements HasTable
     public function mount(): void
     {
         $scan = request()->query('scan');
+        $asOf = request()->query('as_of');
+
+        if (filled($asOf)) {
+            $this->asOf = (string) $asOf;
+        }
 
         if (filled($scan)) {
             $this->scan = (string) $scan;
@@ -95,7 +116,7 @@ class AssetTracking extends Page implements HasTable
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Scan a unit or pallet to see status and custody history.';
+        return 'Scan a unit or pallet to see status and custody history. Optionally set As of (UTC) for a point-in-time snapshot.';
     }
 
     public function runTrace(BuildAssetTrace $builder): void
@@ -119,6 +140,8 @@ class AssetTracking extends Page implements HasTable
         $epc = $resolved['epc'];
         if ($epc instanceof Epc && ! $this->canAccessEpc($epc)) {
             $this->trace = null;
+            $this->containerField = null;
+            $this->containerFieldResolved = false;
             $this->cacheSchema('content', null);
             $this->cachedHeaderActions = [];
             $this->resetTable();
@@ -135,8 +158,11 @@ class AssetTracking extends Page implements HasTable
             return;
         }
 
-        $this->trace = $builder->handle($scan);
+        $asOfCarbon = $this->parseAsOfUtc();
+        $this->trace = $builder->handle($scan, $asOfCarbon);
         $this->resultsTab = 'tracking';
+        $this->containerField = null;
+        $this->containerFieldResolved = false;
 
         // Filament caches the `content` schema for the request. If it was built
         // before this action (discoveredSchemaNames rebuild) or needs new
@@ -166,6 +192,26 @@ class AssetTracking extends Page implements HasTable
         $this->dispatch('focus-scan');
     }
 
+    private function parseAsOfUtc(): ?Carbon
+    {
+        $raw = trim((string) ($this->asOf ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw, 'UTC')->utc();
+        } catch (\Throwable) {
+            Notification::make()
+                ->title('Invalid as-of time')
+                ->body('Use a valid UTC datetime (e.g. 2026-08-28 15:00:00).')
+                ->warning()
+                ->send();
+
+            return null;
+        }
+    }
+
     private function canAccessEpc(Epc $epc): bool
     {
         $user = auth()->user();
@@ -180,10 +226,8 @@ class AssetTracking extends Page implements HasTable
             return SiteAccess::canAccessShipToSite($user, $siteId);
         }
 
-        if (app(EpcCustodyGate::class)->isTenantCommissioned($epc)) {
-            return SiteAccess::userSiteIds($user)->isNotEmpty();
-        }
-
+        // Unmapped last-seen site: only SitesAccessAll (Owners) — never fail-open to
+        // any user who merely has ≥1 site assignment.
         return SiteAccess::canAccessShipToSite($user, null);
     }
 
@@ -216,7 +260,7 @@ class AssetTracking extends Page implements HasTable
 
         $url = EpcisDocumentResource::getUrl('index');
 
-        return $url.(str_contains($url, '?') ? '&' : '?').'findRecall=1';
+        return $url.(str_contains($url, '?') ? '&' : '?').'action=findRecall';
     }
 
     public function verifyProductUrl(): ?string
@@ -234,6 +278,45 @@ class AssetTracking extends Page implements HasTable
         $scan = trim($this->scan) !== '' ? trim($this->scan) : (string) ($this->trace['scan'] ?? '');
 
         return VerifyProduct::getUrl(filled($scan) ? ['barcode' => $scan] : []);
+    }
+
+    /**
+     * Guardian L3 per-container fields for the currently traced EPC, keyed by
+     * indexed `epc_uri` — never selects the sibling `fields` JSON column on
+     * list pages, only here on a single-EPC lookup.
+     */
+    public function containerField(): ?SerializationLotContainerField
+    {
+        if ($this->containerFieldResolved) {
+            return $this->containerField;
+        }
+
+        $this->containerFieldResolved = true;
+
+        if ($this->trace === null || ! ($this->trace['found'] ?? false)) {
+            return $this->containerField = null;
+        }
+
+        $epcUri = (string) ($this->trace['urn'] ?? '');
+        if ($epcUri === '') {
+            return $this->containerField = null;
+        }
+
+        return $this->containerField = SerializationLotContainerField::query()
+            ->where('epc_uri', $epcUri)
+            ->with('lot')
+            ->first();
+    }
+
+    public function containerFieldLotUrl(): ?string
+    {
+        $lot = $this->containerField()?->lot;
+
+        if ($lot === null || ! SerializationLotResource::canAccess()) {
+            return null;
+        }
+
+        return SerializationLotResource::getUrl('view', ['record' => $lot], panel: 'app');
     }
 
     public function openReceiveBarcode(): string
@@ -429,9 +512,14 @@ class AssetTracking extends Page implements HasTable
     private function eventsTable(Table $table, Epc $epc): Table
     {
         $builder = app(BuildAssetTrace::class);
+        $payload = $builder->eventsForTrackingTable($epc, $this->parseAsOfUtc());
+        $limit = $builder->trackingTableLimit();
 
         return $table
-            ->query($builder->eventsQuery($epc)->with(['locations']))
+            ->records(fn (): Collection => $payload['records']->values())
+            ->description($payload['truncated']
+                ? "Showing the {$limit} most recent events (older history truncated)."
+                : null)
             ->columns([
                 TextColumn::make('event_time')
                     ->label('Event time')
@@ -493,7 +581,7 @@ class AssetTracking extends Page implements HasTable
         $builder = app(BuildAssetTrace::class);
 
         return $table
-            ->query($builder->childrenQuery($epc))
+            ->query($builder->childrenQuery($epc, $this->parseAsOfUtc()))
             ->columns([
                 TextColumn::make('identifier')
                     ->label('Identifier')
@@ -539,9 +627,14 @@ class AssetTracking extends Page implements HasTable
     private function transactionsTable(Table $table, Epc $epc): Table
     {
         $builder = app(BuildAssetTrace::class);
+        $payload = $builder->transactionsForEpc($epc);
+        $limit = $builder->trackingTableLimit();
 
         return $table
-            ->records(fn (): Collection => $builder->transactionsForEpc($epc)->values())
+            ->records(fn (): Collection => $payload['records']->values())
+            ->description($payload['truncated']
+                ? "Biz transactions from the {$limit} most recent events (older history truncated)."
+                : null)
             ->columns([
                 TextColumn::make('name')
                     ->label('Name'),
@@ -585,5 +678,10 @@ class AssetTracking extends Page implements HasTable
         $segment = (string) str($uri)->afterLast(':');
 
         return $segment !== '' ? $segment : $uri;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.asset-tracking';
     }
 }

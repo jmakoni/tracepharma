@@ -67,7 +67,8 @@ class EpcisDocumentSummaryTabTest extends TestCase
             $this->assertTrue($summary['dscsa_affirm']);
             $this->assertSame(1, $summary['case_count']);
             $this->assertSame(1, $summary['unit_count']);
-            $this->assertSame('1 case · 1 unit', $summary['case_unit_label']);
+            $this->assertSame(1, $summary['sscc_count']);
+            $this->assertSame('1 SSCC · 1 case · 1 unit', $summary['case_unit_label']);
         } finally {
             $this->cleanup();
         }

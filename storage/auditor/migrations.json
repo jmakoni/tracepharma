@@ -1,0 +1,1065 @@
+{
+    "count": 212,
+    "migrations": [
+        {
+            "file": "database/migrations/0001_01_01_000000_create_users_table.php",
+            "name": "create_users_table",
+            "batch": "0001_01_01_000000"
+        },
+        {
+            "file": "database/migrations/0001_01_01_000001_create_cache_table.php",
+            "name": "create_cache_table",
+            "batch": "0001_01_01_000001"
+        },
+        {
+            "file": "database/migrations/0001_01_01_000002_create_jobs_table.php",
+            "name": "create_jobs_table",
+            "batch": "0001_01_01_000002"
+        },
+        {
+            "file": "database/migrations/2019_09_15_000010_create_tenants_table.php",
+            "name": "create_tenants_table",
+            "batch": "2019_09_15_000010"
+        },
+        {
+            "file": "database/migrations/2019_09_15_000020_create_domains_table.php",
+            "name": "create_domains_table",
+            "batch": "2019_09_15_000020"
+        },
+        {
+            "file": "database/migrations/2020_05_15_000010_create_tenant_user_impersonation_tokens_table.php",
+            "name": "create_tenant_user_impersonation_tokens_table",
+            "batch": "2020_05_15_000010"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190335_create_activity_log_table.php",
+            "name": "create_activity_log_table",
+            "batch": "2026_07_29_190335"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190335_create_permission_tables.php",
+            "name": "create_permission_tables",
+            "batch": "2026_07_29_190335"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190337_create_personal_access_tokens_table.php",
+            "name": "create_personal_access_tokens_table",
+            "batch": "2026_07_29_190337"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190338_create_breezy_sessions_table.php",
+            "name": "create_breezy_sessions_table",
+            "batch": "2026_07_29_190338"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190339_alter_breezy_sessions_table.php",
+            "name": "alter_breezy_sessions_table",
+            "batch": "2026_07_29_190339"
+        },
+        {
+            "file": "database/migrations/2026_07_29_190340_create_passkeys_table.php",
+            "name": "create_passkeys_table",
+            "batch": "2026_07_29_190340"
+        },
+        {
+            "file": "database/migrations/2026_07_29_191000_add_tenant_profile_columns.php",
+            "name": "add_tenant_profile_columns",
+            "batch": "2026_07_29_191000"
+        },
+        {
+            "file": "database/migrations/2026_07_29_191100_create_admins_table.php",
+            "name": "create_admins_table",
+            "batch": "2026_07_29_191100"
+        },
+        {
+            "file": "database/migrations/2026_07_29_210001_create_catalog_products_table.php",
+            "name": "create_catalog_products_table",
+            "batch": "2026_07_29_210001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_210002_create_catalog_trading_partners_table.php",
+            "name": "create_catalog_trading_partners_table",
+            "batch": "2026_07_29_210002"
+        },
+        {
+            "file": "database/migrations/2026_07_29_210003_create_catalog_sites_table.php",
+            "name": "create_catalog_sites_table",
+            "batch": "2026_07_29_210003"
+        },
+        {
+            "file": "database/migrations/2026_07_29_210004_create_catalog_devices_table.php",
+            "name": "create_catalog_devices_table",
+            "batch": "2026_07_29_210004"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220001_enrich_catalog_trading_partners_table.php",
+            "name": "enrich_catalog_trading_partners_table",
+            "batch": "2026_07_29_220001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220002_enrich_catalog_sites_table.php",
+            "name": "enrich_catalog_sites_table",
+            "batch": "2026_07_29_220002"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220010_create_catalog_location_devices_table.php",
+            "name": "create_catalog_location_devices_table",
+            "batch": "2026_07_29_220010"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220011_create_catalog_atp_licenses_table.php",
+            "name": "create_catalog_atp_licenses_table",
+            "batch": "2026_07_29_220011"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220012_migrate_catalog_partner_atp_to_licenses_and_drop.php",
+            "name": "migrate_catalog_partner_atp_to_licenses_and_drop",
+            "batch": "2026_07_29_220012"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220020_create_fda_registry_tables.php",
+            "name": "create_fda_registry_tables",
+            "batch": "2026_07_29_220020"
+        },
+        {
+            "file": "database/migrations/2026_07_29_220021_add_fda_product_id_to_catalog_products.php",
+            "name": "add_fda_product_id_to_catalog_products",
+            "batch": "2026_07_29_220021"
+        },
+        {
+            "file": "database/migrations/2026_07_29_230001_unique_catalog_trading_partners_name.php",
+            "name": "unique_catalog_trading_partners_name",
+            "batch": "2026_07_29_230001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_240001_add_slug_to_catalog_trading_partners.php",
+            "name": "add_slug_to_catalog_trading_partners",
+            "batch": "2026_07_29_240001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_250001_add_partner_fks_drop_labeler_manufacturer_strings.php",
+            "name": "add_partner_fks_drop_labeler_manufacturer_strings",
+            "batch": "2026_07_29_250001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_260001_add_catalog_trading_partner_id_to_fda_wdd_3pl_staging.php",
+            "name": "add_catalog_trading_partner_id_to_fda_wdd_3pl_staging",
+            "batch": "2026_07_29_260001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_270001_add_google_place_id_to_catalog_sites_table.php",
+            "name": "add_google_place_id_to_catalog_sites_table",
+            "batch": "2026_07_29_270001"
+        },
+        {
+            "file": "database/migrations/2026_07_29_280001_add_timezone_to_catalog_partners_and_sites.php",
+            "name": "add_timezone_to_catalog_partners_and_sites",
+            "batch": "2026_07_29_280001"
+        },
+        {
+            "file": "database/migrations/2026_07_30_280001_widen_catalog_sites_state_column.php",
+            "name": "widen_catalog_sites_state_column",
+            "batch": "2026_07_30_280001"
+        },
+        {
+            "file": "database/migrations/2026_07_30_290001_add_catalog_site_id_to_fda_wdd_3pl_staging.php",
+            "name": "add_catalog_site_id_to_fda_wdd_3pl_staging",
+            "batch": "2026_07_30_290001"
+        },
+        {
+            "file": "database/migrations/2026_07_31_100010_add_avatar_url_to_admins_table.php",
+            "name": "add_avatar_url_to_admins_table",
+            "batch": "2026_07_31_100010"
+        },
+        {
+            "file": "database/migrations/2026_07_31_100011_add_avatar_url_to_users_table.php",
+            "name": "add_avatar_url_to_users_table",
+            "batch": "2026_07_31_100011"
+        },
+        {
+            "file": "database/migrations/2026_07_31_120001_add_ndc11_to_catalog_products.php",
+            "name": "add_ndc11_to_catalog_products",
+            "batch": "2026_07_31_120001"
+        },
+        {
+            "file": "database/migrations/2026_07_31_300001_create_fda_wdd_3pl_unmatched_table.php",
+            "name": "create_fda_wdd_3pl_unmatched_table",
+            "batch": "2026_07_31_300001"
+        },
+        {
+            "file": "database/migrations/2026_08_07_120000_add_company_prefix_to_tenants_table.php",
+            "name": "add_company_prefix_to_tenants_table",
+            "batch": "2026_08_07_120000"
+        },
+        {
+            "file": "database/migrations/2026_08_07_184500_create_epcis_hub_routes_table.php",
+            "name": "create_epcis_hub_routes_table",
+            "batch": "2026_08_07_184500"
+        },
+        {
+            "file": "database/migrations/2026_08_07_193000_create_platform_settings_table.php",
+            "name": "create_platform_settings_table",
+            "batch": "2026_08_07_193000"
+        },
+        {
+            "file": "database/migrations/2026_08_07_193100_add_epcis_hub_columns_to_tenants_table.php",
+            "name": "add_epcis_hub_columns_to_tenants_table",
+            "batch": "2026_08_07_193100"
+        },
+        {
+            "file": "database/migrations/2026_08_12_000001_add_package_ndc_index_to_catalog_products.php",
+            "name": "add_package_ndc_index_to_catalog_products",
+            "batch": "2026_08_12_000001"
+        },
+        {
+            "file": "database/migrations/2026_08_12_030000_scope_catalog_atp_licenses_unique_to_site.php",
+            "name": "scope_catalog_atp_licenses_unique_to_site",
+            "batch": "2026_08_12_030000"
+        },
+        {
+            "file": "database/migrations/2026_08_12_040000_add_is_active_to_catalog_atp_licenses.php",
+            "name": "add_is_active_to_catalog_atp_licenses",
+            "batch": "2026_08_12_040000"
+        },
+        {
+            "file": "database/migrations/2026_08_12_050000_create_fda_wdd_3pl_import_runs_table.php",
+            "name": "create_fda_wdd_3pl_import_runs_table",
+            "batch": "2026_08_12_050000"
+        },
+        {
+            "file": "database/migrations/2026_08_12_210000_create_demo_requests_table.php",
+            "name": "create_demo_requests_table",
+            "batch": "2026_08_12_210000"
+        },
+        {
+            "file": "database/migrations/2026_08_12_210001_create_customer_onboardings_table.php",
+            "name": "create_customer_onboardings_table",
+            "batch": "2026_08_12_210001"
+        },
+        {
+            "file": "database/migrations/2026_08_13_120000_create_pure_fda_registry_tables.php",
+            "name": "create_pure_fda_registry_tables",
+            "batch": "2026_08_13_120000"
+        },
+        {
+            "file": "database/migrations/2026_08_13_120001_add_pure_fda_links_to_catalog_and_products.php",
+            "name": "add_pure_fda_links_to_catalog_and_products",
+            "batch": "2026_08_13_120001"
+        },
+        {
+            "file": "database/migrations/2026_08_13_220000_enrich_fda_organizations_and_sites.php",
+            "name": "enrich_fda_organizations_and_sites",
+            "batch": "2026_08_13_220000"
+        },
+        {
+            "file": "database/migrations/2026_08_13_220001_enrich_fda_products_and_packaging.php",
+            "name": "enrich_fda_products_and_packaging",
+            "batch": "2026_08_13_220001"
+        },
+        {
+            "file": "database/migrations/2026_08_13_220002_backfill_fda_from_catalog.php",
+            "name": "backfill_fda_from_catalog",
+            "batch": "2026_08_13_220002"
+        },
+        {
+            "file": "database/migrations/2026_08_13_230000_normalize_fda_product_packaging_pk.php",
+            "name": "normalize_fda_product_packaging_pk",
+            "batch": "2026_08_13_230000"
+        },
+        {
+            "file": "database/migrations/2026_08_13_240000_add_resolution_to_fda_organization_match_reviews.php",
+            "name": "add_resolution_to_fda_organization_match_reviews",
+            "batch": "2026_08_13_240000"
+        },
+        {
+            "file": "database/migrations/2026_08_14_010000_add_fda_organization_id_to_wdd_staging.php",
+            "name": "add_fda_organization_id_to_wdd_staging",
+            "batch": "2026_08_14_010000"
+        },
+        {
+            "file": "database/migrations/2026_08_14_020000_drop_fda_catalog_foreign_keys.php",
+            "name": "drop_fda_catalog_foreign_keys",
+            "batch": "2026_08_14_020000"
+        },
+        {
+            "file": "database/migrations/2026_08_14_040000_drop_catalog_tables.php",
+            "name": "drop_catalog_tables",
+            "batch": "2026_08_14_040000"
+        },
+        {
+            "file": "database/migrations/2026_08_14_103800_dedupe_and_unique_fda_organization_match_reviews.php",
+            "name": "dedupe_and_unique_fda_organization_match_reviews",
+            "batch": "2026_08_14_103800"
+        },
+        {
+            "file": "database/migrations/2026_08_14_120500_fda_organizations_nonunique_canonical_name.php",
+            "name": "fda_organizations_nonunique_canonical_name",
+            "batch": "2026_08_14_120500"
+        },
+        {
+            "file": "database/migrations/2026_08_14_140000_add_contact_phone_to_fda_wdd_tables.php",
+            "name": "add_contact_phone_to_fda_wdd_tables",
+            "batch": "2026_08_14_140000"
+        },
+        {
+            "file": "database/migrations/2026_08_14_140100_add_facility_type_to_fda_wdd_3pl_unmatched.php",
+            "name": "add_facility_type_to_fda_wdd_3pl_unmatched",
+            "batch": "2026_08_14_140100"
+        },
+        {
+            "file": "database/migrations/2026_08_14_200000_add_manually_edited_fields_to_fda_registry.php",
+            "name": "add_manually_edited_fields_to_fda_registry",
+            "batch": "2026_08_14_200000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_032000_scope_epcis_hub_routes_unique_to_tenant.php",
+            "name": "scope_epcis_hub_routes_unique_to_tenant",
+            "batch": "2026_08_16_032000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_040000_unique_customer_onboardings_tenant_id.php",
+            "name": "unique_customer_onboardings_tenant_id",
+            "batch": "2026_08_16_040000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_050000_clear_dead_rejected_onboarding_tenant_ids.php",
+            "name": "clear_dead_rejected_onboarding_tenant_ids",
+            "batch": "2026_08_16_050000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_120000_add_audit_fields_to_tenant_user_impersonation_tokens_table.php",
+            "name": "add_audit_fields_to_tenant_user_impersonation_tokens_table",
+            "batch": "2026_08_16_120000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_160000_create_mail_templates_table.php",
+            "name": "create_mail_templates_table",
+            "batch": "2026_08_16_160000"
+        },
+        {
+            "file": "database/migrations/2026_08_16_170000_add_preferences_to_admins_table.php",
+            "name": "add_preferences_to_admins_table",
+            "batch": "2026_08_16_170000"
+        },
+        {
+            "file": "database/migrations/2026_08_18_140000_sync_tenant_provisioned_mail_templates.php",
+            "name": "sync_tenant_provisioned_mail_templates",
+            "batch": "2026_08_18_140000"
+        },
+        {
+            "file": "database/migrations/2026_08_25_160000_sync_tenant_user_account_created_mail_template.php",
+            "name": "sync_tenant_user_account_created_mail_template",
+            "batch": "2026_08_25_160000"
+        },
+        {
+            "file": "database/migrations/2026_08_26_160000_sync_support_engineer_account_created_mail_template.php",
+            "name": "sync_support_engineer_account_created_mail_template",
+            "batch": "2026_08_26_160000"
+        },
+        {
+            "file": "database/migrations/2026_08_31_160000_add_oidc_columns_to_admins_table.php",
+            "name": "add_oidc_columns_to_admins_table",
+            "batch": "2026_08_31_160000"
+        },
+        {
+            "file": "database/migrations/2026_08_31_170442_create_notifications_table.php",
+            "name": "create_notifications_table",
+            "batch": "2026_08_31_170442"
+        },
+        {
+            "file": "database/migrations/2026_09_01_120000_create_announcements_tables.php",
+            "name": "create_announcements_tables",
+            "batch": "2026_09_01_120000"
+        },
+        {
+            "file": "database/migrations/2026_09_02_120000_add_public_id_to_tenant_user_impersonation_tokens_table.php",
+            "name": "add_public_id_to_tenant_user_impersonation_tokens_table",
+            "batch": "2026_09_02_120000"
+        },
+        {
+            "file": "database/migrations/2026_09_02_150000_add_dea_hin_identifiers_to_fda_facilities.php",
+            "name": "add_dea_hin_identifiers_to_fda_facilities",
+            "batch": "2026_09_02_150000"
+        },
+        {
+            "file": "database/migrations/2026_09_02_180000_add_chemical_reg_and_widen_duns_on_fda_facilities.php",
+            "name": "add_chemical_reg_and_widen_duns_on_fda_facilities",
+            "batch": "2026_09_02_180000"
+        },
+        {
+            "file": "database/migrations/2026_09_02_181000_widen_duns_on_fda_organization_match_reviews.php",
+            "name": "widen_duns_on_fda_organization_match_reviews",
+            "batch": "2026_09_02_181000"
+        },
+        {
+            "file": "database/migrations/2026_09_02_213000_add_directory_attributes_to_admins_table.php",
+            "name": "add_directory_attributes_to_admins_table",
+            "batch": "2026_09_02_213000"
+        },
+        {
+            "file": "database/migrations/2026_09_03_224900_add_account_security_to_admins_table.php",
+            "name": "add_account_security_to_admins_table",
+            "batch": "2026_09_03_224900"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_000001_create_users_table.php",
+            "name": "create_users_table",
+            "batch": "2026_07_29_000001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_000002_create_permission_tables.php",
+            "name": "create_permission_tables",
+            "batch": "2026_07_29_000002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_000003_create_activity_log_table.php",
+            "name": "create_activity_log_table",
+            "batch": "2026_07_29_000003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_200001_create_products_table.php",
+            "name": "create_products_table",
+            "batch": "2026_07_29_200001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_200002_create_trading_partners_table.php",
+            "name": "create_trading_partners_table",
+            "batch": "2026_07_29_200002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_200003_create_sites_table.php",
+            "name": "create_sites_table",
+            "batch": "2026_07_29_200003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_200004_create_read_points_table.php",
+            "name": "create_read_points_table",
+            "batch": "2026_07_29_200004"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_210010_add_catalog_ids_to_master_data.php",
+            "name": "add_catalog_ids_to_master_data",
+            "batch": "2026_07_29_210010"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_210011_create_devices_table.php",
+            "name": "create_devices_table",
+            "batch": "2026_07_29_210011"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220001_enrich_trading_partners_table.php",
+            "name": "enrich_trading_partners_table",
+            "batch": "2026_07_29_220001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220002_enrich_sites_table.php",
+            "name": "enrich_sites_table",
+            "batch": "2026_07_29_220002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220010_create_location_devices_table.php",
+            "name": "create_location_devices_table",
+            "batch": "2026_07_29_220010"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220011_create_atp_licenses_table.php",
+            "name": "create_atp_licenses_table",
+            "batch": "2026_07_29_220011"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220012_migrate_partner_atp_to_licenses_and_drop.php",
+            "name": "migrate_partner_atp_to_licenses_and_drop",
+            "batch": "2026_07_29_220012"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_220021_add_fda_product_id_to_products.php",
+            "name": "add_fda_product_id_to_products",
+            "batch": "2026_07_29_220021"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_250001_add_trading_partner_id_to_products.php",
+            "name": "add_trading_partner_id_to_products",
+            "batch": "2026_07_29_250001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_270001_add_google_place_id_to_sites_table.php",
+            "name": "add_google_place_id_to_sites_table",
+            "batch": "2026_07_29_270001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_29_280001_add_timezone_to_partners_and_sites.php",
+            "name": "add_timezone_to_partners_and_sites",
+            "batch": "2026_07_29_280001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_100001_create_breezy_sessions_table.php",
+            "name": "create_breezy_sessions_table",
+            "batch": "2026_07_31_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_100001_create_trading_partner_product_table.php",
+            "name": "create_trading_partner_product_table",
+            "batch": "2026_07_31_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_100002_create_passkeys_table.php",
+            "name": "create_passkeys_table",
+            "batch": "2026_07_31_100002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_100003_add_avatar_url_to_users_table.php",
+            "name": "add_avatar_url_to_users_table",
+            "batch": "2026_07_31_100003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_120001_add_ndc11_and_assortment_enrichment.php",
+            "name": "add_ndc11_and_assortment_enrichment",
+            "batch": "2026_07_31_120001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_130001_create_epcis_schema_tables.php",
+            "name": "create_epcis_schema_tables",
+            "batch": "2026_07_31_130001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_140001_create_receiving_sessions_tables.php",
+            "name": "create_receiving_sessions_tables",
+            "batch": "2026_07_31_140001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_140002_add_sender_receiver_gln_to_epcis_documents.php",
+            "name": "add_sender_receiver_gln_to_epcis_documents",
+            "batch": "2026_07_31_140002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_07_31_140003_create_epcis_unmatched_glns_table.php",
+            "name": "create_epcis_unmatched_glns_table",
+            "batch": "2026_07_31_140003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_100001_add_shipping_fields_to_epcis_documents.php",
+            "name": "add_shipping_fields_to_epcis_documents",
+            "batch": "2026_08_01_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_120001_add_ship_name_fields_to_epcis_documents.php",
+            "name": "add_ship_name_fields_to_epcis_documents",
+            "batch": "2026_08_01_120001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_180001_add_pipeline_fields_to_epcis_documents.php",
+            "name": "add_pipeline_fields_to_epcis_documents",
+            "batch": "2026_08_01_180001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_200001_epcis_compliance_scale_hardening.php",
+            "name": "epcis_compliance_scale_hardening",
+            "batch": "2026_08_01_200001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_200002_epcis_event_id_unique_per_generation.php",
+            "name": "epcis_event_id_unique_per_generation",
+            "batch": "2026_08_01_200002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_200003_create_quarantine_holds_table.php",
+            "name": "create_quarantine_holds_table",
+            "batch": "2026_08_01_200003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_01_200004_aggregation_links_unique_per_event.php",
+            "name": "aggregation_links_unique_per_event",
+            "batch": "2026_08_01_200004"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_02_100001_create_exception_case_management_tables.php",
+            "name": "create_exception_case_management_tables",
+            "batch": "2026_08_02_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_02_120001_add_category_to_exception_types.php",
+            "name": "add_category_to_exception_types",
+            "batch": "2026_08_02_120001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_02_140001_quarantine_exception_bridge.php",
+            "name": "quarantine_exception_bridge",
+            "batch": "2026_08_02_140001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_02_160001_add_portal_share_uuid_to_trading_partners.php",
+            "name": "add_portal_share_uuid_to_trading_partners",
+            "batch": "2026_08_02_160001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_05_100001_create_epcis_document_vocabulary_tables.php",
+            "name": "create_epcis_document_vocabulary_tables",
+            "batch": "2026_08_05_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_05_100002_create_event_epc_ilmd_and_event_quantities.php",
+            "name": "create_event_epc_ilmd_and_event_quantities",
+            "batch": "2026_08_05_100002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_05_100003_epcis_document_header_and_other_vocab.php",
+            "name": "epcis_document_header_and_other_vocab",
+            "batch": "2026_08_05_100003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_06_100001_add_event_generation_to_receiving_sessions.php",
+            "name": "add_event_generation_to_receiving_sessions",
+            "batch": "2026_08_06_100001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_06_120001_create_inbound_connections_tables.php",
+            "name": "create_inbound_connections_tables",
+            "batch": "2026_08_06_120001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_06_120002_create_personal_access_tokens_table.php",
+            "name": "create_personal_access_tokens_table",
+            "batch": "2026_08_06_120002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_06_120003_create_verifications_table.php",
+            "name": "create_verifications_table",
+            "batch": "2026_08_06_120003"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_140000_create_sscc_labeling_tables.php",
+            "name": "create_sscc_labeling_tables",
+            "batch": "2026_08_07_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_150000_create_transferring_sessions_tables.php",
+            "name": "create_transferring_sessions_tables",
+            "batch": "2026_08_07_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_160000_null_unassigned_partner_owned_sites.php",
+            "name": "null_unassigned_partner_owned_sites",
+            "batch": "2026_08_07_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_170000_add_transferring_ship_receive_columns.php",
+            "name": "add_transferring_ship_receive_columns",
+            "batch": "2026_08_07_170000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_180000_receiving_session_kinds.php",
+            "name": "receiving_session_kinds",
+            "batch": "2026_08_07_180000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_190000_add_is_organization_facility_to_sites.php",
+            "name": "add_is_organization_facility_to_sites",
+            "batch": "2026_08_07_190000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_200000_add_commission_site_id_to_sscc_label_batches.php",
+            "name": "add_commission_site_id_to_sscc_label_batches",
+            "batch": "2026_08_07_200000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_07_200000_create_site_user_table.php",
+            "name": "create_site_user_table",
+            "batch": "2026_08_07_200000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_08_100000_create_outbound_connections_tables.php",
+            "name": "create_outbound_connections_tables",
+            "batch": "2026_08_08_100000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_08_120000_create_outbound_shipping_sessions_tables.php",
+            "name": "create_outbound_shipping_sessions_tables",
+            "batch": "2026_08_08_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_08_130000_add_authored_kind_to_epcis_documents.php",
+            "name": "add_authored_kind_to_epcis_documents",
+            "batch": "2026_08_08_130000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_08_140000_backfill_shipping_authored_kind.php",
+            "name": "backfill_shipping_authored_kind",
+            "batch": "2026_08_08_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_09_140000_create_epcis_jobs_tables.php",
+            "name": "create_epcis_jobs_tables",
+            "batch": "2026_08_09_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_09_160000_add_received_via_to_epcis_documents.php",
+            "name": "add_received_via_to_epcis_documents",
+            "batch": "2026_08_09_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_10_120001_add_receive_impact_to_exception_types.php",
+            "name": "add_receive_impact_to_exception_types",
+            "batch": "2026_08_10_120001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_10_140000_create_tracing_requests_table.php",
+            "name": "create_tracing_requests_table",
+            "batch": "2026_08_10_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_10_150000_create_fda_3911_reports_table.php",
+            "name": "create_fda_3911_reports_table",
+            "batch": "2026_08_10_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_11_010000_create_sscc_number_ranges_table.php",
+            "name": "create_sscc_number_ranges_table",
+            "batch": "2026_08_11_010000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_11_160000_nullable_network_fields_on_label_printers.php",
+            "name": "nullable_network_fields_on_label_printers",
+            "batch": "2026_08_11_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_11_180000_add_delivery_mode_to_sscc_print_jobs.php",
+            "name": "add_delivery_mode_to_sscc_print_jobs",
+            "batch": "2026_08_11_180000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_11_181000_add_client_print_token_to_sscc_print_jobs.php",
+            "name": "add_client_print_token_to_sscc_print_jobs",
+            "batch": "2026_08_11_181000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_12_010000_add_corrective_fields_to_outbound_shipping_sessions.php",
+            "name": "add_corrective_fields_to_outbound_shipping_sessions",
+            "batch": "2026_08_12_010000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_12_020000_add_corrects_epcis_document_id_to_epcis_documents.php",
+            "name": "add_corrects_epcis_document_id_to_epcis_documents",
+            "batch": "2026_08_12_020000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_12_030000_scope_atp_licenses_unique_to_site.php",
+            "name": "scope_atp_licenses_unique_to_site",
+            "batch": "2026_08_12_030000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_12_040000_replace_generated_sgln_columns.php",
+            "name": "replace_generated_sgln_columns",
+            "batch": "2026_08_12_040000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_14_010000_add_fda_stamps_to_master_data.php",
+            "name": "add_fda_stamps_to_master_data",
+            "batch": "2026_08_14_010000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_14_030000_drop_tenant_catalog_stamp_columns.php",
+            "name": "drop_tenant_catalog_stamp_columns",
+            "batch": "2026_08_14_030000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_14_050000_add_atp_verification_to_trading_partners.php",
+            "name": "add_atp_verification_to_trading_partners",
+            "batch": "2026_08_14_050000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_14_140000_add_facility_contact_phone_to_atp_licenses.php",
+            "name": "add_facility_contact_phone_to_atp_licenses",
+            "batch": "2026_08_14_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_100000_create_tracing_request_notifications_table.php",
+            "name": "create_tracing_request_notifications_table",
+            "batch": "2026_08_15_100000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_120000_add_ack_share_uuid_to_tracing_request_notifications_table.php",
+            "name": "add_ack_share_uuid_to_tracing_request_notifications_table",
+            "batch": "2026_08_15_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_130000_add_is_default_to_outbound_connections.php",
+            "name": "add_is_default_to_outbound_connections",
+            "batch": "2026_08_15_130000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_210000_add_vrs_notify_email_to_trading_partners.php",
+            "name": "add_vrs_notify_email_to_trading_partners",
+            "batch": "2026_08_15_210000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_220000_add_wms_idempotency_key_to_outbound_shipping_sessions.php",
+            "name": "add_wms_idempotency_key_to_outbound_shipping_sessions",
+            "batch": "2026_08_15_220000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_230000_add_site_id_to_exceptions.php",
+            "name": "add_site_id_to_exceptions",
+            "batch": "2026_08_15_230000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_15_235900_add_receiving_sessions_site_status_opened_index.php",
+            "name": "add_receiving_sessions_site_status_opened_index",
+            "batch": "2026_08_15_235900"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_16_001000_add_wms_complete_to_outbound_shipping_sessions.php",
+            "name": "add_wms_complete_to_outbound_shipping_sessions",
+            "batch": "2026_08_16_001000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_16_004000_add_l3_forwarded_at_to_epcis_documents.php",
+            "name": "add_l3_forwarded_at_to_epcis_documents",
+            "batch": "2026_08_16_004000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_16_100000_add_preferences_to_users_table.php",
+            "name": "add_preferences_to_users_table",
+            "batch": "2026_08_16_100000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_16_180000_preserve_retired_aggregation_links_on_event_prune.php",
+            "name": "preserve_retired_aggregation_links_on_event_prune",
+            "batch": "2026_08_16_180000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_18_160000_add_legal_acceptance_to_users.php",
+            "name": "add_legal_acceptance_to_users",
+            "batch": "2026_08_18_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_22_140000_add_invoice_to_receiving_sessions.php",
+            "name": "add_invoice_to_receiving_sessions",
+            "batch": "2026_08_22_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_22_150000_add_open_tote_lock_to_receiving_sessions.php",
+            "name": "add_open_tote_lock_to_receiving_sessions",
+            "batch": "2026_08_22_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_23_120000_add_customer_portal_uuid_to_trading_partners.php",
+            "name": "add_customer_portal_uuid_to_trading_partners",
+            "batch": "2026_08_23_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_27_120000_create_epcis_subscriptions_table.php",
+            "name": "create_epcis_subscriptions_table",
+            "batch": "2026_08_27_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_27_140000_pin_outbound_epcis_version_1_2.php",
+            "name": "pin_outbound_epcis_version_1_2",
+            "batch": "2026_08_27_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_27_150000_add_gs1_fields_to_epcis_subscriptions.php",
+            "name": "add_gs1_fields_to_epcis_subscriptions",
+            "batch": "2026_08_27_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_27_160000_add_license_country_to_atp_licenses.php",
+            "name": "add_license_country_to_atp_licenses",
+            "batch": "2026_08_27_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_120000_add_is_drop_shipment_to_outbound_shipping_sessions.php",
+            "name": "add_is_drop_shipment_to_outbound_shipping_sessions",
+            "batch": "2026_08_28_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_140000_create_buying_group_members_table.php",
+            "name": "create_buying_group_members_table",
+            "batch": "2026_08_28_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_140000_create_principals_table.php",
+            "name": "create_principals_table",
+            "batch": "2026_08_28_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_140001_add_principal_id_to_sites_table.php",
+            "name": "add_principal_id_to_sites_table",
+            "batch": "2026_08_28_140001"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_140002_add_principal_id_to_outbound_shipping_sessions_table.php",
+            "name": "add_principal_id_to_outbound_shipping_sessions_table",
+            "batch": "2026_08_28_140002"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_160000_add_superseded_columns_to_epcis_events.php",
+            "name": "add_superseded_columns_to_epcis_events",
+            "batch": "2026_08_28_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_183000_add_split_declared_to_outbound_shipping_sessions.php",
+            "name": "add_split_declared_to_outbound_shipping_sessions",
+            "batch": "2026_08_28_183000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_28_220000_add_conformance_state_to_outbound_connections.php",
+            "name": "add_conformance_state_to_outbound_connections",
+            "batch": "2026_08_28_220000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_140000_add_quantity_gate_override_to_outbound_shipping_sessions.php",
+            "name": "add_quantity_gate_override_to_outbound_shipping_sessions",
+            "batch": "2026_08_29_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_160000_create_epcis_event_archive_tables.php",
+            "name": "create_epcis_event_archive_tables",
+            "batch": "2026_08_29_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_180000_add_live_event_id_unique_to_epcis_events.php",
+            "name": "add_live_event_id_unique_to_epcis_events",
+            "batch": "2026_08_29_180000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_190000_create_epcis_event_child_archive_tables.php",
+            "name": "create_epcis_event_child_archive_tables",
+            "batch": "2026_08_29_190000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_210000_create_l3_guardian_lot_tables.php",
+            "name": "create_l3_guardian_lot_tables",
+            "batch": "2026_08_29_210000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_29_220000_fix_serialization_lots_status_default.php",
+            "name": "fix_serialization_lots_status_default",
+            "batch": "2026_08_29_220000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_30_140000_create_epcis_subscription_deliveries_table.php",
+            "name": "create_epcis_subscription_deliveries_table",
+            "batch": "2026_08_30_140000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_30_150000_create_aggregation_links_archive_and_nullable_established_by.php",
+            "name": "create_aggregation_links_archive_and_nullable_established_by",
+            "batch": "2026_08_30_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_30_160000_add_status_and_l3_forwarded_indexes.php",
+            "name": "add_status_and_l3_forwarded_indexes",
+            "batch": "2026_08_30_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_30_170000_add_wms_receive_confirmed_at_to_receiving_sessions.php",
+            "name": "add_wms_receive_confirmed_at_to_receiving_sessions",
+            "batch": "2026_08_30_170000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_31_160000_add_oidc_columns_to_users_table.php",
+            "name": "add_oidc_columns_to_users_table",
+            "batch": "2026_08_31_160000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_08_31_170500_create_notifications_table.php",
+            "name": "create_notifications_table",
+            "batch": "2026_08_31_170500"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_030800_add_system_flags_to_outbound_connections.php",
+            "name": "add_system_flags_to_outbound_connections",
+            "batch": "2026_09_01_030800"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_031000_create_portal_organizations_and_users_tables.php",
+            "name": "create_portal_organizations_and_users_tables",
+            "batch": "2026_09_01_031000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_031100_create_portal_publications_table.php",
+            "name": "create_portal_publications_table",
+            "batch": "2026_09_01_031100"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_120100_create_tenant_announcements_tables.php",
+            "name": "create_tenant_announcements_tables",
+            "batch": "2026_09_01_120100"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_200000_create_verification_request_tables.php",
+            "name": "create_verification_request_tables",
+            "batch": "2026_09_01_200000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_200100_add_verification_request_case_id_to_verifications.php",
+            "name": "add_verification_request_case_id_to_verifications",
+            "batch": "2026_09_01_200100"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_210000_create_data_exports_table.php",
+            "name": "create_data_exports_table",
+            "batch": "2026_09_01_210000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_01_210100_add_export_lookup_indexes_to_epcis_tables.php",
+            "name": "add_export_lookup_indexes_to_epcis_tables",
+            "batch": "2026_09_01_210100"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_120000_add_dscsa_shipping_extensions_to_epcis_documents.php",
+            "name": "add_dscsa_shipping_extensions_to_epcis_documents",
+            "batch": "2026_09_02_120000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_130000_restrict_data_exports_requested_by_user_fk.php",
+            "name": "restrict_data_exports_requested_by_user_fk",
+            "batch": "2026_09_02_130000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_150000_add_dea_hin_identifiers_to_sites_and_trading_partners.php",
+            "name": "add_dea_hin_identifiers_to_sites_and_trading_partners",
+            "batch": "2026_09_02_150000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_180000_add_chemical_reg_and_widen_duns_on_sites_and_trading_partners.php",
+            "name": "add_chemical_reg_and_widen_duns_on_sites_and_trading_partners",
+            "batch": "2026_09_02_180000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_181000_repair_identifier_columns_before_chemical_reg.php",
+            "name": "repair_identifier_columns_before_chemical_reg",
+            "batch": "2026_09_02_181000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_02_213000_add_directory_attributes_to_users_table.php",
+            "name": "add_directory_attributes_to_users_table",
+            "batch": "2026_09_02_213000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_03_211000_create_inbound_shipments_tables.php",
+            "name": "create_inbound_shipments_tables",
+            "batch": "2026_09_03_211000"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_03_224900_add_account_security_to_users_table.php",
+            "name": "add_account_security_to_users_table",
+            "batch": "2026_09_03_224900"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_03_224910_add_account_security_to_portal_users_table.php",
+            "name": "add_account_security_to_portal_users_table",
+            "batch": "2026_09_03_224910"
+        },
+        {
+            "file": "database/migrations/tenant/2026_09_04_151000_add_dea_number_indexes_to_sites_and_trading_partners.php",
+            "name": "add_dea_number_indexes_to_sites_and_trading_partners",
+            "batch": "2026_09_04_151000"
+        },
+        {
+            "file": "vendor/mkwebdesign/filament-watchdog-v5/database/migrations/2024_01_01_000001_create_filament_watchdog_tables.php",
+            "name": "create_filament_watchdog_tables",
+            "batch": "2024_01_01_000001"
+        }
+    ]
+}

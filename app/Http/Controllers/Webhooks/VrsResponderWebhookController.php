@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Webhooks;
 
 use App\Actions\Vrs\RespondToInboundVerification;
 use App\Models\Tenant;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
+use App\Support\Tenancy\TenantAccess;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
-use App\Support\Tenancy\TenantAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,13 +20,15 @@ final class VrsResponderWebhookController
 
     public function handle(Request $request, string $tenantId): JsonResponse
     {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         $this->authorizeResponder($request, $tenant);
 
         TenantAccess::assertActive($tenant);
 
-        return $tenant->run(function () use ($request): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request): JsonResponse {
             if (! TenantFeatures::forTenant(tenant())->supportsVrs()) {
                 return response()->json(['message' => 'VRS responder is not enabled for this tenant.'], 403);
             }

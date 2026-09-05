@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\Fda3911Reports\Schemas;
 use App\Enums\Fda3911Classification;
 use App\Models\TradingPartner;
 use App\Support\Auth\SiteAccess;
+use App\Support\Filament\ProseEditor;
 use App\Support\Gs1\GlnRules;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -79,11 +80,9 @@ class Fda3911ReportForm
                     ->columns(2),
                 Section::make('Circumstances')
                     ->schema([
-                        Textarea::make('circumstances')
+                        ProseEditor::make('circumstances')
                             ->label('Description of circumstances')
-                            ->required()
-                            ->rows(5)
-                            ->columnSpanFull(),
+                            ->required(),
                     ]),
             ]);
     }

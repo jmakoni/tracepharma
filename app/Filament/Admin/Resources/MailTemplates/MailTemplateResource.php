@@ -14,10 +14,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class MailTemplateResource extends Resource
+class MailTemplateResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = MailTemplate::class;
 
@@ -80,5 +81,10 @@ class MailTemplateResource extends Resource
             'index' => ListMailTemplates::route('/'),
             'edit' => EditMailTemplate::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'platform.mail-templates';
     }
 }

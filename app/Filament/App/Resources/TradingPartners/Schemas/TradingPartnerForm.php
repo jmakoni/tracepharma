@@ -4,9 +4,11 @@ namespace App\Filament\App\Resources\TradingPartners\Schemas;
 
 use App\Enums\PartnerType;
 use App\Filament\App\Support\FdaPicker;
+use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
 use App\Support\Gs1\SglnRules;
+use App\Support\TenantSettings;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -75,8 +77,18 @@ class TradingPartnerForm
                                 Grid::make(['default' => 2])->schema([
                                     GlnRules::input()
                                         ->unique(ignoreRecord: true)
-                                        ->rule(new RejectTenantGln),
-                                    SglnRules::input(),
+                                        ->rule(new RejectTenantGln)
+                                        ->rule(new RejectPartnerGlnUnderOrgPrefix),
+                                    SglnRules::input()
+                                        ->helperText(fn (): string => TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
+                                            ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy the partner\'s stated SGLN from their EPCIS.'
+                                            : 'Copy the partner\'s stated SGLN from their EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.'),
+                                ]),
+                                Grid::make(['default' => 4])->schema([
+                                    TextInput::make('duns_number')->label('DUNS')->maxLength(14),
+                                    TextInput::make('dea_number')->label('DEA')->maxLength(20),
+                                    TextInput::make('hin_number')->label('HIN')->maxLength(20),
+                                    TextInput::make('chemical_reg_number')->label('Chemical Reg')->maxLength(30),
                                 ]),
                                 Grid::make(['default' => 2])->schema([
                                     Select::make('partner_type')

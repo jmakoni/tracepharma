@@ -23,7 +23,7 @@ class EpcisInboundRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxKb = (int) config('tracepharma.epcis.max_upload_kb', 20480);
+        $maxKb = (int) config('tracepharma.epcis.max_upload_kb', 81920);
 
         return [
             'file' => [

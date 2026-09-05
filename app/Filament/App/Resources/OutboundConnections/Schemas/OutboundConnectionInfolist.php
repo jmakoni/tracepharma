@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OutboundConnections\Schemas;
 
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
 use App\Models\OutboundConnection;
@@ -25,14 +26,38 @@ class OutboundConnectionInfolist
                         TextEntry::make('transport')
                             ->badge()
                             ->formatStateUsing(fn (OutboundTransport $state): string => $state->label()),
-                        TextEntry::make('tradingPartner.name')
-                            ->label('Trading partner')
-                            ->placeholder('Not linked'),
+                        TextEntry::make('tradingPartners.name')
+                            ->label('Trading partners')
+                            ->badge()
+                            ->separator(',')
+                            ->placeholder('Global (any customer)'),
                         IconEntry::make('is_active')
                             ->boolean(),
                         IconEntry::make('is_default')
                             ->label('Default for partner')
                             ->boolean(),
+                        TextEntry::make('conformance_state')
+                            ->label('Conformance')
+                            ->badge()
+                            ->formatStateUsing(fn (OutboundConformanceState|string|null $state): string => match (true) {
+                                $state instanceof OutboundConformanceState => $state->label(),
+                                is_string($state) && $state !== '' => OutboundConformanceState::tryFrom($state)?->label() ?? $state,
+                                default => OutboundConformanceState::Test->label(),
+                            }),
+                        TextEntry::make('settings.epcis_document_version')
+                            ->label('EPCIS document version')
+                            ->state(function (OutboundConnection $record): string {
+                                $version = is_array($record->settings)
+                                    ? (string) ($record->settings['epcis_document_version'] ?? '1.2')
+                                    : '1.2';
+
+                                return $version === '2.0' ? 'EPCIS 2.0 JSON-LD' : 'EPCIS 1.2 XML';
+                            })
+                            ->badge()
+                            ->color(fn (OutboundConnection $record): string => (is_array($record->settings) && ($record->settings['epcis_document_version'] ?? '1.2') === '2.0')
+                                ? 'info'
+                                : 'gray')
+                            ->helperText('Ship Orders follow this connection version when accept_20 allows 2.0; otherwise 1.2 XML.'),
                         TextEntry::make('last_sent_at')
                             ->dateTime()
                             ->placeholder('Never'),

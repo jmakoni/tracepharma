@@ -5,6 +5,7 @@ namespace App\Services\Dscsa\TransactionReport;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
+use App\Services\Dscsa\Support\ComplianceReportBranding;
 use App\Services\Dscsa\Support\EpcisShipmentReportContext;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -13,6 +14,7 @@ final class TransactionReportDataBuilder
 {
     public function __construct(
         private readonly EpcisShipmentReportContext $context,
+        private readonly ComplianceReportBranding $branding,
     ) {}
 
     public function build(EpcisDocument $document, ?User $actor = null): TransactionReportData
@@ -27,7 +29,13 @@ final class TransactionReportDataBuilder
         $transactionDate = $shipping['transaction_date'] ?? '—';
         $ownershipRows = $shipping['ownership_rows'];
         $ownershipNote = $shipping['ownership_note'];
-        $directPurchase = $this->context->directPurchaseStatement($document, $shipping['seller_name']);
+        $directPurchase = $this->context->directPurchaseStatement(
+            $document,
+            $shipping['seller_name'],
+            $shipping['seller_gln'],
+        );
+        $receivedPrevWholesaler = $this->context->receivedPrevWholesalerStatement($document);
+        $branding = $this->branding->resolve($shipping['seller_gln'], $shipping['seller_name']);
 
         $lotGroups = $this->context->lotGroups($document);
         $productClasses = $document->fileProductClassesByGtin();
@@ -51,6 +59,7 @@ final class TransactionReportDataBuilder
                 ownershipNote: $ownershipNote,
                 legalStatement: $legalStatement,
                 directPurchase: $directPurchase,
+                receivedPrevWholesaler: $receivedPrevWholesaler,
                 productClasses: $productClasses,
                 document: $document,
             );
@@ -68,6 +77,7 @@ final class TransactionReportDataBuilder
                     ownershipNote: $ownershipNote,
                     legalStatement: $legalStatement,
                     directPurchase: $directPurchase,
+                    receivedPrevWholesaler: $receivedPrevWholesaler,
                     productClasses: $productClasses,
                     document: $document,
                 );
@@ -79,6 +89,8 @@ final class TransactionReportDataBuilder
             shipmentId: $shipmentId,
             pages: $pages,
             footer: $this->context->footer($actor),
+            logoDataUri: $branding['logoDataUri'],
+            sellerDisplayName: $branding['sellerDisplayName'],
         );
     }
 
@@ -104,6 +116,7 @@ final class TransactionReportDataBuilder
         ?string $ownershipNote,
         string $legalStatement,
         ?string $directPurchase,
+        ?string $receivedPrevWholesaler,
         Collection $productClasses,
         EpcisDocument $document,
     ): LotPageData {
@@ -157,6 +170,7 @@ final class TransactionReportDataBuilder
             ownershipNote: $ownershipNote,
             legalStatement: $legalStatement,
             directPurchaseStatement: $directPurchase,
+            receivedPrevWholesalerStatement: $receivedPrevWholesaler,
         );
     }
 }

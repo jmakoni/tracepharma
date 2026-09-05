@@ -16,14 +16,15 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use UnitEnum;
 
-class Quarantine extends Page
+class Quarantine extends Page implements HasKnowledgeBase
 {
     private const HOLDS_PER_PAGE = 25;
 
@@ -51,7 +52,7 @@ class Quarantine extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsComplianceCases())
+        return TenantFeatures::forTenant(tenant())->supportsComplianceCases()
             && JobRoleAccess::allows(Permissions::NavExceptions);
     }
 
@@ -354,5 +355,10 @@ class Quarantine extends Page
                 fn (Builder $document): Builder => $document->where('ship_to_site_id', $siteId),
             );
         });
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.quarantine';
     }
 }

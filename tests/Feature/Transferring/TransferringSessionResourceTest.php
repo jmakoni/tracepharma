@@ -18,9 +18,11 @@ use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
@@ -33,6 +35,7 @@ use App\Support\Tracing\AssetTrackingUrl;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -48,7 +51,8 @@ class TransferringSessionResourceTest extends TestCase
 
     private const DEMO2_DATABASE = 'tenant_demo2_internal_vatengi_com';
 
-    private const EPC_URI = 'urn:epc:id:sgtin:030116.0200116.90000082008888';
+    /** Distinct from TransferringSessionTest EPC_URI / EPC_URI_2 to avoid shared demo2 collisions. */
+    private const EPC_URI = 'urn:epc:id:sgtin:030116.0200116.90000082007777';
 
     private static bool $demo2TenantReady = false;
 
@@ -72,6 +76,8 @@ class TransferringSessionResourceTest extends TestCase
     private ?int $priorDefaultShipFromSiteId = null;
 
     private ?int $priorDefaultReceiveSiteId = null;
+
+    private ?string $priorCompanyPrefix = null;
 
     #[Test]
     public function pharmacy_can_access_and_create_transferring_session_resource(): void
@@ -283,9 +289,15 @@ class TransferringSessionResourceTest extends TestCase
     public function livewire_create_confirm_ship_and_receive_transfer_session(): void
     {
         $tenant = $this->initializeDemo2Tenant();
+        $priorAutoOpen = TenantSettings::forTenant($tenant)->autoOpenReceiveAfterTransferShip();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            // Shared demo2 may retain a prior true; pin default-off for this assertion.
+            TenantSettings::forTenant($tenant)
+                ->setAutoOpenReceiveAfterTransferShip(false)
+                ->saveQuietly();
 
             $user = $this->createOrgAdminUser();
             $this->actingAs($user);
@@ -351,17 +363,14 @@ class TransferringSessionResourceTest extends TestCase
             $this->assertNotNull($session->shipped_at);
             $this->transferDocumentId = (int) $session->transfer_epcis_document_id;
 
-            // Ship best-effort opens destination receive when the actor can access to_site
-            // (Owner / SitesAccessAll). Fall back to the header action otherwise.
+            // Default: ship leaves session in_transit; open receive via Receive at destination.
+            $this->assertFalse(TenantSettings::forTenant($tenant)->autoOpenReceiveAfterTransferShip());
+
             $receiving = ReceivingSession::query()
                 ->where('transferring_session_id', $session->getKey())
                 ->first();
-
-            if ($receiving !== null) {
-                // Owner has SitesAccessAll, so ship auto-opens the receive session and
-                // redirects the shipper straight there instead of leaving them stranded.
-                $shipResult->assertRedirectContains('receiving-sessions');
-            }
+            $this->assertNull($receiving);
+            $shipResult->assertNoRedirect();
 
             $receiveView = Livewire::test(ViewTransferringSession::class, ['record' => $session->getKey()]);
             $receiveView->assertDontSee('Scan to receive');
@@ -371,17 +380,13 @@ class TransferringSessionResourceTest extends TestCase
             // timestamp field is unrelated and intentionally untouched.)
             $receiveView->assertDontSee('stat-value');
 
-            if ($receiving === null) {
-                $receiveView->assertSee('Receive at destination');
-                $receiveView->callAction('receiveAtDestination')
-                    ->assertRedirect();
+            $receiveView->assertSee('Receive at destination');
+            $receiveView->callAction('receiveAtDestination')
+                ->assertRedirect();
 
-                $receiving = ReceivingSession::query()
-                    ->where('transferring_session_id', $session->getKey())
-                    ->first();
-            } else {
-                $receiveView->assertSee('Open receive session #'.$receiving->getKey());
-            }
+            $receiving = ReceivingSession::query()
+                ->where('transferring_session_id', $session->getKey())
+                ->first();
 
             $this->assertNotNull($receiving);
             $this->receivingSessionId = (int) $receiving->getKey();
@@ -409,6 +414,60 @@ class TransferringSessionResourceTest extends TestCase
                 ReceivingSessionResource::getUrl('view', ['record' => $receiving], panel: 'app'),
             );
         } finally {
+            TenantSettings::forTenant($tenant)
+                ->setAutoOpenReceiveAfterTransferShip($priorAutoOpen)
+                ->saveQuietly();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function ship_auto_opens_receive_when_setting_enabled(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->autoOpenReceiveAfterTransferShip();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            TenantSettings::forTenant($tenant)
+                ->setAutoOpenReceiveAfterTransferShip(true)
+                ->saveQuietly();
+
+            $user = $this->createOrgAdminUser();
+            $this->actingAs($user);
+
+            [$fromSite, $toSite] = $this->createTransferSites($tenant);
+            $session = app(OpenTransferringSession::class)->handle(
+                fromSiteId: (int) $fromSite->getKey(),
+                toSiteId: (int) $toSite->getKey(),
+                openedBy: (int) $user->getKey(),
+            );
+            $this->sessionId = (int) $session->getKey();
+
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $this->epcId = (int) $epc->getKey();
+            $this->receiveAtSite($fromSite, $epc);
+            app(ConfirmTransferringScan::class)->handle($session, self::EPC_URI, (int) $user->getKey());
+
+            Livewire::test(ViewTransferringSession::class, ['record' => $session->getKey()])
+                ->callAction('completeTransfer')
+                ->assertRedirectContains('receiving-sessions');
+
+            $session->refresh();
+            $this->assertSame('in_transit', $session->status);
+            $this->assertNotNull($session->transfer_epcis_document_id);
+            $this->transferDocumentId = (int) $session->transfer_epcis_document_id;
+
+            $receiving = ReceivingSession::query()
+                ->where('transferring_session_id', $session->getKey())
+                ->first();
+            $this->assertNotNull($receiving);
+            $this->receivingSessionId = (int) $receiving->getKey();
+        } finally {
+            TenantSettings::forTenant($tenant)
+                ->setAutoOpenReceiveAfterTransferShip($prior)
+                ->saveQuietly();
             $this->cleanup($tenant);
         }
     }
@@ -418,6 +477,18 @@ class TransferringSessionResourceTest extends TestCase
      */
     private function createTransferSites(Tenant $tenant): array
     {
+        $settings = TenantSettings::forTenant($tenant);
+        $this->priorDefaultShipFromSiteId = $settings->defaultShipFromSiteId();
+        $this->priorDefaultReceiveSiteId = $settings->defaultReceiveSiteId();
+        $this->priorCompanyPrefix = $settings->companyPrefix();
+        if ($settings->companyPrefix() === null) {
+            $orgGln = preg_replace('/\D+/', '', (string) ($settings->gln() ?? '')) ?? '';
+            $prefix = strlen($orgGln) === 13 ? substr($orgGln, 0, 7) : '0366150';
+            $settings->setCompanyPrefix($prefix);
+            $tenant->saveQuietly();
+            tenancy()->initialize($tenant->fresh());
+        }
+
         $fromGln = $this->uniqueGln();
         $toGln = $this->uniqueGln();
 
@@ -441,9 +512,6 @@ class TransferringSessionResourceTest extends TestCase
         ]);
         $this->siteIds[] = (int) $toSite->getKey();
 
-        $settings = TenantSettings::forTenant($tenant);
-        $this->priorDefaultShipFromSiteId = $settings->defaultShipFromSiteId();
-        $this->priorDefaultReceiveSiteId = $settings->defaultReceiveSiteId();
         $settings->setDefaultShipFromSiteId((int) $fromSite->getKey());
         $settings->setDefaultReceiveSiteId((int) $toSite->getKey());
         $tenant->save();
@@ -572,11 +640,22 @@ class TransferringSessionResourceTest extends TestCase
             }
 
             if ($this->sessionId !== null) {
+                // Cover auto-opened receive when the test failed before capturing receivingSessionId.
+                ReceivingSession::query()
+                    ->where('transferring_session_id', $this->sessionId)
+                    ->delete();
                 TransferringSession::query()->whereKey($this->sessionId)->delete();
                 $this->sessionId = null;
             }
 
             if ($this->epcId !== null) {
+                QuarantineHold::query()->where('epc_id', $this->epcId)->delete();
+                DB::table('exception_epcs')->where('epc_id', $this->epcId)->delete();
+                DB::table('event_epcs')->where('epc_id', $this->epcId)->delete();
+                if (Schema::hasTable('document_epcs')) {
+                    DB::table('document_epcs')->where('epc_id', $this->epcId)->delete();
+                }
+                TransferringScanLine::query()->where('epc_id', $this->epcId)->delete();
                 Epc::query()->whereKey($this->epcId)->delete();
                 $this->epcId = null;
             }
@@ -589,9 +668,13 @@ class TransferringSessionResourceTest extends TestCase
             $settings = TenantSettings::forTenant($tenant);
             $settings->setDefaultShipFromSiteId($this->priorDefaultShipFromSiteId);
             $settings->setDefaultReceiveSiteId($this->priorDefaultReceiveSiteId);
-            $tenant->save();
+            if ($this->priorCompanyPrefix !== null || $settings->companyPrefix() !== $this->priorCompanyPrefix) {
+                $settings->setCompanyPrefix($this->priorCompanyPrefix);
+            }
+            $tenant->saveQuietly();
             $this->priorDefaultShipFromSiteId = null;
             $this->priorDefaultReceiveSiteId = null;
+            $this->priorCompanyPrefix = null;
 
             tenancy()->end();
         }

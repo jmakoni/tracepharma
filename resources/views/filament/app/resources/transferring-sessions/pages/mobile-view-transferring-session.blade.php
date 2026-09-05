@@ -42,6 +42,13 @@
                     <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
                 </div>
             </div>
+            @if ($this->chipDeaLabel)
+                <span @class([
+                    'badge badge-outline',
+                    'badge-error' => $this->chipDeaColor === 'danger',
+                    'badge-warning' => $this->chipDeaColor === 'warning',
+                ])>{{ $this->chipDeaLabel }}</span>
+            @endif
 
             <div
                 class="tp-floor-receive__menu"
@@ -280,10 +287,22 @@
 
                     @forelse ($recentLines as $line)
                         <div class="tp-floor-receive__recent-row">
-                            <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                            <span class="tp-floor-receive__recent-meta">
-                                {{ ucfirst((string) $line->status) }}
-                            </span>
+                            <div class="tp-floor-receive__recent-main">
+                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
+                                <span class="tp-floor-receive__recent-meta">
+                                    {{ ucfirst((string) $line->status) }}
+                                </span>
+                            </div>
+                            @if ($this->canRemoveRecentScanLine($line))
+                                <button
+                                    type="button"
+                                    class="tp-floor-receive__recent-remove"
+                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
+                                    wire:confirm="Remove this scan from the transfer?"
+                                >
+                                    Remove
+                                </button>
+                            @endif
                         </div>
                     @empty
                         <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>

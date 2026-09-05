@@ -7,6 +7,7 @@ use App\Enums\EpcisReceivedVia;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
+use App\Actions\Epcis\PrepareOutboundEpcisForRetransmit;
 use App\Filament\App\Resources\OutboundEpcisDocuments\Actions\RetryOutboundEpcisTransmitAction;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
 use App\Models\Epcis\EpcisDocument;
@@ -194,11 +195,28 @@ class OutboundEpcisDocumentResourceTest extends TestCase
                 'error_message' => 'Connection refused',
             ]);
 
+            $this->app->instance(PrepareOutboundEpcisForRetransmit::class, new class($doc)
+            {
+                public function __construct(private EpcisDocument $doc) {}
+
+                public function handle(EpcisDocument $document): array
+                {
+                    return [
+                        'document' => $this->doc->fresh() ?? $this->doc,
+                        'mode' => 'remint',
+                        'old_uuid' => (string) $this->doc->document_uuid,
+                        'new_uuid' => (string) $this->doc->document_uuid,
+                        'old_filename' => $this->doc->original_filename,
+                        'new_filename' => (string) $this->doc->original_filename,
+                    ];
+                }
+            });
+
             $fake = new class implements OutboundEpcisTransmitter
             {
                 public int $calls = 0;
 
-                public function transmit(EpcisDocument $document): void
+                public function transmit(EpcisDocument $document, bool $forceRetransmit = false): void
                 {
                     $this->calls++;
                     $document->forceFill([

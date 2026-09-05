@@ -8,6 +8,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Tenant;
+use App\Services\Tracing\BuildAssetTrace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Scout\EngineManager;
@@ -33,7 +34,7 @@ class PruneSupersededIngestGenerationsTest extends TestCase
     private array $epcIds = [];
 
     #[Test]
-    public function prune_deletes_superseded_generations_and_keeps_active(): void
+    public function prune_soft_supersedes_prior_generations_and_keeps_active(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -100,17 +101,21 @@ class PruneSupersededIngestGenerationsTest extends TestCase
             $stats = app(PruneSupersededIngestGenerations::class)->handle($document->fresh());
 
             $this->assertSame(2, $stats['kept_generation']);
-            $this->assertSame(1, $stats['events_deleted']);
+            $this->assertSame(1, $stats['events_superseded']);
             $this->assertSame(1, $stats['document_epcs_deleted']);
 
-            $this->assertFalse(EpcisEvent::query()->whereKey($stale->id)->exists());
+            $stale->refresh();
+            $this->assertNotNull($stale->superseded_at);
+            $this->assertSame(2, (int) $stale->superseded_by_generation);
+            $this->assertTrue(EpcisEvent::query()->whereKey($stale->id)->exists());
             $this->assertTrue(EpcisEvent::query()->whereKey($active->id)->exists());
+            $this->assertNull($active->fresh()->superseded_at);
             $this->assertSame(
-                1,
+                2,
                 EpcisEvent::query()->where('document_id', $document->id)->count(),
             );
             $this->assertSame(
-                0,
+                1,
                 (int) DB::table('event_epcs')->where('event_id', $stale->id)->count(),
             );
 
@@ -132,7 +137,7 @@ class PruneSupersededIngestGenerationsTest extends TestCase
     }
 
     #[Test]
-    public function prune_orphan_generations_deletes_future_generations_only(): void
+    public function prune_orphan_generations_soft_supersedes_future_generations_only(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -211,14 +216,17 @@ class PruneSupersededIngestGenerationsTest extends TestCase
                 ->pruneOrphanGenerations($document->fresh());
 
             $this->assertSame(2, $stats['kept_generation']);
-            $this->assertSame(1, $stats['events_deleted']);
+            $this->assertSame(1, $stats['events_superseded']);
             $this->assertSame(1, $stats['document_epcs_deleted']);
 
             $this->assertTrue(EpcisEvent::query()->whereKey($superseded->id)->exists());
+            $this->assertNull($superseded->fresh()->superseded_at);
             $this->assertTrue(EpcisEvent::query()->whereKey($active->id)->exists());
-            $this->assertFalse(EpcisEvent::query()->whereKey($orphan->id)->exists());
+            $this->assertTrue(EpcisEvent::query()->whereKey($orphan->id)->exists());
+            $this->assertNotNull($orphan->fresh()->superseded_at);
+            $this->assertSame(2, (int) $orphan->fresh()->superseded_by_generation);
             $this->assertSame(
-                2,
+                3,
                 EpcisEvent::query()->where('document_id', $document->id)->count(),
             );
 
@@ -303,7 +311,7 @@ class PruneSupersededIngestGenerationsTest extends TestCase
                 ->pruneOrphanGenerations($document->fresh());
 
             $this->assertSame(1, $stats['kept_generation']);
-            $this->assertSame(0, $stats['events_deleted']);
+            $this->assertSame(0, $stats['events_superseded']);
             $this->assertTrue(EpcisEvent::query()->whereKey($partial->id)->exists());
             $this->assertSame(
                 1,
@@ -392,22 +400,25 @@ class PruneSupersededIngestGenerationsTest extends TestCase
             $stats = app(PruneSupersededIngestGenerations::class)->handle($document->fresh());
 
             $this->assertSame(2, $stats['kept_generation']);
-            $this->assertSame(2, $stats['events_deleted']);
+            $this->assertSame(2, $stats['events_superseded']);
             $this->assertSame(2, $stats['document_epcs_deleted']);
 
-            $this->assertFalse(EpcisEvent::query()->whereKey($superseded->id)->exists());
+            $this->assertTrue(EpcisEvent::query()->whereKey($superseded->id)->exists());
+            $this->assertNotNull($superseded->fresh()->superseded_at);
             $this->assertTrue(EpcisEvent::query()->whereKey($active->id)->exists());
-            $this->assertFalse(EpcisEvent::query()->whereKey($orphan->id)->exists());
+            $this->assertNull($active->fresh()->superseded_at);
+            $this->assertTrue(EpcisEvent::query()->whereKey($orphan->id)->exists());
+            $this->assertNotNull($orphan->fresh()->superseded_at);
             $this->assertSame(
-                1,
+                3,
                 EpcisEvent::query()->where('document_id', $document->id)->count(),
             );
             $this->assertSame(
-                0,
+                1,
                 (int) DB::table('event_epcs')->where('event_id', $superseded->id)->count(),
             );
             $this->assertSame(
-                0,
+                1,
                 (int) DB::table('event_epcs')->where('event_id', $orphan->id)->count(),
             );
 
@@ -495,8 +506,89 @@ class PruneSupersededIngestGenerationsTest extends TestCase
 
             $this->assertContains((int) $stale->id, $engine->removed, 'Superseded event must be removed from Scout');
             $this->assertNotContains((int) $active->id, $engine->removed, 'Active generation event must stay indexed');
-            $this->assertFalse(EpcisEvent::query()->whereKey($stale->id)->exists());
+            $this->assertTrue(EpcisEvent::query()->whereKey($stale->id)->exists());
+            $this->assertNotNull($stale->fresh()->superseded_at);
             $this->assertTrue(EpcisEvent::query()->whereKey($active->id)->exists());
+            $this->assertNull($active->fresh()->superseded_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function soft_supersede_asset_trace_uses_current_generation_only(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'trace-supersede-test.xml',
+                'file_sha256' => hash('sha256', (string) str()->uuid()),
+                'payload_disk' => 'local',
+                'payload_path' => 'epcis/inbound/trace-supersede-'.str()->uuid().'.xml',
+                'dscsa_affirm' => false,
+                'status' => 'validated',
+                'event_count' => 1,
+                'epc_count' => 1,
+                'received_at' => now(),
+                'processed_at' => now(),
+                'ingest_generation' => 2,
+            ]);
+            $this->documentIds[] = (int) $document->id;
+
+            $epc = Epc::query()->create([
+                'epc_uri' => 'urn:epc:id:sgtin:030116.0200116.trace'.substr((string) str()->uuid(), 0, 8),
+                'epc_type' => 'sgtin',
+                'company_prefix' => '030116',
+                'gtin14' => '00301162001162',
+                'serial_number' => 'trace'.random_int(100000, 999999),
+                'ai_01_21' => '010030116200116221trace'.random_int(1000, 9999),
+                'first_seen_at' => now(),
+            ]);
+            $this->epcIds[] = (int) $epc->id;
+
+            $prior = EpcisEvent::query()->create([
+                'document_id' => $document->id,
+                'ingest_generation' => 1,
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subHours(2),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+            ]);
+            $current = EpcisEvent::query()->create([
+                'document_id' => $document->id,
+                'ingest_generation' => 2,
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subHour(),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+            ]);
+
+            DB::table('event_epcs')->insert([
+                ['event_id' => $prior->id, 'epc_id' => $epc->id, 'role' => 'epcList'],
+                ['event_id' => $current->id, 'epc_id' => $epc->id, 'role' => 'epcList'],
+            ]);
+
+            app(PruneSupersededIngestGenerations::class)->handle($document->fresh());
+
+            $timelineIds = app(BuildAssetTrace::class)
+                ->eventsQuery($epc->fresh())
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+
+            $this->assertSame([(int) $current->id], $timelineIds);
+            $this->assertNotContains((int) $prior->id, $timelineIds);
+
+            $rca = EpcisEvent::query()->findOrFail($prior->id);
+            $this->assertSame('urn:epcglobal:cbv:bizstep:commissioning', $rca->biz_step);
+            $this->assertNotNull($rca->superseded_at);
+            $this->assertSame(1, $rca->eventEpcs()->count());
         } finally {
             $this->cleanup();
         }

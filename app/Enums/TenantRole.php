@@ -6,6 +6,8 @@ enum TenantRole: string
 {
     case Owner = 'owner';
 
+    case SupportEngineer = 'support_engineer';
+
     // Manufacturer / CMO / Prepackager
     case PackagingLineOperator = 'packaging_line_operator';
     case SerializationSystemsEngineer = 'serialization_systems_engineer';
@@ -34,6 +36,7 @@ enum TenantRole: string
     {
         return match ($this) {
             self::Owner => 'Owner',
+            self::SupportEngineer => 'Support Engineer',
             self::PackagingLineOperator => 'Packaging Line Operator',
             self::SerializationSystemsEngineer => 'Serialization Systems Engineer',
             self::MasterDataAdministrator => 'Master Data Administrator',
@@ -61,12 +64,14 @@ enum TenantRole: string
         $personas = match ($profile) {
             TenantProfile::Manufacturer,
             TenantProfile::Prepackager => [
+                self::SupportEngineer,
                 self::PackagingLineOperator,
                 self::SerializationSystemsEngineer,
                 self::MasterDataAdministrator,
                 self::CmoIntegrationManager,
             ],
             TenantProfile::Logistics3pl => [
+                self::SupportEngineer,
                 self::InboundExceptionCoordinator,
                 self::WmsIntegrationSpecialist,
                 self::OutboundPickAndPackLead,
@@ -74,18 +79,25 @@ enum TenantRole: string
             ],
             TenantProfile::DrugWholesaler,
             TenantProfile::DentalMedicalSupply => [
+                self::SupportEngineer,
+                self::ReceivingTechnician,
+                self::OutboundPickAndPackLead,
+                self::InboundExceptionCoordinator,
                 self::AtpVerificationManager,
                 self::VrsAnalyst,
                 self::CorporateComplianceAuditor,
                 self::BulkExceptionsManager,
             ],
             TenantProfile::Pharmacy => [
+                self::SupportEngineer,
                 self::ReceivingTechnician,
                 self::DispensingPharmacist,
                 self::PharmacyInventoryManager,
                 self::PharmacySystemAdministrator,
             ],
-            TenantProfile::BuyingGroup => [],
+            TenantProfile::BuyingGroup => [
+                self::SupportEngineer,
+            ],
         };
 
         return [self::Owner, ...$personas];
@@ -99,5 +111,27 @@ enum TenantRole: string
         return collect(self::forProfile($profile))
             ->mapWithKeys(fn (self $role): array => [$role->value => $role->label()])
             ->all();
+    }
+
+    /**
+     * Least-privilege JIT default for SSO-created users (never Owner).
+     */
+    public static function jitDefaultForProfile(TenantProfile $profile): self
+    {
+        $roles = self::forProfile($profile);
+
+        foreach ([
+            self::ReceivingTechnician,
+            self::PackagingLineOperator,
+            self::OutboundPickAndPackLead,
+            self::MasterDataAdministrator,
+            self::SupportEngineer,
+        ] as $candidate) {
+            if (in_array($candidate, $roles, true)) {
+                return $candidate;
+            }
+        }
+
+        return self::SupportEngineer;
     }
 }

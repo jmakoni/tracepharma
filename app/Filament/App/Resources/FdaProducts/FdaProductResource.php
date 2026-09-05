@@ -15,11 +15,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class FdaProductResource extends Resource
+class FdaProductResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = FdaProduct::class;
 
@@ -37,7 +38,7 @@ class FdaProductResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -98,5 +99,10 @@ class FdaProductResource extends Resource
             'index' => ListFdaProducts::route('/'),
             'view' => ViewFdaProduct::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.products';
     }
 }

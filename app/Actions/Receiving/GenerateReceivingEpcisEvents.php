@@ -13,6 +13,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Rules\ValidGln;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
@@ -754,10 +755,16 @@ final class GenerateReceivingEpcisEvents
                 );
             }
 
+            if (ValidGln::normalize($siteGln) === null) {
+                throw new DomainException(
+                    'Cannot author receiving EPCIS: receive site GLN fails the GS1 check digit (fix the site GLN so it matches its SGLN).',
+                );
+            }
+
             $sglnUrn = $this->resolveSiteSglnUrn($session, $siteGln);
             if ($sglnUrn === null) {
                 throw new DomainException(
-                    'Cannot author receiving EPCIS: site GLN is set but SGLN could not be built (organization company prefix required).',
+                    'Cannot author receiving EPCIS: site GLN is set but SGLN could not be built (organization company prefix required, or site GLN/SGLN mismatch).',
                 );
             }
 

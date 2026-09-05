@@ -11,6 +11,10 @@ use Illuminate\Support\Str;
  *
  * Loaded via composer autoload "files" + classmap exclusion of the vendor trait.
  *
+ * Closures must be stored as-is (not wrapped). A wrapper Closure binds `$this` to the
+ * Action instance that called label(), so after ActionGroup::getClone() + record()
+ * evaluate() would run on the template Action (record=null) and TypeError typed params.
+ *
  * @see vendor/filament/actions/src/Concerns/HasLabel.php
  */
 trait HasLabel
@@ -42,13 +46,6 @@ trait HasLabel
     {
         if (is_string($label)) {
             $label = Str::ucwords($label);
-        } elseif ($label instanceof Closure) {
-            $original = $label;
-            $label = function () use ($original): string|Htmlable|null {
-                $resolved = $this->evaluate($original);
-
-                return is_string($resolved) ? Str::ucwords($resolved) : $resolved;
-            };
         }
 
         $this->label = $label;

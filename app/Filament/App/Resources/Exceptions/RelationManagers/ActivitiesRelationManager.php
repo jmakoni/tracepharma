@@ -56,8 +56,32 @@ class ActivitiesRelationManager extends RelationManager
                 TextColumn::make('body')
                     ->wrap()
                     ->limit(80)
+                    ->markdown()
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—'),
+                TextColumn::make('meta')
+                    ->label('Details')
+                    ->formatStateUsing(function (mixed $state): string {
+                        if (! is_array($state) || $state === []) {
+                            return '—';
+                        }
+
+                        if (($state['source'] ?? null) === 'supplier_apply_form') {
+                            $parts = array_filter([
+                                filled($state['corrected_reference'] ?? null) ? 'Ref: '.$state['corrected_reference'] : null,
+                                filled($state['gtin'] ?? null) ? 'GTIN: '.$state['gtin'] : null,
+                                filled($state['serial'] ?? null) ? 'SN: '.$state['serial'] : null,
+                                filled($state['lot'] ?? null) ? 'Lot: '.$state['lot'] : null,
+                                filled($state['expiry'] ?? null) ? 'Exp: '.$state['expiry'] : null,
+                            ]);
+
+                            return $parts !== [] ? implode(' · ', $parts) : 'Apply form';
+                        }
+
+                        return '—';
+                    })
+                    ->wrap()
+                    ->toggleable(),
             ])
             ->defaultSort('created_at', 'desc')
             ->paginated([10, 25, 50])

@@ -114,7 +114,7 @@ final class ReprocessEpcisDocument
                 // Calling handle() directly skips the job's WithoutOverlapping queue
                 // middleware, so an equivalent lock is taken here to keep a concurrent
                 // reprocess of the same document from racing this synchronous run.
-                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
+                EpcisCacheLock::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($job): void {
                     $job->handle(app(EpcisIngestionService::class));
                 });
             } else {

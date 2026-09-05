@@ -11,7 +11,7 @@ use App\Models\SsccLabel;
 use App\Support\Tracing\AssetTrackingUrl;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;

@@ -199,25 +199,212 @@ XML;
             @unlink($firstTmp);
             @unlink($secondTmp);
         } finally {
-            if (tenancy()->initialized) {
-                foreach (array_filter([$firstDocumentId, $secondDocumentId]) as $documentId) {
-                    EpcisException::query()->where('document_id', $documentId)->delete();
-                    EpcisDocument::query()->whereKey($documentId)->delete();
-                }
-
-                $epc = Epc::query()->where('epc_uri', 'urn:epc:id:sgtin:030116.0200116.10000082008888')->first();
-                if ($epc !== null && ! DB::table('event_epcs')->where('epc_id', $epc->id)->exists()) {
-                    EpcIlmd::query()->where('epc_id', $epc->id)->delete();
-                    $epc->delete();
-                }
-
-                tenancy()->end();
-            }
+            $this->cleanupSharedIlmdDocs(
+                [$firstDocumentId, $secondDocumentId],
+                'urn:epc:id:sgtin:030116.0200116.10000082008888',
+            );
         }
     }
 
-    private function commissioningXml(string $uuid, string $epcUri, string $lot, string $expiry): string
+    #[Test]
+    public function shared_epc_ilmd_keeps_existing_lot_expiry_when_incoming_blank(): void
     {
+        $this->initializeDemo2Tenant();
+
+        $firstDocumentId = null;
+        $secondDocumentId = null;
+        $uri = 'urn:epc:id:sgtin:030116.0200116.10000082007777';
+
+        try {
+            $this->assertTrue(Schema::hasTable('epc_ilmd'));
+
+            $firstUuid = (string) str()->uuid();
+            $secondUuid = (string) str()->uuid();
+
+            $firstXml = $this->commissioningXml($firstUuid, $uri, 'LOT-KEEP', '2029-01-31');
+            $secondXml = $this->commissioningXml($secondUuid, $uri, '', '');
+
+            $firstTmp = tempnam(sys_get_temp_dir(), 'epcis_ilmd_blank1_');
+            $secondTmp = tempnam(sys_get_temp_dir(), 'epcis_ilmd_blank2_');
+            $this->assertNotFalse($firstTmp);
+            $this->assertNotFalse($secondTmp);
+            file_put_contents($firstTmp, $firstXml);
+            file_put_contents($secondTmp, $secondXml);
+
+            $first = app(IngestEpcisXmlDocument::class)->handle($firstTmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'ilmd_blank_incoming_a.xml',
+            ]);
+            $firstDocumentId = (int) $first->getKey();
+
+            $second = app(IngestEpcisXmlDocument::class)->handle($secondTmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'ilmd_blank_incoming_b.xml',
+            ]);
+            $secondDocumentId = (int) $second->getKey();
+
+            $epc = Epc::query()->where('epc_uri', $uri)->first();
+            $this->assertNotNull($epc);
+
+            $shared = EpcIlmd::query()->where('epc_id', $epc->id)->first();
+            $this->assertNotNull($shared);
+            $this->assertSame('LOT-KEEP', $shared->lot_number);
+            $this->assertSame('2029-01-31', $shared->expiry_date?->format('Y-m-d'));
+
+            $signal = EpcisException::query()
+                ->where('document_id', $second->id)
+                ->where('epc_id', $epc->id)
+                ->where('exception_type', 'LOT_MISMATCH')
+                ->where('status', 'open')
+                ->first();
+            $this->assertNull($signal, 'Blank incoming is a fill, not a conflict');
+
+            @unlink($firstTmp);
+            @unlink($secondTmp);
+        } finally {
+            $this->cleanupSharedIlmdDocs([$firstDocumentId, $secondDocumentId], $uri);
+        }
+    }
+
+    #[Test]
+    public function shared_epc_ilmd_keeps_extended_fields_on_lot_expiry_conflict(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $firstDocumentId = null;
+        $secondDocumentId = null;
+        $uri = 'urn:epc:id:sgtin:030116.0200116.10000082006666';
+
+        try {
+            $this->assertTrue(Schema::hasTable('epc_ilmd'));
+
+            $firstUuid = (string) str()->uuid();
+            $secondUuid = (string) str()->uuid();
+
+            $firstXml = $this->commissioningXml(
+                $firstUuid,
+                $uri,
+                'LOT-FIRST',
+                '2029-01-31',
+                manufacturingDate: '2026-02-01',
+                bestBeforeDate: '2029-11-30',
+                additionalId: 'ADD-FIRST',
+                sellByDate: '2029-10-31',
+            );
+            $secondXml = $this->commissioningXml(
+                $secondUuid,
+                $uri,
+                'LOT-SECOND',
+                '2030-06-30',
+                manufacturingDate: '2027-03-15',
+                bestBeforeDate: '2030-05-01',
+                additionalId: 'ADD-SECOND',
+                sellByDate: '2030-04-01',
+            );
+
+            $firstTmp = tempnam(sys_get_temp_dir(), 'epcis_ilmd_ext1_');
+            $secondTmp = tempnam(sys_get_temp_dir(), 'epcis_ilmd_ext2_');
+            $this->assertNotFalse($firstTmp);
+            $this->assertNotFalse($secondTmp);
+            file_put_contents($firstTmp, $firstXml);
+            file_put_contents($secondTmp, $secondXml);
+
+            $first = app(IngestEpcisXmlDocument::class)->handle($firstTmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'ilmd_conflict_extended_a.xml',
+            ]);
+            $firstDocumentId = (int) $first->getKey();
+
+            $second = app(IngestEpcisXmlDocument::class)->handle($secondTmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'ilmd_conflict_extended_b.xml',
+            ]);
+            $secondDocumentId = (int) $second->getKey();
+
+            $epc = Epc::query()->where('epc_uri', $uri)->first();
+            $this->assertNotNull($epc);
+
+            $shared = EpcIlmd::query()->where('epc_id', $epc->id)->first();
+            $this->assertNotNull($shared);
+            $this->assertSame('LOT-FIRST', $shared->lot_number);
+            $this->assertSame('2029-01-31', $shared->expiry_date?->format('Y-m-d'));
+            $this->assertSame('2026-02-01', $shared->manufacturing_date?->format('Y-m-d'));
+            $this->assertSame('2029-11-30', $shared->best_before_date?->format('Y-m-d'));
+            $this->assertSame('ADD-FIRST', $shared->additional_id);
+            $this->assertSame(['sellByDate' => '2029-10-31'], $shared->extra_json);
+
+            $secondEvent = EpcisEvent::query()
+                ->where('document_id', $second->id)
+                ->where('event_type', 'ObjectEvent')
+                ->first();
+            $this->assertNotNull($secondEvent);
+
+            $eventIlmd = EventEpcIlmd::query()
+                ->where('event_id', $secondEvent->id)
+                ->where('epc_id', $epc->id)
+                ->first();
+            $this->assertNotNull($eventIlmd);
+            $this->assertSame('LOT-SECOND', $eventIlmd->lot_number);
+            $this->assertSame('2030-06-30', $eventIlmd->expiry_date?->format('Y-m-d'));
+            $this->assertSame('2027-03-15', $eventIlmd->manufacturing_date?->format('Y-m-d'));
+            $this->assertSame('2030-05-01', $eventIlmd->best_before_date?->format('Y-m-d'));
+            $this->assertSame('ADD-SECOND', $eventIlmd->additional_id);
+            $this->assertSame(['sellByDate' => '2030-04-01'], $eventIlmd->extra_json);
+
+            @unlink($firstTmp);
+            @unlink($secondTmp);
+        } finally {
+            $this->cleanupSharedIlmdDocs([$firstDocumentId, $secondDocumentId], $uri);
+        }
+    }
+
+    /**
+     * @param  list<int|null>  $documentIds
+     */
+    private function cleanupSharedIlmdDocs(array $documentIds, string $epcUri): void
+    {
+        if (! tenancy()->initialized) {
+            return;
+        }
+
+        foreach (array_filter($documentIds) as $documentId) {
+            EpcisException::query()->where('document_id', $documentId)->delete();
+            EpcisDocument::query()->whereKey($documentId)->delete();
+        }
+
+        $epc = Epc::query()->where('epc_uri', $epcUri)->first();
+        if ($epc !== null && ! DB::table('event_epcs')->where('epc_id', $epc->id)->exists()) {
+            EpcIlmd::query()->where('epc_id', $epc->id)->delete();
+            $epc->delete();
+        }
+
+        tenancy()->end();
+    }
+
+    private function commissioningXml(
+        string $uuid,
+        string $epcUri,
+        string $lot,
+        string $expiry,
+        ?string $manufacturingDate = null,
+        ?string $bestBeforeDate = null,
+        ?string $additionalId = null,
+        ?string $sellByDate = null,
+    ): string {
+        $extraIlmd = '';
+        if ($manufacturingDate !== null && $manufacturingDate !== '') {
+            $extraIlmd .= "\n            <cbvmda:manufacturingDate>{$manufacturingDate}</cbvmda:manufacturingDate>";
+        }
+        if ($bestBeforeDate !== null && $bestBeforeDate !== '') {
+            $extraIlmd .= "\n            <cbvmda:bestBeforeDate>{$bestBeforeDate}</cbvmda:bestBeforeDate>";
+        }
+        if ($additionalId !== null && $additionalId !== '') {
+            $extraIlmd .= "\n            <cbvmda:additionalId>{$additionalId}</cbvmda:additionalId>";
+        }
+        if ($sellByDate !== null && $sellByDate !== '') {
+            $extraIlmd .= "\n            <cbvmda:sellByDate>{$sellByDate}</cbvmda:sellByDate>";
+        }
+
         return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <epcis:EPCISDocument
@@ -263,7 +450,7 @@ XML;
         <extension>
           <ilmd>
             <cbvmda:lotNumber>{$lot}</cbvmda:lotNumber>
-            <cbvmda:itemExpirationDate>{$expiry}</cbvmda:itemExpirationDate>
+            <cbvmda:itemExpirationDate>{$expiry}</cbvmda:itemExpirationDate>{$extraIlmd}
           </ilmd>
         </extension>
       </ObjectEvent>

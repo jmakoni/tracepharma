@@ -182,9 +182,87 @@ class PlatformSettings
         return $normalized;
     }
 
+    public static function ssoAdminEnabled(): bool
+    {
+        return filter_var(self::get('sso.admin.enabled', '0'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public static function ssoAdminOnly(): bool
+    {
+        return filter_var(self::get('sso.admin.sso_only', '0'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public static function ssoAdminProvider(): string
+    {
+        return (string) self::get('sso.admin.provider', 'entra');
+    }
+
+    public static function ssoAdminIssuer(): string
+    {
+        return (string) self::get('sso.admin.issuer', '');
+    }
+
+    public static function ssoAdminClientId(): string
+    {
+        return (string) self::get('sso.admin.client_id', '');
+    }
+
+    public static function ssoAdminClientSecret(): string
+    {
+        return (string) self::get('sso.admin.client_secret', '');
+    }
+
+    public static function ssoAdminEntraTenantId(): ?string
+    {
+        $value = self::get('sso.admin.entra_tenant_id');
+
+        return filled($value) ? (string) $value : null;
+    }
+
+    /**
+     * @param  array{
+     *     enabled?: bool,
+     *     sso_only?: bool,
+     *     provider?: string,
+     *     issuer?: string,
+     *     client_id?: string,
+     *     client_secret?: string|null,
+     *     entra_tenant_id?: string|null
+     * }  $data
+     */
+    public static function saveSsoAdminConfig(array $data): void
+    {
+        if (array_key_exists('enabled', $data)) {
+            self::put('sso.admin.enabled', ($data['enabled'] ?? false) ? '1' : '0');
+        }
+        if (array_key_exists('sso_only', $data)) {
+            self::put('sso.admin.sso_only', ($data['sso_only'] ?? false) ? '1' : '0');
+        }
+        if (array_key_exists('provider', $data)) {
+            self::put('sso.admin.provider', (string) ($data['provider'] ?? 'entra'));
+        }
+        if (array_key_exists('issuer', $data)) {
+            self::put('sso.admin.issuer', trim((string) ($data['issuer'] ?? '')));
+        }
+        if (array_key_exists('client_id', $data)) {
+            self::put('sso.admin.client_id', trim((string) ($data['client_id'] ?? '')));
+        }
+        if (array_key_exists('client_secret', $data) && filled($data['client_secret'])) {
+            self::put('sso.admin.client_secret', trim((string) $data['client_secret']));
+        }
+        if (array_key_exists('entra_tenant_id', $data)) {
+            $entra = $data['entra_tenant_id'];
+            if (filled($entra)) {
+                self::put('sso.admin.entra_tenant_id', trim((string) $entra));
+            } else {
+                self::forget('sso.admin.entra_tenant_id');
+            }
+        }
+    }
+
     private static function isEncryptedKey(string $key): bool
     {
-        return str_ends_with($key, 'hub_token');
+        return str_ends_with($key, 'hub_token') || str_ends_with($key, 'client_secret');
     }
 
     private static function cacheKey(string $key): string

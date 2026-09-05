@@ -90,6 +90,14 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('INVALID_GTIN_CHECK_DIGIT', 'Invalid GTIN Check Digit', ExceptionTypeCategory::MasterData, ExceptionSeverity::High, 'GTIN fails GS1 check digit validation', 'data_issues'),
             $this->row('INVALID_SSCC_CHECK_DIGIT', 'Invalid SSCC Check Digit', ExceptionTypeCategory::MasterData, ExceptionSeverity::High, 'SSCC fails check digit validation', 'data_issues'),
             $this->row('UNKNOWN_GLN', 'Unknown / Unrecognized GLN', ExceptionTypeCategory::MasterData, ExceptionSeverity::High, 'GLN not recognized by system or trading partner', 'data_issues'),
+            $this->row(
+                'SCHEDULED_PRODUCT_MISSING_DEA',
+                'Scheduled product missing DEA',
+                ExceptionTypeCategory::MasterData,
+                ExceptionSeverity::Medium,
+                'DEA-scheduled product present and seller or destination has no DEA registration',
+                'data_issues',
+            ),
             $this->row('INVALID_COMPANY_PREFIX', 'Invalid Company Prefix Length', ExceptionTypeCategory::MasterData, ExceptionSeverity::High, 'Company Prefix length does not match GCP rules', 'data_issues'),
             $this->row('LEADING_ZERO_STRIPPED', 'Leading Zeros Stripped', ExceptionTypeCategory::MasterData, ExceptionSeverity::Medium, 'Serial or lot number had leading zeros removed', 'data_issues'),
             $this->row('GTIN_SERIAL_MISMATCH', 'GTIN + Serial Combination Conflict', ExceptionTypeCategory::Identifier, ExceptionSeverity::High, 'Same serial used on different GTINs', 'data_issues'),
@@ -132,6 +140,7 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('TIMING_INVERSION', 'Timing Inversion', ExceptionTypeCategory::Timing, ExceptionSeverity::High, 'Commissioning event after shipping event', 'data_issues'),
             $this->row('COMMISSION_AFTER_SHIP', 'Commissioned After Shipping', ExceptionTypeCategory::Timing, ExceptionSeverity::Critical, 'Serial commissioned after it was already shipped', 'data_issues'),
             $this->row('EVENTS_OUT_OF_ORDER', 'Events Out of Chronological Order', ExceptionTypeCategory::Timing, ExceptionSeverity::Medium, 'Events received in wrong sequence', 'data_issues'),
+            $this->row('PACK_HIERARCHY_TIME_INVERSION', 'Pack Hierarchy Time Inversion', ExceptionTypeCategory::Timing, ExceptionSeverity::High, 'EPC packed into a parent before its own child packing event', 'data_issues'),
             $this->row('SHIP_BEFORE_COMMISSION', 'Shipped Before Commissioning', ExceptionTypeCategory::Timing, ExceptionSeverity::Critical, 'Shipping event exists with no prior commissioning', 'product_no_data'),
             $this->row('DECOMMISSION_AFTER_SHIP', 'Decommissioned After Shipping', ExceptionTypeCategory::Timing, ExceptionSeverity::High, 'Serial decommissioned after it left the facility', 'data_issues'),
 
@@ -145,6 +154,10 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('MISSING_SOURCE_DESTINATION', 'Missing Source/Destination', ExceptionTypeCategory::Transmission, ExceptionSeverity::High, 'Required sourceList or destinationList missing', 'data_issues'),
             $this->row('SBDH_SOURCE_OWNING_PARTY_MISMATCH', 'SBDH / Source Owning Party Mismatch', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'SBDH Sender GLN does not match shipping event source owning_party GLN', 'data_issues'),
             $this->row('MISSING_BIZ_TRANSACTION', 'Missing Business Transaction Reference', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'PO/ASN reference missing when required', 'data_issues'),
+            $this->row('ASN_SHIPMENT_FILE_ADDED', 'ASN Shipment File Added', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'Additional inbound EPCIS file joined an existing ASN shipment', 'data_no_product'),
+            $this->row('ASN_SHIPMENT_PO_MISMATCH', 'ASN Shipment PO Mismatch', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'Inbound file ASN matches a shipment but customer PO conflicts', 'data_issues'),
+            $this->row('DESTINATION_OWNING_PARTY_MISMATCH', 'Destination Owning Party Mismatch', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'Sold-to / destination owning party GLN is not this tenant', 'data_issues'),
+            $this->row('DESTINATION_LOCATION_MISMATCH', 'Destination Location Mismatch', ExceptionTypeCategory::Transmission, ExceptionSeverity::Medium, 'Ship-to / destination location GLN is not this tenant', 'data_issues'),
 
             // Process & DSCSA Compliance
             $this->row('MISSING_COMMISSIONING', 'Missing Commissioning Event', ExceptionTypeCategory::Process, ExceptionSeverity::Critical, 'Serial exists in supply chain with no commissioning', 'product_no_data'),

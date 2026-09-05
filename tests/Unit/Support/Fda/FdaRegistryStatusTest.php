@@ -123,4 +123,17 @@ class FdaRegistryStatusTest extends TestCase
         FdaWddFacility::query()->where('name', 'SSOR REG DC')->delete();
         FdaOrganization::query()->where('canonical_name', 'SSOR REG AUTH WDD')->delete();
     }
+
+    #[Test]
+    public function dea_schedule_label_normalizes_cii_through_cv(): void
+    {
+        $this->assertSame('CII', FdaRegistryStatus::deaScheduleLabel('2'));
+        $this->assertSame('CII', FdaRegistryStatus::deaScheduleLabel('C-II'));
+        $this->assertSame('CIII', FdaRegistryStatus::deaScheduleLabel('III'));
+        $this->assertSame('CIV', FdaRegistryStatus::deaScheduleLabel('CIV'));
+        $this->assertSame('CV', FdaRegistryStatus::deaScheduleLabel('c5'));
+        $this->assertNull(FdaRegistryStatus::deaScheduleLabel('CI'));
+        $this->assertNull(FdaRegistryStatus::deaScheduleLabel('junk'));
+        $this->assertNull(FdaRegistryStatus::deaScheduleLabel(null));
+    }
 }

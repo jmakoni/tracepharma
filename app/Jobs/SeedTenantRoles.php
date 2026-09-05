@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\TenantProfile;
 use App\Models\Tenant;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,6 +20,10 @@ class SeedTenantRoles implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    public int $timeout = 120;
+
     public function __construct(
         protected TenantWithDatabase $tenant,
     ) {}
@@ -32,7 +37,7 @@ class SeedTenantRoles implements ShouldQueue
             ? $tenant->profile
             : TenantProfile::tryFrom((string) $tenant->profile) ?? TenantProfile::Pharmacy;
 
-        $tenant->run(function () use ($seeder, $profile): void {
+        TenantRunner::run($tenant, function () use ($seeder, $profile): void {
             $seeder->seedForProfile($profile);
         });
     }

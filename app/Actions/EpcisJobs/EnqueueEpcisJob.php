@@ -11,12 +11,12 @@ use App\Models\EpcisJob;
 use App\Models\Tenant;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\EpcisJobs\EpcisJobLogger;
 use App\Support\EpcisJobs\EpcisJobSla;
 use App\Support\EpcisJobs\ReleaseEpcisJobUniqueLock;
 use App\Support\EpcisJobs\ResolveEpcisJobSources;
 use App\Support\Tenancy\TenantKillSwitches;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -57,7 +57,7 @@ final class EnqueueEpcisJob
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
         $lockKey = 'epcis-enqueue:'.$tenantId.':'.$document->getKey();
 
-        return Cache::lock($lockKey, 30)->block(10, function () use ($document, $sources, $requestedBy, $forceRequeue): EpcisJob {
+        return EpcisCacheLock::lock($lockKey, 30)->block(10, function () use ($document, $sources, $requestedBy, $forceRequeue): EpcisJob {
             $created = false;
 
             $job = DB::transaction(function () use ($document, $sources, $requestedBy, &$created): EpcisJob {

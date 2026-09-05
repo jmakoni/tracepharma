@@ -12,10 +12,10 @@ use App\Models\TracingRequestNotification;
 use App\Models\User;
 use App\Services\Tracing\TracingRequestService;
 use App\Services\Tracing\TracingSlaService;
+use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use InvalidArgumentException;
@@ -204,10 +204,9 @@ class ViewTracingRequest extends ViewRecord
                         ], true)
                     ))
                 ->schema([
-                    Textarea::make('summary')
+                    ProseEditor::make('summary')
                         ->label('Response summary')
                         ->required()
-                        ->rows(4)
                         ->default(fn (): ?string => data_get($this->getRecord()->response_metadata, 'summary'))
                         ->helperText('What you told the requestor / regulator.'),
                     TextInput::make('evidence_reference')
@@ -215,9 +214,8 @@ class ViewTracingRequest extends ViewRecord
                         ->maxLength(255)
                         ->default(fn (): ?string => data_get($this->getRecord()->response_metadata, 'evidence_reference'))
                         ->placeholder('Optional: EPCIS doc #, attachment ID, file name…'),
-                    Textarea::make('evidence_notes')
+                    ProseEditor::make('evidence_notes')
                         ->label('Evidence notes')
-                        ->rows(3)
                         ->default(fn (): ?string => data_get($this->getRecord()->response_metadata, 'evidence_notes'))
                         ->placeholder('Optional supporting notes for the audit trail.'),
                 ])

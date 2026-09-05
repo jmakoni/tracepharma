@@ -1,0 +1,86 @@
+{
+  "@context": [
+    "https://ref.gs1.org/standards/epcis/2.0.0/epcis-context.jsonld"
+  ],
+  "type": "EPCISDocument",
+  "schemaVersion": "2.0",
+  "creationDate": "2026-07-15T20:15:49.056Z",
+  "epcisHeader": {
+    "standardBusinessDocumentHeader": {
+      "headerVersion": "1.0",
+      "sender": {
+        "identifier": "0301160000009"
+      },
+      "receiver": {
+        "identifier": "0096295000009"
+      },
+      "documentIdentification": {
+        "standard": "EPCglobal",
+        "typeVersion": "1.0",
+        "instanceIdentifier": "22222222-3333-4444-5555-666666666666",
+        "type": "Events",
+        "creationDateAndTime": "2026-07-15T20:15:49.056Z"
+      }
+    }
+  },
+  "epcisBody": {
+    "eventList": [
+      {
+        "type": "ObjectEvent",
+        "eventTime": "2026-06-18T23:27:32.897Z",
+        "eventTimeZoneOffset": "-05:00",
+        "epcList": [
+          "urn:epc:id:sgtin:030116.0200116.10000082001560"
+        ],
+        "action": "ADD",
+        "bizStep": "commissioning",
+        "disposition": "active",
+        "readPoint": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        },
+        "bizLocation": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        },
+        "ilmd": {
+          "lotNumber": "606412T",
+          "itemExpirationDate": "2029-05-31"
+        }
+      },
+      {
+        "type": "ObjectEvent",
+        "eventTime": "2026-07-15T18:00:00.000Z",
+        "eventTimeZoneOffset": "-05:00",
+        "epcList": [
+          "urn:epc:id:sscc:030116.01001227052"
+        ],
+        "action": "ADD",
+        "bizStep": "https://ref.gs1.org/cbv/BizStep-commissioning",
+        "disposition": "https://ref.gs1.org/cbv/Disp-active",
+        "readPoint": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        },
+        "bizLocation": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        }
+      },
+      {
+        "type": "AggregationEvent",
+        "eventTime": "2026-07-15T19:24:20.000Z",
+        "eventTimeZoneOffset": "-05:00",
+        "parentID": "urn:epc:id:sscc:030116.01001227052",
+        "childEPCs": [
+          "urn:epc:id:sgtin:030116.0200116.10000082001560"
+        ],
+        "action": "ADD",
+        "bizStep": "packing",
+        "disposition": "in_progress",
+        "readPoint": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        },
+        "bizLocation": {
+          "id": "urn:epc:id:sgln:030116.000000.0"
+        }
+      }
+    ]
+  }
+}

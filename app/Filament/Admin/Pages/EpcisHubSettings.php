@@ -12,7 +12,7 @@ use App\Support\PlatformSettings;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -22,6 +22,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Artisan;
 use UnitEnum;
@@ -29,7 +30,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class EpcisHubSettings extends Page
+class EpcisHubSettings extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedServerStack;
 
@@ -76,15 +77,24 @@ class EpcisHubSettings extends Page
                 ->modalHeading('Check aggregation link FK drift')
                 ->modalDescription('Run detect-only doctor across all tenants (no --fix). Results appear on the admin Hub health widget.')
                 ->action(function (): void {
-                    Artisan::call('tracepharma:doctor-aggregation-link-fk');
+                    $exitCode = Artisan::call('tracepharma:doctor-aggregation-link-fk');
 
                     $output = trim(Artisan::output());
 
-                    Notification::make()
-                        ->title('Aggregation link FK doctor finished')
-                        ->body($output !== '' ? $output : 'Inspect complete. See Hub health on the dashboard.')
-                        ->success()
-                        ->send();
+                    $notification = Notification::make()
+                        ->body($output !== '' ? $output : 'Inspect complete. See Hub health on the dashboard.');
+
+                    if ($exitCode !== 0) {
+                        $notification
+                            ->title('Aggregation link FK doctor found drift')
+                            ->warning();
+                    } else {
+                        $notification
+                            ->title('Aggregation link FK doctor finished')
+                            ->success();
+                    }
+
+                    $notification->send();
                 }),
         ];
     }
@@ -257,5 +267,10 @@ class EpcisHubSettings extends Page
                 ->submit('save')
                 ->keyBindings(['mod+s']),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.epcis-hub-settings';
     }
 }

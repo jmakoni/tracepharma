@@ -10,7 +10,9 @@ use App\Models\User;
 use App\Support\Admin\AdminActivityLogger;
 use App\Support\Auth\Permissions;
 use App\Support\Tenancy\TenantAccess;
+use App\Support\Tenancy\TenantRunner;
 use DomainException;
+use Illuminate\Support\Str;
 use Stancl\Tenancy\Database\Models\ImpersonationToken;
 
 final class StartTenantUserImpersonation
@@ -34,7 +36,7 @@ final class StartTenantUserImpersonation
             throw new DomainException('An impersonation reason is required.');
         }
 
-        $target = $tenant->run(function () use ($userId): ?User {
+        $target = TenantRunner::run($tenant, function () use ($userId): ?User {
             return User::query()->find($userId);
         });
 
@@ -50,6 +52,7 @@ final class StartTenantUserImpersonation
         $ip = $ip ?? request()->ip();
 
         $token = ImpersonationToken::create([
+            'public_id' => (string) Str::uuid(),
             'tenant_id' => $tenant->getTenantKey(),
             'admin_id' => $admin->getKey(),
             'reason' => $reason,
@@ -68,6 +71,6 @@ final class StartTenantUserImpersonation
             'token_hash' => substr(hash('sha256', $token->token), 0, 16),
         ]);
 
-        return 'https://'.$domain.'/impersonate/'.$token->token;
+        return 'https://'.$domain.'/impersonate/'.$token->public_id.'/redeem';
     }
 }

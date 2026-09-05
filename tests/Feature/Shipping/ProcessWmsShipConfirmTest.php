@@ -11,12 +11,13 @@ use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
-use App\Support\Gs1\Sgln;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Gs1\Sgln;
 use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Support\Str;
@@ -223,6 +224,41 @@ class ProcessWmsShipConfirmTest extends TestCase
                 'asn_number' => 'ASN-002',
                 'customer_po' => 'PO-100',
                 'invoice_number' => 'INV-900',
+            ], $key);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function idempotency_replay_rejects_expected_count_change_with_conflict(): void
+    {
+        $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+
+            $site = $this->createShipSite();
+            $this->makeEpcShippableAtSite($site);
+
+            $key = 'wms-expected-idem-'.uniqid('', true);
+
+            $first = app(ProcessWmsShipConfirm::class)->handle([
+                'scans' => [self::SSCC_URI],
+                'complete' => false,
+                'expected_count' => 2,
+            ], $key);
+            $this->sessionIds[] = (int) $first['session_id'];
+
+            $session = OutboundShippingSession::query()->findOrFail($first['session_id']);
+            $this->assertSame(2, (int) $session->expected_count);
+
+            $this->expectException(WmsIdempotencyConflictException::class);
+
+            app(ProcessWmsShipConfirm::class)->handle([
+                'scans' => [self::SSCC_URI],
+                'complete' => false,
+                'expected_count' => 99,
             ], $key);
         } finally {
             $this->cleanup();
@@ -584,7 +620,7 @@ class ProcessWmsShipConfirmTest extends TestCase
             }
 
             if ($this->receivingSessionIds !== []) {
-                \App\Models\Receiving\ReceivingSession::query()->whereKey($this->receivingSessionIds)->delete();
+                ReceivingSession::query()->whereKey($this->receivingSessionIds)->delete();
                 $this->receivingSessionIds = [];
             }
 

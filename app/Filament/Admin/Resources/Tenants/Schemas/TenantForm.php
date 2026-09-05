@@ -4,8 +4,10 @@ namespace App\Filament\Admin\Resources\Tenants\Schemas;
 
 use App\Actions\Tenants\ProvisionTenantOnEnvironment;
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Models\Tenant;
+use App\Support\Auth\OidcProvider;
 use App\Support\Auth\Permissions;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
@@ -70,12 +72,12 @@ class TenantForm
                             ->rule(fn (Get $get, ?Tenant $record): \Closure => self::identityConflictRule($get, $record, 'company_prefix'))
                             ->helperText('6–11 digit GS1 Company Prefix used to build SGLNs from the company GLN.'),
                         Select::make('receiving_state')
-                            ->label('Receiving state')
+                            ->label('Preferred receiving state')
                             ->options(UsState::selectOptions())
                             ->searchable()
                             ->nullable()
                             ->native(false)
-                            ->helperText('Used to evaluate partner ATP licenses for your location'),
+                            ->helperText('Optional badge label / empty-footprint fallback. Partner ATP uses organization facility jurisdictions.'),
                         TextInput::make('tenant_slug')
                             ->label('Tenant slug')
                             ->helperText('Creates both stage and prod hosts: '.TenantHostname::pairHint())
@@ -189,6 +191,61 @@ class TenantForm
                         Toggle::make('kill_switch_wms_webhooks')
                             ->label('Block WMS ship-confirm webhooks')
                             ->helperText('Rejects WMS ship-confirm bridge callbacks.'),
+                    ]),
+                Section::make('Enterprise SSO (OIDC)')
+                    ->compact()
+                    ->columns(['md' => 2])
+                    ->visibleOn('edit')
+                    ->visible(fn (): bool => auth('admin')->user()?->can(Permissions::TenantsManage) ?? false)
+                    ->description('Per-tenant Microsoft Entra ID, Okta, or generic OpenID Connect. Redirect URI: https://{tenant-host}/auth/oidc/callback')
+                    ->schema([
+                        Toggle::make('sso_enabled')
+                            ->label('Enable SSO')
+                            ->live(),
+                        Toggle::make('sso_only')
+                            ->label('SSO only (hide password login)')
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        Select::make('sso_provider')
+                            ->label('Identity provider')
+                            ->options(OidcProvider::options())
+                            ->native(false)
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        TextInput::make('sso_issuer')
+                            ->label('Issuer URL')
+                            ->url()
+                            ->maxLength(255)
+                            ->helperText('Entra: https://login.microsoftonline.com/{tenant}/v2.0 — Okta: https://{org}.okta.com')
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        TextInput::make('sso_client_id')
+                            ->label('Client ID')
+                            ->maxLength(255)
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        TextInput::make('sso_client_secret')
+                            ->label('Client secret')
+                            ->password()
+                            ->revealable()
+                            ->dehydrated(fn (?string $state): bool => filled($state))
+                            ->helperText('Leave blank to keep the existing secret.')
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        TextInput::make('sso_entra_tenant_id')
+                            ->label('Entra directory (tenant) ID')
+                            ->maxLength(64)
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled') && $get('sso_provider') === OidcProvider::Entra->value),
+                        Select::make('sso_jit_default_role')
+                            ->label('JIT default role')
+                            ->options(fn (?Tenant $record): array => $record
+                                ? TenantRole::optionsForProfile(
+                                    TenantProfile::tryFrom((string) $record->profile) ?? TenantProfile::Pharmacy
+                                )
+                                : [])
+                            ->native(false)
+                            ->helperText('Assigned when SSO creates a new user. Never creates Owners automatically unless selected.')
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
+                        TextInput::make('sso_allowed_email_domains')
+                            ->label('Allowed email domains (JIT)')
+                            ->helperText('Comma-separated. Empty allows any domain. Example: acme.com, acme.co')
+                            ->visible(fn (Get $get): bool => (bool) $get('sso_enabled'))
+                            ->columnSpanFull(),
                     ]),
                 Section::make('Address')
                     ->compact()

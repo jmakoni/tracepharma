@@ -17,11 +17,12 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
 use App\Models\EpcisJob;
 use App\Models\Tenant;
+use App\Notifications\EpcisJobFailedPlatformAlert;
 use App\Services\Epcis\EpcisIngestionService;
 use App\Support\EpcisJobs\SyncInboundEpcisJobFromDocument;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
-use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -427,6 +428,21 @@ class InboundEpcisJobLedgerTest extends TestCase
         $this->assertSame('error', $document->status);
         $this->assertStringContainsString('worker died before parse', (string) $document->error_message);
         $this->assertSame(EpcisJobStatus::Error, $job->fresh()->status);
+    }
+
+    #[Test]
+    public function process_epcis_document_job_failed_dispatches_platform_alert(): void
+    {
+        Notification::fake();
+        config(['tracepharma.platform_support_email' => 'ops@example.test']);
+
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+
+        (new ProcessEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('worker died before parse'));
+
+        Notification::assertSentOnDemand(EpcisJobFailedPlatformAlert::class);
     }
 
     #[Test]

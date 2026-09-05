@@ -49,37 +49,57 @@ final class CopyConfirmedReceivingScansToSession
             ];
         }
 
-        $confirmedLines = ReceivingScanLine::query()
-            ->where('receiving_session_id', $from->getKey())
-            ->where('status', 'confirmed')
-            ->whereNotNull('epc_id')
-            ->with('epc')
-            ->orderByRaw("CASE WHEN line_role = 'parent' THEN 0 ELSE 1 END")
-            ->orderBy('id')
-            ->get();
-
         $copied = 0;
         $alreadyConfirmed = 0;
         $skipped = 0;
         $notes = [];
         $needsCompletion = false;
 
-        foreach ($confirmedLines as $sourceLine) {
-            $result = $this->copyOne($sourceLine, $from, $to, $userId, $strictManifestOnly);
+        $base = ReceivingScanLine::query()
+            ->where('receiving_session_id', $from->getKey())
+            ->where('status', 'confirmed')
+            ->whereNotNull('epc_id');
 
-            match ($result['outcome']) {
-                'copied' => $copied++,
-                'already_confirmed' => $alreadyConfirmed++,
-                default => $skipped++,
-            };
-
-            if ($result['note'] !== null) {
-                $notes[] = $result['note'];
+        foreach (['parent', 'non_parent'] as $pass) {
+            $query = (clone $base)->with('epc')->orderBy('id');
+            if ($pass === 'parent') {
+                $query->where('line_role', 'parent');
+            } else {
+                $query->where(function ($q): void {
+                    $q->where('line_role', '!=', 'parent')
+                        ->orWhereNull('line_role');
+                });
             }
 
-            if ($result['needs_completion'] ?? false) {
-                $needsCompletion = true;
-            }
+            $query->chunkById(500, function ($lines) use (
+                $from,
+                $to,
+                $userId,
+                $strictManifestOnly,
+                &$copied,
+                &$alreadyConfirmed,
+                &$skipped,
+                &$notes,
+                &$needsCompletion,
+            ): void {
+                foreach ($lines as $sourceLine) {
+                    $result = $this->copyOne($sourceLine, $from, $to, $userId, $strictManifestOnly);
+
+                    match ($result['outcome']) {
+                        'copied' => $copied++,
+                        'already_confirmed' => $alreadyConfirmed++,
+                        default => $skipped++,
+                    };
+
+                    if ($result['note'] !== null) {
+                        $notes[] = $result['note'];
+                    }
+
+                    if ($result['needs_completion'] ?? false) {
+                        $needsCompletion = true;
+                    }
+                }
+            });
         }
 
         if ($needsCompletion) {

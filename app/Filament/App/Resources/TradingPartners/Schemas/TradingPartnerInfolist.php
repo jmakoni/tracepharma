@@ -19,7 +19,7 @@ class TradingPartnerInfolist
             View::make('filament.admin.infolists.catalog-trading-partner-profile')
                 ->columnSpanFull(),
             Section::make('ATP verification')
-                ->description('Authorization is per site. Manufacturer plants use FDA DECRS; other sites need a receiving-state WDD/3PL license.')
+                ->description('Authorization is per site. Manufacturer plants use FDA DECRS; other sites need a WDD/3PL license for your organization jurisdictions.')
                 ->compact()
                 ->columnSpanFull()
                 ->schema([

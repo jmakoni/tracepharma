@@ -1,0 +1,127 @@
+{
+  "info": {
+    "name": "TracePharma WMS ship-confirm",
+    "description": "Wholesaler WMS ship-confirm webhook and Sanctum connector for outbound shipping.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://your-tenant.example.com"
+    },
+    {
+      "key": "api_token",
+      "value": "your-sanctum-token"
+    },
+    {
+      "key": "wms_api_key",
+      "value": "your-wms-bridge-api-key"
+    },
+    {
+      "key": "tenant_id",
+      "value": "your-tenant-uuid"
+    }
+  ],
+  "item": [
+    {
+      "name": "Sanctum ship-confirm",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": false,\n  \"trading_partner_id\": 1,\n  \"ship_to_gln\": \"0860000000003\",\n  \"asn\": \"ASN-1001\",\n  \"po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/wms/ship-confirm"
+      }
+    },
+    {
+      "name": "Webhook ship-confirm (X-Wms-Api-Key)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-Wms-Api-Key",
+            "value": "{{wms_api_key}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": true,\n  \"asn_number\": \"ASN-1001\",\n  \"customer_po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
+        },
+        "url": "{{base_url}}/api/webhooks/wms/{{tenant_id}}"
+      }
+    },
+    {
+      "name": "Outbound EPCIS transmit (stub)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<epcis:EPCISDocument xmlns:epcis=\"urn:epcglobal:epcis:xsd:1\">\n  <!-- Replace with a valid outbound EPCIS 1.2 document -->\n</epcis:EPCISDocument>"
+        },
+        "url": "{{base_url}}/api/v1/epcis/outbound"
+      }
+    },
+    {
+      "name": "Outbound EPCIS document (stub)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/epcis/outbound/1"
+      }
+    }
+  ]
+}

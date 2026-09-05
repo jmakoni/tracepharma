@@ -102,9 +102,12 @@ class IntegrationHealthMetrics
                 'name',
                 'transport',
                 'is_active',
+                'conformance_state',
                 'last_sent_at',
                 'last_error',
                 'trading_partner_id',
+                'settings',
+                'credentials',
             ])
             ->orderBy('name')
             ->get();

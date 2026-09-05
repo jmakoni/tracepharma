@@ -16,10 +16,11 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class DemoRequestResource extends Resource
+class DemoRequestResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = DemoRequest::class;
 
@@ -114,5 +115,10 @@ class DemoRequestResource extends Resource
             'index' => ListDemoRequests::route('/'),
             'view' => ViewDemoRequest::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'tenants.demo-requests';
     }
 }

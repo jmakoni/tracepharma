@@ -13,9 +13,9 @@ use App\Models\Site;
 use App\Support\Catalog\DisplayName;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseExpiry;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\MasterData\SiteReferences;
-use App\Support\MasterData\TenantReceivingState;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
@@ -24,7 +24,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Enums\Width;
@@ -138,7 +138,7 @@ class SitesTable
     {
         return $table
             // atpLicenses: the ATP readiness column is summarized per row.
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['tradingPartner', 'atpLicenses']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['tradingPartner', 'atpLicenses', 'principal']))
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
@@ -232,8 +232,8 @@ class SitesTable
                             EligibleReceiveSites::forOrganization()->reorder()->select('id'),
                         ),
                     ),
-                // Readiness is judged against the receiving state; renewals are due
-                // whatever state licensed them, so this filter ignores it.
+                // Readiness is judged against evaluation jurisdictions (org footprint or
+                // preferred receiving state); renewals are due whatever state licensed them.
                 Filter::make('atp_expiring_90_days')
                     ->label('License expiring within 90 days')
                     ->toggle()
@@ -249,7 +249,7 @@ class SitesTable
                     ->options(function (): array {
                         return collect(SiteAtpReadinessStatus::cases())
                             ->reject(fn (SiteAtpReadinessStatus $status): bool => $status === SiteAtpReadinessStatus::NeedsReceivingState
-                                && TenantReceivingState::resolve() !== null)
+                                && AtpLicenseRelevance::evaluationJurisdictionKeys() !== [])
                             ->mapWithKeys(fn (SiteAtpReadinessStatus $status): array => [
                                 $status->value => $status->label(),
                             ])
@@ -267,6 +267,12 @@ class SitesTable
                             SiteAtpReadinessStatus::from((string) $value),
                         );
                     }),
+                SelectFilter::make('principal_id')
+                    ->label('Principal')
+                    ->relationship('principal', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
             ])
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)

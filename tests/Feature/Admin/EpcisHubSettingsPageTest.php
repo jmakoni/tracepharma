@@ -15,6 +15,7 @@ use App\Support\PlatformSettings;
 use App\Support\TenantHostname;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -172,6 +173,26 @@ class EpcisHubSettingsPageTest extends TestCase
             ])
             ->call('save')
             ->assertHasFormErrors(['stage.host' => true]);
+    }
+
+    #[Test]
+    public function aggregation_fk_doctor_warns_when_detect_only_finds_drift(): void
+    {
+        $this->actAsAdmin(AdminRole::PlatformAdmin);
+
+        $component = Livewire::test(EpcisHubSettings::class)->assertSuccessful();
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('tracepharma:doctor-aggregation-link-fk')
+            ->andReturn(1);
+        Artisan::shouldReceive('output')->andReturn('[tenant] CASCADE drift');
+
+        $component
+            ->mountAction('runAggregationLinkFkDoctor')
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Aggregation link FK doctor found drift');
     }
 
     private function actAsAdmin(AdminRole $role): Admin

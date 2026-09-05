@@ -6,13 +6,16 @@ use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Notifications\CustomerPortalShipNotification;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Outbound\CustomerPortalService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -104,9 +107,11 @@ final class CompleteOutboundShippingSession
         /** @var OutboundShippingSession $session */
         $session = $completion['session'];
 
+        $authoredThisRequest = false;
         if ($session->status === 'completed' && $session->shipping_events_generated_at === null) {
             try {
                 $this->generateShippingEpcisEvents->handle($session, $actorId);
+                $authoredThisRequest = true;
             } catch (Throwable $e) {
                 // Authoring the EPCIS *is* the shipment as far as trading partners and
                 // regulators are concerned, so a failure here cannot be reported as a send.
@@ -131,7 +136,13 @@ final class CompleteOutboundShippingSession
         }
 
         $session = $session->refresh();
-        $this->issueCustomerPortalLink($session);
+
+        // Always provision portal access once TI is authored (including idempotent retry
+        // after author+throw). Email only when this handle newly authored — avoids
+        // re-sending a fresh signed URL on double-submit.
+        if ($session->status === 'completed' && $session->shipping_events_generated_at !== null) {
+            $this->issueCustomerPortalLink($session, sendEmail: $authoredThisRequest);
+        }
 
         return $session->refresh();
     }
@@ -140,7 +151,7 @@ final class CompleteOutboundShippingSession
      * Portal pickup is access, not identity. A link failure must not undo a send
      * that already authored transaction information.
      */
-    private function issueCustomerPortalLink(OutboundShippingSession $session): void
+    private function issueCustomerPortalLink(OutboundShippingSession $session, bool $sendEmail = true): void
     {
         $partner = $session->tradingPartner
             ?? ($session->trading_partner_id !== null
@@ -153,8 +164,48 @@ final class CompleteOutboundShippingSession
 
         try {
             $this->customerPortalService->ensureCustomerPortalLink($partner);
+            if ($sendEmail) {
+                $this->notifyPartnerPortalPickup($session, $partner);
+            }
         } catch (Throwable $e) {
             Log::warning('Customer portal link was not issued after outbound send.', [
+                'outbound_shipping_session_id' => $session->getKey(),
+                'trading_partner_id' => $partner->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Optional email-on-ship: partner contact gets a signed portal URL. Never fails the send.
+     */
+    private function notifyPartnerPortalPickup(OutboundShippingSession $session, TradingPartner $partner): void
+    {
+        if (! TenantSettings::forTenant(tenant())->emailPortalOnShipEnabled()) {
+            return;
+        }
+
+        $email = filled($partner->email) ? (string) $partner->email : null;
+
+        if ($email === null) {
+            return;
+        }
+
+        try {
+            $portalUrl = $this->customerPortalService->signedCustomerPortalUrl($partner);
+
+            (new AnonymousNotifiable)
+                ->route('mail', $email)
+                ->notify(new CustomerPortalShipNotification(
+                    partnerName: (string) $partner->name,
+                    portalUrl: $portalUrl,
+                    asnNumber: filled($session->asn_number) ? (string) $session->asn_number : null,
+                    customerPo: filled($session->customer_po) ? (string) $session->customer_po : null,
+                    tenantId: tenant()?->getKey() !== null ? (string) tenant()->getKey() : null,
+                    tenantName: tenant()?->name,
+                ));
+        } catch (Throwable $e) {
+            Log::warning('Customer portal ship email was not sent.', [
                 'outbound_shipping_session_id' => $session->getKey(),
                 'trading_partner_id' => $partner->getKey(),
                 'error' => $e->getMessage(),

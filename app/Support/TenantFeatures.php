@@ -116,6 +116,33 @@ class TenantFeatures
         return $this->profile !== TenantProfile::BuyingGroup;
     }
 
+    /**
+     * Buying-group member roster (network control plane).
+     * Floor ops, master data, and member compliance APIs stay off.
+     */
+    public function supportsBuyingGroupNetwork(): bool
+    {
+        return $this->profile === TenantProfile::BuyingGroup;
+    }
+
+    /**
+     * Soft principal registry + optional FK filters on sites / ship orders.
+     * Not EPC-level multi-client custody isolation.
+     */
+    public function supportsPrincipals(): bool
+    {
+        return $this->profile === TenantProfile::Logistics3pl;
+    }
+
+    /**
+     * Prepackager-only TransformationEvent authoring (Repack transform).
+     * Pack / BreakPack stay aggregation tools for all packing profiles.
+     */
+    public function supportsRepackTransform(): bool
+    {
+        return $this->profile === TenantProfile::Prepackager;
+    }
+
     public function supportsInboundIntegrations(): bool
     {
         return $this->profile !== TenantProfile::BuyingGroup;
@@ -142,6 +169,18 @@ class TenantFeatures
     public function supportsPharmacyOutboundDesk(): bool
     {
         return $this->profile === TenantProfile::Pharmacy;
+    }
+
+    /**
+     * When true (default for Pharmacy), hide wholesaler floor and ship-order nav.
+     */
+    public function showsWholesaleOperationsNav(): bool
+    {
+        if ($this->profile !== TenantProfile::Pharmacy) {
+            return true;
+        }
+
+        return ! TenantSettings::forTenant(tenant())->pharmacySimplifiedNavEnabled();
     }
 
     /**
@@ -185,6 +224,26 @@ class TenantFeatures
     }
 
     /**
+     * Partner ATP readiness / network control-plane ATP views.
+     * Buying groups need partner licence visibility without full master-data CRUD.
+     */
+    public function supportsPartnerReadiness(): bool
+    {
+        return $this->supportsMasterData()
+            || $this->profile === TenantProfile::BuyingGroup;
+    }
+
+    /**
+     * Compliance alert center — floor tenants via compliance cases; buying groups
+     * get the control-plane shell (integration/ATP signals) without quarantine/3911.
+     */
+    public function supportsComplianceAlertCenter(): bool
+    {
+        return $this->supportsComplianceCases()
+            || $this->profile === TenantProfile::BuyingGroup;
+    }
+
+    /**
      * Document-scoped DSCSA compliance / transaction report hub.
      */
     public function supportsComplianceReports(): bool
@@ -205,6 +264,56 @@ class TenantFeatures
             TenantProfile::Logistics3pl,
             TenantProfile::Manufacturer,
             TenantProfile::Prepackager,
+            TenantProfile::DentalMedicalSupply => true,
+            default => false,
+        };
+    }
+
+    /**
+     * Opt-in client portal v2 (OTP auth + org membership). Default off.
+     */
+    public function supportsClientPortalV2(): bool
+    {
+        $tenant = tenant();
+        if ($tenant === null) {
+            return false;
+        }
+
+        $settings = $tenant->getAttribute('settings');
+
+        return (bool) data_get(is_array($settings) ? $settings : [], 'features.client_portal_v2', false);
+    }
+
+    /**
+     * Manufacturer verification request portal (VRS fallback). Default off.
+     */
+    public function supportsManufacturerVerificationPortal(): bool
+    {
+        if (! $this->supportsVrs()) {
+            return false;
+        }
+
+        $tenant = tenant();
+        if ($tenant === null) {
+            return false;
+        }
+
+        $settings = $tenant->getAttribute('settings');
+
+        return (bool) data_get(is_array($settings) ? $settings : [], 'features.manufacturer_verification_portal', false);
+    }
+
+    /**
+     * Async Serialized Track & Trace export API (DSCSA compliance PDF).
+     */
+    public function supportsTrackAndTraceExport(): bool
+    {
+        return match ($this->profile) {
+            TenantProfile::Pharmacy,
+            TenantProfile::Manufacturer,
+            TenantProfile::DrugWholesaler,
+            TenantProfile::Prepackager,
+            TenantProfile::Logistics3pl,
             TenantProfile::DentalMedicalSupply => true,
             default => false,
         };

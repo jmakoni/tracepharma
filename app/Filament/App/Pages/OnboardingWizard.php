@@ -9,13 +9,14 @@ use App\Support\TenantFeatures;
 use App\Support\TenantOnboarding;
 use App\Support\TenantSettings;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class OnboardingWizard extends Page
+class OnboardingWizard extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedRocketLaunch;
 
@@ -213,7 +214,7 @@ class OnboardingWizard extends Page
     {
         $notification = Notification::make()
             ->title('Upstream partner ATP not ready')
-            ->body('Before go-live, at least one manufacturer or wholesaler you receive from needs a site with an ATP / WDD license in force for your receiving state.')
+            ->body('Before go-live, at least one manufacturer or wholesaler you receive from needs a site with an ATP / WDD license in force for your organization jurisdictions.')
             ->warning()
             ->persistent();
 
@@ -257,5 +258,10 @@ class OnboardingWizard extends Page
     private function itemDescriptions(): array
     {
         return OnboardingCopy::forTenant(tenant())->itemDescriptions();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.onboarding';
     }
 }

@@ -3,24 +3,26 @@
 namespace App\Filament\App\Pages;
 
 use App\Actions\Vrs\RunProductVerification;
+use App\Exceptions\VrsConfigurationException;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\App\Resources\Verifications\VerificationResource;
 use App\Models\User;
 use App\Models\Verification;
-use App\Support\Gs1\ElementString;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Gs1\ElementString;
 use App\Support\TenantFeatures;
 use App\Support\Vrs\VerificationScorecardMetrics;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use UnitEnum;
 
-class VerifyProduct extends Page
+class VerifyProduct extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
@@ -48,7 +50,7 @@ class VerifyProduct extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsVrs())
+        return TenantFeatures::forTenant(tenant())->supportsVrs()
             && JobRoleAccess::allows(Permissions::NavVerify);
     }
 
@@ -160,6 +162,18 @@ class VerifyProduct extends Page
             $this->scan = '';
             $this->dispatch('focus-scan');
             $this->dispatch('scan-result', tone: 'error');
+        } catch (VrsConfigurationException $exception) {
+            $this->setLastScan('error', $exception->getMessage());
+
+            Notification::make()
+                ->title('VRS not configured')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            $this->scan = '';
+            $this->dispatch('focus-scan');
+            $this->dispatch('scan-result', tone: 'error');
         }
     }
 
@@ -235,5 +249,10 @@ class VerifyProduct extends Page
         $this->lastScanTone = $tone;
         $this->lastScanMessage = $message;
         $this->lastScanDetail = $detail;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.verify-product';
     }
 }

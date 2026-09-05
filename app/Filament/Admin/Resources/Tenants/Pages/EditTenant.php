@@ -14,7 +14,7 @@ use App\Models\Tenant;
 use App\Support\TenantSettings;
 use App\Support\Tenancy\TenantKillSwitches;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Exceptions\Halt;
 
 class EditTenant extends EditRecord
@@ -44,6 +44,9 @@ class EditTenant extends EditRecord
 
     /** @var array<string, bool> */
     protected array $killSwitches = [];
+
+    /** @var array<string, mixed> */
+    protected array $ssoConfig = [];
 
     private ?string $previousStatus = null;
 
@@ -80,6 +83,7 @@ class EditTenant extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $settings = TenantSettings::forTenant($this->record);
+        $sso = $settings->ssoConfig();
 
         return array_merge(
             $data,
@@ -89,6 +93,15 @@ class EditTenant extends EditRecord
                 'kill_switch_inbound_epcis' => $settings->inboundEpcisKilled(),
                 'kill_switch_sanctum_api' => $settings->sanctumApiKilled(),
                 'kill_switch_wms_webhooks' => $settings->wmsWebhooksKilled(),
+                'sso_enabled' => $sso['enabled'],
+                'sso_only' => $sso['sso_only'],
+                'sso_provider' => $sso['provider'],
+                'sso_issuer' => $sso['issuer'],
+                'sso_client_id' => $sso['client_id'],
+                'sso_client_secret' => null,
+                'sso_entra_tenant_id' => $sso['entra_tenant_id'],
+                'sso_jit_default_role' => $sso['jit_default_role'],
+                'sso_allowed_email_domains' => implode(', ', $sso['allowed_email_domains']),
             ],
         );
     }
@@ -105,6 +118,7 @@ class EditTenant extends EditRecord
 
         $this->organizationAddress = [];
         $this->killSwitches = [];
+        $this->ssoConfig = [];
 
         foreach (self::ADDRESS_KEYS as $key) {
             if (! array_key_exists($key, $data)) {
@@ -124,6 +138,27 @@ class EditTenant extends EditRecord
             unset($data[$formKey]);
         }
 
+        $ssoKeys = [
+            'sso_enabled' => 'enabled',
+            'sso_only' => 'sso_only',
+            'sso_provider' => 'provider',
+            'sso_issuer' => 'issuer',
+            'sso_client_id' => 'client_id',
+            'sso_client_secret' => 'client_secret',
+            'sso_entra_tenant_id' => 'entra_tenant_id',
+            'sso_jit_default_role' => 'jit_default_role',
+            'sso_allowed_email_domains' => 'allowed_email_domains',
+        ];
+
+        foreach ($ssoKeys as $formKey => $configKey) {
+            if (! array_key_exists($formKey, $data)) {
+                continue;
+            }
+
+            $this->ssoConfig[$configKey] = $data[$formKey];
+            unset($data[$formKey]);
+        }
+
         return $data;
     }
 
@@ -133,6 +168,11 @@ class EditTenant extends EditRecord
         $statusChanged = $this->record->wasChanged('status');
 
         TenantSettings::forTenant($this->record)->saveOrganization($this->organizationAddress);
+
+        if ($this->ssoConfig !== []) {
+            TenantSettings::forTenant($this->record)->saveSsoConfig($this->ssoConfig);
+            $this->record->save();
+        }
 
         if ($this->killSwitches !== []) {
             TenantSettings::forTenant($this->record)->setKillSwitches($this->killSwitches);

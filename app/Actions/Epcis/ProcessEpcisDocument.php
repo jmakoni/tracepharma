@@ -2,19 +2,29 @@
 
 namespace App\Actions\Epcis;
 
+use App\Actions\Labeling\StampSsccBatchCommissionedFromDocument;
+use App\Actions\Receiving\AttachInboundDocumentToShipment;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\Epcis\EpcisUnmatchedGln;
+use App\Services\Epcis\EpcisJsonLd20Parser;
+use App\Services\Epcis\EpcisXml20Parser;
 use App\Services\Epcis\EpcisXmlParser;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisXmlReader;
+use App\Support\Epcis\LiveAcceptedEpcisEventId;
+use App\Support\Epcis\PersistPedigreeXmlFragments;
+use App\Support\Epcis\Validation\EpcisValidationCatalog;
+use App\Support\Fda\DeaRegistration;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
 use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
@@ -50,6 +60,8 @@ final class ProcessEpcisDocument
      */
     private array $pendingSharedIlmdLotMismatches = [];
 
+    private const SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX = 'Shared EPC ILMD lot/expiry conflict';
+
     /**
      * Cached epcis_document_locations for the current document ingest generation.
      *
@@ -65,7 +77,9 @@ final class ProcessEpcisDocument
     private array $closedDuringAttemptLinkIds = [];
 
     public function __construct(
-        private readonly EpcisXmlParser $parser,
+        private readonly EpcisXmlParser $xmlParser,
+        private readonly EpcisXml20Parser $xml20Parser,
+        private readonly EpcisJsonLd20Parser $jsonLd20Parser,
         private readonly MaterializeEpcKeys $materializeEpcKeys,
         private readonly ResolveGlnToMasterData $resolveGln,
         private readonly ResolveProductFromIdentifier $resolveProduct,
@@ -106,10 +120,14 @@ final class ProcessEpcisDocument
             app(PruneSupersededIngestGenerations::class)->pruneOrphanGenerations($document->refresh());
 
             $generation = $this->nextIngestGeneration($document);
+            app(PruneSupersededIngestGenerations::class)->supersedePriorGenerationsForAttempt($document, $generation);
             $priorGenerationOpenLinkIds = $this->snapshotPriorGenerationOpenLinkIds($document, $generation);
+            $this->tentativelyRetirePriorGenerationAggregationLinks($priorGenerationOpenLinkIds);
+            $this->clearStaleValidationExceptionsForReprocess($document, $generation);
 
+            $parser = $this->ingestParser($document);
             $uniqueUris = [];
-            $header = $this->parser->parseHeaderAndStream(
+            $header = $parser->parseHeaderAndStream(
                 $absolutePath,
                 function (array $event) use (&$uniqueUris): void {
                     foreach ($event['epcs'] ?? [] as $epcRef) {
@@ -140,19 +158,30 @@ final class ProcessEpcisDocument
             $eventCount = 0;
             $batch = [];
             $documentEpcIds = [];
+            $dscsaPromoted = false;
 
             EpcisEvent::withoutSyncingToSearch(function () use (
                 $absolutePath,
                 $document,
                 $epcIdByUri,
                 $generation,
+                $parser,
                 &$eventCount,
                 &$batch,
                 &$documentEpcIds,
+                &$dscsaPromoted,
             ): void {
-                $this->parser->parseHeaderAndStream(
+                $parser->parseHeaderAndStream(
                     $absolutePath,
-                    function (array $eventData) use ($document, $epcIdByUri, $generation, &$eventCount, &$batch, &$documentEpcIds): void {
+                    function (array $eventData) use ($document, $epcIdByUri, $generation, &$eventCount, &$batch, &$documentEpcIds, &$dscsaPromoted): void {
+                        if (! $dscsaPromoted) {
+                            $bizStep = strtolower((string) ($eventData['biz_step'] ?? ''));
+                            if ($bizStep !== '' && str_contains($bizStep, 'shipping')) {
+                                app(PromoteDscsaShippingExtensions::class)->handle($document, $eventData);
+                                $dscsaPromoted = true;
+                            }
+                        }
+
                         $batch[] = $eventData;
                         if (count($batch) < self::EVENT_BATCH_SIZE) {
                             return;
@@ -160,8 +189,9 @@ final class ProcessEpcisDocument
 
                         DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                             foreach ($batch as $row) {
-                                $this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds);
-                                $eventCount++;
+                                if ($this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds)) {
+                                    $eventCount++;
+                                }
                             }
                         });
                         $batch = [];
@@ -171,8 +201,9 @@ final class ProcessEpcisDocument
                 if ($batch !== []) {
                     DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                         foreach ($batch as $row) {
-                            $this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds);
-                            $eventCount++;
+                            if ($this->persistEvent($document, $row, $epcIdByUri, $generation, $documentEpcIds)) {
+                                $eventCount++;
+                            }
                         }
                     });
                 }
@@ -185,6 +216,7 @@ final class ProcessEpcisDocument
             app(EnrichEpcisDocumentShippingFields::class)->handle(
                 $document->refresh(),
                 $header['locations'] ?? [],
+                $generation,
             );
 
             $previousIngestGeneration = $document->ingest_generation;
@@ -214,8 +246,22 @@ final class ProcessEpcisDocument
                 app(RecordSbdhOwningPartyMismatch::class)->handle($document);
             }
 
+            if (class_exists(RecordDestinationGlnMismatch::class)) {
+                app(RecordDestinationGlnMismatch::class)->handle($document);
+            }
+
+            if (class_exists(RecordScheduledProductMissingDea::class)) {
+                app(RecordScheduledProductMissingDea::class)->handle($document);
+            }
+
             app(ValidateEpcis12Document::class)->handle($document, $absolutePath);
             $document->refresh();
+
+            if ($document->status === 'validated') {
+                app(StampSsccBatchCommissionedFromDocument::class)->handle($document);
+                app(AttachInboundDocumentToShipment::class)
+                    ->expandOpenSessionAfterDocumentEligible($document->fresh());
+            }
 
             if ($document->status === 'error') {
                 DB::transaction(function () use ($document, $previousIngestGeneration, $priorGenerationOpenLinkIds, $generation): void {
@@ -223,6 +269,9 @@ final class ProcessEpcisDocument
                         array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
                     );
                     $this->closeThisAttemptOpenAggregationLinks($document, $generation);
+                    if ($generation !== null) {
+                        app(PruneSupersededIngestGenerations::class)->restoreTentativeSupersede($document, $generation);
+                    }
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 });
             } else {
@@ -235,6 +284,18 @@ final class ProcessEpcisDocument
                     'last_processed_at' => $now,
                 ])->save();
                 app(PruneSupersededIngestGenerations::class)->handle($document->refresh());
+
+                // Lossless commissioning/packing + Location/EPCClass XML for outbound TI
+                // when the payload file is later missing (inbound EPCIS or Guardian-authored).
+                try {
+                    app(PersistPedigreeXmlFragments::class)->forDocument($document->refresh(), $absolutePath);
+                } catch (Throwable $fragmentError) {
+                    Log::warning('epcis.pedigree_fragments.persist_failed', [
+                        'document_id' => $document->getKey(),
+                        'message' => $fragmentError->getMessage(),
+                    ]);
+                }
+
                 $scoutShouldIndex = true;
             }
 
@@ -251,6 +312,9 @@ final class ProcessEpcisDocument
                     array_values(array_unique([...$priorGenerationOpenLinkIds, ...$this->closedDuringAttemptLinkIds])),
                 );
                 $this->closeThisAttemptOpenAggregationLinks($document, $generation);
+                if ($generation !== null) {
+                    app(PruneSupersededIngestGenerations::class)->restoreTentativeSupersede($document, $generation);
+                }
                 if ($previousIngestGeneration !== null) {
                     $document->forceFill(['ingest_generation' => $previousIngestGeneration])->save();
                 }
@@ -325,6 +389,7 @@ final class ProcessEpcisDocument
         $this->documentLocationLookupDocumentId = null;
         $this->documentLocationLookupGeneration = null;
         $generation = $this->nextIngestGeneration($document);
+        app(PruneSupersededIngestGenerations::class)->supersedePriorGenerationsForAttempt($document, $generation);
 
         $this->resolveDocumentParties($document, $parsed);
 
@@ -354,8 +419,9 @@ final class ProcessEpcisDocument
             foreach (array_chunk($parsed['events'] ?? [], self::EVENT_BATCH_SIZE) as $batch) {
                 DB::transaction(function () use ($batch, $document, $epcIdByUri, $generation, &$eventCount, &$documentEpcIds): void {
                     foreach ($batch as $eventData) {
-                        $this->persistEvent($document, $eventData, $epcIdByUri, $generation, $documentEpcIds);
-                        $eventCount++;
+                        if ($this->persistEvent($document, $eventData, $epcIdByUri, $generation, $documentEpcIds)) {
+                            $eventCount++;
+                        }
                     }
                 });
             }
@@ -368,6 +434,7 @@ final class ProcessEpcisDocument
         app(EnrichEpcisDocumentShippingFields::class)->handle(
             $document,
             $parsed['locations'] ?? [],
+            $generation,
         );
 
         $document->forceFill([
@@ -450,6 +517,42 @@ final class ProcessEpcisDocument
             ->pluck('id')
             ->map(static fn (mixed $id): int => (int) $id)
             ->all();
+    }
+
+    /**
+     * Tentatively close same-document prior-generation open links so a corrected
+     * reprocess can establish ADDs whose event_time is earlier than the prior
+     * projection's links. Restored on failure via {@see restorePriorGenerationAggregationLinksClosedDuringAttempt}.
+     *
+     * @param  list<int>  $linkIds
+     */
+    private function tentativelyRetirePriorGenerationAggregationLinks(array $linkIds): void
+    {
+        if ($linkIds === [] || ! Schema::hasTable('aggregation_links')) {
+            return;
+        }
+
+        DB::table('aggregation_links')
+            ->whereIn('id', $linkIds)
+            ->whereNull('valid_to')
+            ->update(['valid_to' => now()->format('Y-m-d H:i:s.u')]);
+    }
+
+    /**
+     * Drop open catalog validation findings before a reprocess so a failed parse
+     * does not leave stale PACK_HIERARCHY / business-rule rows from the prior generation.
+     */
+    private function clearStaleValidationExceptionsForReprocess(EpcisDocument $document, int $generation): void
+    {
+        if ($generation <= 1 || ! Schema::hasTable('epcis_exceptions')) {
+            return;
+        }
+
+        EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->whereIn('exception_type', EpcisValidationCatalog::clearableCodes())
+            ->where('status', 'open')
+            ->delete();
     }
 
     /**
@@ -603,6 +706,25 @@ final class ProcessEpcisDocument
     }
 
     /**
+     * Select edge parser by stored payload format and schema version.
+     * JSON → JSON-LD 2.0 parser; XML 2.0 → Xml20Parser; else XML 1.2 parser.
+     */
+    private function ingestParser(EpcisDocument $document): EpcisXmlParser|EpcisXml20Parser|EpcisJsonLd20Parser
+    {
+        $format = (string) ($document->format ?? EpcisSchemaVersion::FORMAT_XML);
+
+        if ($format === EpcisSchemaVersion::FORMAT_JSON) {
+            return $this->jsonLd20Parser;
+        }
+
+        if ((string) $document->schema_version === EpcisSchemaVersion::V20) {
+            return $this->xml20Parser;
+        }
+
+        return $this->xmlParser;
+    }
+
+    /**
      * @param  array<string, mixed>  $parsed
      */
     private function applyParsedHeader(EpcisDocument $document, array $parsed): void
@@ -623,6 +745,15 @@ final class ProcessEpcisDocument
             'dscsa_affirm' => $dscsaAffirm,
             'legal_notice' => $parsed['legal_notice'] ?? null,
         ];
+
+        if (Schema::hasColumn('epcis_documents', 'direct_purchase_statement')) {
+            $attributes['direct_purchase_qualifier'] = null;
+            $attributes['direct_purchase_statement'] = null;
+            $attributes['direct_purchase_indirect_epc_uris'] = null;
+            $attributes['received_prev_wholesaler_qualifier'] = null;
+            $attributes['received_prev_wholesaler_statement'] = null;
+            $attributes['received_prev_wholesaler_indirect_epc_uris'] = null;
+        }
 
         if (Schema::hasColumn('epcis_documents', 'document_uuid_synthesized')) {
             $attributes['document_uuid_synthesized'] = $synthesized;
@@ -888,7 +1019,7 @@ final class ProcessEpcisDocument
         array $epcIdByUri,
         int $generation,
         array &$documentEpcIds,
-    ): void {
+    ): bool {
         $readPointGln = null;
         if (filled($eventData['read_point_uri'] ?? null)) {
             $readPointGln = Sgln::fromUrn((string) $eventData['read_point_uri'])['gln'] ?? null;
@@ -902,6 +1033,13 @@ final class ProcessEpcisDocument
         $gs1EventId = filled($eventData['event_id'] ?? null)
             ? Str::limit((string) $eventData['event_id'], 128, '')
             : null;
+
+        if (
+            filled($gs1EventId)
+            && app(LiveAcceptedEpcisEventId::class)->existsOnOtherDocument($gs1EventId, (int) $document->getKey())
+        ) {
+            return false;
+        }
 
         $errorDeclaration = $eventData['error_declaration'] ?? null;
         $correctiveIds = null;
@@ -1001,11 +1139,25 @@ final class ProcessEpcisDocument
         $validFrom = $event->event_time?->format('Y-m-d H:i:s.u') ?? now()->format('Y-m-d H:i:s.u');
 
         if ($action === 'ADD' && $parentEpcId !== null && $childEpcIds !== []) {
+            // Serialize concurrent ADDs on the same child: lock child EPC rows
+            // (ordered by id to avoid deadlocks) before close+open so two writers
+            // cannot both observe zero open parents and insert dual open links.
+            $sortedChildIds = array_values(array_unique($childEpcIds));
+            sort($sortedChildIds);
+
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
+                DB::table('epcs')
+                    ->whereIn('id', $chunk)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get(['id']);
+            }
+
             // A child may have at most one open parent: close any prior open links
             // (any parent / any establishing document) before inserting the new ones.
             // Only close links established at or before this event's time — a backdated
             // ADD must never invert a newer open link by setting valid_to < valid_from.
-            foreach (array_chunk($childEpcIds, 1000) as $chunk) {
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
                 $hasNewerOpenLink = DB::table('aggregation_links')
                     ->whereIn('child_epc_id', $chunk)
                     ->whereNull('valid_to')
@@ -1020,7 +1172,7 @@ final class ProcessEpcisDocument
                 }
             }
 
-            foreach (array_chunk($childEpcIds, 1000) as $chunk) {
+            foreach (array_chunk($sortedChildIds, 1000) as $chunk) {
                 $this->closeOpenAggregationLinksDuringAttempt(
                     ['child_epc_id' => $chunk],
                     $validFrom,
@@ -1028,7 +1180,7 @@ final class ProcessEpcisDocument
             }
 
             $linkRows = [];
-            foreach ($childEpcIds as $childEpcId) {
+            foreach ($sortedChildIds as $childEpcId) {
                 $linkRows[] = [
                     'parent_epc_id' => $parentEpcId,
                     'child_epc_id' => $childEpcId,
@@ -1070,6 +1222,8 @@ final class ProcessEpcisDocument
         $this->persistBizTransactions($eventId, $eventData);
         $this->persistQuantities($eventId, $eventData);
         $this->persistIlmd($document, $eventId, $eventData, $epcIdByUri);
+
+        return true;
     }
 
     /**
@@ -1088,20 +1242,22 @@ final class ProcessEpcisDocument
             }
 
             $uri = (string) $eventData[$key];
-            $sgln = Sgln::fromUrn($uri);
-            $gln = $sgln['gln'] ?? null;
-            $resolved = filled($gln) ? $this->cachedResolveGln((string) $gln) : null;
+            $location = $this->resolveEpcisLocationToken($uri);
+            $resolved = $location['resolved'];
 
-            if ($resolved !== null && ! $this->hasAnyMasterData($resolved)) {
-                $this->recordUnmatchedGln($document, (string) $gln, $uri, $locationType, null, null);
+            if (! $this->hasAnyMasterData($resolved)) {
+                $unmatchedGln = $location['parsed_gln'] ?? $location['persisted_gln'] ?? '';
+                if ($unmatchedGln !== '') {
+                    $this->recordUnmatchedGln($document, $unmatchedGln, $uri, $locationType, null, null);
+                }
             }
 
-            $overlay = $this->documentLocationOverlay($document, $generation, $gln, $uri);
+            $overlay = $this->documentLocationOverlay($document, $generation, $location['overlay_gln'], $uri);
 
             $locationRows[] = [
                 'event_id' => $eventId,
                 'location_type' => $locationType,
-                'gln' => $gln,
+                'gln' => $location['persisted_gln'],
                 'gln_uri' => $uri,
                 'name' => $overlay['name'],
                 'street_address' => $overlay['street_address'],
@@ -1125,20 +1281,27 @@ final class ProcessEpcisDocument
         $partyRows = [];
         foreach ($eventData['parties'] ?? [] as $party) {
             $glnUri = (string) ($party['gln_uri'] ?? '');
-            $sgln = $glnUri !== '' ? Sgln::fromUrn($glnUri) : null;
-            $gln = $sgln['gln'] ?? null;
-            $resolved = filled($gln) ? $this->cachedResolveGln((string) $gln) : null;
             $context = (string) ($party['party_role'] ?? 'source');
 
-            if ($resolved !== null && ! $this->hasAnyMasterData($resolved)) {
-                $this->recordUnmatchedGln(
-                    $document,
-                    (string) $gln,
-                    $glnUri !== '' ? $glnUri : null,
-                    $context,
-                    $resolved['trading_partner_id'],
-                    $resolved['site_id'],
-                );
+            if ($glnUri === '') {
+                continue;
+            }
+
+            $location = $this->resolveEpcisLocationToken($glnUri);
+            $resolved = $location['resolved'];
+
+            if (! $this->hasAnyMasterData($resolved)) {
+                $unmatchedGln = $location['parsed_gln'] ?? $location['persisted_gln'] ?? '';
+                if ($unmatchedGln !== '') {
+                    $this->recordUnmatchedGln(
+                        $document,
+                        $unmatchedGln,
+                        $glnUri,
+                        $context,
+                        $resolved['trading_partner_id'],
+                        $resolved['site_id'],
+                    );
+                }
             }
 
             $extra = [
@@ -1151,8 +1314,8 @@ final class ProcessEpcisDocument
             $partyRows[] = [
                 'event_id' => $eventId,
                 'party_role' => $context,
-                'gln' => $gln,
-                'gln_uri' => $glnUri !== '' ? $glnUri : null,
+                'gln' => $location['persisted_gln'],
+                'gln_uri' => $glnUri,
                 'trading_partner_id' => $resolved['trading_partner_id'] ?? null,
                 'site_id' => $resolved['site_id'] ?? null,
                 'extra_json' => json_encode($extra, JSON_THROW_ON_ERROR),
@@ -1413,6 +1576,10 @@ final class ProcessEpcisDocument
 
             $keptLot = $lotNumber;
             $keptExpiry = $expiryDate;
+            $keptManufacturing = $manufacturingDate;
+            $keptBestBefore = $bestBeforeDate;
+            $keptAdditionalId = $additionalId;
+            $keptExtraJson = $extraJsonEncoded;
             $existing = $existingByEpcId[$epcId] ?? null;
 
             if ($existing !== null) {
@@ -1424,11 +1591,14 @@ final class ProcessEpcisDocument
                 $lotDiffers = $this->ilmdScalarDiffers($existingLot, $incomingLot);
                 $expiryDiffers = $this->ilmdScalarDiffers($existingExpiry, $incomingExpiry);
 
+                // First-wins fill: non-blank existing lot/expiry beats blank incoming (no wipe).
+                $keptLot = $this->ilmdFirstWinsScalar($existingLot, $incomingLot);
+                $keptExpiry = $this->ilmdFirstWinsScalar($existingExpiry, $incomingExpiry);
+
                 if ($lotDiffers || $expiryDiffers) {
                     // Shared epc_ilmd is URI-scoped across documents: first-wins on lot/expiry
                     // so a later TI cannot clobber an earlier lot/expiry. Soft-signal the conflict.
-                    $keptLot = $existingLot;
-                    $keptExpiry = $existingExpiry;
+                    // Also keep other non-blank shared ILMD fields; event_epc_ilmd still stores incoming.
                     $this->recordSharedIlmdLotMismatch(
                         $epcId,
                         $existingLot,
@@ -1436,6 +1606,25 @@ final class ProcessEpcisDocument
                         $incomingLot,
                         $incomingExpiry,
                     );
+
+                    $keptManufacturing = $this->ilmdFirstWinsScalar(
+                        $this->normalizeDate($existing->manufacturing_date ?? null),
+                        $manufacturingDate,
+                    );
+                    $keptBestBefore = $this->ilmdFirstWinsScalar(
+                        $this->normalizeDate($existing->best_before_date ?? null),
+                        $bestBeforeDate,
+                    );
+                    $keptAdditionalId = $this->ilmdFirstWinsScalar(
+                        $existing->additional_id ?? null,
+                        $additionalId,
+                    );
+                    $existingExtra = $existing->extra_json ?? null;
+                    if (is_string($existingExtra) && $existingExtra !== '') {
+                        $keptExtraJson = $existingExtra;
+                    } elseif ($existingExtra !== null && $existingExtra !== '' && ! is_string($existingExtra)) {
+                        $keptExtraJson = json_encode($existingExtra, JSON_THROW_ON_ERROR);
+                    }
                 }
             }
 
@@ -1443,10 +1632,10 @@ final class ProcessEpcisDocument
                 'epc_id' => $epcId,
                 'lot_number' => $keptLot,
                 'expiry_date' => $keptExpiry,
-                'manufacturing_date' => $manufacturingDate,
-                'best_before_date' => $bestBeforeDate,
-                'additional_id' => $additionalId,
-                'extra_json' => $extraJsonEncoded,
+                'manufacturing_date' => $keptManufacturing,
+                'best_before_date' => $keptBestBefore,
+                'additional_id' => $keptAdditionalId,
+                'extra_json' => $keptExtraJson,
             ];
             if (Schema::hasColumn('epc_ilmd', 'gtin14')) {
                 $row['gtin14'] = $this->gtinByEpcId[$epcId] ?? null;
@@ -1514,6 +1703,20 @@ final class ProcessEpcisDocument
         return $left !== $right;
     }
 
+    /**
+     * First-wins fill: keep non-blank existing; only take incoming when existing is blank.
+     */
+    private function ilmdFirstWinsScalar(mixed $existing, mixed $incoming): mixed
+    {
+        $left = $existing === null || $existing === '' ? null : $existing;
+
+        if ($left !== null) {
+            return $left;
+        }
+
+        return $incoming === null || $incoming === '' ? null : $incoming;
+    }
+
     private function recordSharedIlmdLotMismatch(
         int $epcId,
         mixed $existingLot,
@@ -1537,6 +1740,9 @@ final class ProcessEpcisDocument
 
     private function flushSharedIlmdLotMismatchExceptions(EpcisDocument $document): void
     {
+        // Own rewrite path only — never wipe operational/hook LOT_MISMATCH rows.
+        $this->clearSharedIlmdLotMismatchExceptions($document);
+
         if ($this->pendingSharedIlmdLotMismatches === []) {
             return;
         }
@@ -1544,24 +1750,13 @@ final class ProcessEpcisDocument
         foreach ($this->pendingSharedIlmdLotMismatches as $conflict) {
             $epcId = $conflict['epc_id'];
 
-            $alreadyOpen = EpcisException::query()
-                ->where('document_id', $document->getKey())
-                ->where('epc_id', $epcId)
-                ->where('exception_type', 'LOT_MISMATCH')
-                ->where('status', 'open')
-                ->exists();
-
-            if ($alreadyOpen) {
-                continue;
-            }
-
             EpcisException::query()->create([
                 'document_id' => $document->getKey(),
                 'epc_id' => $epcId,
                 'exception_type' => 'LOT_MISMATCH',
                 'severity' => 'warning',
                 'description' => Str::limit(
-                    'Shared EPC ILMD lot/expiry conflict: kept first-wins values '
+                    self::SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX.': kept first-wins values '
                     .'(lot='.($conflict['existing_lot'] ?? 'null')
                     .', expiry='.($conflict['existing_expiry'] ?? 'null').'); '
                     .'incoming document had lot='.($conflict['incoming_lot'] ?? 'null')
@@ -1573,6 +1768,16 @@ final class ProcessEpcisDocument
         }
 
         $this->pendingSharedIlmdLotMismatches = [];
+    }
+
+    private function clearSharedIlmdLotMismatchExceptions(EpcisDocument $document): void
+    {
+        EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->where('exception_type', 'LOT_MISMATCH')
+            ->where('status', 'open')
+            ->where('description', 'like', self::SHARED_ILMD_LOT_MISMATCH_DESCRIPTION_PREFIX.'%')
+            ->delete();
     }
 
     /**
@@ -1634,6 +1839,9 @@ final class ProcessEpcisDocument
                 'MASTER_DATA_SYNC_LAG',
                 'atp_soft_warning',
                 RecordSbdhOwningPartyMismatch::EXCEPTION_TYPE,
+                RecordDestinationGlnMismatch::OWNING_PARTY_EXCEPTION_TYPE,
+                RecordDestinationGlnMismatch::LOCATION_EXCEPTION_TYPE,
+                RecordScheduledProductMissingDea::EXCEPTION_TYPE,
             ])
             ->where('status', 'open')
             ->delete();
@@ -1748,14 +1956,65 @@ final class ProcessEpcisDocument
      *     read_point: mixed
      * }
      */
-    private function cachedResolveGln(string $gln): array
+    private function cachedResolveGln(string $token): array
     {
-        $normalized = preg_replace('/\D+/', '', $gln) ?? '';
-        if (isset($this->glnCache[$normalized])) {
-            return $this->glnCache[$normalized];
+        $cacheKey = $this->resolveGlnCacheKey($token);
+        if (isset($this->glnCache[$cacheKey])) {
+            return $this->glnCache[$cacheKey];
         }
 
-        return $this->glnCache[$normalized] = $this->resolveGln->handle($gln);
+        return $this->glnCache[$cacheKey] = $this->resolveGln->handle($token);
+    }
+
+    private function resolveGlnCacheKey(string $token): string
+    {
+        $gln = Sgln::normalizeGln($token);
+        if ($gln !== null) {
+            return 'gln:'.$gln;
+        }
+
+        $dea = DeaRegistration::parseFromLocationToken($token);
+        if ($dea !== null) {
+            return 'dea:'.$dea;
+        }
+
+        return 'token:'.strtoupper(trim($token));
+    }
+
+    /**
+     * @return array{
+     *     parsed_gln: ?string,
+     *     persisted_gln: ?string,
+     *     overlay_gln: ?string,
+     *     resolved: array{
+     *         gln: string,
+     *         trading_partner_id: ?int,
+     *         site_id: ?int,
+     *         location_device_id: ?int,
+     *         read_point_id: ?int,
+     *         trading_partner: mixed,
+     *         site: mixed,
+     *         location_device: mixed,
+     *         read_point: mixed
+     *     },
+     *     resolve_token: string
+     * }
+     */
+    private function resolveEpcisLocationToken(string $uri): array
+    {
+        $sgln = Sgln::fromUrn($uri);
+        $parsedGln = $sgln['gln'] ?? null;
+        $resolveToken = $parsedGln ?? $uri;
+        $resolved = $this->cachedResolveGln($resolveToken);
+        $persistedGln = filled($resolved['gln']) ? (string) $resolved['gln'] : null;
+
+        return [
+            'parsed_gln' => $parsedGln,
+            'persisted_gln' => $persistedGln,
+            'overlay_gln' => $parsedGln ?? $persistedGln,
+            'resolved' => $resolved,
+            'resolve_token' => $resolveToken,
+        ];
     }
 
     /**

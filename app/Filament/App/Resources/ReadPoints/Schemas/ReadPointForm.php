@@ -3,12 +3,15 @@
 namespace App\Filament\App\Resources\ReadPoints\Schemas;
 
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\SglnRules;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class ReadPointForm
 {
@@ -21,7 +24,21 @@ class ReadPointForm
                     ->columns(['md' => 2, 'lg' => 3])
                     ->schema([
                         Select::make('site_id')
-                            ->relationship('site', 'name')
+                            ->relationship(
+                                'site',
+                                'name',
+                                modifyQueryUsing: function (Builder $query): Builder {
+                                    $user = auth()->user();
+                                    if ($user === null) {
+                                        return $query->whereRaw('0 = 1');
+                                    }
+                                    if ($user->can(Permissions::SitesAccessAll)) {
+                                        return $query;
+                                    }
+
+                                    return $query->whereIn('id', SiteAccess::userSiteIds($user));
+                                },
+                            )
                             ->default(fn (): ?int => CurrentSite::id())
                             ->searchable()
                             ->preload()

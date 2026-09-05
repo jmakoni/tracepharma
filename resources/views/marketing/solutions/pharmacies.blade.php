@@ -1,7 +1,7 @@
 @extends('marketing.layout')
 
 @section('title', 'Pharmacies — TracePharma')
-@section('meta_description', 'DSCSA traceability for independent pharmacies: wholesaler EPCIS receiving, VRS verification, FDA 3911, dispense-check APIs, and dispenser compliance scorecards.')
+@section('meta_description', 'DSCSA traceability for independent pharmacies: wholesaler EPCIS receiving, VRS verification, FDA 3911, POST /api/v1/dispense-check, and dispenser compliance scorecards.')
 
 @section('content')
     <x-marketing.page-hero
@@ -36,7 +36,7 @@
                 :modules="[
                     ['title' => 'EPCIS receiving', 'description' => 'Upload, SFTP poll, or webhook—match what your wholesaler actually sends so receiving clerks confirm shipments before inventory updates.', 'href' => route('marketing.features.show', 'receiving')],
                     ['title' => 'VRS verification', 'description' => 'Interactive workstation with full verification history—so PIC and staff show auditors the same evidence they used at dispense.', 'href' => route('marketing.features.show', 'verification')],
-                    ['title' => 'Dispense-check API', 'description' => 'PioneerRx, BestRx, PrimeRx, and other PMS adapters block dispense until prior verified scan—so negative VRS results stop at the workstation, not at the patient.', 'href' => route('marketing.features.show', 'integrations')],
+                    ['title' => 'Dispense-check API', 'description' => 'POST /api/v1/dispense-check lets PMS middleware block fills until verification passes—named per-vendor PMS adapters are not GA.', 'href' => route('marketing.features.show', 'integrations')],
                     ['title' => 'Rx expiry dashboard', 'description' => 'Expiring inventory surfaced from verify and receive records—so staff rotate stock before expiry exceptions pile up.'],
                     ['title' => 'Dispenser scorecard', 'description' => 'Weekly pass rate, PMS blocked-reason trends, wholesaler risk—so owners see compliance health without exporting spreadsheets each week.'],
                     ['title' => 'Dispenser compliance dashboard', 'description' => 'TI/TS coverage, verify pass rates, and wholesaler exception trends—so PIC and owners see dispenser compliance health in one view.'],
@@ -60,7 +60,7 @@
             <div class="tp-card p-8">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-tp-muted">Compared to dispenser-only tools</h3>
                 <p class="mt-4 text-sm leading-relaxed text-tp-muted">
-                    InfiniTrak and similar platforms excel at turnkey pharmacy onboarding. TracePharma adds wholesaler-grade EPCIS depth, exception investigation, and EPCIS 2.0 trace search when you need more than verify-only — at a price point sized for independents.
+                    InfiniTrak and similar platforms excel at turnkey pharmacy onboarding. TracePharma adds wholesaler-grade EPCIS depth, exception investigation, and read-only event-store trace search (EPCIS 1.2 GA; 2.0 capture + query-as-2.0) when you need more than verify-only — at a price point sized for independents.
                 </p>
                 <a href="{{ route('marketing.compare.free-dscsa') }}" class="mt-6 inline-flex text-sm font-semibold text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">
                     Why free DSCSA isn't free →
@@ -72,7 +72,7 @@
     <section class="mx-auto max-w-6xl px-4 pb-14 sm:px-6">
         <div class="tp-card border-tp-border p-6 text-sm text-tp-muted">
             <p class="font-semibold text-tp-ink">Read-only EPCIS repository for pharmacy IT</p>
-            <p class="mt-2 leading-relaxed">Pharmacy profiles get a read-only EPCIS 2.0 repository for trace queries and investigations—not a full capture-and-ship serialization hub. Manufacturer, wholesaler, 3PL, and prepackager profiles receive the full repository with outbound generation.</p>
+            <p class="mt-2 leading-relaxed">Pharmacy profiles get a read-only event repository for trace queries and investigations (EPCIS 1.2 GA; query-as-2.0 JSON-LD API)—not a capture-and-ship serialization hub. Manufacturer, wholesaler, 3PL, and prepackager profiles get inbound 2.0 JSON-LD capture (when enabled), outbound 1.2 by default, and optional HTTPS 2.0 subscription webhooks on the same canonical store.</p>
         </div>
     </section>
 

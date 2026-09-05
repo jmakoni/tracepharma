@@ -8,6 +8,7 @@ use App\Filament\App\Resources\Products\Pages\ViewProduct;
 use App\Filament\App\Resources\Products\Schemas\ProductForm;
 use App\Filament\App\Resources\Products\Schemas\ProductInfolist;
 use App\Filament\App\Resources\Products\Tables\ProductsTable;
+use App\Filament\App\Support\UsesTenantScoutGlobalSearch;
 use App\Models\Product;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -17,10 +18,14 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class ProductResource extends Resource
+class ProductResource extends Resource implements HasKnowledgeBase
 {
+    use UsesTenantScoutGlobalSearch;
+
     protected static ?string $model = Product::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCube;
@@ -35,7 +40,7 @@ class ProductResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsMasterData())
+        return TenantFeatures::forTenant(tenant())->supportsMasterData()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 
@@ -71,5 +76,41 @@ class ProductResource extends Resource
     public static function shouldRegisterNavigation(): bool
     {
         return static::canAccess();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name', 'gtin', 'ndc', 'ndc11', 'package_ndc'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected static function tenantScoutSqlColumns(): array
+    {
+        return ['name', 'gtin', 'ndc', 'ndc11', 'package_ndc'];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        if (! $record instanceof Product) {
+            return [];
+        }
+
+        return array_filter([
+            'GTIN' => $record->gtin,
+            'NDC' => $record->ndc11 ?? $record->ndc,
+        ]);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.products';
     }
 }

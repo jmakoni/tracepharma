@@ -6,6 +6,7 @@ namespace App\Actions\Labeling;
 
 use App\Actions\Outbound\GenerateSsccCommissioningDocument;
 use App\Enums\EpcisAuthoredKind;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use Illuminate\Support\Str;
@@ -15,6 +16,7 @@ final class EmitSsccBatchCommissioningEpcis
     public function __construct(
         private readonly GenerateSsccCommissioningDocument $documentGenerator,
         private readonly PersistAuthoredSsccEpcis $persist,
+        private readonly StampSsccBatchCommissionedFromDocument $stampCommissioned,
     ) {}
 
     /**
@@ -41,30 +43,36 @@ final class EmitSsccBatchCommissioningEpcis
         $xml = $this->documentGenerator->forBatch($batch, $pending, siteId: $siteId);
         $path = 'epcis/outbound/sscc-batch-'.$batch->getKey().'-commission-'.Str::uuid().'.xml';
 
-        $this->persist->handle($xml, $path, [
+        $sync = (bool) ($options['sync'] ?? false);
+
+        $document = $this->persist->handle($xml, $path, [
             'trading_partner_id' => $batch->trading_partner_id,
             'original_filename' => "sscc-batch-{$batch->getKey()}-commission.xml",
             'authored_kind' => EpcisAuthoredKind::SsccCommissioning,
             'notes' => 'Generated SSCC commissioning EPCIS for sscc_label_batch_id='.$batch->getKey().'.',
             'ship_from_site_id' => $siteId,
-            'sync' => (bool) ($options['sync'] ?? false),
+            'sync' => $sync,
             'dispatch' => (bool) ($options['dispatch'] ?? true),
         ]);
 
-        $now = now();
         $pendingIds = $pending->pluck('id')->all();
 
+        // Path is recorded immediately for matching/retry; commissioned_at waits for validated ingest.
         SsccLabel::query()
             ->whereIn('id', $pendingIds)
             ->update([
                 'commissioning_epcis_file_path' => $path,
-                'commissioned_at' => $now,
             ]);
 
         $batch->update([
             'commissioning_epcis_file_path' => $path,
-            'commissioned_at' => $now,
         ]);
+
+        // Sync ingest may have already stamped via ProcessEpcisDocument (notes fallback
+        // before path was written). Re-run after path is persisted so labels match path.
+        if ($sync && $document instanceof EpcisDocument) {
+            $this->stampCommissioned->handle($document->refresh());
+        }
 
         return $path;
     }

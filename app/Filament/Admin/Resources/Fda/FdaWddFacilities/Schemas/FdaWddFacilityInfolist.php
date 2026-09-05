@@ -25,6 +25,11 @@ class FdaWddFacilityInfolist
                         ->badge()
                         ->formatStateUsing(fn ($state): string => $state?->label() ?? '—'),
                     FdaRegistryBadges::identifierEntry('gln', 'GLN'),
+                    FdaRegistryBadges::identifierEntry('sgln', 'SGLN'),
+                    FdaRegistryBadges::identifierEntry('duns_number', 'DUNS'),
+                    FdaRegistryBadges::identifierEntry('dea_number', 'DEA'),
+                    FdaRegistryBadges::identifierEntry('hin_number', 'HIN'),
+                    FdaRegistryBadges::identifierEntry('chemical_reg_number', 'Chemical Reg'),
                     FdaRegistryBadges::identifierEntry('code', 'Code'),
                     FdaRegistryBadges::activeEntry(),
                     TextEntry::make('organization.name')

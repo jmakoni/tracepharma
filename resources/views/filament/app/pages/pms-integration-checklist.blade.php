@@ -1,0 +1,68 @@
+<x-filament-panels::page>
+    <div class="flex flex-col gap-4">
+        <div class="alert alert-info">
+            <span>
+                TracePharma ships an API-first PMS bridge (<code class="font-mono text-xs">POST /api/v1/dispense-check</code>).
+                Use this checklist for a pilot certification — not a 30-connector marketplace.
+                Full guide: <code class="font-mono text-xs">docs/integrations/pms.md</code>.
+                Vendor runbooks: <code class="font-mono text-xs">docs/integrations/pms/pioneerrx.md</code>,
+                <code class="font-mono text-xs">bestrx.md</code>,
+                <code class="font-mono text-xs">primerx.md</code>,
+                <code class="font-mono text-xs">liberty-rx30.md</code>,
+                <code class="font-mono text-xs">qs1.md</code>
+                (no <code class="font-mono text-xs">/api/v1/pms/{vendor}/dispense</code> routes).
+            </span>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body gap-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h2 class="card-title text-base">Certification progress</h2>
+                        <p class="text-sm opacity-70">Token + organization jurisdictions unlock the pilot path.</p>
+                    </div>
+                    <div class="stats shadow">
+                        <div class="stat py-2 px-4">
+                            <div class="stat-title">Complete</div>
+                            <div class="stat-value text-2xl">{{ $this->checklistScore() }}%</div>
+                        </div>
+                    </div>
+                </div>
+                <progress class="progress progress-primary w-full" value="{{ $this->checklistScore() }}" max="100"></progress>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body gap-4">
+                <h2 class="card-title text-base">Checklist</h2>
+                <ol class="list-decimal list-inside flex flex-col gap-4">
+                    @foreach ($this->checklistItems() as $item)
+                        <li class="border border-base-300 rounded-box p-4">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <div class="flex items-center gap-2 font-medium">
+                                        @if ($item['done'])
+                                            <span class="badge badge-success badge-sm">Done</span>
+                                        @else
+                                            <span class="badge badge-warning badge-sm">Pending</span>
+                                        @endif
+                                        {{ $item['title'] }}
+                                    </div>
+                                    <p class="text-sm opacity-70 mt-1">{{ $item['description'] }}</p>
+                                </div>
+                                @if (filled($item['href'] ?? null))
+                                    <a
+                                        href="{{ $item['href'] }}"
+                                        class="btn btn-sm {{ $item['done'] ? 'btn-ghost' : 'btn-primary' }} shrink-0"
+                                    >
+                                        {{ $item['action_label'] ?? 'Open' }}
+                                    </a>
+                                @endif
+                            </div>
+                        </li>
+                    @endforeach
+                </ol>
+            </div>
+        </div>
+    </div>
+</x-filament-panels::page>

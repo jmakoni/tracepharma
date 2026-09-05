@@ -15,15 +15,16 @@ use App\Support\Integrations\OutboundTransportAvailability;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 use Throwable;
 use UnitEnum;
 
-class IntegrationHealth extends Page
+class IntegrationHealth extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedSignal;
 
@@ -181,15 +182,15 @@ class IntegrationHealth extends Page
 
         return [
             Action::make('deactivateLegacySftp')
-                ->label('Deactivate legacy SFTP')
+                ->label('Deactivate SFTP outbound')
                 ->icon(Heroicon::OutlinedNoSymbol)
                 ->color('warning')
                 ->requiresConfirmation()
                 ->visible(fn (): bool => $this->canDeactivateLegacySftpOutbound())
-                ->modalHeading('Deactivate legacy SFTP connections?')
+                ->modalHeading('Deactivate SFTP outbound connections?')
                 ->modalDescription(
-                    'SFTP outbound is not available in this release. This will deactivate '
-                    .$count.' active SFTP connection(s). Use HTTPS or AS2 instead.',
+                    'This will deactivate '.$count.' active SFTP outbound connection(s). '
+                    .'Use when cleaning up unused SFTP endpoints.',
                 )
                 ->modalSubmitActionLabel('Deactivate all')
                 ->action(function (): void {
@@ -198,7 +199,7 @@ class IntegrationHealth extends Page
                     $deactivated = OutboundTransportAvailability::deactivateActiveLegacySftpConnections();
 
                     Notification::make()
-                        ->title("Deactivated {$deactivated} legacy SFTP connection(s)")
+                        ->title("Deactivated {$deactivated} SFTP outbound connection(s)")
                         ->success()
                         ->send();
                 }),
@@ -242,5 +243,10 @@ class IntegrationHealth extends Page
         } catch (Throwable) {
             return null;
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.integration-health';
     }
 }

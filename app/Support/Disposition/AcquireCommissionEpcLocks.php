@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Disposition;
 
+use App\Support\Epcis\EpcisCacheLock;
 use Illuminate\Contracts\Cache\Lock;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * One tenant-scoped lock per EPC so overlapping commission sets serialize
@@ -46,7 +46,7 @@ final class AcquireCommissionEpcLocks
 
         try {
             foreach ($sortedIds as $epcId) {
-                $lock = Cache::lock(self::key($tenantId, $epcId), $this->ttlSeconds);
+                $lock = EpcisCacheLock::lock(self::key($tenantId, $epcId), $this->ttlSeconds);
                 $lock->block($this->waitSeconds);
                 $acquired[] = $lock;
             }

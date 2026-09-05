@@ -27,6 +27,8 @@ class ListEpcisDocumentsRequest extends FormRequest
         return [
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'schema_version' => ['sometimes', 'string', 'in:1.2,1.3,2.0'],
+            'format' => ['sometimes', 'string', 'in:xml,json'],
         ];
     }
 }

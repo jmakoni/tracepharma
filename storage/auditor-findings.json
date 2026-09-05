@@ -1,0 +1,568 @@
+{
+    "findings": [
+        {
+            "id": "F-2026-0101",
+            "rule_id": "AUD-FIL-001",
+            "title": "Mutable Role and Fda3911Report Filament resources lack Eloquent policies",
+            "domain": "security",
+            "severity": "high",
+            "confidence": "high",
+            "status": "fixed",
+            "summary": "RoleResource and Fda3911ReportResource are create/edit surfaces gated mainly by canAccess(), with no matching Laravel policies. User/ExceptionCase/EpcisDocument now have policies after remediation; these mutable peers do not. Filament non-strict authorization allows abilities when no policy method exists.",
+            "why_it_matters": "Role editing and FDA 3911 reporting are privileged; missing policies weaken Gate/Filament authorization consistency and make new actions easier to ship without authorize checks.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Filament/App/Resources/Roles/RoleResource.php",
+                    "line": 28,
+                    "end_line": 57,
+                    "detail": "model Role; canAccess/canCreate; no RolePolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/App/Resources/Fda3911Reports/Fda3911ReportResource.php",
+                    "line": 27,
+                    "detail": "Fda3911Report resource without Fda3911ReportPolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Policies",
+                    "detail": "UserPolicy/EpcisDocumentPolicy/ExceptionCasePolicy present; RolePolicy/Fda3911ReportPolicy absent"
+                }
+            ],
+            "affected_resources": [
+                "app/Filament/App/Resources/Roles/RoleResource.php",
+                "app/Filament/App/Resources/Fda3911Reports/Fda3911ReportResource.php",
+                "app/Policies"
+            ],
+            "recommendation": "Add RolePolicy and Fda3911ReportPolicy mirroring existing JobRoleAccess/canAccess gates; wire Filament can* / authorize() on mutate actions.",
+            "verification_notes": "Compared App Filament resources to app/Policies after prior User/EpcisDocument/ExceptionCase remediation.",
+            "metadata": {
+                "priority": "p0",
+                "subsystem": "filament-authz"
+            }
+        },
+        {
+            "id": "F-2026-0102",
+            "rule_id": "AUD-QUE-001",
+            "title": "ExportTenantComplianceArchive has neither $tries nor $timeout",
+            "domain": "conventions",
+            "severity": "high",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "Long-running tenant compliance archive job (large CSV/ZIP generation) implements ShouldQueue with no $tries and no $timeout, so a hung export can occupy a worker indefinitely and retry posture is undefined.",
+            "why_it_matters": "Compliance exports can process large activity/EPCIS inventories; unbounded worker occupancy and unclear retries risk queue starvation and duplicate archives.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Tenants/ExportTenantComplianceArchive.php",
+                    "line": 17,
+                    "end_line": 48,
+                    "detail": "ShouldQueue class with no $tries/$timeout properties"
+                }
+            ],
+            "affected_resources": [
+                "app/Jobs/Tenants/ExportTenantComplianceArchive.php",
+                "app/Services/Tenants/TenantComplianceArchiveGenerator.php"
+            ],
+            "symbol": "ExportTenantComplianceArchive",
+            "recommendation": "Set $timeout aligned under DB/redis retry_after (e.g. 3600) and $tries (e.g. 1\u20133) consistent with ImportFdaDatasetJob / ProcessTrackTraceExportJob.",
+            "verification_notes": "Job source inspected; no tries/timeout properties present.",
+            "metadata": {
+                "priority": "p0",
+                "subsystem": "queues"
+            }
+        },
+        {
+            "id": "F-2026-0103",
+            "rule_id": "AUD-PER-012",
+            "title": "WMS receive-confirm loads all confirmed scan lines via unbounded get()",
+            "domain": "performance",
+            "severity": "high",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "NotifyWmsReceiveConfirm::confirmedScans() loads every confirmed ReceivingScanLine with epc via ->get() before chunking HTTP POSTs. Large ASN/scan-first sessions spike memory on the queue worker.",
+            "why_it_matters": "Hot post-complete receiving path; large sessions can OOM or slow WMS confirmation and delay custody notifications.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php",
+                    "line": 188,
+                    "end_line": 207,
+                    "detail": "ReceivingScanLine::\u2026->with('epc')->get() then map"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php",
+                    "line": 107,
+                    "end_line": 108,
+                    "detail": "confirmedScans() called on complete path"
+                }
+            ],
+            "affected_resources": [
+                "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php"
+            ],
+            "symbol": "NotifyWmsReceiveConfirm::confirmedScans",
+            "recommendation": "Stream/chunk URI extraction with chunkById or cursor before building POST chunks; avoid materializing the full session line set.",
+            "verification_notes": "confirmedScans() source inspected.",
+            "metadata": {
+                "priority": "p1",
+                "subsystem": "receiving"
+            }
+        },
+        {
+            "id": "F-2026-0104",
+            "rule_id": "AUD-FIL-001",
+            "title": "Additional App Filament models still lack policies (mostly read-only)",
+            "domain": "security",
+            "severity": "medium",
+            "confidence": "high",
+            "status": "fixed",
+            "summary": "EpcisJob, Verification, SerializationLot, SsccLabel, ActivityLog, and FdaProduct App resources have no matching policies. Most disable writes via canCreate/canEdit false, but Filament still falls through the no-policy allow path for any ability not overridden.",
+            "why_it_matters": "Defense-in-depth gap relative to resources that now have policies; new mutating actions can ship without Gate coverage.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Filament/App/Resources/EpcisJobs/EpcisJobResource.php",
+                    "detail": "No EpcisJobPolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/App/Resources/Verifications/VerificationResource.php",
+                    "detail": "No VerificationPolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Policies",
+                    "detail": "Policy set does not include these models"
+                }
+            ],
+            "affected_resources": [
+                "app/Filament/App/Resources/EpcisJobs",
+                "app/Filament/App/Resources/Verifications",
+                "app/Filament/App/Resources/SerializationLots",
+                "app/Filament/App/Resources/SsccLabels",
+                "app/Filament/App/Resources/ActivityLogs",
+                "app/Filament/App/Resources/FdaProducts"
+            ],
+            "recommendation": "Add thin viewAny/view policies mirroring canAccess; keep create/update/delete false where resources are read-only.",
+            "verification_notes": "Resource vs Policies directory comparison after prior remediation.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "filament-authz"
+            }
+        },
+        {
+            "id": "F-2026-0105",
+            "rule_id": "AUD-QUE-001",
+            "title": "ProvisionTenantScoutIndexes has neither $tries nor $timeout",
+            "domain": "conventions",
+            "severity": "medium",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "Queued Meilisearch index-settings sync shells out via Artisan with no $tries/$timeout.",
+            "why_it_matters": "Index sync can run long; worker kill/retry posture is unset and can leave tenants with partial Scout provisioning.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Scout/ProvisionTenantScoutIndexes.php",
+                    "line": 16,
+                    "end_line": 40,
+                    "detail": "ShouldQueue without $tries/$timeout; Artisan::call scout-sync"
+                }
+            ],
+            "affected_resources": [
+                "app/Jobs/Scout/ProvisionTenantScoutIndexes.php"
+            ],
+            "symbol": "ProvisionTenantScoutIndexes",
+            "recommendation": "Add $tries and $timeout appropriate for Meilisearch sync duration; fail closed on non-zero Artisan exit (already throws).",
+            "verification_notes": "Job source inspected.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "queues"
+            }
+        },
+        {
+            "id": "F-2026-0106",
+            "rule_id": "AUD-PER-012",
+            "title": "Scan-first TI gate loads all confirmed receiving lines unbounded",
+            "domain": "performance",
+            "severity": "medium",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "CompleteReceivingSession::assertScanFirstTiWhenRequired() pulls every confirmed ReceivingScanLine with epc via ->get() on the complete path.",
+            "why_it_matters": "Large scan-first sessions pay a full-line materialization cost on every complete attempt when TI is required.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Actions/Receiving/CompleteReceivingSession.php",
+                    "line": 239,
+                    "end_line": 253,
+                    "detail": "ReceivingScanLine::\u2026->with('epc')->get()"
+                }
+            ],
+            "affected_resources": [
+                "app/Actions/Receiving/CompleteReceivingSession.php"
+            ],
+            "symbol": "CompleteReceivingSession::assertScanFirstTiWhenRequired",
+            "recommendation": "Chunk/cursor TI checks or query only epc_ids needing TI verification without hydrating all lines.",
+            "verification_notes": "Method source inspected.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "receiving"
+            }
+        },
+        {
+            "id": "F-2026-0107",
+            "rule_id": "AUD-PER-012",
+            "title": "Accept-remaining confirms load all expected parents/children unbounded",
+            "domain": "performance",
+            "severity": "medium",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "ConfirmRemainingExpectedReceivingLines loads all expected parent and child ReceivingScanLine rows (with epc) via ->get() with no chunk/cursor.",
+            "why_it_matters": "Operator accept-remaining on multi-tote ASN sessions can materialize large expected sets in one request.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Actions/Receiving/ConfirmRemainingExpectedReceivingLines.php",
+                    "line": 73,
+                    "end_line": 100,
+                    "detail": "expected parents/children ->get() paths"
+                }
+            ],
+            "affected_resources": [
+                "app/Actions/Receiving/ConfirmRemainingExpectedReceivingLines.php"
+            ],
+            "symbol": "ConfirmRemainingExpectedReceivingLines",
+            "recommendation": "Process expected lines in chunkById batches inside the existing confirmation loop.",
+            "verification_notes": "Action source sampled during re-pass hunt.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "receiving"
+            }
+        },
+        {
+            "id": "F-2026-0108",
+            "rule_id": "AUD-SEC-002",
+            "title": "OutboundConnection mass-assigns is_system and system_key",
+            "domain": "security",
+            "severity": "medium",
+            "confidence": "medium",
+            "status": "fixed",
+            "summary": "Privileged flags is_system and system_key remain on OutboundConnection $fillable. Conformance transitions are guarded in saving(), and deletes block system templates, but fill()/create() can still set is_system/system_key if those keys reach mass assignment.",
+            "why_it_matters": "System outbound templates are privileged integration configuration; mass-assignable flags are a defense-in-depth gap similar to the prior account-security fillable finding.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Models/OutboundConnection.php",
+                    "line": 32,
+                    "end_line": 45,
+                    "detail": "fillable includes is_system, system_key"
+                }
+            ],
+            "affected_resources": [
+                "app/Models/OutboundConnection.php"
+            ],
+            "recommendation": "Remove is_system/system_key from fillable; set only via dedicated seeders/forceFill paths for system templates.",
+            "verification_notes": "Model fillable inspected; no request-path exploit proven (confidence medium).",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "integrations"
+            }
+        },
+        {
+            "id": "F-2026-0201",
+            "rule_id": "AUD-FIL-001",
+            "title": "Mutable Admin Filament resources lack Eloquent policies",
+            "domain": "security",
+            "severity": "high",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "Admin panel create/edit surfaces (Admins, Announcements, Tenants, MailTemplates, FDA registry CRUD) gate access via Permissions::* canAccess/canViewAny only. App panel remediations added Eloquent policies for Role/Fda3911/etc.; Admin mutable peers still have no Admin-typed policies. Filament non-strict authorization allows abilities when no policy method exists.",
+            "why_it_matters": "Platform admin CRUD is highly privileged (tenant lifecycle, admin accounts, announcements). Missing policies weaken Gate/Filament consistency and make new mutate actions easy to ship without authorize().",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/Admins/AdminResource.php",
+                    "line": 21,
+                    "end_line": 42,
+                    "detail": "Admin model; canAccess via Permissions::AdminsManage; no AdminPolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/Announcements/AnnouncementResource.php",
+                    "line": 29,
+                    "end_line": 55,
+                    "detail": "Announcement create/edit; permission-only canViewAny"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/Tenants/TenantResource.php",
+                    "line": 21,
+                    "end_line": 52,
+                    "detail": "Tenant CRUD; Permissions::TenantsManage only"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Policies",
+                    "detail": "No AdminPolicy/AnnouncementPolicy/TenantPolicy; App policies present"
+                }
+            ],
+            "affected_resources": [
+                "app/Filament/Admin/Resources/Admins/AdminResource.php",
+                "app/Filament/Admin/Resources/Announcements/AnnouncementResource.php",
+                "app/Filament/Admin/Resources/Tenants/TenantResource.php",
+                "app/Filament/Admin/Resources/MailTemplates/MailTemplateResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaWddFacilities/FdaWddFacilityResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaEstablishments/FdaEstablishmentResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaOrganizations/FdaOrganizationResource.php",
+                "app/Policies"
+            ],
+            "recommendation": "Add Admin-guard policies (AdminPolicy, AnnouncementPolicy, TenantPolicy, \u2026) mirroring Permissions::* gates; type-hint App\\Models\\Admin; wire Filament can* to policies.",
+            "verification_notes": "App panel 29/29 resources mapped to policies after F-0101/0104; Admin mutable resources have no matching *Policy.php; tests/Feature/Policies has no Admin policy coverage.",
+            "metadata": {
+                "priority": "p0",
+                "subsystem": "admin-filament-authz"
+            }
+        },
+        {
+            "id": "F-2026-0202",
+            "rule_id": "AUD-FIL-001",
+            "title": "Read-mostly Admin Filament resources lack Eloquent policies",
+            "domain": "security",
+            "severity": "medium",
+            "confidence": "high",
+            "status": "fixed",
+            "summary": "Admin DemoRequest, CustomerOnboarding, FdaImportRun, match-review, and WDD list resources disable writes via canCreate/canEdit false but still have no Eloquent policies, so Filament falls through the no-policy allow path for any ability not overridden.",
+            "why_it_matters": "Read paths still expose PII/ops data; missing policies make accidental enablement of create/edit unsafe by default.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/DemoRequests/DemoRequestResource.php",
+                    "detail": "List/View; no DemoRequestPolicy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/CustomerOnboardings/CustomerOnboardingResource.php",
+                    "detail": "List/View; no policy"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Filament/Admin/Resources/Fda/FdaImportRuns/FdaImportRunResource.php",
+                    "detail": "List/View; no policy"
+                }
+            ],
+            "affected_resources": [
+                "app/Filament/Admin/Resources/DemoRequests/DemoRequestResource.php",
+                "app/Filament/Admin/Resources/CustomerOnboardings/CustomerOnboardingResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaImportRuns/FdaImportRunResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaOrganizationMatchReviews/FdaOrganizationMatchReviewResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaWddLicenses/FdaWddLicenseResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaWdd3plUnmatcheds/FdaWdd3plUnmatchedResource.php",
+                "app/Filament/Admin/Resources/Fda/FdaWdd3plStagings/FdaWdd3plStagingResource.php"
+            ],
+            "recommendation": "Add thin viewAny/view policies for Admin read resources; keep create/update/delete false.",
+            "verification_notes": "Same AUD-FIL-001 pattern as F-0104 for App panel; Admin still open.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "admin-filament-authz"
+            }
+        },
+        {
+            "id": "F-2026-0203",
+            "rule_id": "AUD-QUE-001",
+            "title": "Five ShouldQueue jobs declare neither $tries nor $timeout",
+            "domain": "conventions",
+            "severity": "medium",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "After remediating ExportTenantComplianceArchive / ProvisionTenantScoutIndexes / FanOutAnnouncementToTenant, several queued jobs still omit both $tries and $timeout: SeedSystemOutboundTemplates, SeedTenantRoles, RetireAnnouncementOnTenant, PromoteEpcisExceptionToCaseJob, EnsureTenantStorageDirectoriesJob.",
+            "why_it_matters": "Tenant provision and announcement retire paths can hang a worker indefinitely; undefined retry posture risks duplicate seed work or stuck exception promotion.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/SeedSystemOutboundTemplates.php",
+                    "line": 17,
+                    "end_line": 26,
+                    "detail": "ShouldQueue; no tries/timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/SeedTenantRoles.php",
+                    "line": 16,
+                    "end_line": 25,
+                    "detail": "ShouldQueue; no tries/timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Announcements/RetireAnnouncementOnTenant.php",
+                    "line": 16,
+                    "end_line": 26,
+                    "detail": "ShouldQueue; no tries/timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/PromoteEpcisExceptionToCaseJob.php",
+                    "line": 21,
+                    "end_line": 30,
+                    "detail": "ShouldQueue; no tries/timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/EnsureTenantStorageDirectoriesJob.php",
+                    "line": 14,
+                    "end_line": 23,
+                    "detail": "ShouldQueue; no tries/timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Announcements/FanOutAnnouncementToTenant.php",
+                    "line": 32,
+                    "end_line": 34,
+                    "detail": "Contrast: remidiated peer has tries=3 timeout=300"
+                }
+            ],
+            "affected_resources": [
+                "app/Jobs/SeedSystemOutboundTemplates.php",
+                "app/Jobs/SeedTenantRoles.php",
+                "app/Jobs/Announcements/RetireAnnouncementOnTenant.php",
+                "app/Jobs/PromoteEpcisExceptionToCaseJob.php",
+                "app/Jobs/EnsureTenantStorageDirectoriesJob.php"
+            ],
+            "recommendation": "Add $tries and $timeout aligned under queue retry_after (3900); mirror FanOutAnnouncementToTenant for announcement retire; use tries=1 for idempotent seeders if duplicates are harmful.",
+            "verification_notes": "Source inspected; ExportTenantComplianceArchive and ProvisionTenantScoutIndexes remain fixed with bounds.",
+            "metadata": {
+                "priority": "p1",
+                "subsystem": "queues"
+            }
+        },
+        {
+            "id": "F-2026-0204",
+            "rule_id": "AUD-QUE-001",
+            "title": "Operational jobs set $tries but omit $timeout",
+            "domain": "conventions",
+            "severity": "medium",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "NotifyWmsReceiveConfirm ($tries=3), GenerateReceivingLpnLabelJob, ForwardCommissioningToL3, PrintSsccLabelJob, RunProductVerificationJob, SyncTenantAtpLicensesFromFda, and BackfillCatalogPartnerPlacesJob declare retries without a worker $timeout, so a hung HTTP/print call can occupy the worker until the connection layer fails.",
+            "why_it_matters": "WMS confirm, VRS, L3 forward, and label print are latency-bound external I/O; without timeout, retries alone do not bound worker occupancy.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php",
+                    "line": 35,
+                    "detail": "public int $tries = 3; no $timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/PrintSsccLabelJob.php",
+                    "line": 34,
+                    "detail": "tries=3; no timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Vrs/RunProductVerificationJob.php",
+                    "line": 19,
+                    "detail": "tries=3; no timeout"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Jobs/Labeling/ForwardCommissioningToL3.php",
+                    "line": 33,
+                    "detail": "tries=3; no timeout"
+                },
+                {
+                    "type": "config",
+                    "reference": "config/queue.php",
+                    "detail": "database/redis retry_after default 3900 \u2014 timeouts should stay below"
+                }
+            ],
+            "affected_resources": [
+                "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php",
+                "app/Jobs/GenerateReceivingLpnLabelJob.php",
+                "app/Jobs/Labeling/ForwardCommissioningToL3.php",
+                "app/Jobs/PrintSsccLabelJob.php",
+                "app/Jobs/Vrs/RunProductVerificationJob.php",
+                "app/Jobs/SyncTenantAtpLicensesFromFda.php",
+                "app/Jobs/BackfillCatalogPartnerPlacesJob.php"
+            ],
+            "recommendation": "Add $timeout per job class consistent with HTTP client timeouts and under retry_after; keep existing $tries.",
+            "verification_notes": "Confirmed property presence via source grep; ProcessEpcisDocumentJob / TransmitEpcisJob already set both.",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "queues"
+            }
+        },
+        {
+            "id": "F-2026-0205",
+            "rule_id": "AUD-PER-012",
+            "title": "Match-ASN scan-first propagate loads unbounded sessions and confirmed lines",
+            "domain": "performance",
+            "severity": "high",
+            "confidence": "confirmed",
+            "status": "fixed",
+            "summary": "PropagateScanFirstConfirmsToAsnSession loads every scan-first ReceivingSession in open|in_progress|completed (site-filtered only, no time bound) via ->get(), then CopyConfirmedReceivingScansToSession loads all confirmed lines with epc via ->get() per source session. Scales with historical floor activity \u00d7 EPC count on Match ASN.",
+            "why_it_matters": "Busy warehouses accumulate completed scan-first sessions; Match ASN can spike memory/latency and stall the request/worker after F-0103/0106/0107 receiving hot-paths were already chunked.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Actions/Receiving/PropagateScanFirstConfirmsToAsnSession.php",
+                    "line": 32,
+                    "end_line": 47,
+                    "detail": "scan-first sessions whereIn status \u2192 orderBy id \u2192 get()"
+                },
+                {
+                    "type": "file",
+                    "reference": "app/Actions/Receiving/CopyConfirmedReceivingScansToSession.php",
+                    "line": 52,
+                    "end_line": 59,
+                    "detail": "all confirmed lines with(epc) \u2192 get()"
+                }
+            ],
+            "affected_resources": [
+                "app/Actions/Receiving/PropagateScanFirstConfirmsToAsnSession.php",
+                "app/Actions/Receiving/CopyConfirmedReceivingScansToSession.php",
+                "app/Actions/Receiving/PropagateScanFirstConfirmsToTransferReceiveSession.php"
+            ],
+            "symbol": "PropagateScanFirstConfirmsToAsnSession",
+            "recommendation": "Bound candidate sessions (recent window / still-open-first / overlapping EPCs); chunkById confirmed lines when copying; preserve parent-then-child order.",
+            "verification_notes": "Prior receiving remediations still use chunkById; this Match ASN path does not. Transfer twin PropagateScanFirstConfirmsToTransferReceiveSession follows the same session get() pattern.",
+            "metadata": {
+                "priority": "p1",
+                "subsystem": "receiving"
+            }
+        },
+        {
+            "id": "F-2026-0206",
+            "rule_id": "AUD-PER-012",
+            "title": "Domain EPCIS hard-gate hydrates full event/EPC graph via get()",
+            "domain": "performance",
+            "severity": "medium",
+            "confidence": "high",
+            "status": "fixed",
+            "summary": "RunDomainEpcisHardGate::handle loads all active events, then all EventEpc (with epc) and EventQuantity rows for the document via whereIn(...)->get() before ValidationPipeline. Large inbound ASN documents materialize the full graph in memory on validate/commit.",
+            "why_it_matters": "Ingest/validate is on the critical path for large partner files; unbounded hydration risks memory spikes even when queue jobs have timeouts.",
+            "evidence": [
+                {
+                    "type": "file",
+                    "reference": "app/Actions/Epcis/RunDomainEpcisHardGate.php",
+                    "line": 31,
+                    "end_line": 50,
+                    "detail": "activeEvents()->get(); EventEpc/EventQuantity whereIn get"
+                }
+            ],
+            "affected_resources": [
+                "app/Actions/Epcis/RunDomainEpcisHardGate.php",
+                "app/Jobs/ValidateAndCommitEpcisDocumentJob.php"
+            ],
+            "symbol": "RunDomainEpcisHardGate::handle",
+            "recommendation": "Stream/chunk event graph into ValidationContext or validate in batches if pipeline contracts allow; otherwise document memory budget and fail closed earlier on event-count caps.",
+            "verification_notes": "GenerateReceivingEpcisEvents also loads all confirmed EPCs under lockForUpdate \u2014 not filed separately because single ObjectEvent authorship requires a consistent locked set (architectural necessity, not a pure unbounded list scan).",
+            "metadata": {
+                "priority": "p2",
+                "subsystem": "epcis-ingest"
+            }
+        }
+    ]
+}

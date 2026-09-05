@@ -13,6 +13,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\AdminRoleSeeder;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantDatabaseName;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
@@ -85,7 +86,7 @@ class SetupDemoTenantCommand extends Command
             }
         }
 
-        $tenant->run(function () use ($profile) {
+        TenantRunner::run($tenant, function () use ($profile) {
             app(TenantRoleSeeder::class)->seedForProfile($profile);
 
             $user = User::query()->updateOrCreate(

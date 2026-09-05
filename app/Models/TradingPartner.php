@@ -91,6 +91,10 @@ class TradingPartner extends Model
         'description',
         'gln',
         'sgln',
+        'duns_number',
+        'dea_number',
+        'hin_number',
+        'chemical_reg_number',
         'partner_type',
         'street_address',
         'street_address_2',
@@ -132,6 +136,13 @@ class TradingPartner extends Model
     public function sites(): HasMany
     {
         return $this->hasMany(Site::class);
+    }
+
+    public function outboundConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(OutboundConnection::class, 'outbound_connection_trading_partner')
+            ->using(OutboundConnectionTradingPartner::class)
+            ->withTimestamps();
     }
 
     public function ssccNumberRanges(): HasMany
@@ -201,7 +212,7 @@ class TradingPartner extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'gln', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
+            ->logOnly(['name', 'gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }

@@ -74,6 +74,8 @@ class LegalAcceptanceGateTest extends TestCase
             $this->assertSame(200, $response->getStatusCode());
             $this->assertTrue($owner->fresh()?->legal_notice_started_at?->equalTo($started));
 
+            // Avoid Dashboard→OnboardingWizard redirect so we assert the legal gate, not onboarding.
+            session()->put('filament.app.onboarding_wizard_redirected', true);
             Livewire::test(Dashboard::class)->assertOk();
 
             $banner = view('filament.app.hooks.legal-acceptance-banner')->render();
@@ -172,6 +174,123 @@ class LegalAcceptanceGateTest extends TestCase
             $this->assertTrue(LegalAcceptance::isHardBlocked($owner));
         } finally {
             TenantImpersonation::forget();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function hard_blocked_user_cannot_bypass_via_livewire_update_for_other_pages(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $owner = $this->createUserWithRole(TenantRole::Owner);
+            $this->actingAs($owner);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $started = Carbon::parse('2026-08-18 12:00:00');
+            Carbon::setTestNow($started);
+            LegalAcceptance::ensureNoticeStarted($owner);
+            $owner->refresh();
+            Carbon::setTestNow($started->copy()->addDays(15));
+
+            $request = Request::create('/livewire/update', 'POST', [
+                'components' => [[
+                    'snapshot' => json_encode([
+                        'memo' => [
+                            'name' => 'app.filament.app.pages.dashboard',
+                            'path' => '/',
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    'updates' => [],
+                    'calls' => [],
+                ]],
+            ], server: ['HTTP_X_LIVEWIRE' => 'true']);
+
+            $response = $this->throughGate($request);
+
+            $this->assertTrue($response->isRedirect());
+            $this->assertSame(
+                AcceptLegalDocuments::getUrl(panel: 'app'),
+                $response->headers->get('Location'),
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function hard_blocked_user_may_use_accept_legal_livewire(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $owner = $this->createUserWithRole(TenantRole::Owner);
+            $this->actingAs($owner);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $started = Carbon::parse('2026-08-18 12:00:00');
+            Carbon::setTestNow($started);
+            LegalAcceptance::ensureNoticeStarted($owner);
+            $owner->refresh();
+            Carbon::setTestNow($started->copy()->addDays(15));
+
+            $request = Request::create('/livewire/update', 'POST', [
+                'components' => [[
+                    'snapshot' => json_encode([
+                        'memo' => [
+                            'name' => AcceptLegalDocuments::class,
+                            'path' => '/accept-legal-documents',
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    'updates' => [],
+                    'calls' => [['method' => 'accept', 'params' => []]],
+                ]],
+            ], server: ['HTTP_X_LIVEWIRE' => 'true']);
+
+            $response = $this->throughGate($request);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('ok', $response->getContent());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function soft_notice_still_allows_non_accept_livewire(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $owner = $this->createUserWithRole(TenantRole::Owner);
+            $this->actingAs($owner);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $started = Carbon::parse('2026-08-18 12:00:00');
+            Carbon::setTestNow($started);
+            LegalAcceptance::ensureNoticeStarted($owner);
+            $owner->refresh();
+
+            $this->assertFalse(LegalAcceptance::isHardBlocked($owner));
+
+            $request = Request::create('/livewire/update', 'POST', [
+                'components' => [[
+                    'snapshot' => json_encode([
+                        'memo' => [
+                            'name' => 'app.filament.app.pages.dashboard',
+                            'path' => '/',
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    'updates' => [],
+                    'calls' => [],
+                ]],
+            ], server: ['HTTP_X_LIVEWIRE' => 'true']);
+
+            $response = $this->throughGate($request);
+
+            $this->assertSame(200, $response->getStatusCode());
+        } finally {
             $this->cleanup($tenant);
         }
     }

@@ -1,11 +1,14 @@
 @php
     /** @var \App\Services\Dscsa\TransactionReport\LotPageData $page */
+    /** @var \App\Services\Dscsa\TransactionReport\TransactionReportData $report */
     /** @var array{generated_from: string, generated_by: string, generated_at: string} $footer */
 @endphp
-<div class="header">
-        <div class="title">Transaction Report ({{ $page->referenceNumber }})</div>
-        <div class="shipment-id">ShipmentID: {{ $page->shipmentId }}</div>
-    </div>
+@include('dscsa.compliance-report.partials.header', [
+    'title' => 'Transaction Report ('.$page->referenceNumber.')',
+    'subtitle' => 'ShipmentID: '.$page->shipmentId,
+    'logoDataUri' => $report->logoDataUri ?? null,
+    'compact' => false,
+])
 
     <div class="section-title">Transaction Information</div>
     <table class="ti-table">
@@ -69,13 +72,11 @@
         </tbody>
     </table>
 
-    <div class="section-title">DSCSA Legal Statement</div>
-    <div class="legal">
-        <p>{{ $page->legalStatement }}</p>
-        @if (filled($page->directPurchaseStatement))
-            <p>{{ $page->directPurchaseStatement }}</p>
-        @endif
-    </div>
+    @include('dscsa.compliance-report.partials.legal-statements', [
+        'legalStatement' => $page->legalStatement,
+        'directPurchaseStatement' => $page->directPurchaseStatement,
+        'receivedPrevWholesalerStatement' => $page->receivedPrevWholesalerStatement,
+    ])
 
     <div class="footer">
         <div>Generated from: {{ $footer['generated_from'] }}</div>

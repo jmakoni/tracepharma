@@ -11,6 +11,7 @@ use App\Filament\App\Resources\EpcisDocuments\RelationManagers\ProductsRelationM
 use App\Filament\App\Resources\EpcisDocuments\RelationManagers\UnmatchedGlnsRelationManager;
 use App\Filament\App\Resources\EpcisDocuments\Schemas\EpcisDocumentInfolist;
 use App\Filament\App\Resources\EpcisDocuments\Tables\EpcisDocumentsTable;
+use App\Filament\App\Support\UsesTenantScoutGlobalSearch;
 use App\Models\Epcis\EpcisDocument;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -21,12 +22,15 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class EpcisDocumentResource extends Resource
+class EpcisDocumentResource extends Resource implements HasKnowledgeBase
 {
+    use UsesTenantScoutGlobalSearch;
+
     protected static ?string $model = EpcisDocument::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedInboxArrowDown;
@@ -43,9 +47,11 @@ class EpcisDocumentResource extends Resource
 
     protected static ?string $slug = 'inbound-epcis';
 
+    protected static ?string $recordTitleAttribute = 'original_filename';
+
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsInboundIntegrations())
+        return TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavReceive);
     }
 
@@ -108,5 +114,54 @@ class EpcisDocumentResource extends Resource
             'index' => ListEpcisDocuments::route('/'),
             'view' => ViewEpcisDocument::route('/{record}'),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return [
+            'original_filename',
+            'document_uuid',
+            'asn_number',
+            'customer_po',
+            'sender_gln',
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected static function tenantScoutSqlColumns(): array
+    {
+        return [
+            'original_filename',
+            'document_uuid',
+            'asn_number',
+            'customer_po',
+            'sender_gln',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        if (! $record instanceof EpcisDocument) {
+            return [];
+        }
+
+        return array_filter([
+            'Status' => $record->status,
+            'ASN' => $record->asn_number,
+            'PO' => $record->customer_po,
+        ]);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.inbound-epcis';
     }
 }

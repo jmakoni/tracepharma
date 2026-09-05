@@ -4,19 +4,21 @@ namespace App\Support\Integrations;
 
 use App\Enums\OutboundTransport;
 use App\Models\OutboundConnection;
-use DomainException;
-use Illuminate\Validation\ValidationException;
 
 final class OutboundTransportAvailability
 {
     public static function isSelectable(OutboundTransport $transport): bool
     {
-        return $transport !== OutboundTransport::Sftp;
+        return true;
     }
 
+    /**
+     * Previously marked outbound SFTP as legacy/unavailable. SFTP is a first-class
+     * outbound transport; retained for Integration Health API compatibility.
+     */
     public static function isLegacyUnavailable(OutboundTransport $transport): bool
     {
-        return $transport === OutboundTransport::Sftp;
+        return false;
     }
 
     public static function legacyBadgeLabel(): string
@@ -26,54 +28,26 @@ final class OutboundTransportAvailability
 
     public static function sftpSaveMessage(): string
     {
-        return 'SFTP outbound is not available in this release. Use HTTPS or AS2 instead.';
+        return 'SFTP outbound requires host, username, and outbound path.';
     }
 
     public static function sftpTransmitMessage(): string
     {
-        return 'SFTP outbound is not available in this release. Edit the outbound connection to use HTTPS or AS2, or deactivate this legacy SFTP connection.';
+        return 'SFTP outbound transmit failed. Check host, credentials, and outbound path.';
     }
 
-    /**
-     * Fail closed when UI/API attempts to create or persist SFTP outbound transport.
-     *
-     * Legacy rows may remain in the database for audit, but cannot be activated and
-     * cannot be switched to SFTP from another transport.
-     */
     public static function assertSavable(OutboundConnection $connection): void
     {
-        if ($connection->transport !== OutboundTransport::Sftp) {
-            return;
-        }
-
-        if (! $connection->exists) {
-            throw ValidationException::withMessages([
-                'transport' => [self::sftpSaveMessage()],
-            ]);
-        }
-
-        if ($connection->isDirty('transport')) {
-            throw ValidationException::withMessages([
-                'transport' => [self::sftpSaveMessage()],
-            ]);
-        }
-
-        if ($connection->isDirty('is_active') && $connection->is_active) {
-            throw ValidationException::withMessages([
-                'is_active' => [self::sftpSaveMessage()],
-            ]);
-        }
+        // All outbound transports including SFTP are savable.
     }
 
     public static function assertTransmittable(OutboundConnection $connection): void
     {
-        if ($connection->transport === OutboundTransport::Sftp) {
-            throw new DomainException(self::sftpTransmitMessage());
-        }
+        // All outbound transports including SFTP are transmittable when configured.
     }
 
     /**
-     * Deactivate all active legacy SFTP outbound connections in the current tenant.
+     * Deactivate all active SFTP outbound connections in the current tenant (ops cleanup).
      */
     public static function deactivateActiveLegacySftpConnections(): int
     {

@@ -4,6 +4,7 @@ namespace App\Models\Shipping;
 
 use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
+use App\Models\Principal;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\User;
@@ -18,6 +19,7 @@ class OutboundShippingSession extends Model
 
     protected $fillable = [
         'site_id',
+        'principal_id',
         'trading_partner_id',
         'ship_to_site_id',
         'ship_to_gln',
@@ -31,8 +33,16 @@ class OutboundShippingSession extends Model
         'invoice_number',
         'shipment_reference',
         'dscsa_affirm',
+        'is_drop_shipment',
         'expected_count',
         'confirmed_count',
+        'split_declared',
+        'split_declared_at',
+        'split_declared_by',
+        'quantity_gate_overridden',
+        'quantity_gate_overridden_at',
+        'quantity_gate_override_reason',
+        'quantity_gate_overridden_by',
         'epcis_document_id',
         'shipping_events_generated_at',
         'opened_by',
@@ -48,13 +58,18 @@ class OutboundShippingSession extends Model
     {
         return [
             'dscsa_affirm' => 'boolean',
+            'is_drop_shipment' => 'boolean',
             'is_corrective' => 'boolean',
+            'split_declared' => 'boolean',
+            'quantity_gate_overridden' => 'boolean',
             'wms_complete' => 'boolean',
             'expected_count' => 'integer',
             'confirmed_count' => 'integer',
             'opened_at' => 'datetime',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'split_declared_at' => 'datetime',
+            'quantity_gate_overridden_at' => 'datetime',
             'shipping_events_generated_at' => 'datetime',
         ];
     }
@@ -62,6 +77,11 @@ class OutboundShippingSession extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class, 'site_id');
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function tradingPartner(): BelongsTo

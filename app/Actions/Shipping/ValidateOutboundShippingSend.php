@@ -2,20 +2,27 @@
 
 namespace App\Actions\Shipping;
 
+use App\Enums\ExceptionStatus;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Models\Epcis\Epc;
+use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
+use App\Services\Exceptions\ExceptionService;
 use App\Support\Gs1\Sgln;
 use App\Support\MasterData\AtpDisclosure;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\AtpReadinessGate;
 use App\Support\MasterData\SiteAtpReadiness;
-use App\Support\MasterData\TenantReceivingState;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\ResolveOutboundShipToSgln;
+use App\Support\Shipping\SsccShipCompletenessException;
+use App\Support\TenantSettings;
+use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -30,6 +37,7 @@ final class ValidateOutboundShippingSend
         private readonly DetectOpenParentHierarchyOnShip $openParentHierarchyOnShip,
         private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
         private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
+        private readonly ExceptionService $exceptionService,
     ) {}
 
     public function handle(OutboundShippingSession $session): array
@@ -74,6 +82,10 @@ final class ValidateOutboundShippingSend
             $blockers[] = 'Confirm at least one unit before sending.';
         }
 
+        foreach ($this->quantityBlockers($session) as $quantityBlocker) {
+            $blockers[] = $quantityBlocker;
+        }
+
         if (($openParentBlocker = $this->openParentHierarchyOnShip->blockerMessage($session)) !== null) {
             $blockers[] = $openParentBlocker;
         }
@@ -82,11 +94,39 @@ final class ValidateOutboundShippingSend
             $blockers[] = $emptyPlateBlocker;
         }
 
-        if (($atpBlocker = $this->atpBlocker($session)) !== null) {
-            $blockers[] = $atpBlocker;
+        if (($atpIssue = $this->atpIssue($session)) !== null
+            && TenantSettings::forTenant(tenant())->blockSendOnAtpGap()) {
+            $blockers[] = $atpIssue;
         }
 
         return $blockers;
+    }
+
+    /**
+     * Soft ATP gaps when {@see TenantSettings::blockSendOnAtpGap()} is off.
+     *
+     * @return list<string>
+     */
+    public function warnings(OutboundShippingSession $session): array
+    {
+        if (TenantSettings::forTenant(tenant())->blockSendOnAtpGap()) {
+            return [];
+        }
+
+        $session->loadMissing(['tradingPartner', 'shipToSite', 'site']);
+        $issue = $this->atpIssue($session);
+
+        return $issue !== null ? [$issue] : [];
+    }
+
+    /**
+     * ATP destination-license issue text, or null when the gate is quiet / bypassed.
+     */
+    public function atpIssue(OutboundShippingSession $session): ?string
+    {
+        $session->loadMissing(['tradingPartner', 'shipToSite', 'site']);
+
+        return $this->atpBlocker($session);
     }
 
     /**
@@ -110,12 +150,163 @@ final class ValidateOutboundShippingSend
         foreach (Epc::query()->whereIn('id', $epcIds)->get() as $epc) {
             try {
                 $this->assertOutermostSsccHasChildren->handle($epc);
+            } catch (SsccShipCompletenessException $exception) {
+                $blockers[] = $exception->getMessage();
+                $this->openHierarchyException($session, $exception);
             } catch (InvalidArgumentException $exception) {
                 $blockers[] = $exception->getMessage();
             }
         }
 
         return $blockers;
+    }
+
+    /**
+     * When expected_count > 0: overscan always blocks; under-scan requires split_declared.
+     * Live-ladder connections (first_live_lot / hypercare / live) cannot skip with expected_count = 0.
+     *
+     * @return list<string>
+     */
+    private function quantityBlockers(OutboundShippingSession $session): array
+    {
+        $expected = (int) $session->expected_count;
+        $confirmed = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->count();
+
+        if ($expected <= 0) {
+            $session->loadMissing('outboundConnection');
+            $connection = $session->outboundConnection;
+
+            if ($connection !== null && $connection->conformanceState()->requiresExpectedQuantity()) {
+                if ((bool) $session->quantity_gate_overridden) {
+                    return [];
+                }
+
+                $message = 'Expected unit count is required for live outbound connections. '
+                    .'Set expected count from the ASN/order/WMS or on the ship order before sending.';
+                $this->openQuantityMismatchException($session, $message, $expected, $confirmed);
+
+                return [$message];
+            }
+
+            return [];
+        }
+
+        if ($confirmed > $expected) {
+            return [
+                sprintf(
+                    'Confirmed count (%d) exceeds expected units (%d). Remove extra scans before sending.',
+                    $confirmed,
+                    $expected,
+                ),
+            ];
+        }
+
+        if ($confirmed < $expected && ! (bool) $session->split_declared) {
+            $message = sprintf(
+                'Confirmed count (%d) is below expected units (%d). Confirm the remaining units or declare a split/partial shipment.',
+                $confirmed,
+                $expected,
+            );
+            $this->openQuantityMismatchException($session, $message, $expected, $confirmed);
+
+            return [$message];
+        }
+
+        return [];
+    }
+
+    private function openQuantityMismatchException(
+        OutboundShippingSession $session,
+        string $message,
+        int $expected,
+        int $confirmed,
+    ): void {
+        $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
+
+        if ($type === null) {
+            (new ExceptionTypeSeeder)->run();
+            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
+        }
+
+        if ($type === null) {
+            return;
+        }
+
+        $fingerprint = 'ship-order-#'.$session->getKey().'-qty';
+
+        $alreadyOpen = ExceptionCase::query()
+            ->where('exception_type_id', $type->getKey())
+            ->whereNotIn('status', [
+                ExceptionStatus::Resolved->value,
+                ExceptionStatus::Closed->value,
+                ExceptionStatus::Cancelled->value,
+            ])
+            ->where('description', 'like', '%'.$fingerprint.'%')
+            ->exists();
+
+        if ($alreadyOpen) {
+            return;
+        }
+
+        $epcIds = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->pluck('epc_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $this->exceptionService->create([
+            'exception_type_id' => $type->getKey(),
+            'document_id' => null,
+            'site_id' => $session->site_id,
+            'trading_partner_id' => $session->trading_partner_id,
+            'title' => $type->name,
+            'description' => $message.' ['.$fingerprint.'; expected='.$expected.'; confirmed='.$confirmed.']',
+            'status' => ExceptionStatus::New->value,
+        ], $epcIds);
+    }
+
+    private function openHierarchyException(
+        OutboundShippingSession $session,
+        SsccShipCompletenessException $exception,
+    ): void {
+        $type = ExceptionType::query()->where('code', $exception->exceptionTypeCode)->first();
+
+        if ($type === null) {
+            (new ExceptionTypeSeeder)->run();
+            $type = ExceptionType::query()->where('code', $exception->exceptionTypeCode)->first();
+        }
+
+        if ($type === null) {
+            return;
+        }
+
+        $alreadyOpen = ExceptionCase::query()
+            ->where('exception_type_id', $type->getKey())
+            ->whereNotIn('status', [
+                ExceptionStatus::Resolved->value,
+                ExceptionStatus::Closed->value,
+                ExceptionStatus::Cancelled->value,
+            ])
+            ->whereHas('epcs', fn ($query) => $query->where('epcs.id', $exception->parentEpcId))
+            ->exists();
+
+        if ($alreadyOpen) {
+            return;
+        }
+
+        $this->exceptionService->create([
+            'exception_type_id' => $type->getKey(),
+            'document_id' => null,
+            'site_id' => $session->site_id,
+            'trading_partner_id' => $session->trading_partner_id,
+            'title' => $type->name,
+            'description' => $exception->getMessage(),
+            'status' => ExceptionStatus::New->value,
+        ], $exception->epcIdsForCase());
     }
 
     private function hasConfirmedLines(OutboundShippingSession $session): bool
@@ -161,10 +352,9 @@ final class ValidateOutboundShippingSend
     }
 
     /**
-     * Inbound only soft-warns on partner ATP, but a shipment we author is a transfer of
-     * ownership to that party: a license for the tenant receiving state that is expired,
-     * missing, or carries no expiration date stops the send instead of trailing it as an
-     * exception.
+     * Inbound only soft-warns on partner ATP. Outbound defaults to a hard send block when
+     * the destination license is missing/expired; tenants may switch to soft warning via
+     * {@see TenantSettings::blockSendOnAtpGap()} (false).
      *
      * Silent only when there is nothing to judge at all — no customer, and no site on
      * record for the one that is selected.
@@ -178,22 +368,32 @@ final class ValidateOutboundShippingSend
             return null;
         }
 
-        $tenantState = TenantReceivingState::resolve();
+        $evaluationKeys = AtpLicenseRelevance::evaluationJurisdictionKeys();
+        $jurisdictionLabel = AtpLicenseRelevance::evaluationJurisdictionsLabel();
 
-        // Without a receiving state every partner reads as NeedsReceivingState, which is
-        // not evidence of a license — say so rather than waving the shipment through.
-        if ($tenantState === null) {
-            return 'Set the organization receiving state in Organization settings before sending — partner ATP licenses cannot be evaluated without it.';
+        // Without org footprint or preferred receiving state, every partner reads as
+        // NeedsReceivingState — say so rather than waving the shipment through.
+        if ($evaluationKeys === []) {
+            $tail = TenantSettings::forTenant(tenant())->blockSendOnAtpGap()
+                ? 'Partner ATP licenses cannot be evaluated without jurisdictions.'
+                : 'Partner ATP licenses cannot be evaluated without jurisdictions (soft warning).';
+
+            return 'Add organization facility sites with country/state, or set a preferred receiving state in Organization settings, before sending — '.$tail;
         }
 
         $destination = $this->destinationCandidates($session);
 
         if ($destination['unresolved_gln'] !== null) {
+            $tail = TenantSettings::forTenant(tenant())->blockSendOnAtpGap()
+                ? 'Add the destination site before sending.'
+                : 'Add the destination site when you can (soft warning — send is allowed).';
+
             return sprintf(
-                'Ship-to GLN %s does not match any active site on record for %s, so its ATP license for %s cannot be checked. Add the destination site before sending.',
+                'Ship-to GLN %s does not match any active site on record for %s, so its ATP license for %s cannot be checked. %s',
                 $destination['unresolved_gln'],
                 $session->tradingPartner?->name ?? 'the selected customer',
-                $tenantState,
+                $jurisdictionLabel,
+                $tail,
             );
         }
 
@@ -216,7 +416,7 @@ final class ValidateOutboundShippingSend
             $unready[] = $status;
         }
 
-        return $this->atpBlockerMessage($session, $sites, $unready, $tenantState);
+        return $this->atpBlockerMessage($session, $sites, $unready, $jurisdictionLabel);
     }
 
     /**
@@ -283,38 +483,57 @@ final class ValidateOutboundShippingSend
     ): string {
         if ($sites->count() === 1) {
             return sprintf(
-                '%s Sending is blocked until a valid license is on record. %s',
+                '%s %s',
                 $this->singleSiteReason($sites->first(), $unready[0], $tenantState),
                 AtpDisclosure::SHORT,
             );
         }
 
+        $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+        $tail = $hard
+            ? 'Sending is blocked until one is.'
+            : 'Sending is allowed with a soft warning until one is.';
+
         return sprintf(
-            'Customer "%s" has no site with a valid ATP license on record for %s — checked %d site(s). Sending is blocked until one is. %s',
+            'Customer "%s" has no site with a valid ATP license on record for %s — checked %d site(s). %s %s',
             $session->tradingPartner?->name ?? 'selected customer',
             $tenantState,
             $sites->count(),
+            $tail,
             AtpDisclosure::SHORT,
         );
     }
 
     private function singleSiteReason(Site $site, SiteAtpReadinessStatus $status, string $tenantState): string
     {
+        $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+        $tail = $hard
+            ? 'Sending is blocked until a valid license is on record.'
+            : 'Sending is allowed with a soft warning until a valid license is on record.';
+
         return match ($status) {
             SiteAtpReadinessStatus::Expired => sprintf(
-                'Ship-to site "%s" has an expired ATP license for %s on record.',
+                'Ship-to site "%s" has an expired ATP license for %s on record. %s',
                 $site->name,
                 $tenantState,
+                $tail,
             ),
             SiteAtpReadinessStatus::UnknownExpiry => sprintf(
-                'Ship-to site "%s" has an ATP license for %s with no expiration date on file, so it cannot be shown to be in force.',
+                'Ship-to site "%s" has an ATP license for %s with no expiration date on file, so it cannot be shown to be in force. %s',
                 $site->name,
                 $tenantState,
+                $tail,
+            ),
+            SiteAtpReadinessStatus::NeedsReceivingState => sprintf(
+                'Ship-to site "%s" cannot be ATP-evaluated — organization jurisdictions are not configured. %s',
+                $site->name,
+                $tail,
             ),
             default => sprintf(
-                'Ship-to site "%s" has no ATP license for %s on record.',
+                'Ship-to site "%s" has no ATP license for %s on record. %s',
                 $site->name,
                 $tenantState,
+                $tail,
             ),
         };
     }

@@ -25,7 +25,7 @@ class OutboundEpcisFilenameTest extends TestCase
         $tenant->domains()->create(['domain' => 'acme.example.test']);
 
         try {
-            tenancy()->initialize($tenant);
+            \Illuminate\Support\Facades\Storage::fake('local');
 
             $at = Carbon::parse('2026-08-08T02:54:26.000Z');
             $filename = OutboundEpcisFilename::forShippingEvent($tenant, $at);
@@ -39,8 +39,16 @@ class OutboundEpcisFilenameTest extends TestCase
                 OutboundEpcisFilename::storagePath($tenant, $at),
             );
             $this->assertSame('urn:uuid:20260808025426000', SbdhInstanceIdentifier::fromEventTime($at));
+
+            $allocated = OutboundEpcisFilename::allocateUnique($tenant, $at, 'xml', 'local');
+            $this->assertSame($filename, $allocated['filename']);
+            $this->assertSame('epcis/outbound/'.$filename, $allocated['path']);
+
+            \Illuminate\Support\Facades\Storage::disk('local')->put($allocated['path'], '<xml/>');
+            $bumped = OutboundEpcisFilename::allocateUnique($tenant, $at, 'xml', 'local');
+            $this->assertNotSame($allocated['filename'], $bumped['filename']);
+            $this->assertStringContainsString('20260808T025427Z', $bumped['filename']);
         } finally {
-            tenancy()->end();
             $tenant->domains()->delete();
             $tenant->delete();
         }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support\Epcis;
 
+use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
+use DomainException;
+
 /**
  * DSCSA TI/TS fragments for outbound shipping EPCIS: business transaction
  * references, source/destination parties, the transaction statement, and the
@@ -65,6 +68,27 @@ final class ShippingTiTsFragments
      * Empty string when neither reference can be authored, so the event omits the
      * element rather than emitting an invalid empty list.
      */
+    /**
+     * @return list<array{type: string, bizTransaction: string}>
+     */
+    public static function bizTransactionListJson(
+        ?string $po,
+        ?string $asn,
+        ?string $destOwningGln,
+        ?string $sourceOwningGln,
+    ): array {
+        $transactions = [];
+
+        foreach (self::bizTransactions($po, $asn, $destOwningGln, $sourceOwningGln) as $transaction) {
+            $transactions[] = [
+                'type' => $transaction['type_uri'],
+                'bizTransaction' => $transaction['value'],
+            ];
+        }
+
+        return $transactions;
+    }
+
     public static function bizTransactionListXml(
         ?string $po,
         ?string $asn,
@@ -90,13 +114,55 @@ final class ShippingTiTsFragments
             "        </bizTransactionList>\n";
     }
 
+    /**
+     * EPCIS 2.0 JSON-LD source/destination parties (top-level on the event).
+     *
+     * @return array{
+     *     sourceList: list<array{type: string, source: string}>,
+     *     destinationList: list<array{type: string, destination: string}>
+     * }
+     */
+    public static function sourceDestinationListsJson(
+        string $sourceOwningSgln,
+        string $sourceLocationSgln,
+        string $destOwningSgln,
+        string $destLocationSgln,
+    ): array {
+        return [
+            'sourceList' => [
+                [
+                    'type' => self::SDT_OWNING_PARTY,
+                    'source' => $sourceOwningSgln,
+                ],
+                [
+                    'type' => self::SDT_LOCATION,
+                    'source' => $sourceLocationSgln,
+                ],
+            ],
+            'destinationList' => [
+                [
+                    'type' => self::SDT_OWNING_PARTY,
+                    'destination' => $destOwningSgln,
+                ],
+                [
+                    'type' => self::SDT_LOCATION,
+                    'destination' => $destLocationSgln,
+                ],
+            ],
+        ];
+    }
+
     public static function sourceDestinationExtensionXml(
         string $sourceOwningSgln,
         string $sourceLocationSgln,
         string $destOwningSgln,
         string $destLocationSgln,
+        ?string $directPurchaseStatement = null,
     ): string {
-        return
+        // Core EPCIS 1.2 ObjectEventExtensionType allows sourceList/destinationList
+        // then optional nested <extension> (##local only). GS1 US HC directPurchase
+        // is namespaced (##other) and must follow the ObjectEvent <extension> block.
+        $xml =
             "        <extension>\n".
             "          <sourceList>\n".
             '            <source type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($sourceOwningSgln)."</source>\n".
@@ -107,18 +173,117 @@ final class ShippingTiTsFragments
             '            <destination type="'.self::e(self::SDT_LOCATION).'">'.self::e($destLocationSgln)."</destination>\n".
             "          </destinationList>\n".
             "        </extension>\n";
+
+        if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
+            $xml .= self::directPurchaseXml($directPurchaseStatement);
+        }
+
+        return $xml;
+    }
+
+    public static function directPurchaseXml(string $statement): string
+    {
+        return
+            "        <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
+            '          <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
+            "        </gs1ushc:directPurchase>\n";
     }
 
     /**
-     * Indented for a direct child of EPCISHeader.
+     * @return array<string, mixed>
      */
-    public static function dscsaTransactionStatementXml(): string
+    public static function directPurchaseExtensionJson(string $statement): array
     {
+        return [
+            'directPurchase' => [
+                'qualifier' => 'ENTIRELY_DIRECT',
+                'directPurchaseStatement' => $statement,
+            ],
+        ];
+    }
+
+    /**
+     * Indented for EPCISHeader (or nested under header extension).
+     *
+     * @param  non-empty-string  $indent
+     */
+    public static function dscsaTransactionStatementXml(string $indent = '    '): string
+    {
+        $child = $indent.'  ';
+
         return
-            "    <gs1ushc:dscsaTransactionStatement>\n".
-            "      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
-            '      <gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
-            "    </gs1ushc:dscsaTransactionStatement>\n";
+            $indent."<gs1ushc:dscsaTransactionStatement>\n".
+            $child."<gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
+            $child.'<gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
+            $indent."</gs1ushc:dscsaTransactionStatement>\n";
+    }
+
+    /**
+     * GS1 US HC drop-shipment indicator. Always emits true|false so partners can
+     * distinguish an explicit non-drop ship from a missing element. Inbound catalog
+     * rule {@see EpcisCatalogBusinessRules} string-scans for `dropShipment`.
+     *
+     * @param  non-empty-string  $indent
+     */
+    public static function dropShipmentIndicatorXml(bool $isDropShipment, string $indent = '    '): string
+    {
+        $value = $isDropShipment ? 'true' : 'false';
+
+        return $indent.'<gs1ushc:dropShipment>'.$value."</gs1ushc:dropShipment>\n";
+    }
+
+    /**
+     * GS1 US HC drop-shipment indicator on an EPCIS 2.0 JSON-LD document envelope.
+     */
+    public static function withDropShipmentDocumentField(string $json, bool $isDropShipment = true): string
+    {
+        /** @var array<string, mixed> $document */
+        $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $document['gs1ushc:dropShipment'] = $isDropShipment;
+
+        $encoded = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($encoded === false) {
+            throw new DomainException('Unable to encode drop-shipment EPCIS 2.0 JSON-LD document.');
+        }
+
+        return $encoded."\n";
+    }
+
+    /**
+     * GS1 US HC DSCSA transaction statement on an EPCIS 2.0 JSON-LD document envelope.
+     */
+    public static function withDscsaTransactionStatementDocumentField(string $json): string
+    {
+        /** @var array<string, mixed> $document */
+        $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $document['gs1ushc:dscsaTransactionStatement'] = [
+            'gs1ushc:affirmTransactionStatement' => true,
+            'gs1ushc:legalNotice' => self::LEGAL_NOTICE,
+        ];
+
+        $encoded = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($encoded === false) {
+            throw new DomainException('Unable to encode DSCSA transaction statement on EPCIS 2.0 JSON-LD document.');
+        }
+
+        return $encoded."\n";
+    }
+
+    /**
+     * Fail closed when a drop-ship ship order's payload lacks the indicator
+     * inbound validation would accept (stripos for `dropShipment` in XML or JSON).
+     */
+    public static function assertDropShipmentEmitted(bool $isDropShipment, string $payload): void
+    {
+        if (! $isDropShipment) {
+            return;
+        }
+
+        if (stripos($payload, 'dropShipment') === false) {
+            throw new DomainException(
+                'Drop-shipment ship order requires a dropShipment indicator in outbound EPCIS, but none was emitted.',
+            );
+        }
     }
 
     /**

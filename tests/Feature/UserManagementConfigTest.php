@@ -52,10 +52,10 @@ class UserManagementConfigTest extends TestCase
     }
 
     #[Test]
-    public function buying_group_only_gets_owner(): void
+    public function buying_group_gets_owner_and_support_engineer(): void
     {
         $this->assertSame(
-            [TenantRole::Owner],
+            [TenantRole::Owner, TenantRole::SupportEngineer],
             TenantRole::forProfile(TenantProfile::BuyingGroup)
         );
     }

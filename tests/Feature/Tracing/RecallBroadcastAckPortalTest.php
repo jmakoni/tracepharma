@@ -290,13 +290,9 @@ class RecallBroadcastAckPortalTest extends TestCase
 
             tenancy()->end();
 
-            $this->get($url)
-                ->assertOk()
-                ->assertSee('no longer valid', false);
+            $this->get($url)->assertForbidden();
 
-            $this->post($url)
-                ->assertOk()
-                ->assertSee('no longer valid', false);
+            $this->post($url)->assertForbidden();
         } finally {
             if (! tenancy()->initialized) {
                 tenancy()->initialize($tenant);

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Enums\TenantProfile;
@@ -18,10 +19,12 @@ use App\Support\Receiving\EligibleReceiveSites;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class ReceivingSiteWiringTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -32,7 +35,7 @@ class ReceivingSiteWiringTest extends TestCase
 
     private const SGTIN_URI = 'urn:epc:id:sgtin:030116.0200116.10000082001560';
 
-    private const RECEIVE_SITE_GLN = '0366159000089';
+    private const RECEIVE_SITE_GLN = '0366159000088';
 
     private static bool $demo2TenantReady = false;
 
@@ -102,6 +105,9 @@ class ReceivingSiteWiringTest extends TestCase
             );
 
             $session->refresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
             $this->assertSame('completed', $session->status);
             $this->assertNotNull($session->receiving_epcis_document_id);
             $this->receivingDocumentId = (int) $session->receiving_epcis_document_id;
@@ -175,6 +181,8 @@ class ReceivingSiteWiringTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
     }

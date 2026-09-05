@@ -16,6 +16,7 @@ use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
@@ -28,9 +29,10 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -38,8 +40,10 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class PackWorkstation extends Page
+class PackWorkstation extends Page implements HasKnowledgeBase
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
     protected static ?string $navigationLabel = 'Pack';
@@ -374,7 +378,7 @@ class PackWorkstation extends Page
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -398,7 +402,7 @@ class PackWorkstation extends Page
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
@@ -414,7 +418,7 @@ class PackWorkstation extends Page
                 ->title('Pack completed with warnings')
                 ->body('SSCC batch #'.$batch->getKey().'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Created SSCC batch #'.$batch->getKey().'.');
 
@@ -422,7 +426,7 @@ class PackWorkstation extends Page
                 ->title('Pack complete')
                 ->body('SSCC batch #'.$batch->getKey().' ready.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
 
         $this->redirect($this->batchUrl);
@@ -505,7 +509,7 @@ class PackWorkstation extends Page
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -527,7 +531,7 @@ class PackWorkstation extends Page
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
@@ -542,7 +546,7 @@ class PackWorkstation extends Page
                 ->title('Pack completed with warnings')
                 ->body('SSCC '.$this->parentSscc18.'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Added children to SSCC '.$this->parentSscc18.'. Scan more or ship this SSCC.');
 
@@ -550,7 +554,7 @@ class PackWorkstation extends Page
                 ->title('Pack complete')
                 ->body('SSCC '.$this->parentSscc18.' updated.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
     }
 
@@ -1084,5 +1088,10 @@ class PackWorkstation extends Page
     {
         $this->lastTone = $tone;
         $this->lastMessage = $message;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.pack';
     }
 }

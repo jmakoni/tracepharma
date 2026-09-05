@@ -23,6 +23,7 @@ class ReceivingSession extends Model
     protected $fillable = [
         'session_kind',
         'epcis_document_id',
+        'inbound_shipment_id',
         'transferring_session_id',
         'receiving_epcis_document_id',
         'matched_epcis_document_id',
@@ -39,6 +40,7 @@ class ReceivingSession extends Model
         'opened_at',
         'completed_at',
         'receiving_events_generated_at',
+        'wms_receive_confirmed_at',
         'invoice_disk',
         'invoice_path',
         'invoice_original_filename',
@@ -58,12 +60,18 @@ class ReceivingSession extends Model
             'opened_at' => 'datetime',
             'completed_at' => 'datetime',
             'receiving_events_generated_at' => 'datetime',
+            'wms_receive_confirmed_at' => 'datetime',
         ];
     }
 
     public function document(): BelongsTo
     {
         return $this->belongsTo(EpcisDocument::class, 'epcis_document_id');
+    }
+
+    public function inboundShipment(): BelongsTo
+    {
+        return $this->belongsTo(InboundShipment::class, 'inbound_shipment_id');
     }
 
     /**

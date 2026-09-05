@@ -10,10 +10,11 @@ use App\Support\TenantFeatures;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class HqRollup extends Page
+class HqRollup extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice2;
 
@@ -45,7 +46,8 @@ class HqRollup extends Page
 
     public static function shouldRegisterNavigation(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav()
+            && static::canAccess();
     }
 
     public function getSubheading(): string|Htmlable|null
@@ -59,5 +61,10 @@ class HqRollup extends Page
     public function rows(): array
     {
         return app(HqRollupMetrics::class)->bySite();
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.compliance-reports';
     }
 }

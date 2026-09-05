@@ -6,10 +6,10 @@ use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Pages\ScanOutWorkstation;
-use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -17,6 +17,7 @@ use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantFeatures;
@@ -46,6 +47,9 @@ class ScanOutWorkstationTest extends TestCase
     private ?int $priorDefaultReceiveSiteId = null;
 
     private ?bool $priorRequireTi = null;
+
+    /** @var list<int> */
+    private array $partnerIds = [];
 
     /** @var list<int> */
     private array $sessionIds = [];
@@ -88,33 +92,25 @@ class ScanOutWorkstationTest extends TestCase
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createShippingUser());
-            $this->createShipSite($tenant);
+            $site = $this->createShipSite($tenant);
 
             $beforeIds = OutboundShippingSession::query()->pluck('id')->all();
 
             $component = Livewire::test(ScanOutWorkstation::class)
                 ->assertSuccessful()
-                ->assertSee('New Ship Order')
-                ->assertDontSee('Scan barcode')
-                ->callAction('startShipOrder')
-                ->assertHasNoActionErrors()
-                ->assertNoRedirect();
+                ->assertSee('Open a ship order')
+                ->call('openNewSession', (int) $site->getKey())
+                ->assertHasNoErrors()
+                ->assertSet('sessionId', fn (?int $id): bool => $id !== null && $id > 0);
 
-            $session = OutboundShippingSession::query()
-                ->whereNotIn('id', $beforeIds)
-                ->latest('id')
-                ->first();
+            $session = OutboundShippingSession::query()->find($component->get('sessionId'));
 
             $this->assertNotNull($session);
+            $this->assertNotContains((int) $session->getKey(), $beforeIds);
             $this->sessionIds[] = (int) $session->getKey();
-            $this->assertSame((int) $session->getKey(), (int) $component->get('sessionId'));
             $this->assertStringContainsString(
                 'session='.$session->getKey(),
                 ScanOutWorkstation::urlForSession((int) $session->getKey()),
-            );
-            $this->assertStringContainsString(
-                'outbound-shipping-sessions/'.$session->getKey(),
-                OutboundShippingSessionResource::getUrl('view', ['record' => $session], panel: 'app'),
             );
         } finally {
             $this->cleanup();
@@ -122,7 +118,7 @@ class ScanOutWorkstationTest extends TestCase
     }
 
     #[Test]
-    public function open_session_renders_desktop_scan_field_and_send_stays_blocked(): void
+    public function open_session_renders_wizard_with_scan_customer_and_send_steps(): void
     {
         $tenant = $this->initializeWholesalerTenant();
 
@@ -134,17 +130,102 @@ class ScanOutWorkstationTest extends TestCase
             $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
             $this->sessionIds[] = (int) $session->getKey();
 
-            $component = Livewire::test(ScanOutWorkstation::class, ['sessionId' => $session->getKey()])
+            Livewire::test(ScanOutWorkstation::class, ['sessionId' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSee('Scan barcode')
-                ->assertSee('TI/TS affirmation');
-
-            $component->assertActionDisabled('sendShipment');
+                ->assertSee('Customer')
+                ->assertSee('Send')
+                ->set('wizardStep', 2)
+                ->assertSee('Outbound connection')
+                ->set('wizardStep', 3)
+                ->assertSee('ASN number')
+                ->assertSee('I affirm TI/TS')
+                ->assertActionDisabled('sendShipment');
 
             $blade = File::get(resource_path('views/filament/app/pages/scan-out-workstation.blade.php'));
-            $this->assertStringContainsString('scan-field', $blade);
-            $this->assertStringContainsString('show-camera="false"', $blade);
-            $this->assertStringContainsString('submit-action="confirmScan"', $blade);
+            $scanPartial = File::get(resource_path('views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php'));
+            $this->assertStringContainsString('outbound-ship-wizard-step-scan', $blade);
+            $this->assertStringContainsString('scan-field', $scanPartial);
+            $this->assertStringContainsString('useScanFieldComponent', $scanPartial);
+            $this->assertStringContainsString('submit-action="confirmScan"', $scanPartial);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function go_to_step_and_save_party_updates_session_from_scan_out(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createShippingUser());
+            $site = $this->createShipSite($tenant);
+
+            $customerGlnBody = '037014'.str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $customerGln = $customerGlnBody.$this->gs1CheckDigit($customerGlnBody);
+            $partner = TradingPartner::query()->create([
+                'name' => 'Scan Out Customer '.Str::random(4),
+                'slug' => 'scan-out-customer-'.Str::lower(Str::random(8)),
+                'partner_type' => PartnerType::Pharmacy,
+                'gln' => $customerGln,
+                'is_active' => true,
+            ]);
+            $this->partnerIds[] = (int) $partner->getKey();
+
+            $customerSite = Site::query()->create([
+                'name' => 'Customer Site '.Str::random(4),
+                'gln' => $customerGln,
+                'is_active' => true,
+                'is_organization_facility' => false,
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+            $this->siteIds[] = (int) $customerSite->getKey();
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+
+            Livewire::test(ScanOutWorkstation::class, ['sessionId' => $session->getKey()])
+                ->call('goToStep', 2)
+                ->set('ship_to_site_id', (int) $customerSite->getKey())
+                ->set('trading_partner_id', (int) $customerSite->trading_partner_id)
+                ->set('ship_to_gln', (string) $customerSite->gln)
+                ->callAction('saveParty')
+                ->assertHasNoActionErrors();
+
+            $session->refresh();
+            $this->assertSame((int) $customerSite->getKey(), (int) $session->ship_to_site_id);
+            $this->assertSame((string) $customerSite->gln, (string) $session->ship_to_gln);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function new_ship_order_uses_explicit_ship_from_site(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createShippingUser());
+            $site = $this->createShipSite($tenant);
+
+            $beforeIds = OutboundShippingSession::query()->pluck('id')->all();
+
+            Livewire::test(ScanOutWorkstation::class)
+                ->call('openNewSession', (int) $site->getKey())
+                ->assertHasNoErrors();
+
+            $session = OutboundShippingSession::query()
+                ->whereNotIn('id', $beforeIds)
+                ->latest('id')
+                ->first();
+
+            $this->assertNotNull($session);
+            $this->sessionIds[] = (int) $session->getKey();
+            $this->assertSame((int) $site->getKey(), (int) $session->site_id);
         } finally {
             $this->cleanup();
         }
@@ -326,6 +407,24 @@ class ScanOutWorkstationTest extends TestCase
         }
         $this->epcIds = [];
 
+        foreach ($this->siteIds as $siteId) {
+            Site::query()->whereKey($siteId)->delete();
+        }
+        $this->siteIds = [];
+
+        foreach ($this->partnerIds as $partnerId) {
+            Site::query()->where('trading_partner_id', $partnerId)->delete();
+            TradingPartner::query()->whereKey($partnerId)->delete();
+        }
+        $this->partnerIds = [];
+
+        TradingPartner::query()
+            ->where('name', 'like', 'Scan Out Customer %')
+            ->each(function (TradingPartner $partner): void {
+                Site::query()->where('trading_partner_id', $partner->getKey())->delete();
+                $partner->delete();
+            });
+
         if ($this->priorDefaultShipFromSiteId !== null || $this->priorDefaultReceiveSiteId !== null) {
             TenantSettings::forTenant($tenant)->saveOrganization([
                 'default_ship_from_site_id' => $this->priorDefaultShipFromSiteId,
@@ -334,11 +433,6 @@ class ScanOutWorkstationTest extends TestCase
             $this->priorDefaultShipFromSiteId = null;
             $this->priorDefaultReceiveSiteId = null;
         }
-
-        foreach ($this->siteIds as $siteId) {
-            Site::query()->whereKey($siteId)->delete();
-        }
-        $this->siteIds = [];
 
         foreach ($this->userIds as $userId) {
             User::query()->whereKey($userId)->delete();

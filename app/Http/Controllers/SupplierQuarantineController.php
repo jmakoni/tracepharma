@@ -6,10 +6,12 @@ use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\EpcisReceivedVia;
 use App\Enums\ExceptionActivityKind;
 use App\Enums\ExceptionActivityVisibility;
+use App\Enums\ExceptionStatus;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\TradingPartner;
+use App\Services\Exceptions\ExceptionService;
 use App\Services\Quarantine\QuarantineService;
 use App\Services\Quarantine\SupplierQuarantineTableBuilder;
 use App\Support\Epcis\EpcisSchemaVersion;
@@ -99,6 +101,7 @@ class SupplierQuarantineController extends Controller
             'identifierRows' => $identifierRows,
             'summaryRows' => $summaryRows,
             'commentUrl' => app(QuarantineService::class)->signedSupplierCommentUrl($case),
+            'applyUrl' => app(QuarantineService::class)->signedSupplierApplyUrl($case),
             'uploadUrl' => $canUploadCorrectedEpcis
                 ? app(QuarantineService::class)->signedSupplierUploadUrl($case)
                 : null,
@@ -142,6 +145,71 @@ class SupplierQuarantineController extends Controller
         return redirect()
             ->to(app(QuarantineService::class)->signedSupplierUrl($case))
             ->with('status', 'Your response was recorded.');
+    }
+
+    public function apply(Request $request, string $shareUuid): RedirectResponse
+    {
+        abort_unless($request->hasValidSignature(), 403);
+
+        $case = ExceptionCase::query()
+            ->where('share_uuid', $shareUuid)
+            ->firstOrFail();
+
+        $this->assertSupplierCollaborationAccess($case);
+
+        $data = $request->validate([
+            'acknowledged' => ['accepted'],
+            'corrected_reference' => ['nullable', 'string', 'max:255'],
+            'gtin' => ['nullable', 'string', 'max:64'],
+            'serial' => ['nullable', 'string', 'max:128'],
+            'lot' => ['nullable', 'string', 'max:128'],
+            'expiry' => ['nullable', 'string', 'max:64'],
+            'notes' => ['nullable', 'string', 'max:5000'],
+            'supplier_name' => ['nullable', 'string', 'max:150'],
+        ]);
+
+        $prefix = filled($data['supplier_name'] ?? null)
+            ? '['.trim((string) $data['supplier_name']).'] '
+            : '[Supplier] ';
+
+        $summaryParts = ['Submitted apply correction'];
+        if (filled($data['corrected_reference'] ?? null)) {
+            $summaryParts[] = 'ref '.$data['corrected_reference'];
+        }
+        if (filled($data['notes'] ?? null)) {
+            $summaryParts[] = trim((string) $data['notes']);
+        }
+
+        $case->logActivity(
+            ExceptionActivityKind::Comment,
+            null,
+            $prefix.implode(' — ', $summaryParts),
+            ExceptionActivityVisibility::Partner,
+            [
+                'source' => 'supplier_apply_form',
+                'acknowledged' => true,
+                'corrected_reference' => $data['corrected_reference'] ?? null,
+                'gtin' => $data['gtin'] ?? null,
+                'serial' => $data['serial'] ?? null,
+                'lot' => $data['lot'] ?? null,
+                'expiry' => $data['expiry'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'supplier_name' => $data['supplier_name'] ?? null,
+            ],
+        );
+
+        if ($case->status === ExceptionStatus::WaitingPartner) {
+            app(ExceptionService::class)->transition(
+                $case,
+                ExceptionStatus::Investigating,
+                null,
+                'Partner submitted apply correction — returned to investigation.',
+            );
+        }
+
+        return redirect()
+            ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+            ->with('status', 'Your correction was recorded.');
     }
 
     public function upload(Request $request, string $shareUuid): RedirectResponse
@@ -248,17 +316,14 @@ class SupplierQuarantineController extends Controller
 
     private function assertEpcis12Schema(string $absolutePath): void
     {
-        $handle = fopen($absolutePath, 'rb');
-        $head = $handle === false ? '' : (string) fread($handle, 8192);
-        if (is_resource($handle)) {
-            fclose($handle);
+        try {
+            EpcisSchemaVersion::assertAccepted(
+                EpcisSchemaVersion::peekFile($absolutePath),
+                EpcisSchemaVersion::detectFormat($absolutePath),
+            );
+        } catch (\InvalidArgumentException $e) {
+            abort(422, $e->getMessage());
         }
-
-        if (EpcisSchemaVersion::isAccepted(EpcisSchemaVersion::peek($head))) {
-            return;
-        }
-
-        abort(422, 'EPCIS 1.2 or 1.3 is required. EPCIS 1.0 (or a file missing schemaVersion 1.2/1.3) is not accepted.');
     }
 
     private function assertSupplierCollaborationAccess(ExceptionCase $case): void

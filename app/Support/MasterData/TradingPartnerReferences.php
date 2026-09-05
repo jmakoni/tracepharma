@@ -43,6 +43,7 @@ final class TradingPartnerReferences
         'inbound_connections' => 'inbound connection',
         'inbound_connection_trading_partner' => 'inbound connection route',
         'outbound_connections' => 'outbound connection',
+        'outbound_connection_trading_partner' => 'outbound connection route',
         'sscc_label_batches' => 'SSCC label batch',
         'products' => 'labeled product',
     ];

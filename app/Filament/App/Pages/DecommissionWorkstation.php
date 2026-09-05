@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Actions\Disposition\EmitDecommissioningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
+use App\Enums\DecommissionReason;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -11,30 +12,35 @@ use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
-use App\Support\Auth\SiteAccess;
-use App\Support\Gs1\ElementString;
-use App\Support\Gs1\EpcBarcodeDisplay;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
-use App\Support\Receiving\EligibleReceiveSites;
-use App\Support\Shipping\EpcOnOpenShippingSession;
-use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Transferring\EpcOnOpenTransferringSession;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
+use App\Support\Disposition\AssertDecommissionMassApproval;
+use App\Support\Gs1\ElementString;
+use App\Support\Gs1\EpcBarcodeDisplay;
+use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
+use App\Support\Shipping\EpcOnOpenShippingSession;
+use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
+use App\Support\Transferring\EpcOnOpenTransferringSession;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
 use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class DecommissionWorkstation extends Page
+class DecommissionWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedNoSymbol;
 
@@ -59,15 +65,17 @@ class DecommissionWorkstation extends Page
     /** @var 'ok'|'warn'|'error'|null */
     public ?string $lastTone = null;
 
+    public ?string $decommissionReason = null;
+
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsCommissioning())
+        return TenantFeatures::forTenant(tenant())->supportsCommissioning()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Scan on-hand EPCs at the selected site, then author decommissioning (inactive) EPCIS.';
+        return 'Scan on-hand EPCs at the selected site, choose a reason, then author decommissioning ObjectEvents.';
     }
 
     public function processScan(
@@ -211,14 +219,64 @@ class DecommissionWorkstation extends Page
                     ->requiresConfirmation()
                     ->disabled(fn (): bool => $this->confirmed === [])
                     ->modalHeading('Decommission selected EPCs?')
+                    ->form(function (): array {
+                        $count = count($this->confirmed);
+                        $mass = app(AssertDecommissionMassApproval::class);
+                        $siteId = $this->selectedSite()?->getKey();
+                        $siteId = $siteId !== null ? (int) $siteId : null;
+                        $threshold = $mass->threshold();
+                        $effective = $mass->effectiveCount($count, $siteId);
+                        $recent = $mass->recentDecommissionedEpcCount($siteId);
+                        $fields = [
+                            Select::make('reason')
+                                ->label('Decommission reason')
+                                ->options(DecommissionReason::options())
+                                ->required()
+                                ->native(false)
+                                ->live()
+                                ->helperText(function (?string $state): ?string {
+                                    $reason = DecommissionReason::tryFromMixed($state);
+                                    if ($reason === null) {
+                                        return null;
+                                    }
+
+                                    return 'CBV disposition: '.$reason->dispositionUri();
+                                }),
+                        ];
+
+                        if ($mass->requiresSecondApprover($count, $siteId)) {
+                            $fields[] = TextInput::make('approver_email')
+                                ->label('Second approver email')
+                                ->email()
+                                ->required()
+                                ->helperText(
+                                    "Mass decommission (effective {$effective} = {$count} this batch + {$recent} recent at site > {$threshold}) requires a different authorized approver."
+                                );
+                            $fields[] = TextInput::make('approver_password')
+                                ->label('Second approver password')
+                                ->password()
+                                ->required()
+                                ->revealable();
+                        }
+
+                        return $fields;
+                    })
                     ->modalDescription(function (): string {
                         $count = count($this->confirmed);
-                        $siteName = $this->selectedSite()?->name ?? '(select a site)';
+                        $site = $this->selectedSite();
+                        $siteName = $site?->name ?? '(select a site)';
+                        $mass = app(AssertDecommissionMassApproval::class);
+                        $siteId = $site !== null ? (int) $site->getKey() : null;
+                        $threshold = $mass->threshold();
+                        $massNote = $mass->requiresSecondApprover($count, $siteId)
+                            ? " Mass decommission requires a second approver (effective {$mass->effectiveCount($count, $siteId)} > threshold {$threshold})."
+                            : '';
 
-                        return "Author decommissioning ObjectEvents for {$count} EPC(s) at {$siteName}? Disposition will be inactive.";
+                        return "Author decommissioning ObjectEvents for {$count} EPC(s) at {$siteName}?{$massNote}";
                     })
                     ->modalSubmitActionLabel('Decommission')
                     ->action(function (
+                        array $data,
                         EmitDecommissioningEpcis $emit,
                         ShippableEpcsAtSite $shippable,
                         ReceivingGate $receivingGate,
@@ -241,6 +299,36 @@ class DecommissionWorkstation extends Page
                             return;
                         }
 
+                        $reason = DecommissionReason::tryFromMixed($data['reason'] ?? null);
+                        if ($reason === null) {
+                            $this->flash('error', 'Select a decommission reason.');
+
+                            return;
+                        }
+
+                        $this->decommissionReason = $reason->value;
+
+                        $approverUserId = null;
+                        $count = count($this->confirmed);
+                        $mass = app(AssertDecommissionMassApproval::class);
+                        if ($mass->requiresSecondApprover($count, $siteId)) {
+                            try {
+                                $approverUserId = $this->resolveMassApprover(
+                                    (string) ($data['approver_email'] ?? ''),
+                                    (string) ($data['approver_password'] ?? ''),
+                                );
+                            } catch (InvalidArgumentException $exception) {
+                                $this->flash('error', $exception->getMessage());
+                                Notification::make()
+                                    ->title('Decommission failed')
+                                    ->body($exception->getMessage())
+                                    ->danger()
+                                    ->ephemeral()->send();
+
+                                return;
+                            }
+                        }
+
                         $epcIds = array_map(fn (array $row): int => (int) $row['epc_id'], $this->confirmed);
                         $eligibilityError = $this->assertConfirmedStillEligible(
                             $epcIds,
@@ -257,7 +345,7 @@ class DecommissionWorkstation extends Page
                                 ->title('Decommission failed')
                                 ->body($eligibilityError)
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -266,6 +354,8 @@ class DecommissionWorkstation extends Page
                             $result = $emit->handle($epcIds, $siteId, [
                                 'sync' => true,
                                 'dispatch' => true,
+                                'reason' => $reason,
+                                'approver_user_id' => $approverUserId,
                             ]);
                         } catch (InvalidArgumentException|LockTimeoutException|Throwable $exception) {
                             $this->flash('error', $exception->getMessage());
@@ -273,41 +363,43 @@ class DecommissionWorkstation extends Page
                                 ->title('Decommission failed')
                                 ->body($exception->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
 
-                        $count = (int) ($result['decommissioned_count'] ?? 0);
+                        $decommissioned = (int) ($result['decommissioned_count'] ?? 0);
                         $driftCount = (int) ($result['drift_count'] ?? 0);
-                        $message = "Decommissioned {$count} EPC".($count === 1 ? '' : 's').'.';
+                        $message = "Decommissioned {$decommissioned} EPC".($decommissioned === 1 ? '' : 's')
+                            .' ('.$reason->label().' → '.$reason->dispositionUri().').';
                         if (filled($result['drift_notes'] ?? null)) {
                             $message .= ' '.$result['drift_notes'];
                         }
 
                         $this->confirmed = [];
+                        $this->decommissionReason = null;
 
-                        if ($count > 0 && $driftCount > 0) {
+                        if ($decommissioned > 0 && $driftCount > 0) {
                             $this->flash('warn', $message);
                             Notification::make()
                                 ->title('Decommissioned with aggregation drift')
                                 ->body($message)
                                 ->warning()
-                                ->send();
-                        } elseif ($count > 0) {
+                                ->ephemeral()->send();
+                        } elseif ($decommissioned > 0) {
                             $this->flash('ok', $message);
                             Notification::make()
                                 ->title('Decommission complete')
                                 ->body($message)
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
                         } else {
                             $this->flash('warn', $message);
                             Notification::make()
                                 ->title('Nothing decommissioned')
                                 ->body($message)
                                 ->success()
-                                ->send();
+                                ->ephemeral()->send();
                         }
                         $this->dispatch('focus-scan');
                     }),
@@ -316,6 +408,33 @@ class DecommissionWorkstation extends Page
                 subject: fn (): ?Site => $this->selectedSite(),
             ),
         ];
+    }
+
+    private function resolveMassApprover(string $email, string $password): int
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || $password === '') {
+            throw new InvalidArgumentException('Second approver email and password are required for mass decommission.');
+        }
+
+        $approver = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
+        if (! $approver instanceof User) {
+            throw new InvalidArgumentException('Second approver was not found.');
+        }
+
+        if ((int) $approver->getKey() === (int) auth()->id()) {
+            throw new InvalidArgumentException('Mass decommission cannot be self-approved.');
+        }
+
+        if (! Hash::check($password, (string) $approver->password)) {
+            throw new InvalidArgumentException('Second approver password is incorrect.');
+        }
+
+        if (! $approver->can(Permissions::DecommissionMassApprove)) {
+            throw new InvalidArgumentException('Second approver is not authorized for mass decommission approval.');
+        }
+
+        return (int) $approver->getKey();
     }
 
     /**
@@ -400,5 +519,10 @@ class DecommissionWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.decommission';
     }
 }

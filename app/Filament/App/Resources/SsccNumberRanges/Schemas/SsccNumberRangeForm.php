@@ -46,7 +46,7 @@ class SsccNumberRangeForm
                         Select::make('site_id')
                             ->label('Site')
                             ->options(function (?SsccNumberRange $record): array {
-                                $options = EligibleReceiveSites::forOrganization()
+                                $options = EligibleReceiveSites::query()
                                     ->orderBy('name')
                                     ->pluck('name', 'id')
                                     ->all();

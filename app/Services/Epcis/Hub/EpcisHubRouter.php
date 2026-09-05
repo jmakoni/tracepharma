@@ -13,6 +13,7 @@ use App\Models\TradingPartner;
 use App\Support\Epcis\SbdhHeaderExtractor;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Integrations\InboundConnectivityProbe;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Support\Collection;
 use RuntimeException;
 
@@ -56,7 +57,7 @@ class EpcisHubRouter
 
         $preferredConnectionId = $route?->default_inbound_connection_id;
 
-        $connection = $tenant->run(function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
+        $connection = TenantRunner::run($tenant, function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
             // Sender must be resolved before any preferred-connection shortcut.
             // default_inbound_connection_id is only a tie-break among matched senders
             // (or a fallback for truly senderless payloads) — never an unknown-sender bypass.

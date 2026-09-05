@@ -30,7 +30,7 @@ trait SyncsUserSiteMembership
 
     protected function syncSiteMembershipIfNeeded(User $user): void
     {
-        if ($user->hasRole(TenantRole::Owner->value)) {
+        if ($user->hasRole(TenantRole::Owner->value) || $user->hasRole(TenantRole::SupportEngineer->value)) {
             return;
         }
 
@@ -42,7 +42,7 @@ trait SyncsUserSiteMembership
      */
     protected function siteMembershipFormDefaults(User $user): array
     {
-        if ($user->hasRole(TenantRole::Owner->value)) {
+        if ($user->hasRole(TenantRole::Owner->value) || $user->hasRole(TenantRole::SupportEngineer->value)) {
             return [];
         }
 

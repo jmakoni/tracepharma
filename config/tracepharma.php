@@ -17,7 +17,7 @@ return [
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.0'),
+    'app_version' => env('APP_VERSION', '1.4.0'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))
@@ -68,7 +68,7 @@ return [
     ],
 
     'epcis' => [
-        'max_upload_kb' => (int) env('TRACEPHARMA_EPCIS_MAX_UPLOAD_KB', 20480), // raise with PHP-FPM upload_max_filesize for 50–100MB
+        'max_upload_kb' => (int) env('TRACEPHARMA_EPCIS_MAX_UPLOAD_KB', 81920), // 80MB — keep in sync with livewire.php, PHP-FPM, and nginx
         // Inbound uploads may still use EPCIS_INBOUND_DISK via TRACEPHARMA_EPCIS_PAYLOAD_DISK.
         // On S3, inbound keys are hub-style: inbound/{uuid}.xml
         'payload_disk' => env('TRACEPHARMA_EPCIS_PAYLOAD_DISK', env('EPCIS_INBOUND_DISK', env('FILESYSTEM_DISK', 'local'))),
@@ -76,7 +76,22 @@ return [
         'authored_payload_disk' => env('TRACEPHARMA_EPCIS_AUTHORED_PAYLOAD_DISK', 'local'),
         'inbound_url_ttl_minutes' => (int) env('EPCIS_INBOUND_URL_TTL', 15),
         'inbound_bucket' => env('EPCIS_INBOUND_BUCKET', env('AWS_BUCKET')),
+        // Event-row archive cutoff (MOVE into epcis_events_archive). Never deletes payloads.
         'retention_years' => (int) env('TRACEPHARMA_EPCIS_RETENTION_YEARS', 6),
+        // Fallback TI pedigree source when DB fragments are missing. Prefer
+        // epcis_pedigree_*_fragments (written on ingest). Must be >= retention_years.
+        'payload_retention_years' => (int) env(
+            'TRACEPHARMA_EPCIS_PAYLOAD_RETENTION_YEARS',
+            (int) env('TRACEPHARMA_EPCIS_RETENTION_YEARS', 6),
+        ),
+        /*
+        | Pedigree replay for outbound shipping TI:
+        | - commissioning: whole_event (verbatim ObjectEvent when it intersects the tree)
+        | - packing: open_tree_children (childEPCs filtered to current open aggregation
+        |   children under parentID; empty packs omitted). Do not delete removed-case
+        |   fragment history — it remains for a later ship of that case.
+        */
+        'outbound_pedigree_replay' => 'whole_event',
         // Compliance kill-switches: fail closed, see SafetyGate.
         'enforce_ts_for_receiving' => SafetyGate::enabled('TRACEPHARMA_EPCIS_ENFORCE_TS_RECEIVING'),
         'enforce_atp_soft_gate' => SafetyGate::enabled('TRACEPHARMA_EPCIS_ENFORCE_ATP_SOFT'),
@@ -95,6 +110,18 @@ return [
             'max_findings_per_type' => (int) env('TRACEPHARMA_EPCIS_MAX_FINDINGS_PER_TYPE', 50),
             'severity_overrides' => [],
         ],
+
+        /*
+        | EPCIS 2.0 JSON-LD ingest/outbound is opt-in. Default off preserves
+        | EPCIS 1.2/1.3 XML as the only accepted edge format.
+        */
+        'accept_20' => (bool) env('TRACEPHARMA_EPCIS_ACCEPT_20', false),
+        // Platform default for new / unpinned outbound connections. Prefer 1.2 XML until
+        // a real XML 2.0 writer ships; JSON-LD 2.0 remains opt-in via connection + accept_20.
+        // Existing rows may still be pinned explicitly by tenant migration pin_outbound_epcis_version_1_2.
+        'default_outbound_version' => env('TRACEPHARMA_EPCIS_DEFAULT_OUTBOUND_VERSION', '1.2'),
+        'subscription_inline_event_threshold' => (int) env('TRACEPHARMA_EPCIS_SUBSCRIPTION_INLINE_EVENTS', 50),
+        'subscription_download_ttl_minutes' => (int) env('TRACEPHARMA_EPCIS_SUBSCRIPTION_DOWNLOAD_TTL', 60),
     ],
 
     /*
@@ -105,6 +132,28 @@ return [
         'enabled' => (bool) env('TRACEPHARMA_EPCIS_JOBS_ENABLED', false),
         'queue' => env('TRACEPHARMA_EPCIS_JOBS_QUEUE', 'epcis'),
         'stale_queued_seconds' => (int) env('TRACEPHARMA_EPCIS_JOBS_STALE_QUEUED_SECONDS', 900),
+    ],
+
+    /*
+    | Guardian (Systech) lot-close inbound: raw DataFeed XML archive + limits.
+    | See app/Actions/L3/ReceiveGuardianLotFeed.php.
+    */
+    'guardian_lot_close' => [
+        'max_upload_mb' => (int) env('TRACEPHARMA_GUARDIAN_LOT_CLOSE_MAX_UPLOAD_MB', 50),
+    ],
+
+    /*
+    | Async data exports (Serialized Track & Trace PDF, etc.).
+    */
+    'exports' => [
+        'disk' => env('TRACEPHARMA_EXPORTS_DISK', 'tenant_exports'),
+        'chunk_size' => (int) env('TRACEPHARMA_EXPORT_CHUNK_SIZE', 1000),
+        'max_rows' => (int) env('TRACEPHARMA_EXPORT_MAX_ROWS', 500_000),
+        'compliance_report_max_serials' => (int) env('TRACEPHARMA_DSCSA_COMPLIANCE_REPORT_MAX_SERIALS', 50_000),
+        'url_ttl_minutes' => (int) env('TRACEPHARMA_EXPORT_URL_TTL_MINUTES', 60),
+        'retention_days' => (int) env('TRACEPHARMA_EXPORT_RETENTION_DAYS', 7),
+        'queue' => env('TRACEPHARMA_EXPORT_QUEUE', 'default'),
+        'stale_processing_hours' => (int) env('TRACEPHARMA_EXPORT_STALE_PROCESSING_HOURS', 2),
     ],
 
     /*
@@ -159,12 +208,73 @@ return [
     ],
 
     /*
+    | Account disable / failed-login lockout for Users, Admins, and PortalUsers.
+    | Separate from the regulatory action password gate above.
+    */
+    'account_security' => [
+        'max_failed_logins' => max(1, (int) env('TRACEPHARMA_MAX_FAILED_LOGINS', 5)),
+        'lockout_minutes' => max(1, (int) env('TRACEPHARMA_LOCKOUT_MINUTES', 15)),
+    ],
+
+    /*
+    | Decommission workstation: mass dual-control when selected EPC count exceeds threshold.
+    | Printed-never-shipped auto-decommission (disposition:decommission-never-shipped)
+    | holds commissioned/active units for unshipped_hold_days before retiring them.
+    */
+    'decommission' => [
+        'mass_threshold' => (int) env('TRACEPHARMA_DECOMMISSION_MASS_THRESHOLD', 10),
+        'mass_window_hours' => (int) env('TRACEPHARMA_DECOMMISSION_MASS_WINDOW_HOURS', 8),
+        'unshipped_hold_days' => (int) env('TRACEPHARMA_DECOMMISSION_UNSHIPPED_HOLD_DAYS', 30),
+    ],
+
+    /*
     | Supplier-facing exception portal links. Links are temporary signed URLs so a
     | forwarded email stops working on its own; they can also be revoked or rotated
     | per partner (portal_share_uuid) by owners and master-data administrators.
     */
     'supplier_portal' => [
         'link_ttl_days' => (int) env('TRACEPHARMA_SUPPLIER_PORTAL_LINK_TTL_DAYS', 30),
+    ],
+
+    /*
+    | Aging supplier exception collaboration: push email + portal status when
+    | open partner-linked cases age. No inbound email-reply parser.
+    */
+    'supplier_exception_notify' => [
+        'aging_days' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_AGING_DAYS', 3),
+        'cooldown_hours' => (int) env('TRACEPHARMA_SUPPLIER_EXCEPTION_NOTIFY_COOLDOWN_HOURS', 72),
+    ],
+
+    /*
+    | Outbound connection conformance / cert operational knobs.
+    */
+    'outbound' => [
+        'cert_warning_days' => (int) env('TRACEPHARMA_OUTBOUND_CERT_WARNING_DAYS', 30),
+    ],
+
+    /*
+    | AS2 outbound MDN SLAs for catalog signals (MISSING_MDN / LATE_MDN).
+    | Pending transmission_mdns past missing (but before late) → MISSING_MDN;
+    | past late → LATE_MDN only. De-duped per document + exception_type.
+    */
+    'as2_mdn' => [
+        'missing_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_MISSING_HOURS', 24),
+        'late_after_hours' => (int) env('TRACEPHARMA_AS2_MDN_LATE_HOURS', 72),
+    ],
+
+    /*
+    | Hours from SSCC labeling / commission-source to L4 commissioning event_time.
+    | Leadership DSCSA pack warns when a completed batch exceeds this SLA.
+    */
+    'l3_l4_ingest' => [
+        'sla_hours' => max(1, (int) env('TRACEPHARMA_L3_L4_INGEST_SLA_HOURS', 4)),
+    ],
+
+    /*
+    | Leadership DSCSA pack drill-down row caps (Filament page + CSV export).
+    */
+    'leadership' => [
+        'drill_limit' => 100,
     ],
 
     /*

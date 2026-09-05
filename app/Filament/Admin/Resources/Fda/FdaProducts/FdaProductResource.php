@@ -18,10 +18,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
-class FdaProductResource extends Resource
+class FdaProductResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -83,5 +84,10 @@ class FdaProductResource extends Resource
     public static function getGlobalSearchEloquentQuery(): Builder
     {
         return parent::getGlobalSearchEloquentQuery()->with(['fdaOrganization', 'packaging']);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.fda-products';
     }
 }

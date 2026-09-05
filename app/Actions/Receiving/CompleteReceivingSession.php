@@ -16,9 +16,11 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\OutboundShipmentInTransit;
 use App\Support\Logging\RedactsUrls;
+use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\TenantSettings;
 use DomainException;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -26,8 +28,10 @@ use Throwable;
 /**
  * Public orchestrator for completing a receiving session and emitting EPCIS events.
  *
- * - inbound_asn: session is typically already completed by ConfirmReceivingScan::markSessionCompletedIfReady,
- *   which defers this call to run after the scan-confirm transaction commits
+ * - inbound_asn: default is explicit Complete receive (ATTP/TraceLink-style). Optional
+ *   tenant setting receiving.auto_complete_asn_on_ready flips status after the last
+ *   confirm via ConfirmReceivingScan::markSessionCompletedIfReady, then this runs
+ *   post-commit for EPCIS. Manual Complete also marks the session when ready.
  * - scan_first: manual complete — marks completed when confirmed lines exist, then GenerateReceivingEpcisEvents
  * - transfer_receive: completes linked transfer + GenerateTransferringReceiveEpcisEvents
  *
@@ -57,8 +61,8 @@ final class CompleteReceivingSession
         }
 
         $user = auth()->user();
-        if ($user instanceof User && $session->site_id !== null) {
-            SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
+        if ($user instanceof User) {
+            $this->assertCanAccessSessionSite($user, $session);
         }
 
         try {
@@ -83,13 +87,14 @@ final class CompleteReceivingSession
             return $this->completeTransferReceive($session, $actorId, $shortClose);
         }
 
-        if ($session->status !== 'completed' && ($session->isScanFirst() || ($shortClose && $session->isInboundAsn()))) {
-            // Scan-first always marks complete here. Inbound ASN uses the same
-            // path only for Scan In short-close (confirmed cases only). HUD
-            // complete leaves shortClose false and still requires a full tote.
-            // Locked, mirroring the transfer-receive branch: a concurrent complete
-            // call (e.g. the last confirm auto-triggering completion while the
-            // operator also taps "Complete") must not race this status transition.
+        if ($session->status !== 'completed' && (
+            $session->isScanFirst()
+            || ($shortClose && $session->isInboundAsn())
+            || ($session->isInboundAsn() && $session->isReadyToCompleteInboundAsn())
+        )) {
+            // Scan-first always marks complete here. Inbound ASN marks complete when
+            // ready (explicit Complete receive) or via Scan In short-close. Locked so
+            // a concurrent last-confirm auto-complete and operator Complete do not race.
             $session = DB::transaction(function () use ($session): ReceivingSession {
                 $locked = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
@@ -109,6 +114,7 @@ final class CompleteReceivingSession
                 $locked->forceFill([
                     'status' => 'completed',
                     'completed_at' => now(),
+                    'active_parent_epc_id' => null,
                 ])->save();
 
                 return $locked->refresh();
@@ -168,6 +174,19 @@ final class CompleteReceivingSession
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function assertCanAccessSessionSite(User $user, ReceivingSession $session): void
+    {
+        if ($session->site_id === null) {
+            if (! $user->can(Permissions::SitesAccessAll)) {
+                throw new AuthorizationException('You do not have access to this receiving session.');
+            }
+
+            return;
+        }
+
+        SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
     }
 
     private function assertDocumentNotBlockedByOpenException(ReceivingSession $session): void
@@ -230,25 +249,34 @@ final class CompleteReceivingSession
             ->where('receiving_session_id', $session->getKey())
             ->where('status', 'confirmed')
             ->whereNotNull('epc_id')
-            ->with('epc')
-            ->get();
+            ->select(['id', 'epc_id'])
+            ->orderBy('id');
 
-        foreach ($lines as $line) {
-            $epc = $line->epc;
-            if ($epc === null) {
-                $epc = Epc::query()->find($line->epc_id);
-            }
+        $lines->chunkById(500, function ($chunk): void {
+            $epcIds = $chunk->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
 
-            if ($epc === null) {
-                continue;
-            }
+            $epcsById = Epc::query()
+                ->whereIn('id', $epcIds)
+                ->get()
+                ->keyBy('id');
 
-            if (! $this->resolveReceiveScanContext->epcHasTransactionInformation($epc)) {
-                throw new DomainException(
-                    'TI required for scan-first receive — one or more confirmed EPCs have no shipping or commissioning event on file.',
-                );
+            foreach ($chunk as $line) {
+                $epc = $epcsById->get((int) $line->epc_id);
+                if ($epc === null) {
+                    continue;
+                }
+
+                if (! $this->resolveReceiveScanContext->epcHasTransactionInformation($epc)) {
+                    throw new DomainException(
+                        'TI required for scan-first receive — one or more confirmed EPCs have no shipping or commissioning event on file.',
+                    );
+                }
             }
-        }
+        });
     }
 
     /**
@@ -359,9 +387,31 @@ final class CompleteReceivingSession
                     $e,
                 );
             }
+
+            $this->markTransferReceiveSessionEventsGenerated($session, $transfer->fresh() ?? $transfer);
         }
 
         return $session->refresh();
+    }
+
+    /**
+     * Transfer-receive custody is authored on the linked transferring session's
+     * document; mirror that timestamp onto the receive session so
+     * {@see EpcOnAnotherOpenReceivingSession} releases
+     * confirmed EPCs for ship/transfer/disposition.
+     */
+    private function markTransferReceiveSessionEventsGenerated(
+        ReceivingSession $session,
+        TransferringSession $transfer,
+    ): void {
+        if ($session->receiving_events_generated_at !== null || $transfer->receive_events_generated_at === null) {
+            return;
+        }
+
+        $session->forceFill([
+            'receiving_events_generated_at' => $transfer->receive_events_generated_at,
+            'receiving_epcis_document_id' => $transfer->transfer_epcis_document_id,
+        ])->save();
     }
 
     /**

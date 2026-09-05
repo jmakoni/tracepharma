@@ -12,7 +12,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\View;
@@ -22,6 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -29,7 +30,7 @@ use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use UnitEnum;
 
-class ApiTokens extends Page implements HasTable
+class ApiTokens extends Page implements HasKnowledgeBase, HasTable
 {
     use InteractsWithTable;
 
@@ -97,6 +98,47 @@ class ApiTokens extends Page implements HasTable
                     }),
             ])
             ->headerActions([
+                Action::make('createDispenseCheckToken')
+                    ->label('Create dispense-check token')
+                    ->icon(Heroicon::OutlinedShieldCheck)
+                    ->color('gray')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs())
+                    ->schema([
+                        TextInput::make('token_name')
+                            ->label('Token name')
+                            ->default('PMS dispense-check')
+                            ->required()
+                            ->maxLength(255),
+                        DatePicker::make('expires_at')
+                            ->label('Expiry date')
+                            ->default(now()->addDays($this->defaultTokenExpiryDays())->toDateString())
+                            ->minDate(now())
+                            ->required(),
+                    ])
+                    ->action(function (array $data): void {
+                        $user = Auth::user();
+
+                        if ($user === null) {
+                            return;
+                        }
+
+                        $expiresAt = Carbon::createFromFormat(
+                            'Y-m-d',
+                            $data['expires_at'] ?? now()->addDays($this->defaultTokenExpiryDays())->toDateString(),
+                        );
+
+                        $this->plainTextToken = $user->createToken(
+                            $data['token_name'],
+                            [SanctumAbilities::VRS_DISPENSE_CHECK],
+                            $expiresAt,
+                        )->plainTextToken;
+
+                        Notification::make()
+                            ->title('Dispense-check token created')
+                            ->body('Copy the token now — it will not be shown again. Ability: vrs:dispense-check.')
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('createToken')
                     ->label('Create token')
                     ->schema([
@@ -108,7 +150,7 @@ class ApiTokens extends Page implements HasTable
                             ->label('Abilities')
                             ->options(SanctumAbilities::options())
                             ->columns(2)
-                            ->default([])
+                            ->default(fn (): array => $this->defaultAbilitiesFromRequest())
                             ->required()
                             ->minItems(1),
                         DatePicker::make('expires_at')
@@ -181,6 +223,19 @@ class ApiTokens extends Page implements HasTable
             ->where('tokenable_type', $user?->getMorphClass());
     }
 
+    private function defaultAbilitiesFromRequest(): array
+    {
+        $ability = request()->query('ability');
+
+        if (! is_string($ability) || $ability === '') {
+            return [];
+        }
+
+        $options = array_keys(SanctumAbilities::options());
+
+        return in_array($ability, $options, true) ? [$ability] : [];
+    }
+
     private function defaultTokenExpiryDays(): int
     {
         $minutes = config('sanctum.expiration');
@@ -190,5 +245,10 @@ class ApiTokens extends Page implements HasTable
         }
 
         return (int) max(1, round(((int) $minutes) / 60 / 24));
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.api-tokens';
     }
 }

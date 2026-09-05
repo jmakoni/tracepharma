@@ -10,8 +10,10 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\Epcis\EventQuantity;
+use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
 use App\Support\Epcis\Validation\EpcisCbvAllowlist;
+use App\Support\Epcis\Validation\EpcisJsonSchema20Validator;
 use App\Support\Epcis\Validation\EpcisValidationCatalog;
 use App\Support\Epcis\Validation\EpcisValidationContext;
 use App\Support\Epcis\Validation\EpcisValidationFinding;
@@ -50,6 +52,7 @@ final class ValidateEpcis12Document
 
     public function __construct(
         private readonly EpcisXsdValidator $xsdValidator,
+        private readonly EpcisJsonSchema20Validator $jsonSchema20Validator,
         private readonly EpcisCatalogBusinessRules $catalogRules,
         private readonly EpcisValidationProfileResolver $profileResolver,
     ) {}
@@ -92,10 +95,10 @@ final class ValidateEpcis12Document
             $this->maxFindingsPerType = (int) config('tracepharma.epcis.validation.max_findings_per_type', 50);
             $this->findingCounts = [];
 
-            // Compute all findings first (XSD file I/O + DB business/catalog rules are CPU/IO
+            // Compute all findings first (schema file I/O + DB business/catalog rules are CPU/IO
             // bound and stay outside the transaction); only the clear+persist+status mutation
             // below needs to be atomic.
-            $findings = $this->xsdValidator->validateFile($path);
+            $findings = $this->schemaFindings($document, $path);
             $events = $this->activeEvents($document);
             $findings = array_merge($findings, $this->runBusinessRules($document, $events, $ctx));
             $findings = array_merge($findings, $this->catalogRules->validate($ctx, $events));
@@ -112,6 +115,25 @@ final class ValidateEpcis12Document
                 @unlink($path);
             }
         }
+    }
+
+    /**
+     * @return list<EpcisValidationFinding>
+     */
+    private function schemaFindings(EpcisDocument $document, string $path): array
+    {
+        $format = (string) ($document->format ?? EpcisSchemaVersion::FORMAT_XML);
+
+        if ($format === EpcisSchemaVersion::FORMAT_JSON) {
+            return $this->jsonSchema20Validator->validateFile($path);
+        }
+
+        // EPCIS 2.0 XML: skip 1.2 XSD; structural parse + catalog rules still apply.
+        if ((string) $document->schema_version === EpcisSchemaVersion::V20) {
+            return [];
+        }
+
+        return $this->xsdValidator->validateFile($path);
     }
 
     /**
@@ -773,10 +795,22 @@ final class ValidateEpcis12Document
                 static fn (EpcisValidationFinding $f): string => $f->description,
                 array_slice($blocking, 0, 5),
             );
+            $message = Str::limit(implode('; ', $summaries), 2000);
+
+            // Authored outbound (transfer/ship/receive) already wrote custody events.
+            // Flipping status to error makes ResolveEpcLastKnownGln ignore those events
+            // and strands stock at the prior site after a failed pre-transmit revalidation.
+            if ($document->authored_kind !== null) {
+                $document->forceFill([
+                    'error_message' => $message,
+                ])->save();
+
+                return;
+            }
 
             $document->forceFill([
                 'status' => 'error',
-                'error_message' => Str::limit(implode('; ', $summaries), 2000),
+                'error_message' => $message,
             ])->save();
 
             return;
@@ -786,5 +820,7 @@ final class ValidateEpcis12Document
             'status' => 'validated',
             'error_message' => null,
         ])->save();
+
+        app(DispatchEpcisSubscriptions::class)->handle($document, 'validated');
     }
 }

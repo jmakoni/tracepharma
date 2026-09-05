@@ -13,7 +13,7 @@ use App\Models\Transferring\TransferringSession;
 use App\Support\Auth\SiteAccess;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;

@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\FdaProducts\Schemas;
 
 use App\Support\Catalog\DisplayName;
+use App\Support\Fda\FdaRegistryStatus;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
@@ -37,6 +38,16 @@ class FdaProductInfolist
                 ->compact()
                 ->columns(['md' => 2])
                 ->schema([
+                    TextEntry::make('dea_schedule')
+                        ->label('DEA')
+                        ->badge()
+                        ->formatStateUsing(fn (?string $state): ?string => FdaRegistryStatus::deaScheduleLabel($state))
+                        ->color(fn (?string $state): string => match (FdaRegistryStatus::deaScheduleLabel($state)) {
+                            'CII' => 'danger',
+                            'CIII', 'CIV', 'CV' => 'warning',
+                            default => 'gray',
+                        })
+                        ->placeholder('—'),
                     TextEntry::make('dosage_form')
                         ->placeholder('—'),
                     TextEntry::make('product_type')

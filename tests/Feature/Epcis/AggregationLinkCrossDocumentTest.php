@@ -3,6 +3,7 @@
 namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
@@ -12,6 +13,7 @@ use App\Models\Tenant;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -120,10 +122,16 @@ class AggregationLinkCrossDocumentTest extends TestCase
                 self::SGTIN_URI,
                 eventTime: '2026-07-17T12:00:00.000Z',
             );
-            $docB = $this->ingestXmlString($repackXml, 'aggregation_add_reparent.xml');
+            // Outbound: TraceLink reserved-check only applies to inbound; this reparent
+            // ADD packs an already-commissioned child under a newly commissioned parent.
+            $docB = $this->ingestXmlString($repackXml, 'aggregation_add_reparent.xml', 'outbound');
             $this->documentIds[] = (int) $docB->getKey();
 
-            $this->assertSame('validated', $docB->status);
+            $this->assertSame(
+                'validated',
+                $docB->status,
+                (string) ($docB->error_message ?? 'no error_message'),
+            );
 
             $linkUnderA->refresh();
             $this->assertNotNull(
@@ -180,7 +188,7 @@ class AggregationLinkCrossDocumentTest extends TestCase
             );
 
             try {
-                $docC = $this->ingestXmlString($backdatedXml, 'aggregation_add_backdated.xml');
+                $docC = $this->ingestXmlString($backdatedXml, 'aggregation_add_backdated.xml', 'outbound');
                 $this->documentIds[] = (int) $docC->getKey();
                 $this->fail('Expected DomainException for backdated ADD with newer open link');
             } catch (DomainException $e) {
@@ -200,6 +208,128 @@ class AggregationLinkCrossDocumentTest extends TestCase
                     ->whereNull('valid_to')
                     ->count(),
                 'Child must have exactly one open parent; backdated ADD must not insert a second',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function same_document_reprocess_allows_earlier_add_than_prior_generation_open_links(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $doc = $this->ingestUniqueFixture('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->documentIds[] = (int) $doc->getKey();
+            $this->assertSame('validated', $doc->status);
+
+            $child = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+            $priorLink = AggregationLink::query()
+                ->where('child_epc_id', $child->getKey())
+                ->whereNull('valid_to')
+                ->firstOrFail();
+
+            $earlierXml = $this->aggregationAddDocumentXml(
+                self::SSCC_B_URI,
+                self::SGTIN_URI,
+                eventTime: '2026-07-01T08:00:00.000Z',
+            );
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_corr_');
+            $this->assertNotFalse($tmp);
+            $path = $tmp.'.xml';
+            rename($tmp, $path);
+            file_put_contents($path, $earlierXml);
+
+            $disk = (string) ($doc->payload_disk ?: 'local');
+            $newPayload = 'epcis/inbound/'.(string) str()->uuid().'.xml';
+            Storage::disk($disk)->put($newPayload, file_get_contents($path));
+
+            $doc->forceFill([
+                'payload_path' => $newPayload,
+                'status' => 'error',
+                'error_message' => 'simulated partner correction',
+                'file_sha256' => hash_file('sha256', $path),
+                'original_filename' => 'corrected-earlier-pack.xml',
+            ])->save();
+
+            @unlink($path);
+
+            $reprocessed = app(ReprocessEpcisDocument::class)->handle(
+                $doc->fresh(),
+                sync: true,
+                force: true,
+                authorizeExceptionsRole: false,
+            );
+
+            $this->assertStringNotContainsString(
+                'newer open link',
+                (string) $reprocessed->error_message,
+                'Same-document corrected reprocess must not be blocked by prior-generation open links (status='
+                .$reprocessed->status.' err='.(string) $reprocessed->error_message.')',
+            );
+            $this->assertFalse(
+                str_starts_with((string) $reprocessed->error_message, 'Aggregation ADD at'),
+                'Aggregation ADD must project during same-document corrected reprocess (status='
+                .$reprocessed->status.' err='.(string) $reprocessed->error_message.')',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    /**
+     * Finding 4 — Aggregation ADD must lock child EPC rows before close+open so
+     * concurrent ADDs cannot leave two open parents.
+     */
+    #[Test]
+    public function aggregation_add_locks_child_epc_for_update(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $docA = $this->ingestUniqueFixture('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->documentIds[] = (int) $docA->getKey();
+
+            $child = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+            $childId = (int) $child->getKey();
+
+            $sawChildLock = false;
+            DB::listen(function ($query) use (&$sawChildLock, $childId): void {
+                $sql = strtolower($query->sql);
+                if (! str_contains($sql, 'for update')) {
+                    return;
+                }
+
+                $bindsChild = in_array($childId, $query->bindings, true)
+                    || in_array((string) $childId, $query->bindings, false);
+
+                if ($bindsChild && (str_contains($sql, '`epcs`') || str_contains($sql, 'epcs')
+                    || str_contains($sql, 'aggregation_links'))) {
+                    $sawChildLock = true;
+                }
+            });
+
+            $repackXml = $this->aggregationAddDocumentXml(
+                self::SSCC_B_URI,
+                self::SGTIN_URI,
+                eventTime: '2026-07-17T12:00:00.000Z',
+            );
+            $docB = $this->ingestXmlString($repackXml, 'aggregation_add_child_lock.xml', 'outbound');
+            $this->documentIds[] = (int) $docB->getKey();
+
+            // Lock is taken during Aggregation ADD projection (persistEvent), before
+            // catalog validation. Parent SSCC_B may be uncommissioned → document can
+            // land in error; the race serialization still must have locked the child.
+            $this->assertTrue(
+                $sawChildLock,
+                'Expected SELECT ... FOR UPDATE on child EPC (or its aggregation_links) during Aggregation ADD.',
+            );
+            $this->assertContains(
+                $docB->status,
+                ['validated', 'error', 'parsed'],
+                'Ingest must complete far enough to project Aggregation ADD (status='.$docB->status.', err='.($docB->error_message ?? '').')',
             );
         } finally {
             $this->cleanup();
@@ -277,7 +407,7 @@ class AggregationLinkCrossDocumentTest extends TestCase
         }
     }
 
-    private function ingestXmlString(string $xml, string $filename): EpcisDocument
+    private function ingestXmlString(string $xml, string $filename, string $direction = 'inbound'): EpcisDocument
     {
         $tmp = tempnam(sys_get_temp_dir(), 'epcis_xdoc_');
         $this->assertNotFalse($tmp);
@@ -287,7 +417,7 @@ class AggregationLinkCrossDocumentTest extends TestCase
 
         try {
             return app(IngestEpcisXmlDocument::class)->handle($xmlPath, [
-                'direction' => 'inbound',
+                'direction' => $direction,
                 'original_filename' => $filename,
             ]);
         } finally {
@@ -452,6 +582,22 @@ XML;
   </EPCISHeader>
   <EPCISBody>
     <EventList>
+      <ObjectEvent>
+        <eventTime>{$eventTime}</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>{$parentUri}</epc>
+        </epcList>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+        <readPoint>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </readPoint>
+        <bizLocation>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </bizLocation>
+      </ObjectEvent>
       <AggregationEvent>
         <eventTime>{$eventTime}</eventTime>
         <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>

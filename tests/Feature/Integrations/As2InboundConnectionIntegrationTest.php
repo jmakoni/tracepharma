@@ -104,6 +104,36 @@ class As2InboundConnectionIntegrationTest extends TestCase
     }
 
     #[Test]
+    public function production_rejects_unsigned_xml_even_when_lab_flag_is_on(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->app->detectEnvironment(fn () => 'production');
+
+            $lab = $this->createAs2Connection(settings: [
+                'allow_unsigned_xml' => true,
+            ]);
+            $xml = $this->uniqueFixtureXml();
+
+            $rejected = app(As2InboundWebhookController::class)->handle(
+                $this->as2Request($tenant, $lab, $xml),
+                tenantId: $tenant->id,
+                connectionId: (int) $lab->id,
+            );
+
+            $this->assertSame(200, $rejected->getStatusCode());
+            $this->assertStringContainsString('failed/failure', $rejected->getContent());
+            $this->assertSame(0, (int) $rejected->headers->get('X-Document-Id'));
+            $this->assertSame(0, EpcisDocument::query()->where('inbound_connection_id', $lab->id)->count());
+        } finally {
+            $this->app->detectEnvironment(fn () => 'testing');
+            $this->cleanupTrackedEpcisArtifacts();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function encrypted_as2_unwraps_with_inbound_decrypt_certs(): void
     {
         $tenant = $this->initializeDemo2Tenant();

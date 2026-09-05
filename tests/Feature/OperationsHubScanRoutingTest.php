@@ -495,7 +495,7 @@ class OperationsHubScanRoutingTest extends TestCase
 
         try {
             $url = EpcisDocumentResource::getUrl('index');
-            $expected = $url.(str_contains($url, '?') ? '&' : '?').'findRecall=1';
+            $expected = $url.(str_contains($url, '?') ? '&' : '?').'action=findRecall';
 
             Livewire::test(OperationsHub::class)
                 ->set('hubScan', 'UNKNOWN-LABEL')

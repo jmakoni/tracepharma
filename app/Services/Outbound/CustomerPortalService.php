@@ -6,6 +6,7 @@ use App\Enums\EpcisAuthoredKind;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\TradingPartner;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -84,6 +85,77 @@ final class CustomerPortalService
                 'document' => $document->getKey(),
             ],
         );
+    }
+
+    /**
+     * @return Builder<EpcisDocument>
+     */
+    public function portalDocumentsQuery(
+        TradingPartner $partner,
+        ?string $direction = null,
+        ?Carbon $from = null,
+        ?Carbon $to = null,
+        ?string $po = null,
+    ): Builder {
+        $years = max(1, (int) config('tracepharma.epcis.retention_years', 6));
+        $retentionFrom = now()->subYears($years);
+        $from = $from !== null && $from->greaterThan($retentionFrom) ? $from : $retentionFrom;
+        $to = $to ?? now();
+
+        $outbound = $this->documentsQuery($partner)
+            ->where('created_at', '>=', $from)
+            ->where('created_at', '<=', $to);
+
+        $inbound = $this->inboundDocumentsQuery($partner)
+            ->where('created_at', '>=', $from)
+            ->where('created_at', '<=', $to);
+
+        if (filled($po)) {
+            $poLike = '%'.$po.'%';
+            $outbound->where('customer_po', 'like', $poLike);
+            $inbound->where(function (Builder $query) use ($poLike): void {
+                $query->where('customer_po', 'like', $poLike)
+                    ->orWhere('asn_number', 'like', $poLike);
+            });
+        }
+
+        if ($direction === 'outbound') {
+            return $outbound;
+        }
+
+        if ($direction === 'inbound') {
+            return $inbound;
+        }
+
+        return EpcisDocument::query()
+            ->where(function (Builder $query) use ($outbound, $inbound): void {
+                $query->whereIn('id', $outbound->select('id'))
+                    ->orWhereIn('id', $inbound->select('id'));
+            })
+            ->latest('id');
+    }
+
+    /**
+     * Inbound docs visible on the customer portal.
+     *
+     * Authorization is by trading_partner_id only. Do not OR on sender_gln —
+     * that field comes from payload content and can be spoofed on ingest,
+     * which would leak another partner's EPCIS to a signed portal holder.
+     *
+     * @return Builder<EpcisDocument>
+     */
+    public function inboundDocumentsQuery(TradingPartner $partner): Builder
+    {
+        $years = max(1, (int) config('tracepharma.epcis.retention_years', 6));
+        $partnerId = (int) $partner->getKey();
+
+        return EpcisDocument::query()
+            ->where('direction', 'inbound')
+            ->where('trading_partner_id', $partnerId)
+            ->whereIn('status', ['parsed', 'validated', 'generated'])
+            ->where('created_at', '>=', now()->subYears($years))
+            ->whereNotNull('payload_path')
+            ->latest('id');
     }
 
     /**

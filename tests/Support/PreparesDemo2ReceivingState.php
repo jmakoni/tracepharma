@@ -7,6 +7,8 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Models\Site;
+use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\TenantSettings;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +27,14 @@ trait PreparesDemo2ReceivingState
     {
         $tenant = tenant();
         if ($tenant !== null) {
-            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::SealedParent);
+            $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+            $settings = TenantSettings::forTenant($tenant);
+            $settings->setReceivingEdgeMode(ReceivingEdgeMode::SealedParent);
+            // Shared demo2 can retain this from OrganizationSettings / destination-GLN
+            // suites; default is warning-only so unrelated receive tests can open ASN.
+            if ($settings->blockReceiveOnDestinationGlnMismatch()) {
+                $settings->setBlockReceiveOnDestinationGlnMismatch(false);
+            }
             $tenant->save();
         }
 
@@ -107,5 +116,61 @@ trait PreparesDemo2ReceivingState
 
         ReceivingScanLine::query()->where('receiving_session_id', $sessionId)->delete();
         $session->delete();
+    }
+
+    /**
+     * tracepharma_test demo2 can retain a polluted org GLN/prefix that does not
+     * cover the site ResolveReceivingSite would pick — receiving EPCIS then cannot
+     * build an SGLN. Align identity to that same eligible fallback site.
+     */
+    protected function ensureDemo2OrgPrefixMatchesReceiveSites(): void
+    {
+        $tenant = tenant();
+        if ($tenant === null) {
+            return;
+        }
+
+        // Always work on the tenancy instance so later $tenant->save() calls cannot
+        // overwrite identity with a stale in-memory company_prefix/gln.
+        $settings = TenantSettings::forTenant($tenant);
+        $receiveSiteId = $settings->defaultReceiveSiteId();
+        $siteGln = '';
+
+        if ($receiveSiteId !== null) {
+            $default = Site::query()->whereKey($receiveSiteId)->first();
+            if (
+                $default !== null
+                && EligibleReceiveSites::isEligible($default)
+            ) {
+                $siteGln = preg_replace('/\D+/', '', (string) ($default->gln ?? '')) ?? '';
+            }
+        }
+
+        if (strlen($siteGln) !== 13) {
+            $fallback = EligibleReceiveSites::forOrganization()
+                ->reorder()
+                ->orderByDesc('is_headquarters')
+                ->orderBy('id')
+                ->first();
+            $siteGln = preg_replace('/\D+/', '', (string) ($fallback?->gln ?? '')) ?? '';
+        }
+
+        if (strlen($siteGln) !== 13) {
+            return;
+        }
+
+        $orgGln = preg_replace('/\D+/', '', (string) ($settings->gln() ?? '')) ?? '';
+        $prefix = $settings->companyPrefix();
+
+        if ($prefix !== null && str_starts_with($siteGln, $prefix) && $orgGln !== '' && str_starts_with($orgGln, $prefix)) {
+            return;
+        }
+
+        $aligned = substr($siteGln, 0, 6);
+        $settings->setCompanyPrefix($aligned);
+        if ($orgGln === '' || ! str_starts_with($orgGln, $aligned)) {
+            $settings->setGln($siteGln);
+        }
+        $tenant->saveQuietly();
     }
 }

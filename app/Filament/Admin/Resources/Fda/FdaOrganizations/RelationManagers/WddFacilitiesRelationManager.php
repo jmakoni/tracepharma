@@ -5,6 +5,7 @@ namespace App\Filament\Admin\Resources\Fda\FdaOrganizations\RelationManagers;
 use App\Filament\Admin\Resources\Fda\FdaWddFacilities\FdaWddFacilityResource;
 use App\Filament\Admin\Support\FdaRegistryBadges;
 use App\Filament\Support\RecordActionGroup;
+use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -32,12 +33,21 @@ class WddFacilitiesRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('name')->searchable()->placeholder(fn ($record) => $record->facility_name),
                 FdaRegistryBadges::facilityTypeColumn(),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('city'),
                 TextColumn::make('state_province')->label('State'),
                 TextColumn::make('active_licenses_count')->label('Active licenses'),
                 FdaRegistryBadges::activeColumn(),
             ])
             ->recordUrl(fn ($record): string => FdaWddFacilityResource::getUrl('view', ['record' => $record]))
+            ->headerActions([
+                CreateAction::make()
+                    ->label('New WDD facility')
+                    ->url(fn (): string => FdaWddFacilityResource::getUrl('create', [
+                        'fda_organization_id' => $this->getOwnerRecord()->getKey(),
+                    ]))
+                    ->visible(fn (): bool => FdaWddFacilityResource::canCreate()),
+            ])
             ->recordActions(RecordActionGroup::make([
                 ViewAction::make()
                     ->url(fn ($record): string => FdaWddFacilityResource::getUrl('view', ['record' => $record])),

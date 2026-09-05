@@ -36,8 +36,8 @@
         <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <a href="{{ route('marketing.integrations.pms.index') }}" class="tp-card-accent group border-tp-accent-500/30 p-6 transition hover:border-tp-accent-500/50">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pharmacy PMS</p>
-                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">7 dispense-check APIs</h3>
-                <p class="mt-2 text-sm text-tp-muted">PioneerRx, BestRx, PrimeRx, and more</p>
+                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">One dispense-check API</h3>
+                <p class="mt-2 text-sm text-tp-muted">POST /api/v1/dispense-check · named adapters not GA</p>
             </a>
             <a href="{{ route('marketing.integrations.wms.index') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">WMS</p>

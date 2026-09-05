@@ -14,7 +14,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Fda\FdaStagingSnapshotSize;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;

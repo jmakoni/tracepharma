@@ -4,10 +4,11 @@ namespace App\Filament\App\Resources\SsccNumberRanges\Pages;
 
 use App\Enums\SsccNumberRangeScope;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
+use App\Filament\Notifications\Notification;
 use App\Support\Labeling\SsccNumberRangeValidator;
 use App\Support\Receiving\EligibleReceiveSites;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -78,6 +79,8 @@ class CreateSsccNumberRange extends CreateRecord
                 ->send();
 
             $this->halt();
+
+            throw new Halt;
         } catch (Throwable $e) {
             report($e);
 
@@ -88,6 +91,8 @@ class CreateSsccNumberRange extends CreateRecord
                 ->send();
 
             $this->halt();
+
+            throw new Halt;
         }
     }
 }

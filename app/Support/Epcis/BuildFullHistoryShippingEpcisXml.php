@@ -9,6 +9,7 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Ndc;
 use App\Support\Gs1\Sgln;
@@ -25,13 +26,18 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
- * Build a self-contained EPCIS 1.2 commission → pack → ship document
- * from the live aggregation tree under a completed outbound shipping session.
+ * Build a self-contained EPCIS 1.2 shipping document that REPLAYS prior
+ * commissioning/packing from retained inbound (or authored) payloads for the
+ * open aggregation tree, then appends only the wholesaler shipping ObjectEvent.
+ *
+ * Does not invent manufacturer history or retimestamp commission/pack events.
  */
 final class BuildFullHistoryShippingEpcisXml
 {
     public function __construct(
         private readonly ResolveOwningPartySite $resolveOwningPartySite,
+        private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
+        private readonly ExtractPriorPedigreeXml $extractPriorPedigreeXml,
     ) {}
 
     /**
@@ -72,23 +78,28 @@ final class BuildFullHistoryShippingEpcisXml
             ?? 'urn:uuid:'.(string) Str::uuid();
 
         $parties = $this->resolveParties($session);
+        $pedigree = $this->extractPriorPedigreeXml->forOpenTree($ssccIds);
 
-        $trees = [];
+        $ssccUris = [];
         foreach ($ssccIds as $ssccId) {
             $sscc = $ssccs->get($ssccId);
-            if (! $sscc instanceof Epc) {
-                continue;
+            if ($sscc instanceof Epc) {
+                $ssccUris[] = (string) $sscc->epc_uri;
             }
-            $trees[] = $this->walkTree((int) $sscc->getKey(), (string) $sscc->epc_uri);
         }
+
+        $instanceId = SbdhInstanceIdentifier::uuid();
+        $directPurchaseStatement = $this->resolveDirectPurchaseStatement($session);
 
         $xml = $this->render(
             session: $session,
             shipEventTime: $shipEventTime,
             shippingEventId: $shippingEventId,
             parties: $parties,
-            trees: $trees,
-            instanceId: SbdhInstanceIdentifier::fromEventTime($shipEventTime),
+            ssccUris: $ssccUris,
+            pedigree: $pedigree,
+            instanceId: $instanceId,
+            directPurchaseStatement: $directPurchaseStatement,
         );
 
         $filename = OutboundEpcisFilename::forShippingEvent($tenant, $shipEventTime);
@@ -98,7 +109,7 @@ final class BuildFullHistoryShippingEpcisXml
             'filename' => $filename,
             'path' => OutboundEpcisFilename::storagePath($tenant, $shipEventTime),
             'ship_event_time' => $shipEventTime,
-            'instance_id' => SbdhInstanceIdentifier::fromEventTime($shipEventTime),
+            'instance_id' => $instanceId,
         ];
     }
 
@@ -145,7 +156,14 @@ final class BuildFullHistoryShippingEpcisXml
         }
 
         if ($shipToSite instanceof Site && filled($shipToSite->gln)) {
-            $destLocation = $this->partyFromSite($shipToSite, 'Ship-to location');
+            $extra = [];
+            if ($partner instanceof TradingPartner) {
+                $partnerSgln = $partner->getAttribute('sgln');
+                if (is_string($partnerSgln) && $partnerSgln !== '') {
+                    $extra[] = $partnerSgln;
+                }
+            }
+            $destLocation = $this->partyFromSite($shipToSite, 'Ship-to location', $extra);
         } elseif ($partner instanceof TradingPartner) {
             $destLocation = $this->partyFromPartner($partner, 'Ship-to location');
         } else {
@@ -156,6 +174,7 @@ final class BuildFullHistoryShippingEpcisXml
             ? $this->partyFromPartner($partner, 'Ship-to owning party')
             : $destLocation;
 
+        // Emit the SGLN recorded on site/partner master data — do not rewrite extensions.
         return [
             'source_owning' => $sourceOwning,
             'source_location' => $sourceLocation,
@@ -165,12 +184,34 @@ final class BuildFullHistoryShippingEpcisXml
     }
 
     /**
+     * @param  list<string>  $extraSglnCandidates
      * @return array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string}
      */
-    private function partyFromSite(Site $site, string $fallbackName): array
+    private function partyFromSite(Site $site, string $fallbackName, array $extraSglnCandidates = []): array
     {
         $gln = Sgln::normalizeGln((string) $site->gln) ?? (string) $site->gln;
-        $sgln = $this->resolveSglnUrnForGln($gln, is_string($site->sgln) ? [$site->sgln] : []);
+        $candidates = [];
+        if (is_string($site->sgln) && $site->sgln !== '') {
+            $candidates[] = $site->sgln;
+        }
+        // Partner ship-to sites often store SGLN on the trading partner only.
+        if ($site->trading_partner_id !== null) {
+            $site->loadMissing('tradingPartner');
+            $partnerSgln = $site->tradingPartner?->getAttribute('sgln');
+            if (is_string($partnerSgln) && $partnerSgln !== '') {
+                $candidates[] = $partnerSgln;
+            }
+        }
+        foreach ($extraSglnCandidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                $candidates[] = $candidate;
+            }
+        }
+        $sgln = $this->resolveSglnUrnForGln(
+            $gln,
+            $candidates,
+            partnerLocation: $site->trading_partner_id !== null || $extraSglnCandidates !== [],
+        );
         if ($sgln === null) {
             throw new DomainException(
                 'No SGLN on record for '.$fallbackName.' (GLN '.$gln.'). Record the site SGLN before sending.',
@@ -209,7 +250,7 @@ final class BuildFullHistoryShippingEpcisXml
             $candidates[] = $partnerSgln;
         }
 
-        $sgln = $this->resolveSglnUrnForGln($gln, $candidates);
+        $sgln = $this->resolveSglnUrnForGln($gln, $candidates, partnerLocation: true);
         if ($sgln === null) {
             throw new DomainException(
                 'No SGLN on record for '.$fallbackName.' (GLN '.$gln.'). Record the trading partner\'s own SGLN '
@@ -240,12 +281,17 @@ final class BuildFullHistoryShippingEpcisXml
      *
      * @param  list<string>  $candidates
      */
-    private function resolveSglnUrnForGln(string $gln, array $candidates): ?string
+    private function resolveSglnUrnForGln(string $gln, array $candidates, bool $partnerLocation = false): ?string
     {
+        $settings = TenantSettings::forTenant(tenant());
+        $prefix = $partnerLocation
+            ? $settings->companyPrefixForPartnerEncoding()
+            : $settings->companyPrefix();
+
         return SglnResolution::resolve(
             $gln,
             $candidates,
-            TenantSettings::forTenant(tenant())->companyPrefix(),
+            $prefix,
         );
     }
 
@@ -326,123 +372,41 @@ final class BuildFullHistoryShippingEpcisXml
     }
 
     /**
-     * @param  list<array{sscc_uri: string, cases: list<array{uri: string, lot: ?string, expiry: ?string, bottles: list<array{uri: string, lot: ?string, expiry: ?string}>}>}>  $trees
      * @param  array{
      *     source_owning: array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string},
      *     source_location: array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string},
      *     dest_owning: array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string},
      *     dest_location: array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string}
      * }  $parties
+     * @param  list<string>  $ssccUris
+     * @param  array{
+     *     event_xml: list<string>,
+     *     location_elements_xml: list<string>,
+     *     epc_class_elements_xml: list<string>,
+     *     source_document_ids: list<int>,
+     *     tree_epc_uris: list<string>,
+     *     event_count: int
+     * }  $pedigree
      */
     private function render(
         OutboundShippingSession $session,
         Carbon $shipEventTime,
         string $shippingEventId,
         array $parties,
-        array $trees,
+        array $ssccUris,
+        array $pedigree,
         string $instanceId,
+        ?string $directPurchaseStatement = null,
     ): string {
         $creationDate = $shipEventTime->copy()->addSeconds(4)->format('Y-m-d\TH:i:s.v\Z');
-        $readPointSgln = $parties['source_location']['sgln'];
-
-        $allBottlesByUri = [];
-        $allCasesByUri = [];
-        $gtinPatterns = [];
-
-        foreach ($trees as $tree) {
-            foreach ($tree['cases'] as $case) {
-                $allCasesByUri[$case['uri']] = $case;
-                $parsed = Sgtin::fromUrn($case['uri']);
-                if ($parsed !== null) {
-                    $gtinPatterns[$parsed['company_prefix'].'.'.$parsed['indicator_digit'].$parsed['item_reference']] = $parsed;
-                }
-                foreach ($case['bottles'] as $bottle) {
-                    $allBottlesByUri[$bottle['uri']] = $bottle;
-                    $parsedBottle = Sgtin::fromUrn($bottle['uri']);
-                    if ($parsedBottle !== null) {
-                        $gtinPatterns[$parsedBottle['company_prefix'].'.'.$parsedBottle['indicator_digit'].$parsedBottle['item_reference']] = $parsedBottle;
-                    }
-                }
-            }
-        }
-
-        $bottleGroups = $this->groupByLotExpiry(array_values($allBottlesByUri));
-        $caseGroups = $this->groupByLotExpiry(array_values($allCasesByUri));
-
-        $t = $shipEventTime->copy()->subDay()->setTime(14, 0, 0);
-        $events = [];
-
-        foreach ($bottleGroups as $group) {
-            $events[] = $this->objectCommissionXml(
-                eventTime: $t->copy(),
-                epcs: $group['uris'],
-                sgln: $readPointSgln,
-                lot: $group['lot'],
-                expiry: $group['expiry'],
-            );
-            $t = $t->addMinutes(2);
-        }
-
-        foreach ($caseGroups as $group) {
-            $events[] = $this->objectCommissionXml(
-                eventTime: $t->copy(),
-                epcs: $group['uris'],
-                sgln: $readPointSgln,
-                lot: $group['lot'],
-                expiry: $group['expiry'],
-            );
-            $t = $t->addMinutes(2);
-        }
-
-        foreach ($trees as $tree) {
-            $events[] = $this->objectCommissionXml(
-                eventTime: $t->copy(),
-                epcs: [$tree['sscc_uri']],
-                sgln: $readPointSgln,
-                lot: null,
-                expiry: null,
-            );
-            $t = $t->addMinutes(1);
-        }
-
-        $t = $shipEventTime->copy()->subDay()->setTime(15, 0, 0);
-        foreach ($trees as $tree) {
-            foreach ($tree['cases'] as $case) {
-                if ($case['bottles'] === []) {
-                    continue;
-                }
-                $events[] = $this->aggregationXml(
-                    eventTime: $t->copy(),
-                    parentUri: $case['uri'],
-                    childUris: array_column($case['bottles'], 'uri'),
-                    sgln: $readPointSgln,
-                );
-                $t = $t->addMinutes(1);
-            }
-        }
-
-        $t = $shipEventTime->copy()->subDay()->setTime(16, 0, 0);
-        foreach ($trees as $tree) {
-            $childUris = array_column($tree['cases'], 'uri');
-            if ($childUris === []) {
-                continue;
-            }
-            $events[] = $this->aggregationXml(
-                eventTime: $t->copy(),
-                parentUri: $tree['sscc_uri'],
-                childUris: $childUris,
-                sgln: $readPointSgln,
-            );
-            $t = $t->addMinutes(5);
-        }
 
         $po = (string) ($session->customer_po ?: $session->invoice_number ?: '');
         $asn = (string) ($session->asn_number ?: '');
         if ($asn === '' || $po === '') {
             throw new DomainException('ASN and customer PO or invoice are required to author shipping EPCIS.');
         }
-        $ssccUris = array_column($trees, 'sscc_uri');
 
+        $events = $pedigree['event_xml'];
         $events[] = $this->shippingXml(
             eventTime: $shipEventTime,
             eventId: $shippingEventId,
@@ -450,22 +414,35 @@ final class BuildFullHistoryShippingEpcisXml
             parties: $parties,
             po: $po,
             asn: $asn,
+            directPurchaseStatement: $directPurchaseStatement,
         );
 
-        $locationXml = $this->locationVocabularyXml([
-            $parties['source_owning'],
-            $parties['source_location'],
-            $parties['dest_owning'],
-            $parties['dest_location'],
-        ]);
-        $epcClassXml = $this->epcClassVocabularyXml(
-            $gtinPatterns,
-            $session->epcis_document_id !== null ? (int) $session->epcis_document_id : null,
-            $session->epcisDocument?->ingest_generation !== null
-                ? (int) $session->epcisDocument->ingest_generation
-                : null,
+        $locationXml = $this->mergedLocationVocabularyXml(
+            $pedigree['location_elements_xml'],
+            [
+                $parties['source_owning'],
+                $parties['source_location'],
+                $parties['dest_owning'],
+                $parties['dest_location'],
+            ],
+        );
+        $epcClassXml = $this->vocabularyFromElements(
+            'urn:epcglobal:epcis:vtype:EPCClass',
+            $pedigree['epc_class_elements_xml'],
         );
 
+        $headerExtras = '';
+        $headerExtras .= "    <gs1ushc:guidelineVersion>R1.3</gs1ushc:guidelineVersion>\n";
+        if ((bool) $session->dscsa_affirm) {
+            $headerExtras .= ShippingTiTsFragments::dscsaTransactionStatementXml('    ');
+        }
+        $headerExtras .= ShippingTiTsFragments::dropShipmentIndicatorXml(
+            (bool) $session->is_drop_shipment,
+            '    ',
+        );
+
+        // EPCISHeaderExtensionType = EPCISMasterData + optional nested extension only.
+        // GS1 US HC elements are ##other on EPCISHeader and must follow </extension>.
         $header =
             "  <EPCISHeader>\n".
             ShippingTiTsFragments::sbdhXml(
@@ -482,7 +459,7 @@ final class BuildFullHistoryShippingEpcisXml
             "        </VocabularyList>\n".
             "      </EPCISMasterData>\n".
             "    </extension>\n".
-            ShippingTiTsFragments::dscsaTransactionStatementXml().
+            $headerExtras.
             "  </EPCISHeader>\n";
 
         $body =
@@ -492,9 +469,9 @@ final class BuildFullHistoryShippingEpcisXml
             "    </EventList>\n".
             "  </EPCISBody>\n";
 
-        return
+        $xml =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".
-            "<!-- Full-history EPCIS 1.2: Location+EPCClass master data, DSCSA TS, SSCC commissioning, bottle ILMD, packing in_progress, ship without bizLocation. -->\n".
+            "<!-- EPCIS 1.2 / GS1 US R1.3: replayed prior commission+pack + authored shipping. -->\n".
             "<epcis:EPCISDocument\n".
             "    xmlns:epcis=\"urn:epcglobal:epcis:xsd:1\"\n".
             "    xmlns:sbdh=\"http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader\"\n".
@@ -505,6 +482,69 @@ final class BuildFullHistoryShippingEpcisXml
             $header.
             $body.
             "</epcis:EPCISDocument>\n";
+
+        ShippingTiTsFragments::assertDropShipmentEmitted(
+            isDropShipment: (bool) $session->is_drop_shipment,
+            payload: $xml,
+        );
+
+        return $xml;
+    }
+
+    /**
+     * @param  list<string>  $priorElements
+     * @param  list<array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string}>  $parties
+     */
+    private function mergedLocationVocabularyXml(array $priorElements, array $parties): string
+    {
+        $byId = [];
+        foreach ($priorElements as $element) {
+            if (preg_match('/id="([^"]+)"/', $element, $m)) {
+                $byId[$m[1]] = $element;
+            } else {
+                $byId[hash('sha256', $element)] = $element;
+            }
+        }
+
+        foreach ($parties as $party) {
+            $sgln = $party['sgln'];
+            if (isset($byId[$sgln])) {
+                continue;
+            }
+            $byId[$sgln] =
+                '              <VocabularyElement id="'.$this->e($sgln)."\">\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#name">'.$this->e($party['name'])."</attribute>\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#streetAddressOne">'.$this->e($party['street'])."</attribute>\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#city">'.$this->e($party['city'])."</attribute>\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#state">'.$this->e($party['state'])."</attribute>\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#postalCode">'.$this->e($party['postal'])."</attribute>\n".
+                '                <attribute id="urn:epcglobal:cbv:mda#countryCode">'.$this->e($party['country'])."</attribute>\n".
+                '              </VocabularyElement>';
+        }
+
+        return $this->vocabularyFromElements('urn:epcglobal:epcis:vtype:Location', array_values($byId));
+    }
+
+    /**
+     * @param  list<string>  $elements
+     */
+    private function vocabularyFromElements(string $type, array $elements): string
+    {
+        if ($elements === []) {
+            return '';
+        }
+
+        $body = '';
+        foreach ($elements as $element) {
+            $body .= rtrim($element)."\n";
+        }
+
+        return
+            '          <Vocabulary type="'.$this->e($type)."\">\n".
+            "            <VocabularyElementList>\n".
+            $body.
+            "            </VocabularyElementList>\n".
+            "          </Vocabulary>\n";
     }
 
     /**
@@ -635,12 +675,16 @@ final class BuildFullHistoryShippingEpcisXml
         array $parties,
         string $po,
         string $asn,
+        ?string $directPurchaseStatement = null,
     ): string {
         $recordTime = $eventTime->copy()->addSeconds(3);
         $epcXml = collect($ssccUris)
             ->map(fn (string $uri): string => '          <epc>'.$this->e($uri).'</epc>')
             ->implode("\n");
+        $shipFromSgln = $parties['source_location']['sgln'];
 
+        // GS1 US R1.3 / TraceLink: omit bizLocation on shipping — destination is unknown
+        // until receiving; destinationList carries ship-to identity.
         return
             "      <ObjectEvent>\n".
             '        <eventTime>'.$eventTime->format('Y-m-d\TH:i:s.v\Z')."</eventTime>\n".
@@ -656,7 +700,7 @@ final class BuildFullHistoryShippingEpcisXml
             "        <bizStep>urn:epcglobal:cbv:bizstep:shipping</bizStep>\n".
             "        <disposition>urn:epcglobal:cbv:disp:in_transit</disposition>\n".
             "        <readPoint>\n".
-            '          <id>'.$this->e($parties['source_location']['sgln'])."</id>\n".
+            '          <id>'.$this->e($shipFromSgln)."</id>\n".
             "        </readPoint>\n".
             ShippingTiTsFragments::bizTransactionListXml(
                 po: $po,
@@ -669,8 +713,23 @@ final class BuildFullHistoryShippingEpcisXml
                 sourceLocationSgln: $parties['source_location']['sgln'],
                 destOwningSgln: $parties['dest_owning']['sgln'],
                 destLocationSgln: $parties['dest_location']['sgln'],
+                directPurchaseStatement: $directPurchaseStatement,
             ).
             '      </ObjectEvent>';
+    }
+
+    private function resolveDirectPurchaseStatement(OutboundShippingSession $session): ?string
+    {
+        if (! (bool) $session->dscsa_affirm) {
+            return null;
+        }
+
+        $partnerType = $this->directPurchaseStatements->tenantProfileToPartnerType(tenant());
+        $sellerName = filled($session->site?->name)
+            ? (string) $session->site->name
+            : (string) (tenant()?->name ?? 'Seller');
+
+        return $this->directPurchaseStatements->statementForSeller($partnerType, $sellerName);
     }
 
     /**

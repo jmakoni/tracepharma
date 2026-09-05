@@ -20,6 +20,8 @@ final class As2SmimeUnwrap
                 throw new RuntimeException('Unsigned AS2 XML is not allowed for this connection.');
             }
 
+            $this->assertUnsignedXmlAllowedOutsideProduction();
+
             return $body;
         }
 
@@ -40,6 +42,8 @@ final class As2SmimeUnwrap
                 throw new RuntimeException('AS2 payload is encrypted but not signed.');
             }
 
+            $this->assertUnsignedXmlAllowedOutsideProduction();
+
             return $decrypted;
         }
 
@@ -51,6 +55,16 @@ final class As2SmimeUnwrap
         }
 
         throw new RuntimeException('AS2 S/MIME unwrap did not produce EPCIS XML.');
+    }
+
+    /**
+     * Lab-only flag: unsigned XML is never permitted in production.
+     */
+    private function assertUnsignedXmlAllowedOutsideProduction(): void
+    {
+        if (app()->environment('production')) {
+            throw new RuntimeException('Unsigned AS2 XML is not allowed in production.');
+        }
     }
 
     private function decrypt(string $body, ?string $contentType, string $certPem, string $keyPem): string

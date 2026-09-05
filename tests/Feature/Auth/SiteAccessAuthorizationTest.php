@@ -243,6 +243,7 @@ class SiteAccessAuthorizationTest extends TestCase
             foreach ([
                 fn () => app(CancelReceivingSession::class)->handle($session->fresh()),
                 fn () => app(ResetReceivingSessionScans::class)->handle($session->fresh()),
+                fn () => app(CompleteReceivingSession::class)->handle($session->fresh()),
             ] as $action) {
                 try {
                     $action();

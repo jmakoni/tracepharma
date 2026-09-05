@@ -3,9 +3,13 @@
 namespace App\Filament\App\Resources\OutboundConnections\Schemas;
 
 use App\Enums\As2MdnAckMode;
+use App\Enums\OutboundConformanceState;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
+use App\Models\OutboundConnection;
 use App\Support\Integrations\OutboundTransportAvailability;
+use App\Support\SftpConnectionProviderFactory;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -55,25 +59,54 @@ class OutboundConnectionForm
                                 ))
                             ->required()
                             ->live()
-                            ->rules([
-                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
-                                    $transport = OutboundTransport::tryFrom((string) $value);
-
-                                    if ($transport !== null && ! OutboundTransportAvailability::isSelectable($transport)) {
-                                        $fail(OutboundTransportAvailability::sftpSaveMessage());
-                                    }
-                                },
-                            ]),
-                        Select::make('trading_partner_id')
-                            ->label('Trading partner')
-                            ->relationship('tradingPartner', 'name')
+                            ->disabled(fn (?OutboundConnection $record): bool => $record?->isSystemTemplate() ?? false)
+                            ->dehydrated(),
+                        Placeholder::make('system_template_notice')
+                            ->label('System template')
+                            ->content('This is a built-in Email / Client portal template. Enable it and configure settings; it cannot be deleted or have its transport changed.')
+                            ->visible(fn (?OutboundConnection $record): bool => $record?->isSystemTemplate() ?? false)
+                            ->columnSpanFull(),
+                        Select::make('tradingPartners')
+                            ->label('Trading partners')
+                            ->relationship('tradingPartners', 'name')
+                            ->multiple()
                             ->searchable()
-                            ->nullable(),
+                            ->preload()
+                            ->nullable()
+                            ->helperText('Leave empty for a global connection usable by any customer. Select one or more partners to scope this endpoint.')
+                            ->disabled(fn (?OutboundConnection $record): bool => $record?->isSystemTemplate() ?? false),
                         Toggle::make('is_active')
                             ->default(true),
                         Toggle::make('is_default')
                             ->label('Default for partner')
-                            ->helperText('When set, this connection is preferred for auto-routing to the selected trading partner (or globally when no partner is linked).'),
+                            ->helperText('When set, this connection is preferred for auto-routing to its linked trading partners (or globally when none are linked). Email is only used when explicitly selected as default or pinned on a shipment — never via B2B→Portal ladder fallback.'),
+                        Placeholder::make('conformance_state_display')
+                            ->label('Conformance')
+                            ->content(function (?OutboundConnection $record): string {
+                                if ($record === null) {
+                                    return OutboundConformanceState::Test->label().' (new connections always start in Test)';
+                                }
+
+                                return $record->conformanceState()->label();
+                            })
+                            ->helperText('Advance via Promote or Break-glass on the connection view — not editable here.'),
+                        Select::make('settings.epcis_document_version')
+                            ->label('EPCIS document version')
+                            ->options([
+                                '1.2' => 'EPCIS 1.2 XML (default)',
+                                '2.0' => 'EPCIS 2.0 JSON-LD (opt-in when accept_20 is on)',
+                            ])
+                            ->default('1.2')
+                            ->helperText('Ship Orders follow this connection version when accept_20 allows 2.0; otherwise 1.2 XML. XML 2.0 outbound is not offered.'),
+                        Select::make('settings.epcis_document_format')
+                            ->label('EPCIS 2.0 format')
+                            ->options([
+                                'json' => 'JSON-LD (supported)',
+                            ])
+                            ->default('json')
+                            ->dehydrated()
+                            ->visible(fn (Get $get): bool => $get('settings.epcis_document_version') === '2.0')
+                            ->helperText('Only used when EPCIS 2.0 is selected. Ship Orders and disposition documents follow the connection version above.'),
                     ])
                     ->columns(2),
                 Section::make('HTTPS settings')
@@ -137,6 +170,111 @@ class OutboundConnectionForm
                             ->columnSpanFull()
                             ->helperText('Partner public certificate for payload encryption after signing. Stored encrypted.'),
                     ]),
+                Section::make('Email settings')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Email->value)
+                    ->schema([
+                        Repeater::make('settings.to_emails')
+                            ->label('To recipients')
+                            ->simple(
+                                TextInput::make('email')
+                                    ->email()
+                                    ->required(),
+                            )
+                            ->defaultItems(1)
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Email->value && ($get('is_active') ?? false))
+                            ->helperText('Required when this connection is active. EPCIS XML/JSON is attached to the message.')
+                            ->columnSpanFull(),
+                        Repeater::make('settings.cc_emails')
+                            ->label('CC recipients')
+                            ->simple(
+                                TextInput::make('email')
+                                    ->email(),
+                            )
+                            ->defaultItems(0)
+                            ->columnSpanFull(),
+                        TextInput::make('settings.from_name')
+                            ->label('From display name')
+                            ->maxLength(255),
+                        TextInput::make('settings.subject_template')
+                            ->label('Subject template')
+                            ->helperText('Optional. Tokens: {asn}, {po}, {filename}')
+                            ->maxLength(255),
+                        TextInput::make('settings.max_attachment_mb')
+                            ->label('Max attachment (MB)')
+                            ->numeric()
+                            ->default(15)
+                            ->minValue(1)
+                            ->maxValue(50)
+                            ->helperText('Larger files fail with guidance to use Client portal or SFTP.'),
+                    ])
+                    ->columns(2),
+                Section::make('Client portal settings')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Portal->value)
+                    ->schema([
+                        Toggle::make('settings.notify_on_publish')
+                            ->label('Email notify on publish')
+                            ->default(true)
+                            ->helperText('Sends a login link (no attachment) when EPCIS is published to the client portal.'),
+                        Repeater::make('settings.invite_emails')
+                            ->label('Notify / invite emails')
+                            ->simple(
+                                TextInput::make('email')
+                                    ->email(),
+                            )
+                            ->defaultItems(0)
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('SFTP settings')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                    ->schema([
+                        TextInput::make('settings.host')
+                            ->label('Host')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                            ->rules([
+                                fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                    if ($value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    try {
+                                        SftpConnectionProviderFactory::assertSafeHost((string) $value);
+                                    } catch (\InvalidArgumentException $exception) {
+                                        $fail($exception->getMessage());
+                                    }
+                                },
+                            ]),
+                        TextInput::make('settings.port')
+                            ->numeric()
+                            ->default(22),
+                        TextInput::make('settings.outbound_path')
+                            ->label('Outbound path')
+                            ->default('/outbound/epcis')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                        TextInput::make('settings.root')
+                            ->label('Remote root')
+                            ->default('/'),
+                    ])
+                    ->columns(2),
+                Section::make('SFTP credentials')
+                    ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                    ->schema([
+                        TextInput::make('sftp_username')
+                            ->label('Username')
+                            ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value),
+                        TextInput::make('sftp_password')
+                            ->label('Password')
+                            ->password()
+                            ->revealable(),
+                        Textarea::make('sftp_private_key')
+                            ->label('Private key (PEM)')
+                            ->rows(6)
+                            ->columnSpanFull(),
+                        TextInput::make('sftp_passphrase')
+                            ->label('Private key passphrase')
+                            ->password()
+                            ->revealable(),
+                    ])
+                    ->columns(2),
                 Section::make('HTTPS credentials')
                     ->visible(fn (Get $get): bool => $get('transport') === OutboundTransport::Https->value)
                     ->schema([

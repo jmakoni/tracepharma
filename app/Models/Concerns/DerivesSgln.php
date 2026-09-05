@@ -2,7 +2,10 @@
 
 namespace App\Models\Concerns;
 
+use App\Models\LocationDevice;
 use App\Models\Site;
+use App\Models\TradingPartner;
+use App\Rules\ValidGln;
 use App\Support\Gs1\OrganizationSglnPrefixes;
 use App\Support\Gs1\SglnResolution;
 use App\Support\TenantSettings;
@@ -44,7 +47,18 @@ trait DerivesSgln
         $gln = is_string($this->getAttribute('gln')) ? $this->getAttribute('gln') : null;
         $current = $this->getAttribute('sgln');
         $current = is_string($current) ? $current : null;
-        $orgPrefix = TenantSettings::forTenant(tenant())->companyPrefix();
+
+        // Never invent an SGLN for a GLN that fails the GS1 check digit — the URN
+        // would encode a different GLN and break EPCIS authoring (readPoint/bizLocation).
+        if ($gln !== null && $gln !== '' && ValidGln::normalize($gln) === null) {
+            $this->setAttribute('sgln', null);
+
+            return;
+        }
+
+        $settings = TenantSettings::forTenant(tenant());
+        $orgPrefix = $settings->companyPrefix();
+        $partnerPrefix = $settings->companyPrefixForPartnerEncoding();
 
         if ($this instanceof Site && OrganizationSglnPrefixes::isOrganizationFacility($this)) {
             $siblingPrefixes = $orgPrefix !== null
@@ -65,11 +79,52 @@ trait DerivesSgln
             return;
         }
 
+        $encodingPrefix = $this->usesPartnerPrefixForEncoding()
+            ? $partnerPrefix
+            : $orgPrefix;
+
         $this->setAttribute('sgln', SglnResolution::resolve(
             $gln,
             $current !== null ? [$current] : [],
-            $orgPrefix,
-        ));
+            $encodingPrefix,
+        ) ?? ($this instanceof Site && $encodingPrefix !== null
+            ? SglnResolution::fromPrefixLength(
+                $gln,
+                $encodingPrefix,
+                SglnResolution::extensionOf($current, $gln),
+            )
+            : null));
+    }
+
+    /**
+     * Partner-owned master data may encode SGLNs from our prefix only when allowed.
+     * Organization facilities and their devices always use the organization prefix.
+     */
+    private function usesPartnerPrefixForEncoding(): bool
+    {
+        if ($this instanceof TradingPartner) {
+            return true;
+        }
+
+        if ($this instanceof Site) {
+            return $this->trading_partner_id !== null;
+        }
+
+        if ($this instanceof LocationDevice) {
+            $siteId = $this->getAttribute('site_id');
+
+            if ($siteId === null) {
+                return false;
+            }
+
+            $site = $this->relationLoaded('site')
+                ? $this->getRelation('site')
+                : Site::query()->find($siteId);
+
+            return $site instanceof Site && $site->trading_partner_id !== null;
+        }
+
+        return false;
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Enums\SsccAllocationMode;
 use App\Enums\TenantProfile;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
@@ -28,7 +29,6 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -37,6 +37,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\PermissionRegistrar;
@@ -46,7 +47,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class OrganizationSettings extends Page
+class OrganizationSettings extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice;
 
@@ -96,10 +97,17 @@ class OrganizationSettings extends Page
             'organization_type' => $tenant?->profile?->tenantType()->label(),
             'gln' => $settings->gln(),
             'company_prefix' => $settings->companyPrefix(),
+            'allow_assign_partner_glns_from_prefix' => $settings->allowAssignPartnerGlnsFromPrefix(),
             'receiving_state' => $settings->receivingState(),
             'default_receive_site_id' => $settings->defaultReceiveSiteId(),
             'default_ship_from_site_id' => $settings->defaultShipFromSiteId(),
             'require_ti_for_scan_first' => $settings->requireTiForScanFirst(),
+            'require_pure_epcis_document' => $settings->requirePureEpcisDocument(),
+            'block_receive_on_destination_gln_mismatch' => $settings->blockReceiveOnDestinationGlnMismatch(),
+            'match_inbound_ship_to_site' => $settings->matchInboundShipToSite(),
+            'block_send_on_atp_gap' => $settings->blockSendOnAtpGap(),
+            'auto_open_receive_after_transfer_ship' => $settings->autoOpenReceiveAfterTransferShip(),
+            'auto_complete_asn_on_ready' => $settings->autoCompleteAsnOnReady(),
             'receiving_edge_mode' => ReceivingPolicy::forTenant($tenant)->edgeMode()->value,
             'job_roles_enabled' => $settings->jobRolesEnabled(),
             'compliance_contact_name' => $settings->complianceContactName(),
@@ -117,11 +125,16 @@ class OrganizationSettings extends Page
             'l3_provider' => $settings->l3Provider(),
             'l3_endpoint_url' => $settings->l3EndpointUrl(),
             'l3_api_key' => null,
+            'l3_guardian_lot_close_enabled' => $settings->l3GuardianLotCloseEnabled(),
             'wms_bridge_api_key' => null,
             'wms_receive_confirm_url' => $settings->wmsReceiveConfirmUrl(),
             'dashboard_allow_user_customize' => $settings->dashboardAllowUserCustomize(),
             'dashboard_allowed' => array_keys(array_filter($settings->dashboardAllowed())),
             'dashboard_defaults' => array_keys(array_filter($settings->dashboardDefaults())),
+            'pharmacy_simplified_nav' => $settings->pharmacySimplifiedNavEnabled(),
+            'alert_digest_enabled' => $settings->alertDigestEnabled(),
+            'alert_digest_frequency' => $settings->alertDigestFrequency(),
+            'email_portal_on_ship' => $settings->emailPortalOnShipEnabled(),
         ], $settings->organizationAddress()));
     }
 
@@ -173,13 +186,18 @@ class OrganizationSettings extends Page
                                 };
                             })
                             ->helperText('6–11 digit GS1 Company Prefix used for SGLNs and SSCC number ranges. Ranges must match this GCP.'),
+                        Toggle::make('allow_assign_partner_glns_from_prefix')
+                            ->label('Allow assign partner GLNs from our prefix')
+                            ->helperText('When on, trading partners and their sites may use GLNs issued under your GS1 Company Prefix; SGLNs for those locations are derived from your prefix. When off, partner GLNs must use the partner\'s own GS1 identity — record their stated SGLN from EPCIS.')
+                            ->default(false)
+                            ->columnSpanFull(),
                         Select::make('receiving_state')
-                            ->label('Receiving / ATP evaluation state')
+                            ->label('Preferred receiving state')
                             ->options(UsState::selectOptions())
                             ->searchable()
                             ->nullable()
                             ->native(false)
-                            ->helperText('Used to evaluate partner ATP licenses for your location.'),
+                            ->helperText('Optional badge label. Partner ATP licenses are evaluated against organization facility jurisdictions; this is the fallback when no org sites have a state.'),
                     ]),
                 Section::make('Address')
                     ->compact()
@@ -239,6 +257,40 @@ class OrganizationSettings extends Page
                             ->helperText('Overrides the profile default for sealed vs open-count receive.')
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
                     ]),
+                Section::make('Inbound EPCIS')
+                    ->compact()
+                    ->description('How TracePharma accepts partner EPCIS files.')
+                    ->schema([
+                        Toggle::make('require_pure_epcis_document')
+                            ->label('Require pure EPCISDocument')
+                            ->helperText('When on, SOAP-wrapped files are rejected. When off (default), TracePharma unwraps SOAP and validates the inner EPCIS document.')
+                            ->columnSpanFull(),
+                        Toggle::make('block_receive_on_destination_gln_mismatch')
+                            ->label('Block receive when destination GLN is not ours')
+                            ->helperText('When on, sold-to / ship-to GLNs outside this organization block Start receiving until the exception is resolved (ATTP-style). When off (default), mismatches are warnings only.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                        Toggle::make('match_inbound_ship_to_site')
+                            ->label('Match inbound ASN ship-to GLN to a site')
+                            ->helperText('When on, TracePharma binds ship-to GLN to sites.ship_to_site_id (partner destinations included). When off (default while testing), ship-to GLN is stored but site matching is skipped — receive uses the default receive site / chooser instead.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                        Toggle::make('auto_complete_asn_on_ready')
+                            ->label('Auto-complete ASN receive when all expected lines are confirmed')
+                            ->helperText('When on, the last confirmed scan finishes the session and authors receiving EPCIS. When off (default), tap Complete receive after scanning — ATTP/TraceLink-style.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Transferring')
+                    ->compact()
+                    ->description('Internal site-to-site ship and receive choreography.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsTransferring())
+                    ->schema([
+                        Toggle::make('auto_open_receive_after_transfer_ship')
+                            ->label('After ship transfer, open destination receive')
+                            ->helperText('When on, Ship transfer opens the destination receive session and redirects there (same-operator warehouses). When off (default), stay on the transfer and use Receive at destination — ATTP-style two-step.')
+                            ->columnSpanFull(),
+                    ]),
                 Section::make('Access')
                     ->compact()
                     ->description('Control whether job roles limit menus and actions.')
@@ -248,6 +300,48 @@ class OrganizationSettings extends Page
                         Toggle::make('job_roles_enabled')
                             ->label('Limit access by job role')
                             ->helperText('When off, users with Manage users (Owners and system administrators) manage accounts, and everyone with site access sees the same menus for your business type. When on, each user’s job role further limits menus — we sync role permissions automatically when you turn this on. With roles on, users with the Master data capability can create and edit sites, products, and trading partners (not Owner-only); deletes stay with Owner and master-data administrator personas.')
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Pharmacy navigation')
+                    ->compact()
+                    ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy)
+                    ->description('Trim navigation for independent pharmacies — receive, verify, pharmacy outbound desk, and compliance essentials.')
+                    ->schema([
+                        Toggle::make('pharmacy_simplified_nav')
+                            ->label('Simplified navigation')
+                            ->helperText('When on, hides transfer, pack, ship order, analytics, and other wholesaler floor workflows.')
+                            ->default(true)
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Notifications')
+                    ->compact()
+                    ->description('Compliance Alert Center digests and customer portal ship notices.')
+                    ->schema([
+                        Toggle::make('alert_digest_enabled')
+                            ->label('Alert center email digest')
+                            ->helperText('Email compliance and IT contacts (or Owners) when Alert Center has critical or warning signals.')
+                            ->default(true)
+                            ->live()
+                            ->columnSpanFull(),
+                        Select::make('alert_digest_frequency')
+                            ->label('Digest frequency')
+                            ->options([
+                                'daily' => 'Daily',
+                                'weekly' => 'Weekly (Mondays)',
+                            ])
+                            ->default('daily')
+                            ->visible(fn ($get): bool => (bool) $get('alert_digest_enabled'))
+                            ->required(fn ($get): bool => (bool) $get('alert_digest_enabled')),
+                        Toggle::make('email_portal_on_ship')
+                            ->label('Email customer portal link on ship')
+                            ->helperText('After TI is authored, email the trading partner contact a signed portal link. No portal login accounts.')
+                            ->default(true)
+                            ->columnSpanFull(),
+                        Toggle::make('block_send_on_atp_gap')
+                            ->label('Block send when ship-to ATP license is missing or expired')
+                            ->helperText('When off (default), missing/expired destination ATP licenses are a soft warning on the ship desk and send is allowed. When on, outbound send is refused until a valid license is on record.')
+                            ->default(false)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments())
                             ->columnSpanFull(),
                     ]),
                 Section::make('Dashboard')
@@ -397,6 +491,10 @@ class OrganizationSettings extends Page
                                 : '')
                             ->helperText('Write-only. Leave blank to keep the current key.')
                             ->columnSpanFull(),
+                        Toggle::make('l3_guardian_lot_close_enabled')
+                            ->label('Accept Guardian lot-close inbound')
+                            ->helperText('Archive DataFeed XML and auto-project commissioning/aggregation into TracePharma.')
+                            ->columnSpanFull(),
                     ]),
                 Section::make('WMS ship-confirm bridge')
                     ->compact()
@@ -434,6 +532,7 @@ class OrganizationSettings extends Page
         $organization = [
             'gln' => $data['gln'] ?? null,
             'company_prefix' => $data['company_prefix'] ?? null,
+            'allow_assign_partner_glns_from_prefix' => (bool) ($data['allow_assign_partner_glns_from_prefix'] ?? false),
             'receiving_state' => $data['receiving_state'] ?? null,
             'street_address' => $data['street_address'] ?? null,
             'street_address_2' => $data['street_address_2'] ?? null,
@@ -479,6 +578,8 @@ class OrganizationSettings extends Page
             if (filled($data['l3_api_key'] ?? null)) {
                 $organization['l3_api_key'] = $data['l3_api_key'];
             }
+
+            $organization['l3_guardian_lot_close_enabled'] = (bool) ($data['l3_guardian_lot_close_enabled'] ?? false);
         }
 
         if ($this->showsWmsBridgeSection() && filled($data['wms_bridge_api_key'] ?? null)) {
@@ -493,6 +594,23 @@ class OrganizationSettings extends Page
             $organization['dashboard_allow_user_customize'] = (bool) ($data['dashboard_allow_user_customize'] ?? true);
             $organization['dashboard_allowed'] = $this->dashboardCheckboxListToFlags($data['dashboard_allowed'] ?? []);
             $organization['dashboard_defaults'] = $this->dashboardCheckboxListToFlags($data['dashboard_defaults'] ?? []);
+        }
+
+        if (tenant()?->profile === TenantProfile::Pharmacy) {
+            $organization['pharmacy_simplified_nav'] = (bool) ($data['pharmacy_simplified_nav'] ?? true);
+        }
+
+        $organization['alert_digest_enabled'] = (bool) ($data['alert_digest_enabled'] ?? true);
+        $organization['alert_digest_frequency'] = (string) ($data['alert_digest_frequency'] ?? 'daily');
+        $organization['email_portal_on_ship'] = (bool) ($data['email_portal_on_ship'] ?? true);
+        $organization['require_pure_epcis_document'] = (bool) ($data['require_pure_epcis_document'] ?? false);
+        $organization['block_receive_on_destination_gln_mismatch'] = (bool) ($data['block_receive_on_destination_gln_mismatch'] ?? false);
+        $organization['match_inbound_ship_to_site'] = (bool) ($data['match_inbound_ship_to_site'] ?? false);
+        $organization['auto_open_receive_after_transfer_ship'] = (bool) ($data['auto_open_receive_after_transfer_ship'] ?? false);
+        $organization['auto_complete_asn_on_ready'] = (bool) ($data['auto_complete_asn_on_ready'] ?? false);
+
+        if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
+            $organization['block_send_on_atp_gap'] = (bool) ($data['block_send_on_atp_gap'] ?? false);
         }
 
         try {
@@ -781,5 +899,10 @@ class OrganizationSettings extends Page
                 'data.job_roles_enabled' => 'Owner role permissions did not sync — you would lose Settings access. Run php artisan tracepharma:seed-tenant-job-roles or contact support, then try again.',
             ]);
         }
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.settings-hub';
     }
 }

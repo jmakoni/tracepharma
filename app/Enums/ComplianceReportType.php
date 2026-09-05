@@ -23,7 +23,7 @@ enum ComplianceReportType: string
     {
         return match ($this) {
             self::TransactionReport => 'One PDF page per lot with ownership / TI summary for a parsed inbound EPCIS document.',
-            self::DscsaComplianceReport => 'Serialized unit listing by lot with DSCSA legal language for a parsed inbound EPCIS document.',
+            self::DscsaComplianceReport => 'Serialized unit listing by lot with DSCSA legal language. Queued as a PDF export with email and in-app notification when ready.',
             self::TiHistory => 'CSV of GTIN, serial, lot, expiry, and party context for the selected inbound document.',
             self::AuditPackage => 'ZIP with transaction PDF, serialized compliance PDF, TI history CSV, and document summary JSON.',
         };
@@ -34,6 +34,7 @@ enum ComplianceReportType: string
         return match ($this) {
             self::AuditPackage => 'Download ZIP',
             self::TiHistory => 'Download CSV',
+            self::DscsaComplianceReport => 'Queue PDF export',
             default => 'Download PDF',
         };
     }

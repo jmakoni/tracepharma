@@ -23,5 +23,7 @@ final readonly class ComplianceReportData
         public array $footer,
         public array $lots,
         public int $serialCount,
+        public ?string $logoDataUri = null,
+        public string $sellerDisplayName = 'Seller',
     ) {}
 }

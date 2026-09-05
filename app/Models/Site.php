@@ -9,9 +9,11 @@ use App\Models\Concerns\DerivesSgln;
 use App\Models\Fda\FdaEstablishment;
 use App\Models\Fda\FdaWddFacility;
 use App\Support\MasterData\SiteReferences;
+use App\Support\Places\UsState;
 use App\Support\Receiving\EligibleReceiveSites;
 use Database\Factories\SiteFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -101,12 +103,17 @@ class Site extends Model
         'fda_establishment_id',
         'fda_wdd_facility_id',
         'trading_partner_id',
+        'principal_id',
         'name',
         'code',
         'is_headquarters',
         'description',
         'gln',
         'sgln',
+        'duns_number',
+        'dea_number',
+        'hin_number',
+        'chemical_reg_number',
         'google_place_id',
         'street_address',
         'street_address_2',
@@ -136,6 +143,36 @@ class Site extends Model
     }
 
     /**
+     * sites.state is VARCHAR(2). Accept full US names (FDA / typed "Illinois") and
+     * store the postal code so create does not 500 on MySQL truncation.
+     */
+    protected function state(): Attribute
+    {
+        return Attribute::make(
+            set: function (mixed $value): ?string {
+                if ($value === null || (is_string($value) && trim($value) === '')) {
+                    return null;
+                }
+
+                $string = trim((string) $value);
+                $normalized = UsState::normalize($string);
+
+                if ($normalized !== null) {
+                    return $normalized;
+                }
+
+                if (strlen($string) <= 2) {
+                    return strtoupper($string);
+                }
+
+                throw new \InvalidArgumentException(
+                    'State must be a US state or territory postal code (or full name). "'.$string.'" is too long for sites.state.',
+                );
+            },
+        );
+    }
+
+    /**
      * A site is the physical party on every EPCIS event it reads or authors, so an
      * inspector asking "where was this shipped from, and who owned that dock" needs the
      * identity, ownership, activation and address history — not just the current row.
@@ -147,6 +184,10 @@ class Site extends Model
                 'name',
                 'gln',
                 'sgln',
+                'duns_number',
+                'dea_number',
+                'hin_number',
+                'chemical_reg_number',
                 'is_active',
                 'is_headquarters',
                 'trading_partner_id',
@@ -164,6 +205,11 @@ class Site extends Model
     public function tradingPartner(): BelongsTo
     {
         return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function fdaEstablishment(): BelongsTo

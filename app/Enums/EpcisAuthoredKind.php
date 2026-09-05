@@ -21,6 +21,7 @@ enum EpcisAuthoredKind: string
     case Decommissioning = 'decommissioning';
     case Returning = 'returning';
     case Commissioning = 'commissioning';
+    case Transformation = 'transformation';
 
     /**
      * Friendly label for Type filter options and general UI use.
@@ -37,6 +38,7 @@ enum EpcisAuthoredKind: string
             self::Decommissioning => 'Decommissioning',
             self::Returning => 'Returning',
             self::Commissioning => 'Commissioning',
+            self::Transformation => 'Transformation (repack)',
         };
     }
 
@@ -65,6 +67,7 @@ enum EpcisAuthoredKind: string
             self::Decommissioning => 'Generated decommissioning',
             self::Returning => 'Generated returning',
             self::Commissioning => 'Generated commissioning',
+            self::Transformation => 'Generated transformation',
         };
     }
 
@@ -130,6 +133,14 @@ enum EpcisAuthoredKind: string
 
         if (str_contains($notes, 'Generated transferring') || str_starts_with($filename, 'transfer-')) {
             return self::Transferring;
+        }
+
+        if (
+            str_contains($notes, 'Generated TransformationEvent')
+            || str_contains($notes, 'Generated transformation')
+            || str_starts_with($filename, 'transformation-')
+        ) {
+            return self::Transformation;
         }
 
         if (

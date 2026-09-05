@@ -40,6 +40,13 @@
                     <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
                 </div>
             </div>
+            @if ($this->chipDeaLabel)
+                <span @class([
+                    'badge badge-outline',
+                    'badge-error' => $this->chipDeaColor === 'danger',
+                    'badge-warning' => $this->chipDeaColor === 'warning',
+                ])>{{ $this->chipDeaLabel }}</span>
+            @endif
 
             <div
                 class="tp-floor-receive__menu"
@@ -68,11 +75,10 @@
                     role="menu"
                 >
                     <a
-                        href="{{ $desktopUrl }}"
+                        href="{{ $this->scanOutDeskUrl() }}"
                         class="tp-floor-receive__menu-item"
                         role="menuitem"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >Customer &amp; send</a>
+                    >Customer &amp; send on Scan Out</a>
                     <a
                         href="{{ $desktopUrl }}"
                         class="tp-floor-receive__menu-item"
@@ -86,11 +92,10 @@
         <p class="px-4 text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
 
         @if ($isCompleted)
-            @php($shipComplete = $this->shipCompleteCopy())
             <div class="tp-floor-receive__complete">
-                <div class="tp-floor-receive__complete-title">{{ $shipComplete['title'] }}</div>
+                <div class="tp-floor-receive__complete-title">{{ $this->shipCompleteCopy()['title'] }}</div>
                 <p class="tp-floor-receive__complete-body">
-                    {{ $shipComplete['body'] }}
+                    {{ $this->shipCompleteCopy()['body'] }}
                 </p>
                 <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
                     Back to ship orders
@@ -276,10 +281,22 @@
 
                     @forelse ($recentLines as $line)
                         <div class="tp-floor-receive__recent-row">
-                            <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                            <span class="tp-floor-receive__recent-meta">
-                                {{ ucfirst((string) $line->status) }}
-                            </span>
+                            <div class="tp-floor-receive__recent-main">
+                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
+                                <span class="tp-floor-receive__recent-meta">
+                                    {{ ucfirst((string) $line->status) }}
+                                </span>
+                            </div>
+                            @if ($this->canRemoveRecentScanLine($line))
+                                <button
+                                    type="button"
+                                    class="tp-floor-receive__recent-remove"
+                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
+                                    wire:confirm="Remove this scan from the ship order?"
+                                >
+                                    Remove
+                                </button>
+                            @endif
                         </div>
                     @empty
                         <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>

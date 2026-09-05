@@ -2,14 +2,20 @@
 
 namespace App\Support\Exceptions;
 
+use App\Actions\MasterData\ReconcilePendingManufacturerAuthorizations;
 use App\Enums\PartnerType;
 use App\Filament\App\Resources\FdaProducts\FdaProductResource;
 use App\Models\Exceptions\ExceptionCase;
+use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\TradingPartner;
 use App\Support\Catalog\DisplayName;
+use App\Support\Fda\CompanyNameNormalizer;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Ndc;
+use App\Support\MasterData\TenantPartnerCatalogLink;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Catalog / FDA assortment helpers for UNKNOWN_GTIN exception correction.
@@ -282,6 +288,116 @@ final class AssortmentFromCatalog
     public static function catalogMissMessage(): string
     {
         return 'This GTIN is not in FDA packaging. Open FDA Products to find the NDC and authorize packages from there — do not invent a freeform product record.';
+    }
+
+    /**
+     * Whether tenant product master already has this GTIN (or a padded/UPC-equivalent spelling).
+     */
+    public static function productAuthorizedForGtin(string $gtin): bool
+    {
+        $column = self::productGtinColumn();
+        $candidates = self::gtinLookupCandidates($gtin);
+
+        if ($column === null || $candidates === []) {
+            return false;
+        }
+
+        return DB::table('products')->whereIn($column, $candidates)->exists();
+    }
+
+    /**
+     * Column tenant products publish their GTIN-14 in, or null when unavailable.
+     */
+    public static function productGtinColumn(): ?string
+    {
+        if (! Schema::hasTable('products')) {
+            return null;
+        }
+
+        if (Schema::hasColumn('products', 'gtin14')) {
+            return 'gtin14';
+        }
+
+        return Schema::hasColumn('products', 'gtin') ? 'gtin' : null;
+    }
+
+    /**
+     * Link an unlinked manufacturer partner to the catalog labeler when GLN or
+     * canonical name matches the FDA organization on the packaging listing.
+     */
+    public static function tryLinkManufacturerPartnerToCatalogLabeler(
+        TradingPartner $partner,
+        FdaProductPackaging $packaging,
+    ): bool {
+        if ($partner->partner_type !== PartnerType::Manufacturer || $partner->fda_organization_id !== null) {
+            return false;
+        }
+
+        $organization = self::catalogLabelerOrganization($packaging);
+
+        if ($organization === null || ! self::partnerMatchesCatalogLabeler($partner, $organization)) {
+            return false;
+        }
+
+        $partner->forceFill(
+            TenantPartnerCatalogLink::attributesFor($partner, $organization, PartnerType::Manufacturer),
+        )->save();
+
+        app(ReconcilePendingManufacturerAuthorizations::class)->handle($partner->fresh());
+
+        return true;
+    }
+
+    public static function manufacturerLabelerLinkIssue(
+        TradingPartner $partner,
+        ?FdaProductPackaging $packaging,
+    ): ?string {
+        if ($partner->partner_type !== PartnerType::Manufacturer || $partner->fda_organization_id !== null) {
+            return null;
+        }
+
+        $organization = $packaging !== null ? self::catalogLabelerOrganization($packaging) : null;
+
+        if ($organization === null) {
+            return 'This manufacturer is not linked to an FDA organization. Link it under Trading Partners, or choose your wholesaler as receive-from.';
+        }
+
+        $labeler = DisplayName::clean($organization->name ?: $organization->canonical_name) ?: 'the catalog labeler';
+
+        return 'This manufacturer is not linked to '.$labeler.'. Link it under Trading Partners, or choose your wholesaler as receive-from.';
+    }
+
+    private static function catalogLabelerOrganization(FdaProductPackaging $packaging): ?FdaOrganization
+    {
+        $listing = $packaging->relationLoaded('product') ? $packaging->product : $packaging->product()->first();
+        $organizationId = $listing?->fda_organization_id;
+
+        if ($organizationId === null) {
+            return null;
+        }
+
+        return FdaOrganization::query()->find($organizationId);
+    }
+
+    private static function partnerMatchesCatalogLabeler(TradingPartner $partner, FdaOrganization $organization): bool
+    {
+        if (filled($organization->gln) && filled($partner->gln) && $partner->gln === $organization->gln) {
+            return true;
+        }
+
+        $partnerCanonical = CompanyNameNormalizer::canonical($partner->name ?? '');
+
+        if ($partnerCanonical === '') {
+            return false;
+        }
+
+        foreach ([$organization->canonical_name, $organization->name, $organization->original_name] as $candidate) {
+            if (filled($candidate) && CompanyNameNormalizer::canonical($candidate) === $partnerCanonical) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function matchOrganizationId(?FdaProductPackaging $match): ?int

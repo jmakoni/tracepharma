@@ -217,6 +217,17 @@ final class QuarantineService
         );
     }
 
+    public function signedSupplierApplyUrl(ExceptionCase $case): string
+    {
+        $case = $this->ensureShareLink($case);
+
+        return URL::temporarySignedRoute(
+            'tenant.supplier-quarantine.apply',
+            $case->share_expires_at ?? now()->addDays($this->linkTtlDays()),
+            ['shareUuid' => $case->share_uuid],
+        );
+    }
+
     public function signedSupplierUploadUrl(ExceptionCase $case): string
     {
         $case = $this->ensureShareLink($case);

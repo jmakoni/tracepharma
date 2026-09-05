@@ -20,6 +20,7 @@ use App\Services\Labeling\NetworkPrinterClient;
 use App\Services\Labeling\SsccSerialPoolService;
 use App\Services\Labeling\ZplLabelRenderer;
 use App\Support\Labeling\SsccBatchPrintCompletion;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -273,6 +274,88 @@ class PrintSsccLabelJobTest extends TestCase
             $this->assertSame(SsccLabelPrintStatus::Printed, $label->print_status);
             $this->assertSame(2, $label->printed_copies);
             $this->assertSame(210167, $pool->last_printed_serial_reference_int);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function print_job_is_unique_and_skips_tcp_when_already_printing(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $printer = LabelPrinter::query()->create([
+                'name' => 'Zebra Crash Recovery',
+                'ip_address' => '10.0.0.50',
+                'port' => 9100,
+                'protocol' => LabelPrinterProtocol::ZplRaw,
+                'enabled' => true,
+            ]);
+            $this->printerIds[] = (int) $printer->id;
+
+            $batch = SsccLabelBatch::query()->create([
+                'company_prefix' => '030116',
+                'extension_digit' => '0',
+                'allocation_mode' => SsccAllocationMode::Sequential,
+                'label_count' => 1,
+                'copies_per_label' => 1,
+                'status' => SsccLabelBatchStatus::Completed,
+            ]);
+            $this->batchIds[] = (int) $batch->id;
+
+            $label = SsccLabel::query()->create([
+                'batch_id' => $batch->id,
+                'label_printer_id' => $printer->id,
+                'sscc_18' => '003011600002101682',
+                'sscc_urn' => 'urn:epc:id:sscc:030116.00000210168',
+                'extension_digit' => '0',
+                'company_prefix' => '030116',
+                'serial_reference' => '0000210168',
+                'serial_reference_int' => 210168,
+                'element_string' => '0003011600002101682',
+                'hrt' => '0003011600002101682',
+                'label_disk' => 'local',
+                'label_path' => 'test.pdf',
+            ]);
+            $this->labelIds[] = (int) $label->id;
+
+            $pool = SsccSerialPool::query()->create([
+                'company_prefix' => '030116',
+                'extension_digit' => '0',
+                'default_allocation_mode' => SsccAllocationMode::Sequential,
+                'last_serial_reference_int' => 210168,
+            ]);
+            $this->poolIds[] = (int) $pool->id;
+
+            $job = SsccPrintJob::query()->create([
+                'sscc_label_batch_id' => $batch->id,
+                'sscc_label_id' => $label->id,
+                'label_printer_id' => $printer->id,
+                'copies' => 1,
+                'status' => SsccPrintJobStatus::Printing,
+                'attempts' => 1,
+                'queued_at' => now(),
+            ]);
+            $this->printJobIds[] = (int) $job->id;
+
+            $queueJob = new PrintSsccLabelJob($tenant, $job->id);
+            $this->assertInstanceOf(ShouldBeUnique::class, $queueJob);
+            $this->assertNotEmpty($queueJob->middleware());
+
+            $mock = $this->createMock(NetworkPrinterClient::class);
+            $mock->expects($this->never())->method('send');
+            $this->app->instance(NetworkPrinterClient::class, $mock);
+
+            $queueJob->handle(
+                app(ZplLabelRenderer::class),
+                app(NetworkPrinterClient::class),
+                app(SsccSerialPoolService::class),
+                app(SsccBatchPrintCompletion::class),
+            );
+
+            $job->refresh();
+            $this->assertSame(SsccPrintJobStatus::Printed, $job->status);
         } finally {
             $this->cleanup();
         }

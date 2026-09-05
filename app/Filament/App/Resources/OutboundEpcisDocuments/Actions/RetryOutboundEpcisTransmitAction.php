@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\OutboundEpcisDocuments\Actions;
 
+use App\Actions\Epcis\PrepareOutboundEpcisForRetransmit;
 use App\Actions\EpcisJobs\EnqueueEpcisJob;
 use App\Actions\EpcisJobs\RequeueEpcisJob;
 use App\Enums\EpcisJobStatus;
@@ -10,11 +11,15 @@ use App\Models\EpcisJob;
 use App\Models\User;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
+use Throwable;
 
 /**
  * Shared Retry outbound EPCIS transmit action for the view page and table row.
+ *
+ * Always remints InstanceIdentifier + filename (shipping: full TI rebuild from
+ * current open hierarchy) before enqueue/requeue/sync transmit.
  */
 final class RetryOutboundEpcisTransmitAction
 {
@@ -26,14 +31,24 @@ final class RetryOutboundEpcisTransmitAction
     }
 
     /**
-     * Resolve the transmitter, retry transmission, refresh the record in place
-     * (transmitters fetch their own fresh copy internally), log activity, and notify.
-     *
-     * When epcis_jobs.enabled, requeues an existing error/cancelled job or enqueues
-     * a new managed job; otherwise sync-transmits.
+     * Prepare (rebuild/remint + GS1 validate), then requeue/enqueue or sync-transmit.
      */
     public static function retry(EpcisDocument $document): EpcisDocument
     {
+        try {
+            $prepared = app(PrepareOutboundEpcisForRetransmit::class)->handle($document);
+            $document = $prepared['document'];
+        } catch (Throwable $e) {
+            $document->refresh();
+            Notification::make()
+                ->title('Retransmit prepare failed')
+                ->body($e->getMessage() ?: 'Could not rebuild or remint the outbound EPCIS payload.')
+                ->danger()
+                ->send();
+
+            return $document;
+        }
+
         if (config('tracepharma.epcis_jobs.enabled')) {
             $requeueable = EpcisJob::query()
                 ->where('epcis_document_id', $document->getKey())
@@ -46,7 +61,8 @@ final class RetryOutboundEpcisTransmitAction
                 ->first();
 
             if ($requeueable !== null) {
-                app(RequeueEpcisJob::class)->handle($requeueable, auth()->id());
+                // Payload already prepared above; skip double prepare in RebuildEpcisJobPayload.
+                app(RequeueEpcisJob::class)->handle($requeueable, auth()->id(), skipPayloadPrepare: true);
             } else {
                 app(EnqueueEpcisJob::class)->handle($document, auth()->id());
             }
@@ -63,6 +79,11 @@ final class RetryOutboundEpcisTransmitAction
                     'transmission_status' => $document->transmission_status,
                     'error_message' => $document->error_message,
                     'via' => 'epcis_job',
+                    'prepare_mode' => $prepared['mode'],
+                    'document_uuid' => $prepared['new_uuid'],
+                    'original_filename' => $prepared['new_filename'],
+                    'previous_document_uuid' => $prepared['old_uuid'],
+                    'previous_original_filename' => $prepared['old_filename'],
                 ])
                 ->log('Retried outbound EPCIS transmission');
 
@@ -84,6 +105,11 @@ final class RetryOutboundEpcisTransmitAction
             ->withProperties([
                 'transmission_status' => $document->transmission_status,
                 'error_message' => $document->error_message,
+                'prepare_mode' => $prepared['mode'],
+                'document_uuid' => $prepared['new_uuid'],
+                'original_filename' => $prepared['new_filename'],
+                'previous_document_uuid' => $prepared['old_uuid'],
+                'previous_original_filename' => $prepared['old_filename'],
             ])
             ->log('Retried outbound EPCIS transmission');
 
@@ -133,7 +159,9 @@ final class RetryOutboundEpcisTransmitAction
             ->icon(Heroicon::OutlinedArrowPath)
             ->color('warning')
             ->requiresConfirmation()
-            ->modalDescription('Attempt to transmit this EPCIS document to its trading partner again.')
+            ->modalDescription(
+                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates GS1 EPCIS 1.2 / GS1 US R1.3, then transmits again.',
+            )
             ->visible(fn (): bool => self::visible($document()))
             ->action(function () use ($document): void {
                 self::retry($document());
@@ -150,7 +178,9 @@ final class RetryOutboundEpcisTransmitAction
             ->icon(Heroicon::OutlinedArrowPath)
             ->color('warning')
             ->requiresConfirmation()
-            ->modalDescription('Attempt to transmit this EPCIS document to its trading partner again.')
+            ->modalDescription(
+                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates GS1 EPCIS 1.2 / GS1 US R1.3, then transmits again.',
+            )
             ->visible(fn (EpcisDocument $record): bool => self::visible($record))
             ->action(fn (EpcisDocument $record) => self::retry($record));
     }

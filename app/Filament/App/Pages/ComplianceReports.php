@@ -3,19 +3,19 @@
 namespace App\Filament\App\Pages;
 
 use App\Enums\ComplianceReportType;
+use App\Filament\App\Support\QueueSerializedTrackTraceExport;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Dscsa\AuditPackageZipGenerator;
-use App\Services\Dscsa\DscsaComplianceReportGenerator;
 use App\Services\Dscsa\TiHistoryExportGenerator;
 use App\Services\Dscsa\TransactionReportGenerator;
-use App\Support\Auth\SiteAccess;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -24,6 +24,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -33,7 +34,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class ComplianceReports extends Page
+class ComplianceReports extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentChartBar;
 
@@ -52,7 +53,7 @@ class ComplianceReports extends Page
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsComplianceReports())
+        return TenantFeatures::forTenant(tenant())->supportsComplianceReports()
             && JobRoleAccess::allows(Permissions::NavCompliance);
     }
 
@@ -204,11 +205,17 @@ class ComplianceReports extends Page
             return null;
         }
 
+        if ($reportType === ComplianceReportType::DscsaComplianceReport) {
+            QueueSerializedTrackTraceExport::forDocument($document, $actor);
+
+            return null;
+        }
+
         $result = match ($reportType) {
             ComplianceReportType::TransactionReport => app(TransactionReportGenerator::class)->generate($document, $actor),
-            ComplianceReportType::DscsaComplianceReport => app(DscsaComplianceReportGenerator::class)->generate($document, $actor),
             ComplianceReportType::TiHistory => app(TiHistoryExportGenerator::class)->generate($document, $actor),
             ComplianceReportType::AuditPackage => app(AuditPackageZipGenerator::class)->generate($document, $actor),
+            ComplianceReportType::DscsaComplianceReport => throw new \LogicException('DSCSA compliance report is queued asynchronously.'),
         };
 
         $contentType = $result['content_type'] ?? $reportType->contentType();
@@ -254,5 +261,10 @@ class ComplianceReports extends Page
         ]);
 
         return implode(' · ', $parts);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.compliance-reports';
     }
 }

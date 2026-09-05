@@ -1,0 +1,3567 @@
+{
+    "count": 101,
+    "models": [
+        {
+            "class": "App\\Models\\Admin",
+            "table": "admins",
+            "fillable": [
+                "name",
+                "email",
+                "password",
+                "is_active",
+                "disabled_reason",
+                "must_change_password",
+                "oidc_issuer",
+                "oidc_subject",
+                "directory_object_id",
+                "user_principal_name",
+                "employee_id",
+                "given_name",
+                "surname",
+                "job_title",
+                "department",
+                "company_name",
+                "office_location",
+                "mobile_phone",
+                "business_phone",
+                "directory_groups",
+                "directory_synced_at",
+                "avatar_url",
+                "preferences"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active",
+                "failed_login_count",
+                "locked_until",
+                "disabled_at",
+                "session_version",
+                "must_change_password",
+                "password_changed_at",
+                "password",
+                "preferences",
+                "directory_groups",
+                "directory_synced_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "breezySession": "morphOne",
+                "breezySessions": "morphMany",
+                "notifications": "morphMany",
+                "permissions": "belongsToMany",
+                "readNotifications": "morphMany",
+                "roles": "belongsToMany",
+                "teams": "belongsToMany",
+                "unreadNotifications": "morphMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Announcement",
+            "table": "announcements",
+            "fillable": [
+                "title",
+                "body",
+                "severity",
+                "status",
+                "starts_at",
+                "ends_at",
+                "published_at",
+                "retired_at",
+                "created_by_admin_id"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "severity",
+                "status",
+                "starts_at",
+                "ends_at",
+                "published_at",
+                "retired_at"
+            ],
+            "incrementing": false,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "createdByAdmin": "belongsTo",
+                "tenants": "belongsToMany"
+            }
+        },
+        {
+            "class": "App\\Models\\AnnouncementTenant",
+            "table": "announcement_tenant",
+            "fillable": [
+                "announcement_id",
+                "tenant_id",
+                "fan_out_status",
+                "fan_out_error",
+                "fan_out_at"
+            ],
+            "guarded": [],
+            "casts": [
+                "id",
+                "fan_out_status",
+                "fan_out_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "announcement": "belongsTo",
+                "tenant": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\AtpLicense",
+            "table": "atp_licenses",
+            "fillable": [
+                "site_id",
+                "fda_wdd_license_id",
+                "facility_type",
+                "license_number",
+                "license_country",
+                "license_state",
+                "license_expiration_date",
+                "reporting_year",
+                "facility_contact_person",
+                "facility_contact_email",
+                "facility_contact_phone",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "facility_type",
+                "license_expiration_date",
+                "reporting_year",
+                "fda_wdd_license_id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "fdaWddLicense": "belongsTo",
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\BuyingGroupMember",
+            "table": "buying_group_members",
+            "fillable": [
+                "name",
+                "external_ref",
+                "member_tenant_id",
+                "status",
+                "contact_email"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\CustomerOnboarding",
+            "table": "customer_onboardings",
+            "fillable": [
+                "status",
+                "legal_company_name",
+                "company_display_name",
+                "contact_name",
+                "contact_email",
+                "contact_phone",
+                "contact_role",
+                "organization_type",
+                "tenant_profile",
+                "tenant_type",
+                "gln",
+                "tenant_slug",
+                "owner_name",
+                "owner_email",
+                "message",
+                "demo_request_id",
+                "tenant_id",
+                "terms_version",
+                "privacy_version",
+                "terms_accepted_at",
+                "privacy_accepted_at",
+                "acceptance_ip",
+                "acceptance_user_agent",
+                "approved_at",
+                "approved_by_admin_user_id",
+                "provisioned_at",
+                "rejected_at",
+                "rejection_reason",
+                "admin_notes",
+                "submission_ip",
+                "submission_user_agent"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "tenant_profile",
+                "tenant_type",
+                "terms_accepted_at",
+                "privacy_accepted_at",
+                "approved_at",
+                "provisioned_at",
+                "rejected_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "approvedBy": "belongsTo",
+                "demoRequest": "belongsTo",
+                "tenant": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\DataExport",
+            "table": "data_exports",
+            "fillable": [
+                "type",
+                "requested_by_user_id",
+                "filters",
+                "notify_email"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "type",
+                "status",
+                "filters",
+                "row_count",
+                "expires_at",
+                "started_at",
+                "completed_at"
+            ],
+            "incrementing": false,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "requestedBy": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\DemoRequest",
+            "table": "demo_requests",
+            "fillable": [
+                "name",
+                "email",
+                "company",
+                "phone",
+                "role",
+                "organization_type",
+                "message",
+                "source",
+                "ip_address",
+                "user_agent"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Device",
+            "table": "devices",
+            "fillable": [
+                "name",
+                "device_type",
+                "manufacturer",
+                "model",
+                "serial_number",
+                "site_id",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "device_type",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\EpcisHubRoute",
+            "table": "epcis_hub_routes",
+            "fillable": [
+                "tenant_id",
+                "provider",
+                "gln",
+                "sgln_urn",
+                "default_inbound_connection_id",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "tenant": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\EpcisJob",
+            "table": "epcis_jobs",
+            "fillable": [
+                "receipt",
+                "kind",
+                "status",
+                "epcis_document_id",
+                "outbound_shipping_session_id",
+                "receiving_session_id",
+                "transferring_session_id",
+                "sscc_label_batch_id",
+                "outbound_connection_id",
+                "ship_from_site_id",
+                "requested_by",
+                "original_filename",
+                "received_at",
+                "started_at",
+                "finished_at",
+                "archived_at",
+                "processing_time_ms",
+                "attempt_count",
+                "error_message",
+                "stats_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "kind",
+                "status",
+                "received_at",
+                "started_at",
+                "finished_at",
+                "archived_at",
+                "stats_json",
+                "attempt_count",
+                "processing_time_ms"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "messages": "hasMany",
+                "outboundConnection": "belongsTo",
+                "receivingSession": "belongsTo",
+                "requestedByUser": "belongsTo",
+                "shipFromSite": "belongsTo",
+                "shippingSession": "belongsTo",
+                "ssccLabelBatch": "belongsTo",
+                "transferringSession": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\EpcisJobMessage",
+            "table": "epcis_job_messages",
+            "fillable": [
+                "epcis_job_id",
+                "level",
+                "message",
+                "created_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "created_at"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "job": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\AggregationLink",
+            "table": "aggregation_links",
+            "fillable": [
+                "parent_epc_id",
+                "child_epc_id",
+                "established_by_event_id",
+                "link_type",
+                "valid_from",
+                "valid_to"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "valid_from",
+                "valid_to",
+                "created_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "childEpc": "belongsTo",
+                "establishedByEvent": "belongsTo",
+                "parentEpc": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\DocumentEpc",
+            "table": "document_epcs",
+            "fillable": [
+                "document_id",
+                "epc_id",
+                "ingest_generation"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "ingest_generation"
+            ],
+            "incrementing": false,
+            "primary_key": null,
+            "relationships": {
+                "document": "belongsTo",
+                "epc": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\Epc",
+            "table": "epcs",
+            "fillable": [
+                "epc_uri",
+                "epc_type",
+                "company_prefix",
+                "indicator_digit",
+                "item_reference",
+                "serial_number",
+                "extension_digit",
+                "gtin14",
+                "sscc18",
+                "ai_01_21",
+                "ai_00",
+                "digital_link",
+                "packaging_level",
+                "packaging_type",
+                "product_id",
+                "first_seen_at",
+                "last_event_id"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "indicator_digit",
+                "extension_digit",
+                "first_seen_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "aggregationLinksAsChild": "hasMany",
+                "aggregationLinksAsParent": "hasMany",
+                "childEpcs": "belongsToMany",
+                "eventEpcs": "hasMany",
+                "events": "belongsToMany",
+                "ilmd": "hasOne",
+                "parentEpcs": "belongsToMany",
+                "product": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcIlmd",
+            "table": "epc_ilmd",
+            "fillable": [
+                "epc_id",
+                "gtin14",
+                "lot_number",
+                "expiry_date",
+                "manufacturing_date",
+                "best_before_date",
+                "additional_id",
+                "extra_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "expiry_date",
+                "manufacturing_date",
+                "best_before_date",
+                "extra_json"
+            ],
+            "incrementing": false,
+            "primary_key": "epc_id",
+            "relationships": {
+                "epc": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisDocument",
+            "table": "epcis_documents",
+            "fillable": [
+                "document_uuid",
+                "ingest_generation",
+                "document_uuid_synthesized",
+                "schema_version",
+                "creation_date",
+                "direction",
+                "authored_kind",
+                "corrects_epcis_document_id",
+                "trading_partner_id",
+                "inbound_shipment_id",
+                "sender_gln",
+                "receiver_gln",
+                "customer_po",
+                "asn_number",
+                "ship_from_gln",
+                "ship_to_gln",
+                "ship_from_name",
+                "ship_from_site_name",
+                "ship_to_name",
+                "ship_to_site_name",
+                "ship_from_site_id",
+                "ship_to_site_id",
+                "ship_to_partner_id",
+                "inbound_connection_id",
+                "received_via",
+                "outbound_connection_id",
+                "format",
+                "original_filename",
+                "file_sha256",
+                "payload_disk",
+                "payload_path",
+                "dscsa_affirm",
+                "legal_notice",
+                "direct_purchase_qualifier",
+                "direct_purchase_statement",
+                "direct_purchase_indirect_epc_uris",
+                "received_prev_wholesaler_qualifier",
+                "received_prev_wholesaler_statement",
+                "received_prev_wholesaler_indirect_epc_uris",
+                "header_json",
+                "status",
+                "error_message",
+                "notes",
+                "reprocess_count",
+                "event_count",
+                "epc_count",
+                "received_at",
+                "sent_at",
+                "transmission_status",
+                "l3_forwarded_at",
+                "processed_at",
+                "last_processed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "creation_date",
+                "authored_kind",
+                "received_via",
+                "ingest_generation",
+                "document_uuid_synthesized",
+                "dscsa_affirm",
+                "direct_purchase_indirect_epc_uris",
+                "received_prev_wholesaler_indirect_epc_uris",
+                "header_json",
+                "reprocess_count",
+                "event_count",
+                "epc_count",
+                "received_at",
+                "sent_at",
+                "l3_forwarded_at",
+                "processed_at",
+                "last_processed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activeEvents": "hasMany",
+                "activitiesAsSubject": "morphMany",
+                "correctsDocument": "belongsTo",
+                "documentEpcs": "hasMany",
+                "documentLocations": "hasMany",
+                "eventEpcs": "hasManyThrough",
+                "events": "hasMany",
+                "exceptions": "hasMany",
+                "inboundShipment": "belongsTo",
+                "outboundConnection": "belongsTo",
+                "outboundShippingSession": "hasOne",
+                "productClasses": "hasMany",
+                "receivingSession": "hasOne",
+                "shipFromSite": "belongsTo",
+                "shipToPartner": "belongsTo",
+                "shipToSite": "belongsTo",
+                "tradingPartner": "belongsTo",
+                "transferringSession": "hasOne",
+                "transmissionMdns": "hasMany",
+                "unmatchedGlns": "hasMany",
+                "vocabularyElements": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisDocumentLocation",
+            "table": "epcis_document_locations",
+            "fillable": [
+                "document_id",
+                "ingest_generation",
+                "gln_uri",
+                "gln",
+                "name",
+                "street_address",
+                "city",
+                "state",
+                "postal_code",
+                "country_code",
+                "attributes_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "ingest_generation",
+                "attributes_json"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisDocumentProductClass",
+            "table": "epcis_document_product_classes",
+            "fillable": [
+                "document_id",
+                "ingest_generation",
+                "idpat",
+                "gtin14",
+                "ndc_raw",
+                "ndc11",
+                "name",
+                "dosage_form",
+                "strength",
+                "manufacturer",
+                "net_content",
+                "attributes_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "ingest_generation",
+                "attributes_json"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisDocumentVocabularyElement",
+            "table": "epcis_document_vocabulary_elements",
+            "fillable": [
+                "document_id",
+                "ingest_generation",
+                "vocabulary_type",
+                "element_id",
+                "attributes_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "ingest_generation",
+                "attributes_json"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisEvent",
+            "table": "epcis_events",
+            "fillable": [
+                "document_id",
+                "ingest_generation",
+                "superseded_at",
+                "superseded_by_generation",
+                "event_id",
+                "event_type",
+                "event_time",
+                "event_timezone_offset",
+                "record_time",
+                "action",
+                "biz_step",
+                "disposition",
+                "persistent_disposition",
+                "error_declaration",
+                "corrective_event_ids",
+                "read_point_gln",
+                "biz_location_gln",
+                "trading_partner_id",
+                "extension_json",
+                "certification_info",
+                "sensor_element_list"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "ingest_generation",
+                "superseded_by_generation",
+                "superseded_at",
+                "event_time",
+                "record_time",
+                "error_declaration",
+                "corrective_event_ids",
+                "extension_json",
+                "certification_info",
+                "sensor_element_list"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "bizTransactions": "hasMany",
+                "document": "belongsTo",
+                "epcIlmd": "hasMany",
+                "epcs": "belongsToMany",
+                "eventEpcs": "hasMany",
+                "locations": "hasMany",
+                "parties": "hasMany",
+                "quantities": "hasMany",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisEventArchive",
+            "table": "epcis_events_archive",
+            "fillable": [
+                "id",
+                "document_id",
+                "ingest_generation",
+                "superseded_at",
+                "superseded_by_generation",
+                "event_id",
+                "event_type",
+                "event_time",
+                "event_timezone_offset",
+                "record_time",
+                "action",
+                "biz_step",
+                "disposition",
+                "persistent_disposition",
+                "error_declaration",
+                "corrective_event_ids",
+                "read_point_gln",
+                "biz_location_gln",
+                "trading_partner_id",
+                "extension_json",
+                "certification_info",
+                "sensor_element_list",
+                "archived_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "ingest_generation",
+                "superseded_by_generation",
+                "superseded_at",
+                "event_time",
+                "record_time",
+                "archived_at",
+                "error_declaration",
+                "corrective_event_ids",
+                "extension_json",
+                "certification_info",
+                "sensor_element_list"
+            ],
+            "incrementing": false,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisException",
+            "table": "epcis_exceptions",
+            "fillable": [
+                "case_id",
+                "document_id",
+                "event_id",
+                "epc_id",
+                "exception_type",
+                "severity",
+                "description",
+                "status",
+                "assigned_to",
+                "user_id",
+                "resolved_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "resolved_at",
+                "created_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "case": "belongsTo",
+                "document": "belongsTo",
+                "epc": "belongsTo",
+                "event": "belongsTo",
+                "user": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisExceptionGroup",
+            "table": "epcis_exception_groups",
+            "fillable": [],
+            "guarded": [],
+            "casts": [
+                "created_at",
+                "case_id",
+                "signal_id",
+                "event_count",
+                "epc_count",
+                "gtins",
+                "ssccs",
+                "ndcs"
+            ],
+            "incrementing": false,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisFileProductSummary",
+            "table": "epcis_file_product_summaries",
+            "fillable": [],
+            "guarded": [],
+            "casts": [
+                "linked",
+                "document_epc_count",
+                "product_id"
+            ],
+            "incrementing": false,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisSubscription",
+            "table": "epcis_subscriptions",
+            "fillable": [
+                "name",
+                "subscription_uuid",
+                "target_url",
+                "secret",
+                "is_active",
+                "directions",
+                "biz_step_filter",
+                "format",
+                "query_name",
+                "schedule",
+                "query_params",
+                "created_by",
+                "last_delivered_at",
+                "last_error_at",
+                "last_error"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "secret",
+                "is_active",
+                "biz_step_filter",
+                "query_params",
+                "last_delivered_at",
+                "last_error_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "creator": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisSubscriptionDelivery",
+            "table": "epcis_subscription_deliveries",
+            "fillable": [
+                "subscription_id",
+                "document_id",
+                "trigger",
+                "delivered_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "delivered_at"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "subscription": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EpcisUnmatchedGln",
+            "table": "epcis_unmatched_glns",
+            "fillable": [
+                "document_id",
+                "gln",
+                "gln_uri",
+                "context",
+                "trading_partner_id",
+                "site_id"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventBizTransaction",
+            "table": "event_biz_transactions",
+            "fillable": [
+                "event_id",
+                "type_uri",
+                "value"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "event": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventEpc",
+            "table": "event_epcs",
+            "fillable": [
+                "event_id",
+                "epc_id",
+                "role",
+                "quantity",
+                "uom"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "quantity"
+            ],
+            "incrementing": false,
+            "primary_key": null,
+            "relationships": {
+                "epc": "belongsTo",
+                "event": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventEpcIlmd",
+            "table": "event_epc_ilmd",
+            "fillable": [
+                "event_id",
+                "epc_id",
+                "lot_number",
+                "expiry_date",
+                "manufacturing_date",
+                "best_before_date",
+                "additional_id",
+                "extra_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "expiry_date",
+                "manufacturing_date",
+                "best_before_date",
+                "extra_json"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "epc": "belongsTo",
+                "event": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventLocation",
+            "table": "event_locations",
+            "fillable": [
+                "event_id",
+                "location_type",
+                "gln",
+                "gln_uri",
+                "name",
+                "street_address",
+                "city",
+                "state",
+                "postal_code",
+                "country_code",
+                "latitude",
+                "longitude",
+                "site_id",
+                "location_device_id",
+                "read_point_id",
+                "extra_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "latitude",
+                "longitude",
+                "extra_json"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "event": "belongsTo",
+                "locationDevice": "belongsTo",
+                "readPoint": "belongsTo",
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventParty",
+            "table": "event_parties",
+            "fillable": [
+                "event_id",
+                "party_role",
+                "gln",
+                "gln_uri",
+                "trading_partner_id",
+                "site_id",
+                "extra_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "extra_json"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "event": "belongsTo",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\EventQuantity",
+            "table": "event_quantities",
+            "fillable": [
+                "event_id",
+                "role",
+                "epc_class",
+                "quantity",
+                "uom"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "quantity"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "event": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Epcis\\TransmissionMdn",
+            "table": "transmission_mdns",
+            "fillable": [
+                "document_id",
+                "trading_partner_id",
+                "mdn_status",
+                "mdn_received_at",
+                "mdn_payload"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "mdn_received_at",
+                "mdn_payload",
+                "created_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionAction",
+            "table": "exception_actions",
+            "fillable": [
+                "code",
+                "name",
+                "description",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "cases": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionActivity",
+            "table": "exception_activities",
+            "fillable": [
+                "exception_id",
+                "user_id",
+                "kind",
+                "visibility",
+                "body",
+                "meta"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "kind",
+                "visibility",
+                "meta",
+                "created_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "case": "belongsTo",
+                "user": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionCase",
+            "table": "exceptions",
+            "fillable": [
+                "exception_type_id",
+                "document_id",
+                "event_id",
+                "trading_partner_id",
+                "site_id",
+                "compensating_document_id",
+                "title",
+                "description",
+                "severity",
+                "status",
+                "assigned_to",
+                "assigned_at",
+                "due_at",
+                "first_response_at",
+                "resolved_at",
+                "closed_at",
+                "root_cause_id",
+                "resolution_action_id",
+                "resolution_notes",
+                "serials_affected",
+                "share_uuid",
+                "share_expires_at",
+                "disposition"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "severity",
+                "status",
+                "disposition",
+                "assigned_at",
+                "due_at",
+                "first_response_at",
+                "resolved_at",
+                "closed_at",
+                "share_expires_at",
+                "serials_affected"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activities": "hasMany",
+                "activitiesAsSubject": "morphMany",
+                "assignee": "belongsTo",
+                "compensatingDocument": "belongsTo",
+                "document": "belongsTo",
+                "epcs": "belongsToMany",
+                "event": "belongsTo",
+                "quarantineHolds": "hasMany",
+                "resolutionAction": "belongsTo",
+                "rootCause": "belongsTo",
+                "signals": "hasMany",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo",
+                "type": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionRootCause",
+            "table": "exception_root_causes",
+            "fillable": [
+                "code",
+                "name",
+                "description",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "cases": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionSlaRule",
+            "table": "exception_sla_rules",
+            "fillable": [
+                "exception_type_id",
+                "severity",
+                "first_response_hours",
+                "resolve_hours",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "severity",
+                "first_response_hours",
+                "resolve_hours",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "type": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Exceptions\\ExceptionType",
+            "table": "exception_types",
+            "fillable": [
+                "code",
+                "name",
+                "category",
+                "hda_class",
+                "description",
+                "default_severity",
+                "receive_impact",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "category",
+                "default_severity",
+                "receive_impact",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "cases": "hasMany",
+                "slaRules": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda3911Report",
+            "table": "fda_3911_reports",
+            "fillable": [
+                "status",
+                "classification",
+                "verification_id",
+                "exception_id",
+                "trading_partner_id",
+                "incident_number",
+                "determined_at",
+                "submitted_at",
+                "acknowledged_at",
+                "due_at",
+                "notifier_name",
+                "notifier_title",
+                "notifier_phone",
+                "notifier_email",
+                "facility_name",
+                "facility_gln",
+                "facility_address",
+                "product_ndc",
+                "product_name",
+                "product_gtin",
+                "lot",
+                "serial",
+                "strength",
+                "dosage_form",
+                "circumstances",
+                "trading_partner_notifications",
+                "generated_pdf_path",
+                "metadata",
+                "created_by",
+                "submitted_by"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "classification",
+                "determined_at",
+                "submitted_at",
+                "acknowledged_at",
+                "due_at",
+                "trading_partner_notifications",
+                "metadata"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "createdByUser": "belongsTo",
+                "exceptionCase": "belongsTo",
+                "submittedByUser": "belongsTo",
+                "tradingPartner": "belongsTo",
+                "verification": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaEstablishment",
+            "table": "fda_establishments",
+            "fillable": [
+                "fda_organization_id",
+                "fei_number",
+                "firm_name",
+                "name",
+                "code",
+                "duns_number",
+                "dea_number",
+                "hin_number",
+                "chemical_reg_number",
+                "gln",
+                "sgln",
+                "street_address",
+                "street_address_2",
+                "city",
+                "state_province",
+                "postal_code",
+                "country_code",
+                "full_address",
+                "address_fingerprint",
+                "timezone",
+                "latitude",
+                "longitude",
+                "altitude",
+                "expiration_date",
+                "exclusion_flag",
+                "is_currently_registered",
+                "is_headquarters",
+                "establishment_contact_name",
+                "establishment_contact_email",
+                "agent_details",
+                "registrant_contact_name",
+                "registrant_contact_email",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "expiration_date",
+                "exclusion_flag",
+                "is_currently_registered",
+                "is_headquarters",
+                "is_active",
+                "altitude",
+                "latitude",
+                "longitude",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "operations": "hasMany",
+                "organization": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaEstablishmentOperation",
+            "table": "fda_establishment_operations",
+            "fillable": [
+                "fda_establishment_id",
+                "operation_code"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "establishment": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaImportRun",
+            "table": "fda_import_runs",
+            "fillable": [
+                "source",
+                "source_path",
+                "sha256",
+                "rows_read",
+                "rows_inserted",
+                "rows_updated",
+                "rows_skipped",
+                "rows_sent_to_review",
+                "started_at",
+                "completed_at",
+                "duration_ms"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "rows_read",
+                "rows_inserted",
+                "rows_updated",
+                "rows_skipped",
+                "rows_sent_to_review",
+                "started_at",
+                "completed_at",
+                "duration_ms"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaOrganization",
+            "table": "fda_organizations",
+            "fillable": [
+                "original_name",
+                "canonical_name",
+                "name",
+                "doing_business_as",
+                "duns_number",
+                "gln",
+                "sgln",
+                "partner_type",
+                "telephone",
+                "email",
+                "fax",
+                "website",
+                "description",
+                "logo",
+                "street_address",
+                "street_address_2",
+                "city",
+                "state_province",
+                "postal_code",
+                "country_code",
+                "full_address",
+                "timezone",
+                "latitude",
+                "longitude",
+                "altitude",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "partner_type",
+                "is_active",
+                "altitude",
+                "latitude",
+                "longitude",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "establishments": "hasMany",
+                "matchReviews": "hasMany",
+                "products": "hasMany",
+                "wddFacilities": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaOrganizationMatchReview",
+            "table": "fda_organization_match_reviews",
+            "fillable": [
+                "source",
+                "original_name",
+                "canonical_name",
+                "duns_number",
+                "proposed_fda_organization_id",
+                "resolved_fda_organization_id",
+                "resolved_by_admin_id",
+                "resolved_at",
+                "confidence",
+                "status",
+                "payload_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "confidence",
+                "payload_json",
+                "resolved_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "proposedOrganization": "belongsTo",
+                "resolvedByAdmin": "belongsTo",
+                "resolvedOrganization": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaProduct",
+            "table": "fda_products",
+            "fillable": [
+                "product_id",
+                "product_ndc",
+                "generic_name",
+                "brand_name",
+                "brand_name_base",
+                "name",
+                "fda_organization_id",
+                "marketing_category",
+                "application_number",
+                "dosage_form",
+                "strength",
+                "product_type",
+                "dea_schedule",
+                "finished",
+                "marketing_start_date",
+                "listing_expiration_date",
+                "spl_id",
+                "spl_set_id",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "finished",
+                "is_active",
+                "marketing_start_date",
+                "listing_expiration_date",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activeIngredients": "hasMany",
+                "fdaOrganization": "belongsTo",
+                "packaging": "hasMany",
+                "pharmClasses": "hasMany",
+                "routes": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaProductActiveIngredient",
+            "table": "fda_product_active_ingredients",
+            "fillable": [
+                "product_id_fk",
+                "name",
+                "strength"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "product": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaProductPackaging",
+            "table": "fda_product_packaging",
+            "fillable": [
+                "package_ndc",
+                "fda_product_id",
+                "description",
+                "net_content_description",
+                "marketing_start_date",
+                "is_sample",
+                "ndc11",
+                "gtin",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "marketing_start_date",
+                "is_sample",
+                "is_active",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "product": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaProductPharmClass",
+            "table": "fda_product_pharm_classes",
+            "fillable": [
+                "product_id_fk",
+                "class_name"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "product": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaProductRoute",
+            "table": "fda_product_routes",
+            "fillable": [
+                "product_id_fk",
+                "route_name"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "product": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaWdd3plImportRun",
+            "table": "fda_wdd_3pl_import_runs",
+            "fillable": [
+                "source_path",
+                "sha256",
+                "rows_read",
+                "rows_matched",
+                "rows_skipped_unmatched",
+                "row_count",
+                "started_at",
+                "completed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "rows_read",
+                "rows_matched",
+                "rows_skipped_unmatched",
+                "row_count",
+                "started_at",
+                "completed_at"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaWdd3plStaging",
+            "table": "fda_wdd_3pl_staging",
+            "fillable": [
+                "fda_organization_id",
+                "facility_name",
+                "alternate_name",
+                "street_address",
+                "city",
+                "state",
+                "zip",
+                "contact_person",
+                "contact_email",
+                "contact_phone",
+                "facility_type",
+                "license_number",
+                "license_state",
+                "expiration_date",
+                "reporting_year"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "reporting_year"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "fdaOrganization": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaWdd3plUnmatched",
+            "table": "fda_wdd_3pl_unmatched",
+            "fillable": [
+                "facility_name",
+                "slug_attempt",
+                "facility_type",
+                "row_count",
+                "last_seen_at",
+                "resolved_at",
+                "fda_organization_id"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "facility_type",
+                "row_count",
+                "last_seen_at",
+                "resolved_at"
+            ],
+            "incrementing": true,
+            "primary_key": "id",
+            "relationships": {
+                "fdaOrganization": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaWddFacility",
+            "table": "fda_wdd_facilities",
+            "fillable": [
+                "fda_organization_id",
+                "facility_type",
+                "facility_name",
+                "name",
+                "alternate_name",
+                "code",
+                "duns_number",
+                "gln",
+                "sgln",
+                "dea_number",
+                "hin_number",
+                "chemical_reg_number",
+                "street_address",
+                "street_address_2",
+                "city",
+                "state_province",
+                "postal_code",
+                "country_code",
+                "full_address",
+                "address_fingerprint",
+                "timezone",
+                "latitude",
+                "longitude",
+                "altitude",
+                "contact_person",
+                "contact_email",
+                "contact_phone",
+                "is_headquarters",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "facility_type",
+                "is_headquarters",
+                "is_active",
+                "altitude",
+                "latitude",
+                "longitude",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "licenses": "hasMany",
+                "organization": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Fda\\FdaWddLicense",
+            "table": "fda_wdd_licenses",
+            "fillable": [
+                "fda_wdd_facility_id",
+                "license_number",
+                "jurisdiction",
+                "expiration_date",
+                "reporting_year",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "expiration_date",
+                "reporting_year",
+                "is_active",
+                "manually_edited_fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "facility": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\InboundConnection",
+            "table": "inbound_connections",
+            "fillable": [
+                "name",
+                "serialization_provider",
+                "transport",
+                "trading_partner_id",
+                "is_active",
+                "credentials",
+                "settings",
+                "inbound_token",
+                "last_polled_at",
+                "last_received_at",
+                "last_error"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "serialization_provider",
+                "transport",
+                "is_active",
+                "credentials",
+                "settings",
+                "last_polled_at",
+                "last_received_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "documents": "hasMany",
+                "logs": "hasMany",
+                "tradingPartner": "belongsTo",
+                "tradingPartners": "belongsToMany"
+            }
+        },
+        {
+            "class": "App\\Models\\InboundConnectionLog",
+            "table": "inbound_connection_logs",
+            "fillable": [
+                "inbound_connection_id",
+                "event_type",
+                "status",
+                "message",
+                "metadata"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "metadata"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "inboundConnection": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\InboundConnectionTradingPartner",
+            "table": "inbound_connection_trading_partner",
+            "fillable": [
+                "inbound_connection_id",
+                "trading_partner_id",
+                "sender_gln",
+                "priority",
+                "is_default"
+            ],
+            "guarded": [],
+            "casts": [
+                "id",
+                "is_default"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "inboundConnection": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\L3\\L3LotFeed",
+            "table": "l3_lot_feeds",
+            "fillable": [
+                "message_id",
+                "file_sha256",
+                "payload_disk",
+                "payload_path",
+                "status",
+                "error_summary"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "lots": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\L3\\SerializationLot",
+            "table": "serialization_lots",
+            "fillable": [
+                "feed_id",
+                "epcis_document_id",
+                "lot_number",
+                "ndc",
+                "unit_gtin14",
+                "case_gtin14",
+                "product_name",
+                "expire_date",
+                "mfg_date",
+                "site_id",
+                "line_name",
+                "lot_processed_at",
+                "timezone_offset",
+                "lot_info_saved_at",
+                "lot_control_data",
+                "pallet_count",
+                "case_count",
+                "unit_count",
+                "status"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "expire_date",
+                "mfg_date",
+                "lot_processed_at",
+                "lot_info_saved_at",
+                "lot_control_data",
+                "pallet_count",
+                "case_count",
+                "unit_count"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "containerFields": "hasMany",
+                "epcisDocument": "belongsTo",
+                "feed": "belongsTo",
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\L3\\SerializationLotContainerField",
+            "table": "serialization_lot_container_fields",
+            "fillable": [
+                "lot_id",
+                "epc_uri",
+                "container_type",
+                "parent_epc_uri",
+                "fields"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "fields"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "lot": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\LabelPrinter",
+            "table": "label_printers",
+            "fillable": [
+                "name",
+                "ip_address",
+                "port",
+                "protocol",
+                "is_default",
+                "enabled",
+                "settings"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "protocol",
+                "is_default",
+                "enabled",
+                "settings",
+                "port"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "printJobs": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\LocationDevice",
+            "table": "location_devices",
+            "fillable": [
+                "site_id",
+                "name",
+                "description",
+                "gln",
+                "sgln",
+                "altitude",
+                "latitude",
+                "longitude",
+                "logo"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "altitude",
+                "latitude",
+                "longitude"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\MailTemplate",
+            "table": "mail_templates",
+            "fillable": [
+                "key",
+                "subject",
+                "greeting",
+                "body",
+                "salutation",
+                "action_label",
+                "action_url",
+                "recipients",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "recipients",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\OutboundConnection",
+            "table": "outbound_connections",
+            "fillable": [
+                "name",
+                "serialization_provider",
+                "transport",
+                "trading_partner_id",
+                "is_active",
+                "is_default",
+                "is_system",
+                "system_key",
+                "conformance_state",
+                "credentials",
+                "settings",
+                "last_sent_at",
+                "last_error"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "serialization_provider",
+                "transport",
+                "conformance_state",
+                "is_active",
+                "is_default",
+                "is_system",
+                "credentials",
+                "settings",
+                "last_sent_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "documents": "hasMany",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\PlatformSetting",
+            "table": "platform_settings",
+            "fillable": [
+                "key",
+                "value"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\PortalOrganization",
+            "table": "portal_organizations",
+            "fillable": [
+                "trading_partner_id",
+                "name",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "tradingPartner": "belongsTo",
+                "users": "belongsToMany"
+            }
+        },
+        {
+            "class": "App\\Models\\PortalOtpChallenge",
+            "table": "portal_otp_challenges",
+            "fillable": [
+                "email",
+                "code_hash",
+                "expires_at",
+                "consumed_at",
+                "attempts"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "expires_at",
+                "consumed_at",
+                "attempts"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\PortalPublication",
+            "table": "portal_publications",
+            "fillable": [
+                "epcis_document_id",
+                "trading_partner_id",
+                "published_at",
+                "published_by_connection_id",
+                "revoked_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "published_at",
+                "revoked_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "publishedByConnection": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\PortalUser",
+            "table": "portal_users",
+            "fillable": [
+                "email",
+                "name",
+                "is_active",
+                "disabled_reason",
+                "last_login_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active",
+                "failed_login_count",
+                "locked_until",
+                "disabled_at",
+                "session_version",
+                "last_login_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "notifications": "morphMany",
+                "organizations": "belongsToMany",
+                "readNotifications": "morphMany",
+                "unreadNotifications": "morphMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Principal",
+            "table": "principals",
+            "fillable": [
+                "name",
+                "gln",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "sites": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Product",
+            "table": "products",
+            "fillable": [
+                "fda_product_id",
+                "fda_product_packaging_id",
+                "trading_partner_id",
+                "gtin",
+                "name",
+                "dosage_form",
+                "strength",
+                "ndc",
+                "package_ndc",
+                "ndc11",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "epcs": "hasMany",
+                "fdaProduct": "belongsTo",
+                "fdaProductPackaging": "belongsTo",
+                "packagingChildren": "belongsToMany",
+                "packagingLinksAsChild": "hasMany",
+                "packagingLinksAsParent": "hasMany",
+                "packagingParents": "belongsToMany",
+                "tradingPartner": "belongsTo",
+                "tradingPartners": "belongsToMany"
+            }
+        },
+        {
+            "class": "App\\Models\\ProductPackagingLink",
+            "table": "product_packaging_links",
+            "fillable": [
+                "parent_product_id",
+                "child_product_id",
+                "quantity",
+                "pack_level"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "quantity",
+                "pack_level"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "childProduct": "belongsTo",
+                "parentProduct": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Quarantine\\QuarantineHold",
+            "table": "quarantine_holds",
+            "fillable": [
+                "epc_id",
+                "document_id",
+                "exception_id",
+                "reason",
+                "status",
+                "severity",
+                "opened_at",
+                "closed_at",
+                "closed_reason",
+                "meta"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "opened_at",
+                "closed_at",
+                "meta"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "document": "belongsTo",
+                "epc": "belongsTo",
+                "exception": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\ReadPoint",
+            "table": "read_points",
+            "fillable": [
+                "site_id",
+                "name",
+                "code",
+                "sgln",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "site": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Receiving\\InboundShipment",
+            "table": "inbound_shipments",
+            "fillable": [
+                "trading_partner_id",
+                "trading_partner_key",
+                "asn_number",
+                "customer_po",
+                "status",
+                "document_count"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "trading_partner_key",
+                "document_count"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "documents": "hasMany",
+                "receivingSessions": "hasMany",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Receiving\\ReceivingScanLine",
+            "table": "receiving_scan_lines",
+            "fillable": [
+                "receiving_session_id",
+                "epc_id",
+                "parent_epc_id",
+                "line_role",
+                "status",
+                "scan_raw",
+                "confirmed_at",
+                "confirmed_by",
+                "ilmd_mismatch_json"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "confirmed_at",
+                "ilmd_mismatch_json"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "confirmedByUser": "belongsTo",
+                "epc": "belongsTo",
+                "parentEpc": "belongsTo",
+                "session": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Receiving\\ReceivingSession",
+            "table": "receiving_sessions",
+            "fillable": [
+                "session_kind",
+                "epcis_document_id",
+                "inbound_shipment_id",
+                "transferring_session_id",
+                "receiving_epcis_document_id",
+                "matched_epcis_document_id",
+                "trading_partner_id",
+                "site_id",
+                "status",
+                "expected_parent_count",
+                "confirmed_parent_count",
+                "expected_child_count",
+                "confirmed_child_count",
+                "active_parent_epc_id",
+                "short_closed_parent_epc_ids",
+                "opened_by",
+                "opened_at",
+                "completed_at",
+                "receiving_events_generated_at",
+                "wms_receive_confirmed_at",
+                "invoice_disk",
+                "invoice_path",
+                "invoice_original_filename",
+                "invoice_sha256"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "session_kind",
+                "expected_parent_count",
+                "confirmed_parent_count",
+                "expected_child_count",
+                "confirmed_child_count",
+                "active_parent_epc_id",
+                "short_closed_parent_epc_ids",
+                "opened_at",
+                "completed_at",
+                "receiving_events_generated_at",
+                "wms_receive_confirmed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activeParentEpc": "belongsTo",
+                "document": "belongsTo",
+                "inboundShipment": "belongsTo",
+                "matchedDocument": "belongsTo",
+                "openedByUser": "belongsTo",
+                "receivingDocument": "belongsTo",
+                "scanLines": "hasMany",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo",
+                "transferringSession": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Shipping\\OutboundShippingScanLine",
+            "table": "outbound_shipping_scan_lines",
+            "fillable": [
+                "outbound_shipping_session_id",
+                "epc_id",
+                "line_role",
+                "status",
+                "scan_raw",
+                "confirmed_at",
+                "confirmed_by"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "confirmed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "confirmedByUser": "belongsTo",
+                "epc": "belongsTo",
+                "session": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Shipping\\OutboundShippingSession",
+            "table": "outbound_shipping_sessions",
+            "fillable": [
+                "site_id",
+                "principal_id",
+                "trading_partner_id",
+                "ship_to_site_id",
+                "ship_to_gln",
+                "outbound_connection_id",
+                "status",
+                "is_corrective",
+                "corrective_reason",
+                "corrects_epcis_document_id",
+                "asn_number",
+                "customer_po",
+                "invoice_number",
+                "shipment_reference",
+                "dscsa_affirm",
+                "is_drop_shipment",
+                "expected_count",
+                "confirmed_count",
+                "split_declared",
+                "split_declared_at",
+                "split_declared_by",
+                "quantity_gate_overridden",
+                "quantity_gate_overridden_at",
+                "quantity_gate_override_reason",
+                "quantity_gate_overridden_by",
+                "epcis_document_id",
+                "shipping_events_generated_at",
+                "opened_by",
+                "opened_at",
+                "completed_at",
+                "cancelled_at",
+                "notes",
+                "wms_idempotency_key",
+                "wms_complete"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "dscsa_affirm",
+                "is_drop_shipment",
+                "is_corrective",
+                "split_declared",
+                "quantity_gate_overridden",
+                "wms_complete",
+                "expected_count",
+                "confirmed_count",
+                "opened_at",
+                "completed_at",
+                "cancelled_at",
+                "split_declared_at",
+                "quantity_gate_overridden_at",
+                "shipping_events_generated_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "correctsDocument": "belongsTo",
+                "epcisDocument": "belongsTo",
+                "openedByUser": "belongsTo",
+                "outboundConnection": "belongsTo",
+                "principal": "belongsTo",
+                "scanLines": "hasMany",
+                "shipToSite": "belongsTo",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Site",
+            "table": "sites",
+            "fillable": [
+                "fda_establishment_id",
+                "fda_wdd_facility_id",
+                "trading_partner_id",
+                "principal_id",
+                "name",
+                "code",
+                "is_headquarters",
+                "description",
+                "gln",
+                "sgln",
+                "duns_number",
+                "dea_number",
+                "hin_number",
+                "chemical_reg_number",
+                "google_place_id",
+                "street_address",
+                "street_address_2",
+                "city",
+                "state",
+                "zipcode",
+                "country_code",
+                "timezone",
+                "altitude",
+                "latitude",
+                "longitude",
+                "logo",
+                "is_active",
+                "is_organization_facility"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active",
+                "is_headquarters",
+                "is_organization_facility",
+                "altitude",
+                "latitude",
+                "longitude"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "atpLicenses": "hasMany",
+                "devices": "hasMany",
+                "fdaEstablishment": "belongsTo",
+                "fdaWddFacility": "belongsTo",
+                "locationDevices": "hasMany",
+                "principal": "belongsTo",
+                "readPoints": "hasMany",
+                "ssccNumberRanges": "hasMany",
+                "tradingPartner": "belongsTo",
+                "users": "belongsToMany"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccLabel",
+            "table": "sscc_labels",
+            "fillable": [
+                "batch_id",
+                "label_printer_id",
+                "sscc_18",
+                "sscc_urn",
+                "extension_digit",
+                "company_prefix",
+                "serial_reference",
+                "serial_reference_int",
+                "allocation_mode",
+                "element_string",
+                "hrt",
+                "ship_to_name",
+                "ship_to_gln",
+                "notes",
+                "label_disk",
+                "label_path",
+                "template_version",
+                "print_status",
+                "printed_copies",
+                "printed_at",
+                "epcis_file_path",
+                "epcis_emitted_at",
+                "commissioning_epcis_file_path",
+                "commissioned_at",
+                "created_by"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "serial_reference_int",
+                "allocation_mode",
+                "print_status",
+                "printed_copies",
+                "printed_at",
+                "epcis_emitted_at",
+                "commissioned_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "batch": "belongsTo",
+                "children": "hasMany",
+                "creator": "belongsTo",
+                "printJobs": "hasMany",
+                "printer": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccLabelBatch",
+            "table": "sscc_label_batches",
+            "fillable": [
+                "company_prefix",
+                "extension_digit",
+                "allocation_mode",
+                "label_count",
+                "copies_per_label",
+                "label_printer_id",
+                "commission_site_id",
+                "send_to_printer",
+                "emit_epcis",
+                "emit_disaggregation",
+                "source_epcis_document_id",
+                "source_parent_sscc_urn",
+                "trading_partner_id",
+                "allocation_config",
+                "status",
+                "ship_to_name",
+                "ship_to_gln",
+                "notes",
+                "created_by",
+                "completed_at",
+                "error_message",
+                "epcis_file_path",
+                "epcis_emitted_at",
+                "commissioning_epcis_file_path",
+                "commissioned_at",
+                "disaggregation_file_path",
+                "disaggregation_emitted_at",
+                "printed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "allocation_mode",
+                "status",
+                "allocation_config",
+                "label_count",
+                "copies_per_label",
+                "send_to_printer",
+                "emit_epcis",
+                "emit_disaggregation",
+                "completed_at",
+                "epcis_emitted_at",
+                "commissioned_at",
+                "disaggregation_emitted_at",
+                "printed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "commissionSite": "belongsTo",
+                "creator": "belongsTo",
+                "labels": "hasMany",
+                "printJobs": "hasMany",
+                "printer": "belongsTo",
+                "sourceDocument": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccLabelChild",
+            "table": "sscc_label_children",
+            "fillable": [
+                "sscc_label_id",
+                "child_epc"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "label": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccNumberRange",
+            "table": "sscc_number_ranges",
+            "fillable": [
+                "name",
+                "scope",
+                "site_id",
+                "trading_partner_id",
+                "company_prefix",
+                "extension_digit",
+                "gs1_api_key",
+                "index",
+                "increment_by",
+                "range_size",
+                "start_number",
+                "current_number",
+                "threshold_percentage",
+                "status",
+                "remaining",
+                "threshold_notified_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "scope",
+                "status",
+                "gs1_api_key",
+                "index",
+                "increment_by",
+                "range_size",
+                "start_number",
+                "current_number",
+                "threshold_percentage",
+                "remaining",
+                "threshold_notified_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "site": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccPrintJob",
+            "table": "sscc_print_jobs",
+            "fillable": [
+                "sscc_label_batch_id",
+                "sscc_label_id",
+                "label_printer_id",
+                "copies",
+                "status",
+                "delivery_mode",
+                "client_print_token",
+                "attempts",
+                "last_error",
+                "queued_at",
+                "printed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "delivery_mode",
+                "copies",
+                "attempts",
+                "queued_at",
+                "printed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "batch": "belongsTo",
+                "label": "belongsTo",
+                "printer": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\SsccSerialPool",
+            "table": "sscc_serial_pools",
+            "fillable": [
+                "company_prefix",
+                "extension_digit",
+                "default_allocation_mode",
+                "last_serial_reference_int",
+                "last_printed_serial_reference_int",
+                "last_printed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "default_allocation_mode",
+                "last_serial_reference_int",
+                "last_printed_serial_reference_int",
+                "last_printed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\Tenant",
+            "table": "tenants",
+            "fillable": [
+                "id",
+                "name",
+                "profile",
+                "status",
+                "gln",
+                "company_prefix",
+                "inbound_environment",
+                "hub_providers",
+                "tenancy_db_name",
+                "receiving_state",
+                "tenant_pair_slug",
+                "tenant_pair_environment"
+            ],
+            "guarded": [],
+            "casts": [
+                "profile",
+                "status",
+                "hub_providers",
+                "data"
+            ],
+            "incrementing": false,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": []
+        },
+        {
+            "class": "App\\Models\\TenantAnnouncement",
+            "table": "tenant_announcements",
+            "fillable": [
+                "announcement_id",
+                "title",
+                "body",
+                "severity",
+                "published_at",
+                "starts_at",
+                "ends_at",
+                "is_active"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "severity",
+                "published_at",
+                "starts_at",
+                "ends_at",
+                "is_active"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "dismissals": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\TenantAnnouncementDismissal",
+            "table": "tenant_announcement_dismissals",
+            "fillable": [
+                "tenant_announcement_id",
+                "user_id",
+                "dismissed_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "dismissed_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "tenantAnnouncement": "belongsTo",
+                "user": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\TracingRequest",
+            "table": "tracing_requests",
+            "fillable": [
+                "title",
+                "status",
+                "requestor_type",
+                "requested_by",
+                "exception_id",
+                "gtin",
+                "serial",
+                "lot",
+                "expiry",
+                "scope",
+                "is_recall",
+                "notes",
+                "requested_at",
+                "due_at",
+                "responded_at",
+                "completed_at",
+                "sla_breached",
+                "response_metadata"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "requestor_type",
+                "scope",
+                "is_recall",
+                "expiry",
+                "requested_at",
+                "due_at",
+                "responded_at",
+                "completed_at",
+                "sla_breached",
+                "response_metadata"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "exceptionCase": "belongsTo",
+                "notifications": "hasMany",
+                "requestedByUser": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\TracingRequestNotification",
+            "table": "tracing_request_notifications",
+            "fillable": [
+                "tracing_request_id",
+                "trading_partner_id",
+                "channel",
+                "status",
+                "sent_at",
+                "acknowledged_at",
+                "error_message",
+                "metadata"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "sent_at",
+                "acknowledged_at",
+                "metadata"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "tracingRequest": "belongsTo",
+                "tradingPartner": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\TradingPartner",
+            "table": "trading_partners",
+            "fillable": [
+                "fda_organization_id",
+                "name",
+                "doing_business_as",
+                "description",
+                "gln",
+                "sgln",
+                "duns_number",
+                "dea_number",
+                "hin_number",
+                "chemical_reg_number",
+                "partner_type",
+                "street_address",
+                "street_address_2",
+                "city",
+                "state",
+                "zipcode",
+                "country_code",
+                "timezone",
+                "altitude",
+                "latitude",
+                "longitude",
+                "logo",
+                "website",
+                "telephone",
+                "email",
+                "vrs_notify_email",
+                "fax",
+                "is_active",
+                "atp_verified_at",
+                "atp_verified_by",
+                "atp_verification_source",
+                "atp_verification_url",
+                "atp_verification_note"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "partner_type",
+                "atp_verification_source",
+                "atp_verified_at",
+                "is_active",
+                "altitude",
+                "latitude",
+                "longitude"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "activitiesAsSubject": "morphMany",
+                "atpVerifier": "belongsTo",
+                "contactCard": "hasOne",
+                "fdaOrganization": "belongsTo",
+                "fdaProducts": "hasMany",
+                "locationDevices": "hasManyThrough",
+                "manufacturedProducts": "hasMany",
+                "products": "belongsToMany",
+                "sites": "hasMany",
+                "ssccNumberRanges": "hasMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Transferring\\TransferringScanLine",
+            "table": "transferring_scan_lines",
+            "fillable": [
+                "transferring_session_id",
+                "epc_id",
+                "status",
+                "scan_raw",
+                "confirmed_at",
+                "confirmed_by",
+                "received_at",
+                "received_by"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "confirmed_at",
+                "received_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "confirmedByUser": "belongsTo",
+                "epc": "belongsTo",
+                "receivedByUser": "belongsTo",
+                "session": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\Transferring\\TransferringSession",
+            "table": "transferring_sessions",
+            "fillable": [
+                "from_site_id",
+                "to_site_id",
+                "status",
+                "confirmed_count",
+                "received_count",
+                "opened_by",
+                "opened_at",
+                "shipped_at",
+                "received_at",
+                "completed_at",
+                "transfer_epcis_document_id",
+                "transfer_events_generated_at",
+                "receive_events_generated_at",
+                "notes"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "confirmed_count",
+                "received_count",
+                "opened_at",
+                "shipped_at",
+                "received_at",
+                "completed_at",
+                "transfer_events_generated_at",
+                "receive_events_generated_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "fromSite": "belongsTo",
+                "openedByUser": "belongsTo",
+                "receivingSession": "hasOne",
+                "scanLines": "hasMany",
+                "toSite": "belongsTo",
+                "transferDocument": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\User",
+            "table": "users",
+            "fillable": [
+                "name",
+                "email",
+                "password",
+                "is_active",
+                "disabled_reason",
+                "must_change_password",
+                "oidc_issuer",
+                "oidc_subject",
+                "directory_object_id",
+                "user_principal_name",
+                "employee_id",
+                "given_name",
+                "surname",
+                "job_title",
+                "department",
+                "company_name",
+                "office_location",
+                "mobile_phone",
+                "business_phone",
+                "directory_groups",
+                "directory_synced_at",
+                "avatar_url",
+                "preferences",
+                "terms_accepted_at",
+                "terms_version",
+                "privacy_accepted_at",
+                "privacy_version",
+                "legal_notice_started_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "is_active",
+                "failed_login_count",
+                "locked_until",
+                "disabled_at",
+                "session_version",
+                "must_change_password",
+                "password_changed_at",
+                "email_verified_at",
+                "password",
+                "preferences",
+                "directory_groups",
+                "directory_synced_at",
+                "terms_accepted_at",
+                "privacy_accepted_at",
+                "legal_notice_started_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "breezySession": "morphOne",
+                "breezySessions": "morphMany",
+                "notifications": "morphMany",
+                "permissions": "belongsToMany",
+                "readNotifications": "morphMany",
+                "roles": "belongsToMany",
+                "sites": "belongsToMany",
+                "teams": "belongsToMany",
+                "tokens": "morphMany",
+                "unreadNotifications": "morphMany"
+            }
+        },
+        {
+            "class": "App\\Models\\Verification",
+            "table": "verifications",
+            "fillable": [
+                "gtin14",
+                "serial",
+                "lot",
+                "status",
+                "scanned_barcode",
+                "verified_by",
+                "exception_id",
+                "verification_request_case_id",
+                "request_payload",
+                "response_payload",
+                "message",
+                "verified_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "request_payload",
+                "response_payload",
+                "verified_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "exception": "belongsTo",
+                "verificationRequestCase": "belongsTo",
+                "verifiedByUser": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\VerificationRequestCase",
+            "table": "verification_request_cases",
+            "fillable": [
+                "verification_id",
+                "exception_id",
+                "manufacturer_trading_partner_id",
+                "requestor_name",
+                "requestor_gln",
+                "requestor_license",
+                "requestor_notify_email",
+                "vendor_number",
+                "gtin14",
+                "serial",
+                "lot",
+                "expiry_yymmdd",
+                "ndc11",
+                "product_description",
+                "cin",
+                "trigger_reason",
+                "notes",
+                "expires_at",
+                "created_by"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "status",
+                "trigger_reason",
+                "expires_at",
+                "responded_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "createdByUser": "belongsTo",
+                "exception": "belongsTo",
+                "manufacturerTradingPartner": "belongsTo",
+                "response": "hasOne",
+                "verification": "belongsTo"
+            }
+        },
+        {
+            "class": "App\\Models\\VerificationRequestResponse",
+            "table": "verification_request_responses",
+            "fillable": [
+                "verification_request_case_id",
+                "outcome",
+                "reason_code",
+                "comments",
+                "responder_email",
+                "responder_ip",
+                "attachment_path",
+                "terms_accepted_at"
+            ],
+            "guarded": [
+                "*"
+            ],
+            "casts": [
+                "id",
+                "outcome",
+                "reason_code",
+                "terms_accepted_at"
+            ],
+            "incrementing": true,
+            "timestamps": true,
+            "primary_key": "id",
+            "relationships": {
+                "verificationRequestCase": "belongsTo"
+            }
+        }
+    ]
+}

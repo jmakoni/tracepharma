@@ -47,7 +47,7 @@
                 title="Operations scorecards"
                 :items="[
                     'Manufacturer and wholesaler scorecards with ACK health and blocked-reason trends.',
-                    '3PL principal-scoped operations view for multi-brand warehouses.',
+                    '3PL soft principal registry and site/ship-order filters are GA for Logistics3pl; custody-isolated operations views remain on the roadmap.',
                     'Dispenser scorecard with PMS blocked-reason trends for pharmacy profiles.',
                 ]"
             />

@@ -211,16 +211,16 @@ final class RegulatoryCompliance
             }
 
             $data = $action->getData();
-            self::assert($data, $actionName);
+            self::assert($data, $actionName, $action);
 
             $reason = null;
             if ($requireReason) {
                 $key = $existingReasonField ?? 'compliance_reason';
                 $reason = isset($data[$key]) ? trim((string) $data[$key]) : '';
                 if ($reason === '') {
-                    throw ValidationException::withMessages([
+                    self::throwValidation([
                         $key => 'A reason for this action is required.',
-                    ]);
+                    ], $action);
                 }
             }
 
@@ -270,9 +270,14 @@ final class RegulatoryCompliance
             }
 
             $payload = self::parentMountedData($action);
-            self::assert($payload, $actionName);
+            self::assert($payload, $actionName, $action);
 
-            $reason = self::reasonFromPayload($payload, $requireReason, $existingReasonField);
+            $reason = self::reasonFromPayload(
+                $payload,
+                $requireReason,
+                $existingReasonField,
+                errorAction: $action,
+            );
             $auditSubject = $subject instanceof Closure
                 ? $action->evaluate($subject)
                 : ($subject ?? $action->getRecord());
@@ -427,7 +432,7 @@ final class RegulatoryCompliance
                 $existingReasonField,
                 $subject,
             ): void {
-                self::assert($data, $actionName);
+                self::assert($data, $actionName, $footer);
 
                 $parentData = self::parentMountedData($parent);
                 $reason = self::reasonFromPayload(
@@ -462,10 +467,12 @@ final class RegulatoryCompliance
      *
      * @param  array<string, mixed>  $data
      * @param  string|null  $actionName  Scopes the throttle and the failure log entry
+     * @param  Action|null  $action  When set, validation keys are prefixed to the mounted
+     *                               schema state path so Filament field wrappers show errors.
      *
      * @throws ValidationException
      */
-    public static function assert(array $data, ?string $actionName = null): void
+    public static function assert(array $data, ?string $actionName = null, ?Action $action = null): void
     {
         if (! self::enabled()) {
             return;
@@ -473,9 +480,9 @@ final class RegulatoryCompliance
 
         $user = auth()->user();
         if ($user === null) {
-            throw ValidationException::withMessages([
+            self::throwValidation([
                 'regulatory_password' => 'You must be signed in to confirm this action.',
-            ]);
+            ], $action);
         }
 
         $key = self::throttleKey($user, $actionName);
@@ -484,10 +491,10 @@ final class RegulatoryCompliance
             $availableIn = RateLimiter::availableIn($key);
             self::auditFailure($actionName, $user, 'locked_out', $availableIn);
 
-            throw ValidationException::withMessages([
+            self::throwValidation([
                 'regulatory_password' => 'Too many incorrect passwords for this action. Try again in '
                     .max(1, (int) ceil($availableIn / 60)).' minute(s).',
-            ]);
+            ], $action);
         }
 
         $password = (string) ($data['regulatory_password'] ?? '');
@@ -497,9 +504,9 @@ final class RegulatoryCompliance
             RateLimiter::hit($key, self::lockoutSeconds());
             self::auditFailure($actionName, $user, 'incorrect_password', null);
 
-            throw ValidationException::withMessages([
+            self::throwValidation([
                 'regulatory_password' => 'The password you entered is incorrect.',
-            ]);
+            ], $action);
         }
 
         RateLimiter::clear($key);
@@ -579,6 +586,7 @@ final class RegulatoryCompliance
         bool $requireReason,
         ?string $existingReasonField,
         ?Action $popPasswordModal = null,
+        ?Action $errorAction = null,
     ): ?string {
         if (! $requireReason) {
             return null;
@@ -597,9 +605,70 @@ final class RegulatoryCompliance
             }
         }
 
-        throw ValidationException::withMessages([
+        self::throwValidation([
             $key => 'A reason for this action is required.',
-        ]);
+        ], $errorAction ?? $popPasswordModal);
+    }
+
+    /**
+     * Filament action schemas bind at mountedActions.{n}.data — bare field keys never
+     * appear under the Password input. Prefix when an Action context is available.
+     *
+     * @param  array<string, string|list<string>>  $messages
+     *
+     * @throws ValidationException
+     */
+    private static function throwValidation(array $messages, ?Action $action = null): never
+    {
+        throw ValidationException::withMessages(self::prefixValidationMessages($messages, $action));
+    }
+
+    /**
+     * @param  array<string, string|list<string>>  $messages
+     * @return array<string, string|list<string>>
+     */
+    private static function prefixValidationMessages(array $messages, ?Action $action = null): array
+    {
+        $prefix = self::mountedDataStatePath($action);
+        if ($prefix === null) {
+            return $messages;
+        }
+
+        $prefixed = [];
+        foreach ($messages as $key => $message) {
+            $prefixed[str_contains((string) $key, '.') ? $key : "{$prefix}.{$key}"] = $message;
+        }
+
+        return $prefixed;
+    }
+
+    private static function mountedDataStatePath(?Action $action): ?string
+    {
+        if ($action === null) {
+            return null;
+        }
+
+        $index = $action->getNestingIndex();
+
+        if ($index === null) {
+            try {
+                $mounted = $action->getLivewire()->mountedActions ?? [];
+            } catch (Throwable) {
+                return null;
+            }
+
+            if ($mounted === []) {
+                return null;
+            }
+
+            $index = array_key_last($mounted);
+        }
+
+        if ($index === null) {
+            return null;
+        }
+
+        return "mountedActions.{$index}.data";
     }
 
     public static function audit(string $actionName, mixed $subject = null, ?string $reason = null): void
