@@ -3,6 +3,7 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenTransferReceivingSession;
@@ -256,6 +257,7 @@ class NotifyWmsReceiveConfirmTest extends TestCase
 
             $job = new NotifyWmsReceiveConfirm(self::DEMO2_TENANT_ID, (int) $session->getKey());
             $this->assertSame(3, $job->tries);
+            $this->assertSame(600, $job->timeout);
 
             try {
                 $job->handle();
@@ -372,16 +374,16 @@ class NotifyWmsReceiveConfirmTest extends TestCase
 
     private function enableWmsReceiveConfirm(?string $url = self::WMS_URL): void
     {
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+
         $settings = TenantSettings::forTenant(tenant());
         $this->priorWmsUrl = $settings->wmsReceiveConfirmUrl();
         $this->priorWmsKey = $settings->wmsBridgeApiKey();
         $this->priorWmsKilled = $settings->wmsWebhooksKilled();
 
-        $settings->saveOrganization([
-            'wms_receive_confirm_url' => $url,
-        ]);
+        $settings->setWmsReceiveConfirmUrl($url);
         $settings->setWmsBridgeApiKey(self::WMS_KEY);
-        tenant()->save();
+        tenant()->saveQuietly();
     }
 
     private function completeInboundAsnSession(): ReceivingSession
@@ -395,6 +397,9 @@ class NotifyWmsReceiveConfirmTest extends TestCase
         app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, userId: null, autoConfirmChildren: true);
 
         $session->refresh();
+        if ($session->status !== 'completed') {
+            $session = app(CompleteReceivingSession::class)->handle($session);
+        }
         $this->assertSame('completed', $session->status);
         $this->assertNotNull($session->receiving_epcis_document_id);
         $this->receivingDocumentId = (int) $session->receiving_epcis_document_id;

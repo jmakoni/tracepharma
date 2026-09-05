@@ -7,6 +7,7 @@ use App\Enums\SsccAllocationMode;
 use App\Enums\TenantProfile;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
@@ -28,7 +29,6 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -102,6 +102,12 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'default_receive_site_id' => $settings->defaultReceiveSiteId(),
             'default_ship_from_site_id' => $settings->defaultShipFromSiteId(),
             'require_ti_for_scan_first' => $settings->requireTiForScanFirst(),
+            'require_pure_epcis_document' => $settings->requirePureEpcisDocument(),
+            'block_receive_on_destination_gln_mismatch' => $settings->blockReceiveOnDestinationGlnMismatch(),
+            'match_inbound_ship_to_site' => $settings->matchInboundShipToSite(),
+            'block_send_on_atp_gap' => $settings->blockSendOnAtpGap(),
+            'auto_open_receive_after_transfer_ship' => $settings->autoOpenReceiveAfterTransferShip(),
+            'auto_complete_asn_on_ready' => $settings->autoCompleteAsnOnReady(),
             'receiving_edge_mode' => ReceivingPolicy::forTenant($tenant)->edgeMode()->value,
             'job_roles_enabled' => $settings->jobRolesEnabled(),
             'compliance_contact_name' => $settings->complianceContactName(),
@@ -251,6 +257,40 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->helperText('Overrides the profile default for sealed vs open-count receive.')
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
                     ]),
+                Section::make('Inbound EPCIS')
+                    ->compact()
+                    ->description('How TracePharma accepts partner EPCIS files.')
+                    ->schema([
+                        Toggle::make('require_pure_epcis_document')
+                            ->label('Require pure EPCISDocument')
+                            ->helperText('When on, SOAP-wrapped files are rejected. When off (default), TracePharma unwraps SOAP and validates the inner EPCIS document.')
+                            ->columnSpanFull(),
+                        Toggle::make('block_receive_on_destination_gln_mismatch')
+                            ->label('Block receive when destination GLN is not ours')
+                            ->helperText('When on, sold-to / ship-to GLNs outside this organization block Start receiving until the exception is resolved (ATTP-style). When off (default), mismatches are warnings only.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                        Toggle::make('match_inbound_ship_to_site')
+                            ->label('Match inbound ASN ship-to GLN to a site')
+                            ->helperText('When on, TracePharma binds ship-to GLN to sites.ship_to_site_id (partner destinations included). When off (default while testing), ship-to GLN is stored but site matching is skipped — receive uses the default receive site / chooser instead.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                        Toggle::make('auto_complete_asn_on_ready')
+                            ->label('Auto-complete ASN receive when all expected lines are confirmed')
+                            ->helperText('When on, the last confirmed scan finishes the session and authors receiving EPCIS. When off (default), tap Complete receive after scanning — ATTP/TraceLink-style.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Transferring')
+                    ->compact()
+                    ->description('Internal site-to-site ship and receive choreography.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsTransferring())
+                    ->schema([
+                        Toggle::make('auto_open_receive_after_transfer_ship')
+                            ->label('After ship transfer, open destination receive')
+                            ->helperText('When on, Ship transfer opens the destination receive session and redirects there (same-operator warehouses). When off (default), stay on the transfer and use Receive at destination — ATTP-style two-step.')
+                            ->columnSpanFull(),
+                    ]),
                 Section::make('Access')
                     ->compact()
                     ->description('Control whether job roles limit menus and actions.')
@@ -296,6 +336,12 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->label('Email customer portal link on ship')
                             ->helperText('After TI is authored, email the trading partner contact a signed portal link. No portal login accounts.')
                             ->default(true)
+                            ->columnSpanFull(),
+                        Toggle::make('block_send_on_atp_gap')
+                            ->label('Block send when ship-to ATP license is missing or expired')
+                            ->helperText('When off (default), missing/expired destination ATP licenses are a soft warning on the ship desk and send is allowed. When on, outbound send is refused until a valid license is on record.')
+                            ->default(false)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments())
                             ->columnSpanFull(),
                     ]),
                 Section::make('Dashboard')
@@ -557,6 +603,15 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         $organization['alert_digest_enabled'] = (bool) ($data['alert_digest_enabled'] ?? true);
         $organization['alert_digest_frequency'] = (string) ($data['alert_digest_frequency'] ?? 'daily');
         $organization['email_portal_on_ship'] = (bool) ($data['email_portal_on_ship'] ?? true);
+        $organization['require_pure_epcis_document'] = (bool) ($data['require_pure_epcis_document'] ?? false);
+        $organization['block_receive_on_destination_gln_mismatch'] = (bool) ($data['block_receive_on_destination_gln_mismatch'] ?? false);
+        $organization['match_inbound_ship_to_site'] = (bool) ($data['match_inbound_ship_to_site'] ?? false);
+        $organization['auto_open_receive_after_transfer_ship'] = (bool) ($data['auto_open_receive_after_transfer_ship'] ?? false);
+        $organization['auto_complete_asn_on_ready'] = (bool) ($data['auto_complete_asn_on_ready'] ?? false);
+
+        if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
+            $organization['block_send_on_atp_gap'] = (bool) ($data['block_send_on_atp_gap'] ?? false);
+        }
 
         try {
             TenantSettings::forTenant(tenant())->saveOrganization($organization);

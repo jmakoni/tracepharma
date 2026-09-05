@@ -1,11 +1,11 @@
 ---
-title: Api Tokens
+title: API tokens
 parent: integrations
 order: 20
 group: Integrations
 ---
 
-# Api Tokens
+# API tokens
 
 Filament classes:
 

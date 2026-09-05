@@ -25,7 +25,7 @@ Configure physical sites (GLN / SGLN), scanners and printers as devices, locatio
 
 ## Steps
 
-1. Open **Sites**; create or edit site master and ATP licenses. Open the page and use Help for live UI.
+1. Open **Site directory** from Operations Hub Directories (`/sites`), or **Sites** in nav. Create or edit site master and ATP licenses. Open the page and use Help for live UI.
 2. Register **Devices** and bind them via **Location devices**.
 3. Maintain **Read points** for scan locations used in events.
 4. Confirm site selection works on receiving, shipping, and quarantine desks.
@@ -39,5 +39,7 @@ Configure physical sites (GLN / SGLN), scanners and printers as devices, locatio
 
 ## Notes
 
+- Create requires **Name** and **Code**; submit is gated by regulatory password (**Confirm create**).
+- QA / disposable test sites: prefix names with `QA Cursor ` (do not overwrite real demo sites).
 - Wrong SGLN on a site corrupts event location data — verify before go-live.
 - Devices are not interchangeable with read points; both may be required depending on scanner setup.

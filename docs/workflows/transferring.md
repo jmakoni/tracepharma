@@ -34,6 +34,7 @@ Move on-hand inventory between tenant sites without a trading-partner outbound i
 - [ ] No custom `transferring` biz_step — reuses trading-partner CBV steps
 - [ ] Site GLNs on readPoint / bizLocation per leg
 - [ ] Custody moves to in-transit then destination on-hand
+- [ ] Packed children still under an open SSCC follow that SSCC's last-seen site until unpack (break-pack / ship / Asset Tracking)
 
 ## Related pages
 

@@ -26,6 +26,7 @@ use App\Http\Controllers\SupplierExceptionPortalController;
 use App\Http\Controllers\SupplierQuarantineController;
 use App\Http\Controllers\Tenant\ImpersonateController;
 use App\Http\Controllers\VerificationRequestPortalController;
+use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsureClientPortalV2Enabled;
 use App\Http\Middleware\EnsureManufacturerVerificationPortalEnabled;
 use App\Http\Middleware\EnsurePortalUserHasOrganization;
@@ -60,11 +61,11 @@ Route::middleware([
         ->name('tenant.impersonate.redeem');
 
     Route::post('/current-site/{site}', SetCurrentSiteController::class)
-        ->middleware(['auth', 'throttle:60,1'])
+        ->middleware(['auth', EnsureAccountIsUsable::class.':web', 'throttle:60,1'])
         ->whereNumber('site')
         ->name('tenant.current-site.set');
 
-    Route::middleware(['auth', 'throttle:60,1'])->prefix('label-print')->group(function (): void {
+    Route::middleware(['auth', EnsureAccountIsUsable::class.':web', 'throttle:60,1'])->prefix('label-print')->group(function (): void {
         Route::get('/config', [ClientLabelPrintController::class, 'config'])
             ->name('tenant.label-print.config');
         Route::post('/bridge', [ClientLabelPrintController::class, 'setBridge'])
@@ -86,11 +87,11 @@ Route::middleware([
     });
 
     Route::get('/recall-broadcast-ack/{ackShareUuid}', [RecallBroadcastAckPortalController::class, 'show'])
-        ->middleware(['throttle:20,1'])
+        ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.recall-broadcast-ack.show');
 
     Route::post('/recall-broadcast-ack/{ackShareUuid}', [RecallBroadcastAckPortalController::class, 'acknowledge'])
-        ->middleware(['throttle:20,1'])
+        ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.recall-broadcast-ack.acknowledge');
 
     Route::get('/supplier-exceptions/{portalShareUuid}', [SupplierExceptionPortalController::class, 'index'])

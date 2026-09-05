@@ -39,3 +39,4 @@ Create and maintain partner endpoints for receiving and sending EPCIS (or relate
 
 - Rotating credentials invalidates in-flight partner configs — coordinate cutover windows.
 - Inbound and outbound are separate resources; a bidirectional partner usually needs both.
+- An **outbound** connection can link to **multiple trading partners** (shared hub/AS2 endpoint). Leave partners empty for a global connection usable by any customer.

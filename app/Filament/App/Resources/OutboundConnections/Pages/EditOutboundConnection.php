@@ -52,7 +52,10 @@ class EditOutboundConnection extends EditRecord
 
     protected function afterSave(): void
     {
-        OutboundConnectionDefaultSync::ensureSingleDefault($this->record->fresh());
+        /** @var OutboundConnection $record */
+        $record = $this->record;
+        $record->syncTradingPartnerIdFromPartners();
+        OutboundConnectionDefaultSync::ensureSingleDefault($record->fresh());
     }
 
     private function promoteAction(): Action
@@ -159,6 +162,11 @@ class EditOutboundConnection extends EditRecord
                 }
             });
 
-        return RegulatoryCompliance::apply($action, requiresReason: false);
+        return RegulatoryCompliance::apply(
+            $action,
+            'outbound_connection_break_glass',
+            requireReason: true,
+            existingReasonField: 'reason',
+        );
     }
 }

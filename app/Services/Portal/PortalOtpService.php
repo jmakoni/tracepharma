@@ -7,6 +7,7 @@ namespace App\Services\Portal;
 use App\Models\PortalOtpChallenge;
 use App\Models\PortalUser;
 use App\Notifications\PortalOtpNotification;
+use App\Support\Auth\AccountSecuritySession;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
@@ -32,6 +33,8 @@ final class PortalOtpService
     public function issue(string $email): PortalOtpChallenge
     {
         $email = $this->normalizeEmail($email);
+        $this->assertExistingUserIsUsable($email);
+
         $throttleKey = $this->issueThrottleKey($email);
 
         if (RateLimiter::tooManyAttempts($throttleKey, self::ISSUE_MAX_ATTEMPTS)) {
@@ -76,6 +79,13 @@ final class PortalOtpService
         $email = $this->normalizeEmail($email);
         $code = trim($code);
 
+        $existing = PortalUser::query()->where('email', $email)->first();
+        if ($existing !== null && ! $existing->isUsable()) {
+            throw ValidationException::withMessages([
+                'email' => $existing->authenticationFailureMessage(),
+            ]);
+        }
+
         $challenge = PortalOtpChallenge::query()
             ->where('email', $email)
             ->whereNull('consumed_at')
@@ -103,6 +113,17 @@ final class PortalOtpService
                 $challenge->forceFill(['consumed_at' => now()])->save();
             }
 
+            if ($existing !== null) {
+                $existing->recordFailedLogin();
+                $existing->refresh();
+
+                if (! $existing->isUsable()) {
+                    throw ValidationException::withMessages([
+                        'email' => $existing->authenticationFailureMessage(),
+                    ]);
+                }
+            }
+
             throw ValidationException::withMessages([
                 'code' => 'The login code is incorrect.',
             ]);
@@ -113,18 +134,34 @@ final class PortalOtpService
 
         $user = PortalUser::query()->firstOrCreate(
             ['email' => $email],
-            ['is_active' => true],
         );
 
-        if (! $user->is_active) {
+        if ($user->wasRecentlyCreated) {
+            $user->forceFill(['is_active' => true])->save();
+        }
+
+        if (! $user->isUsable()) {
             throw ValidationException::withMessages([
-                'email' => 'This portal account is inactive.',
+                'email' => $user->authenticationFailureMessage(),
             ]);
         }
 
+        $user->clearFailedLogins();
         $user->forceFill(['last_login_at' => now()])->save();
+        AccountSecuritySession::bind($user);
 
         return $user;
+    }
+
+    private function assertExistingUserIsUsable(string $email): void
+    {
+        $user = PortalUser::query()->where('email', $email)->first();
+
+        if ($user !== null && ! $user->isUsable()) {
+            throw ValidationException::withMessages([
+                'email' => $user->authenticationFailureMessage(),
+            ]);
+        }
     }
 
     private function generateCode(): string

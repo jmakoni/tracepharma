@@ -70,7 +70,9 @@ final class InTransitInsideOpenParent
                 break;
             }
 
-            $metas = $this->lastKnownGln->latestEventMetaForEpcIds(array_keys($parents));
+            // Own events only: a mid-level case must not inherit the pallet's shipping
+            // meta here or the climb would short-circuit and skip deeper ancestors.
+            $metas = $this->lastKnownGln->ownLatestEventMetaForEpcIds(array_keys($parents));
 
             foreach ($parents as $parentId => $packedEpcIds) {
                 if (OutboundShipmentInTransit::matches($metas[$parentId] ?? null)) {

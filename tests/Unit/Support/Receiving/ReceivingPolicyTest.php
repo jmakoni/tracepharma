@@ -69,6 +69,16 @@ class ReceivingPolicyTest extends TestCase
     }
 
     #[Test]
+    public function kind_hud_copy_uses_receive_button_for_asn_and_transfer(): void
+    {
+        $policy = ReceivingPolicy::forProfile(TenantProfile::DrugWholesaler);
+
+        $this->assertSame('ADD', $policy->kindHudCopy(\App\Enums\ReceivingSessionKind::ScanFirst)['confirmButton']);
+        $this->assertSame('RECEIVE', $policy->kindHudCopy(\App\Enums\ReceivingSessionKind::InboundAsn)['confirmButton']);
+        $this->assertSame('RECEIVE', $policy->kindHudCopy(\App\Enums\ReceivingSessionKind::TransferReceive)['confirmButton']);
+    }
+
+    #[Test]
     public function edge_mode_chip_labels_use_edge_style_suffix(): void
     {
         $this->assertSame('Sealed parent — Edge-style', ReceivingEdgeMode::SealedParent->chipLabel());

@@ -15,7 +15,7 @@ class EpcisValidationCatalogEngineTest extends TestCase
     #[Test]
     public function catalog_lists_all_seeded_codes_and_clearable_subset(): void
     {
-        $this->assertCount(66, EpcisValidationCatalog::all());
+        $this->assertCount(72, EpcisValidationCatalog::all());
         $this->assertTrue(EpcisValidationCatalog::isOwned('MISSING_SOURCE_DESTINATION'));
         $this->assertTrue(EpcisValidationCatalog::isOwned('PARTNER_REJECTED_FILE'));
         $this->assertNotContains('PARTNER_REJECTED_FILE', EpcisValidationCatalog::clearableCodes());

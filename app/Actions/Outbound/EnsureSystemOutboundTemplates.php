@@ -31,18 +31,20 @@ final class EnsureSystemOutboundTemplates
                 continue;
             }
 
-            OutboundConnection::query()->create([
+            $connection = new OutboundConnection([
                 'name' => $definition['name'],
                 'serialization_provider' => SerializationProvider::Other,
                 'transport' => $definition['transport'],
                 'trading_partner_id' => null,
                 'is_active' => false,
                 'is_default' => false,
-                'is_system' => true,
-                'system_key' => $definition['system_key'],
                 'credentials' => [],
                 'settings' => $definition['settings'],
             ]);
+            $connection->forceFill([
+                'is_system' => true,
+                'system_key' => $definition['system_key'],
+            ])->save();
             $created++;
         }
 

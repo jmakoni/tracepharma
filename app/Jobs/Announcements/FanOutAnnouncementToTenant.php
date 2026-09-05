@@ -29,6 +29,10 @@ final class FanOutAnnouncementToTenant implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    public int $timeout = 300;
+
     public function __construct(
         public string $announcementId,
         public string $tenantId,
@@ -47,21 +51,21 @@ final class FanOutAnnouncementToTenant implements ShouldQueue
 
         try {
             TenantRunner::run($tenant, function () use ($announcement): void {
-                DB::transaction(function () use ($announcement): void {
-                    TenantAnnouncement::query()->updateOrCreate(
-                        ['announcement_id' => $announcement->id],
-                        [
-                            'title' => $announcement->title,
-                            'body' => $announcement->body,
-                            'severity' => $announcement->severity,
-                            'published_at' => $announcement->published_at,
-                            'starts_at' => $announcement->starts_at,
-                            'ends_at' => $announcement->ends_at,
-                            'is_active' => true,
-                        ],
-                    );
+                TenantAnnouncement::query()->updateOrCreate(
+                    ['announcement_id' => $announcement->id],
+                    [
+                        'title' => $announcement->title,
+                        'body' => $announcement->body,
+                        'severity' => $announcement->severity,
+                        'published_at' => $announcement->published_at,
+                        'starts_at' => $announcement->starts_at,
+                        'ends_at' => $announcement->ends_at,
+                        'is_active' => true,
+                    ],
+                );
 
-                    foreach (User::query()->get() as $user) {
+                User::query()->orderBy('id')->chunkById(100, function ($users) use ($announcement): void {
+                    foreach ($users as $user) {
                         $this->sendAnnouncementBellNotification($user, $announcement);
                     }
                 });

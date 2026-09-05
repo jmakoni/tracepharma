@@ -5,6 +5,7 @@ namespace App\Actions\Receiving;
 use App\Enums\ReceivingSessionKind;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Receiving\ScanFirstSessionsForPropagate;
 use DomainException;
 
 /**
@@ -46,16 +47,14 @@ final class PropagateScanFirstConfirmsToTransferReceiveSession
 
         $scanFirstQuery->where('site_id', $siteId);
 
-        $scanFirstSessions = $scanFirstQuery
-            ->orderBy('id')
-            ->get();
+        ScanFirstSessionsForPropagate::constrainToOverlappingTargetEpcs($scanFirstQuery, $transferReceive);
 
         $copied = 0;
         $alreadyConfirmed = 0;
         $skipped = 0;
         $notes = [];
 
-        foreach ($scanFirstSessions as $from) {
+        foreach ($scanFirstQuery->orderBy('id')->lazyById(100) as $from) {
             // strictManifestOnly false → ConfirmReceivingScan on transfer_receive (dual-write + complete).
             $result = $this->copyConfirmedReceivingScansToSession->handle(
                 $from,

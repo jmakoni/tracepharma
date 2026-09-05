@@ -279,11 +279,14 @@ trait InteractsWithOutboundShippingWizard
             $partnerId = (int) $this->trading_partner_id;
 
             $query->where(function ($builder) use ($partnerId): void {
-                $builder->whereNull('trading_partner_id')
-                    ->orWhere('trading_partner_id', $partnerId);
+                $builder->whereDoesntHave('tradingPartners')
+                    ->orWhereHas(
+                        'tradingPartners',
+                        fn ($partners) => $partners->where('trading_partners.id', $partnerId),
+                    );
             });
         } else {
-            $query->whereNull('trading_partner_id');
+            $query->whereDoesntHave('tradingPartners');
         }
 
         return $query

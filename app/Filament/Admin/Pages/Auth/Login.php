@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages\Auth;
 
+use App\Filament\Auth\Concerns\AuthenticatesWithAccountSecurity;
 use App\Services\Auth\Oidc\OidcAuthenticator;
 use Filament\Actions\Action;
 use Filament\Auth\Pages\Login as BaseLogin;
@@ -18,6 +19,8 @@ use Filament\View\PanelsRenderHook;
 
 class Login extends BaseLogin
 {
+    use AuthenticatesWithAccountSecurity;
+
     public function form(Schema $schema): Schema
     {
         if ($this->ssoOnly()) {

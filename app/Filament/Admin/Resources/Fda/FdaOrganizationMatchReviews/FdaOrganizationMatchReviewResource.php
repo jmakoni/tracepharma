@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class FdaOrganizationMatchReviewResource extends Resource implements HasKnowledgeBase
@@ -33,6 +34,11 @@ class FdaOrganizationMatchReviewResource extends Resource implements HasKnowledg
     protected static ?string $modelLabel = 'Match Review';
 
     protected static ?string $recordTitleAttribute = 'original_name';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function infolist(Schema $schema): Schema
     {

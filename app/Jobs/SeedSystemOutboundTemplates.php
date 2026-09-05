@@ -21,6 +21,10 @@ class SeedSystemOutboundTemplates implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    public int $timeout = 60;
+
     public function __construct(
         protected TenantWithDatabase $tenant,
     ) {}

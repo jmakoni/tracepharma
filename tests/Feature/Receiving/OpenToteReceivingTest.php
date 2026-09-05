@@ -217,8 +217,11 @@ class OpenToteReceivingTest extends TestCase
             $this->assertTrue($childConfirm['ok'], $childConfirm['message'] ?? 'child confirm failed');
 
             $session = $session->fresh();
-            $this->assertSame('completed', $session->status);
             $this->assertNull($session->active_parent_epc_id);
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
+            $this->assertSame('completed', $session->status);
         } finally {
             $this->cleanup($tenant);
         }

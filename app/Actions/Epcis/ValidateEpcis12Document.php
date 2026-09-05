@@ -795,10 +795,22 @@ final class ValidateEpcis12Document
                 static fn (EpcisValidationFinding $f): string => $f->description,
                 array_slice($blocking, 0, 5),
             );
+            $message = Str::limit(implode('; ', $summaries), 2000);
+
+            // Authored outbound (transfer/ship/receive) already wrote custody events.
+            // Flipping status to error makes ResolveEpcLastKnownGln ignore those events
+            // and strands stock at the prior site after a failed pre-transmit revalidation.
+            if ($document->authored_kind !== null) {
+                $document->forceFill([
+                    'error_message' => $message,
+                ])->save();
+
+                return;
+            }
 
             $document->forceFill([
                 'status' => 'error',
-                'error_message' => Str::limit(implode('; ', $summaries), 2000),
+                'error_message' => $message,
             ])->save();
 
             return;

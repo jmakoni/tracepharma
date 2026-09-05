@@ -75,6 +75,20 @@ final class Sgln
     }
 
     /**
+     * Legal-entity / facility SGLN uses extension digit 0. Sub-locations (.1, .2, …)
+     * stay on destination location; owning_party collapses to .0 when the same GLN body.
+     */
+    public static function toFacilityUrn(string $sgln): string
+    {
+        $parsed = self::fromUrn($sgln);
+        if ($parsed === null || $parsed['extension'] === '0') {
+            return $sgln;
+        }
+
+        return self::toUrn($parsed['gln'], strlen($parsed['company_prefix']), '0') ?? $sgln;
+    }
+
+    /**
      * Resolve an SGLN URN for a GLN using an optional hint URN and/or candidate URNs
      * (e.g. inbound destinationList). Never invents a fake company-prefix length.
      *

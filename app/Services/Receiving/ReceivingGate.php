@@ -2,12 +2,17 @@
 
 namespace App\Services\Receiving;
 
+use App\Actions\Epcis\RecordDestinationGlnMismatch;
+use App\Actions\Exceptions\SyncDestinationGlnMismatchReceiveImpact;
 use App\Enums\ExceptionReceiveImpact;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisException;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
+use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionReceiveImpactMap;
+use App\Support\TenantSettings;
 
 final class ReceivingGate
 {
@@ -16,6 +21,9 @@ final class ReceivingGate
      *
      * Only Hard / Blocking and Business Rule / Semantic types gate receiving.
      * Warning and Soft types surface in the exception UI but do not block ASN open.
+     *
+     * Phase 2: when destination GLN block-receive is on, open DESTINATION_* ingest
+     * signals are promoted to cases so they participate in the same gate.
      */
     public function documentBlockedByOpenException(EpcisDocument $document): ?ExceptionCase
     {
@@ -25,7 +33,7 @@ final class ReceivingGate
         ];
         $blockingCodes = $this->blockingTypeCodes();
 
-        return ExceptionCase::query()
+        $case = ExceptionCase::query()
             ->open()
             ->where('document_id', $document->getKey())
             ->whereDoesntHave('epcs')
@@ -41,6 +49,56 @@ final class ReceivingGate
             ->with('type:id,name,code,receive_impact')
             ->orderBy('id')
             ->first();
+
+        if ($case !== null) {
+            return $case;
+        }
+
+        return $this->blockingDestinationGlnMismatchCase($document);
+    }
+
+    /**
+     * Re-derive destination GLN mismatch then evaluate the receive gate.
+     * Use on open receive / Start Receiving — not on every scan confirm.
+     */
+    public function documentBlockedAfterDestinationRecheck(EpcisDocument $document): ?ExceptionCase
+    {
+        app(RecordDestinationGlnMismatch::class)->handle($document);
+
+        return $this->documentBlockedByOpenException($document);
+    }
+
+    /**
+     * Safety net when the tenant setting is on but a DESTINATION_* signal was not
+     * yet promoted (e.g. setting flipped after ingest without a full sync).
+     */
+    private function blockingDestinationGlnMismatchCase(EpcisDocument $document): ?ExceptionCase
+    {
+        $tenant = tenant();
+        if ($tenant === null || ! TenantSettings::forTenant($tenant)->blockReceiveOnDestinationGlnMismatch()) {
+            return null;
+        }
+
+        $signal = EpcisException::query()
+            ->where('document_id', $document->getKey())
+            ->whereIn('exception_type', SyncDestinationGlnMismatchReceiveImpact::CODES)
+            ->where('status', 'open')
+            ->orderBy('id')
+            ->first();
+
+        if ($signal === null) {
+            return null;
+        }
+
+        $case = app(ExceptionService::class)->createFromSignal($signal);
+
+        if (! $case->status->isOpen()) {
+            return null;
+        }
+
+        $case->loadMissing('type:id,name,code,receive_impact');
+
+        return $case->type?->blocksReceiving() ? $case : null;
     }
 
     /**

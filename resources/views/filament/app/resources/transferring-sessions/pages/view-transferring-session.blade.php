@@ -19,6 +19,13 @@
                         <span class="font-medium">{{ $this->getRecord()->fromSite?->name ?? 'From site' }}</span>
                         <span aria-hidden="true">→</span>
                         <span class="font-medium">{{ $this->getRecord()->toSite?->name ?? 'To site' }}</span>
+                        @if ($this->chipDeaLabel)
+                            <span @class([
+                                'badge badge-outline',
+                                'badge-error' => $this->chipDeaColor === 'danger',
+                                'badge-warning' => $this->chipDeaColor === 'warning',
+                            ])>{{ $this->chipDeaLabel }}</span>
+                        @endif
                     </div>
 
                     <span @class([

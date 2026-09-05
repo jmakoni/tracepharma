@@ -28,6 +28,8 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\LabelPrinter;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Fda\ScheduledProductPresence;
+use App\Support\Fda\ScheduledSessionChip;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingEdgeMode;
@@ -96,6 +98,14 @@ trait InteractsWithReceivingSessionHud
     public ?string $chipMatchedAsnLabel = null;
 
     public ?int $chipTransferSessionId = null;
+
+    public ?string $chipDeaSchedule = null;
+
+    public ?bool $chipDeaMissingParty = null;
+
+    public ?string $chipDeaLabel = null;
+
+    public ?string $chipDeaColor = null;
 
     public function mount(int|string $record): void
     {
@@ -333,6 +343,11 @@ trait InteractsWithReceivingSessionHud
         return $this->getRecord()->isScanFirst();
     }
 
+    public function isInboundAsn(): bool
+    {
+        return $this->getRecord()->isInboundAsn();
+    }
+
     public function isTransferReceive(): bool
     {
         return $this->getRecord()->isTransferReceive();
@@ -470,11 +485,44 @@ trait InteractsWithReceivingSessionHud
 
     public function canCompleteManually(): bool
     {
-        if ($this->isCompleted() || ! $this->isScanFirst()) {
+        if ($this->isCompleted()) {
             return false;
         }
 
-        return $this->confirmedCount() > 0;
+        if ($this->isScanFirst()) {
+            return $this->confirmedCount() > 0;
+        }
+
+        if ($this->isInboundAsn()) {
+            /** @var ReceivingSession $record */
+            $record = $this->getRecord();
+
+            if (! in_array($record->status, ['open', 'in_progress'], true)) {
+                return false;
+            }
+
+            return $record->isReadyToCompleteInboundAsn();
+        }
+
+        if ($this->isTransferReceive()) {
+            /** @var ReceivingSession $record */
+            $record = $this->getRecord();
+
+            if (! in_array($record->status, ['open', 'in_progress'], true)) {
+                return false;
+            }
+
+            if ($this->confirmedCount() < 1) {
+                return false;
+            }
+
+            // Recovery after last-scan EPCIS failure: all lines confirmed, session reverted.
+            return ! $record->scanLines()
+                ->where('status', 'expected')
+                ->exists();
+        }
+
+        return false;
     }
 
     public function canCloseTransferWithShortage(): bool
@@ -1027,6 +1075,61 @@ trait InteractsWithReceivingSessionHud
         if ($record->transferring_session_id !== null) {
             $this->chipTransferSessionId = (int) $record->transferring_session_id;
         }
+
+        $this->hydrateDeaScheduleChip($record);
+    }
+
+    private function hydrateDeaScheduleChip(ReceivingSession $record): void
+    {
+        $gtins = $this->sessionGtin14s($record);
+        $presence = ScheduledProductPresence::forGtins($gtins);
+        $highest = $presence['highest'];
+
+        $missing = false;
+        if ($presence['has_scheduled']) {
+            $partnerId = $record->trading_partner_id !== null
+                ? (int) $record->trading_partner_id
+                : ($record->document?->trading_partner_id !== null
+                    ? (int) $record->document->trading_partner_id
+                    : null);
+            $missing = ! ScheduledSessionChip::partyHasDea($partnerId);
+        }
+
+        $this->chipDeaSchedule = $highest;
+        $this->chipDeaMissingParty = $presence['has_scheduled'] ? $missing : null;
+        $this->chipDeaLabel = ScheduledSessionChip::label($highest, $missing, 'No DEA on seller');
+        $this->chipDeaColor = ScheduledSessionChip::badgeColor($highest);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function sessionGtin14s(ReceivingSession $record): array
+    {
+        $gtins = [];
+
+        if ($record->epcis_document_id !== null) {
+            $document = $record->document ?? EpcisDocument::query()->find($record->epcis_document_id);
+            if ($document !== null) {
+                $gtins = array_merge($gtins, $document->epcsQuery()
+                    ->whereNotNull('gtin14')
+                    ->where('gtin14', '!=', '')
+                    ->distinct()
+                    ->pluck('gtin14')
+                    ->map(fn ($gtin): string => (string) $gtin)
+                    ->all());
+            }
+        }
+
+        $lineGtins = $record->scanLines()
+            ->with('epc:id,gtin14')
+            ->get()
+            ->pluck('epc.gtin14')
+            ->filter(fn ($gtin): bool => filled($gtin))
+            ->map(fn ($gtin): string => (string) $gtin)
+            ->all();
+
+        return array_values(array_unique([...$gtins, ...$lineGtins]));
     }
 
     private function matchedAsnChipLabel(?EpcisDocument $doc, int $documentId): string
@@ -1455,8 +1558,12 @@ trait InteractsWithReceivingSessionHud
                     ->color('success')
                     ->visible(fn (): bool => $this->canCompleteManually())
                     ->requiresConfirmation()
-                    ->modalHeading('Complete scan-first receive?')
-                    ->modalDescription('Marks this session complete and authors receiving EPCIS events for confirmed scans.')
+                    ->modalHeading(fn (): string => $this->isInboundAsn()
+                        ? 'Complete ASN receive?'
+                        : 'Complete scan-first receive?')
+                    ->modalDescription(fn (): string => $this->isInboundAsn()
+                        ? 'Marks this session complete and authors receiving EPCIS events for confirmed ASN lines.'
+                        : 'Marks this session complete and authors receiving EPCIS events for confirmed scans.')
                     ->modalSubmitActionLabel('Complete')
                     ->schema(fn (): array => $this->canShowUnpackOnComplete()
                         ? [

@@ -1,0 +1,85 @@
+{
+    "name": "TracePharma",
+    "environment": "local",
+    "php_version": "8.5.10",
+    "laravel_version": "v13.30.1",
+    "laravel_major_version": 13,
+    "database": "mysql",
+    "test_framework": "phpunit",
+    "frontend": {
+        "livewire": "detected",
+        "filament": "detected",
+        "tailwind": true
+    },
+    "architecture_signals": {
+        "api": true,
+        "console": true,
+        "websocket_channels": false,
+        "queued_jobs": true,
+        "policies": true,
+        "events": true,
+        "observers": true,
+        "console_commands": true,
+        "service_providers": true,
+        "middleware": true,
+        "notifications": true,
+        "mail": true
+    },
+    "source_layout": {
+        "app_files": 1428,
+        "migrations": 211,
+        "routes_files": 5,
+        "config_files": 30,
+        "test_files": 602,
+        "has_factories": true,
+        "has_seeders": true
+    },
+    "ecosystem": {
+        "livewire": true,
+        "filament": true,
+        "inertia": false,
+        "pest": false,
+        "phpunit": true,
+        "tailwind": true,
+        "queues": true,
+        "boost": false
+    },
+    "packages": {
+        "laravel/framework": {
+            "version": "v13.30.1",
+            "dev": false
+        },
+        "laravel/sanctum": {
+            "version": "v4.3.3",
+            "dev": false
+        },
+        "laravel/horizon": {
+            "version": "v5.48.1",
+            "dev": false
+        },
+        "laravel/scout": {
+            "version": "v11.4.0",
+            "dev": false
+        },
+        "livewire/livewire": {
+            "version": "v4.3.5",
+            "dev": false
+        },
+        "filament/filament": {
+            "version": "v5.7.8",
+            "dev": false
+        },
+        "phpunit/phpunit": {
+            "version": "12.5.33",
+            "dev": true
+        }
+    },
+    "paths": {
+        "app": "app",
+        "config": "config",
+        "database": "database",
+        "routes": "routes",
+        "resources": "resources",
+        "tests": "tests"
+    }
+}

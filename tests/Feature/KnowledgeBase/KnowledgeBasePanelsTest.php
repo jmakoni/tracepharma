@@ -63,6 +63,39 @@ class KnowledgeBasePanelsTest extends TestCase
     }
 
     #[Test]
+    public function knowledge_base_breezy_exposes_my_profile_slug_for_two_factor_middleware(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('knowledge-base'));
+
+        $breezy = filament('filament-breezy');
+
+        $this->assertSame('my-profile', $breezy->slug());
+
+        Filament::setCurrentPanel(Filament::getPanel('admin-knowledge-base'));
+
+        $adminBreezy = filament('filament-breezy');
+
+        $this->assertSame('my-profile', $adminBreezy->slug());
+    }
+
+    #[Test]
+    public function authenticated_tenant_user_can_open_shell_and_site_help_article(): void
+    {
+        $tenant = $this->ensureDemo2Tenant();
+        tenancy()->initialize($tenant);
+
+        try {
+            $user = User::factory()->create();
+
+            $this->actingAs($user, 'web')
+                ->get('https://'.self::DEMO2_DOMAIN.'/help/workflows/shell-and-site')
+                ->assertOk();
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function knowledge_base_flatfiles_include_operator_workflow_articles(): void
     {
         Filament::setCurrentPanel(Filament::getPanel('knowledge-base'));

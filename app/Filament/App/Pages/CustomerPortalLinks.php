@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Actions\Portal\EnsurePortalOrganization;
+use App\Filament\Notifications\Notification;
 use App\Models\PortalUser;
 use App\Models\TradingPartner;
 use App\Models\User;
@@ -11,7 +12,6 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
@@ -87,6 +87,53 @@ class CustomerPortalLinks extends Page implements HasKnowledgeBase
         return TenantFeatures::forTenant(tenant())->supportsClientPortalV2();
     }
 
+    /**
+     * @return Collection<int, PortalUser>
+     */
+    public function portalUsers(): Collection
+    {
+        return PortalUser::query()
+            ->with('organizations')
+            ->orderBy('email')
+            ->limit(200)
+            ->get();
+    }
+
+    public function togglePortalUserActive(int $portalUserId): void
+    {
+        $portalUser = PortalUser::query()->find($portalUserId);
+
+        if ($portalUser === null) {
+            Notification::make()->title('Portal user not found')->danger()->send();
+
+            return;
+        }
+
+        if ($portalUser->is_active) {
+            $portalUser->disable('Disabled from Customer portal page');
+            Notification::make()->title('Portal user disabled')->success()->send();
+
+            return;
+        }
+
+        $portalUser->enable();
+        Notification::make()->title('Portal user enabled')->success()->send();
+    }
+
+    public function unlockPortalUser(int $portalUserId): void
+    {
+        $portalUser = PortalUser::query()->find($portalUserId);
+
+        if ($portalUser === null) {
+            Notification::make()->title('Portal user not found')->danger()->send();
+
+            return;
+        }
+
+        $portalUser->unlock();
+        Notification::make()->title('Portal user unlocked')->success()->send();
+    }
+
     protected function getHeaderActions(): array
     {
         if (! $this->supportsClientPortalV2()) {
@@ -137,8 +184,11 @@ class CustomerPortalLinks extends Page implements HasKnowledgeBase
                     $org = app(EnsurePortalOrganization::class)->handle($partner);
                     $portalUser = PortalUser::query()->firstOrCreate(
                         ['email' => $email],
-                        ['is_active' => true],
                     );
+
+                    if ($portalUser->wasRecentlyCreated) {
+                        $portalUser->forceFill(['is_active' => true])->save();
+                    }
 
                     if ($portalUser->organizations()->where('portal_organizations.id', $org->getKey())->exists()) {
                         Notification::make()

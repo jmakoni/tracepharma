@@ -1,0 +1,287 @@
+{
+    "jobs": [
+        "Announcements/FanOutAnnouncementToTenant.php",
+        "Announcements/RetireAnnouncementOnTenant.php",
+        "BackfillCatalogPartnerPlacesJob.php",
+        "DeliverEpcisSubscriptionJob.php",
+        "EnsureTenantStorageDirectoriesJob.php",
+        "EpcisJobs/TransmitEpcisJob.php",
+        "Exports/ProcessTrackTraceExportJob.php",
+        "GenerateReceivingLpnLabelJob.php",
+        "ImportFdaDatasetJob.php",
+        "IngestEpcisXmlJob.php",
+        "L3/ConvertAndAcceptGuardianLotJob.php",
+        "Labeling/ForwardCommissioningToL3.php",
+        "PollSftpInboundConnection.php",
+        "PrintSsccLabelJob.php",
+        "ProcessEpcisDocumentJob.php",
+        "PromoteEpcisExceptionToCaseJob.php",
+        "Receiving/NotifyWmsReceiveConfirm.php",
+        "Scout/ProvisionTenantScoutIndexes.php",
+        "SeedSystemOutboundTemplates.php",
+        "SeedTenantRoles.php",
+        "SyncTenantAtpLicensesFromFda.php",
+        "Tenants/ExportTenantComplianceArchive.php",
+        "ValidateAndCommitEpcisDocumentJob.php",
+        "Vrs/RunProductVerificationJob.php"
+    ],
+    "events": [],
+    "listeners": [
+        "LogTenantUserImpersonationEnded.php"
+    ],
+    "registered_events": {
+        "Filament\\Events\\ServingFilament": [
+            "closure"
+        ],
+        "Illuminate\\Auth\\Events\\Logout": [
+            "App\\Listeners\\LogTenantUserImpersonationEnded",
+            "App\\Listeners\\LogTenantUserImpersonationEnded@handle"
+        ],
+        "Illuminate\\Auth\\Events\\Registered": [
+            "Illuminate\\Auth\\Listeners\\SendEmailVerificationNotification"
+        ],
+        "Illuminate\\Console\\Events\\CommandFinished": [
+            "closure",
+            "closure"
+        ],
+        "Illuminate\\Console\\Events\\CommandStarting": [
+            "closure",
+            "closure"
+        ],
+        "Illuminate\\Database\\Events\\QueryExecuted": [
+            "closure"
+        ],
+        "Illuminate\\Foundation\\Events\\LocaleUpdated": [
+            "closure"
+        ],
+        "Illuminate\\Foundation\\Http\\Events\\RequestHandled": [
+            "closure"
+        ],
+        "Illuminate\\Log\\Events\\MessageLogged": [
+            "closure"
+        ],
+        "Illuminate\\Queue\\Events\\JobAttempted": [
+            "closure"
+        ],
+        "Illuminate\\Queue\\Events\\JobExceptionOccurred": [
+            "Laravel\\Horizon\\Listeners\\ForgetJobTimer",
+            "closure"
+        ],
+        "Illuminate\\Queue\\Events\\JobFailed": [
+            "closure",
+            "Laravel\\Horizon\\Listeners\\ForgetJobTimer",
+            "Laravel\\Horizon\\Listeners\\MarshalFailedEvent"
+        ],
+        "Illuminate\\Queue\\Events\\JobProcessed": [
+            "closure",
+            "closure",
+            "closure"
+        ],
+        "Illuminate\\Queue\\Events\\JobProcessing": [
+            "closure",
+            "closure",
+            "closure",
+            "closure"
+        ],
+        "Illuminate\\Queue\\Events\\JobRetryRequested": [
+            "closure"
+        ],
+        "Jeffgreco13\\FilamentBreezy\\Events\\PasskeyUsedToAuthenticate": [
+            "Jeffgreco13\\FilamentBreezy\\Listeners\\SkipTwoFactorAfterPasskeyAuthentication"
+        ],
+        "Laravel\\Horizon\\Events\\JobDeleted": [
+            "Laravel\\Horizon\\Listeners\\MarkJobAsComplete",
+            "Laravel\\Horizon\\Listeners\\UpdateJobMetrics"
+        ],
+        "Laravel\\Horizon\\Events\\JobFailed": [
+            "Laravel\\Horizon\\Listeners\\MarkJobAsFailed",
+            "Laravel\\Horizon\\Listeners\\StoreTagsForFailedJob"
+        ],
+        "Laravel\\Horizon\\Events\\JobPending": [
+            "Laravel\\Horizon\\Listeners\\StoreJob"
+        ],
+        "Laravel\\Horizon\\Events\\JobPushed": [
+            "Laravel\\Horizon\\Listeners\\StoreMonitoredTags"
+        ],
+        "Laravel\\Horizon\\Events\\JobReleased": [
+            "Laravel\\Horizon\\Listeners\\MarkJobAsReleased"
+        ],
+        "Laravel\\Horizon\\Events\\JobReserved": [
+            "Laravel\\Horizon\\Listeners\\MarkJobAsReserved",
+            "Laravel\\Horizon\\Listeners\\StartTimingJob"
+        ],
+        "Laravel\\Horizon\\Events\\JobsMigrated": [
+            "Laravel\\Horizon\\Listeners\\MarkJobsAsMigrated"
+        ],
+        "Laravel\\Horizon\\Events\\LongWaitDetected": [
+            "Laravel\\Horizon\\Listeners\\SendNotification"
+        ],
+        "Laravel\\Horizon\\Events\\MasterSupervisorLooped": [
+            "Laravel\\Horizon\\Listeners\\TrimRecentJobs",
+            "Laravel\\Horizon\\Listeners\\TrimFailedJobs",
+            "Laravel\\Horizon\\Listeners\\TrimMonitoredJobs",
+            "Laravel\\Horizon\\Listeners\\ExpireSupervisors",
+            "Laravel\\Horizon\\Listeners\\MonitorMasterSupervisorMemory"
+        ],
+        "Laravel\\Horizon\\Events\\SupervisorLooped": [
+            "Laravel\\Horizon\\Listeners\\PruneTerminatingProcesses",
+            "Laravel\\Horizon\\Listeners\\MonitorSupervisorMemory",
+            "Laravel\\Horizon\\Listeners\\MonitorWaitTimes"
+        ],
+        "SocialiteProviders\\Manager\\SocialiteWasCalled": [
+            "closure"
+        ],
+        "Stancl\\Tenancy\\Events\\RevertedToCentralContext": [
+            "closure"
+        ],
+        "Stancl\\Tenancy\\Events\\SyncedResourceSaved": [
+            "Stancl\\Tenancy\\Listeners\\UpdateSyncedResource"
+        ],
+        "Stancl\\Tenancy\\Events\\TenancyBootstrapped": [
+            "closure",
+            "closure"
+        ],
+        "Stancl\\Tenancy\\Events\\TenancyEnded": [
+            "Stancl\\Tenancy\\Listeners\\RevertToCentralContext",
+            "closure",
+            "closure"
+        ],
+        "Stancl\\Tenancy\\Events\\TenancyInitialized": [
+            "Stancl\\Tenancy\\Listeners\\BootstrapTenancy"
+        ],
+        "Stancl\\Tenancy\\Events\\TenantCreated": [
+            "closure",
+            "closure"
+        ],
+        "Stancl\\Tenancy\\Events\\TenantDeleted": [
+            "closure"
+        ]
+    },
+    "scheduled_commands": [
+        {
+            "expression": "* * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' watchdog:scan",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 0 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' watchdog:cleanup",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 3 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:recalc-fda-establishment-registration",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "30 3 1 * *",
+            "command": "closure",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 4 * * 0",
+            "command": "closure",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 3 * * 0",
+            "command": "closure",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "*/5 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' epcis:poll-sftp",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "*/5 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' epcis:fail-stale-jobs",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "*/5 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' exports:fail-stale",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "30 4 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' exports:purge-expired",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 0 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' sscc:check-pool-levels",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 0 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' sscc:reconcile-l3-l4",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "*/5 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' sscc:fail-stale-client-print-jobs",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' exceptions:check-sla",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "*/15 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracing:check-sla",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 7 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' compliance:alert-license-expiry",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "30 7 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' compliance:alert-center-digest",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 8 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:exception-digest",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "30 8 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' exceptions:notify-aging-suppliers",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' epcis:emit-pending-mdn-signals",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:tenant-health-alert",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 * * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:scout-health",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 5 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:doctor-aggregation-link-fk",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "30 2 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' disposition:decommission-never-shipped",
+            "timezone": "UTC"
+        },
+        {
+            "expression": "0 3 * * *",
+            "command": "'/usr/bin/php8.5' 'artisan' tracepharma:epcis-archive-events",
+            "timezone": "UTC"
+        }
+    ]
+}

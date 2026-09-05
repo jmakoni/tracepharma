@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\EpcisDocuments\RelationManagers;
 
 use App\Enums\ExceptionTypeCategory;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
@@ -15,7 +16,6 @@ use App\Support\Epcis\Exceptions\GroupDocumentExceptionSignals;
 use App\Support\Epcis\Validation\EpcisValidationCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
@@ -56,6 +56,9 @@ class ExceptionsRelationManager extends RelationManager
         $document = $this->getOwnerRecord();
 
         return $table
+            // Grouped rows are EpcisExceptionGroup, not the exceptions() relationship model.
+            // Without this, Filament omits recordKey from row action wire:click handlers.
+            ->relationship(null)
             ->records(function (?array $filters = null) use ($document): Collection {
                 $rows = app(GroupDocumentExceptionSignals::class)->handle($document);
 
@@ -150,8 +153,12 @@ class ExceptionsRelationManager extends RelationManager
                 Action::make('openCase')
                     ->label('Open case')
                     ->icon(Heroicon::OutlinedFolderOpen)
-                    ->visible(fn (EpcisExceptionGroup $record): bool => $record->case_id === null && filled($record->exception_type))
+                    ->visible(fn (?EpcisExceptionGroup $record): bool => $record !== null
+                        && $record->case_id === null
+                        && filled($record->exception_type))
                     ->action(function (EpcisExceptionGroup $record) {
+                        /** @var EpcisDocument $document */
+                        $document = $this->getOwnerRecord();
                         /** @var User|null $actor */
                         $actor = auth()->user();
 
@@ -178,17 +185,22 @@ class ExceptionsRelationManager extends RelationManager
                             ->success()
                             ->send();
 
-                        return redirect(ExceptionResource::getUrl('view', ['record' => $case], panel: 'app'));
+                        $this->redirect(
+                            ExceptionResource::getUrl('view', ['record' => $case], panel: 'app'),
+                        );
                     }),
                 Action::make('viewCase')
                     ->label('View case')
                     ->icon(Heroicon::OutlinedEye)
-                    ->visible(fn (EpcisExceptionGroup $record): bool => $record->case_id !== null)
-                    ->url(fn (EpcisExceptionGroup $record): string => ExceptionResource::getUrl(
-                        'view',
-                        ['record' => $record->case_id],
-                        panel: 'app',
-                    )),
+                    ->visible(fn (?EpcisExceptionGroup $record): bool => $record !== null
+                        && $record->case_id !== null)
+                    ->url(fn (?EpcisExceptionGroup $record): ?string => $record?->case_id !== null
+                        ? ExceptionResource::getUrl(
+                            'view',
+                            ['record' => $record->case_id],
+                            panel: 'app',
+                        )
+                        : null),
             ]));
     }
 

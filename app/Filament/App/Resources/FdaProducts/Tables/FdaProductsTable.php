@@ -6,6 +6,7 @@ use App\Filament\App\Resources\FdaProducts\Actions\AddFdaProductPackagesAction;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Fda\FdaProduct;
 use App\Support\Catalog\DisplayName;
+use App\Support\Fda\FdaRegistryStatus;
 use Filament\Actions\ViewAction;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
@@ -48,6 +49,17 @@ class FdaProductsTable
                     ->label('Dosage')
                     ->searchable()
                     ->toggleable(),
+                TextColumn::make('dea_schedule')
+                    ->label('DEA')
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->formatStateUsing(fn (?string $state): ?string => FdaRegistryStatus::deaScheduleLabel($state))
+                    ->color(fn (?string $state): string => match (FdaRegistryStatus::deaScheduleLabel($state)) {
+                        'CII' => 'danger',
+                        'CIII', 'CIV', 'CV' => 'warning',
+                        default => 'gray',
+                    })
+                    ->placeholder('—'),
                 TextColumn::make('strength')
                     ->label('Strength')
                     ->wrap()

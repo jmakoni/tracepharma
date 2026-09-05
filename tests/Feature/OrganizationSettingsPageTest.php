@@ -95,6 +95,284 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function save_persists_require_pure_epcis_document_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->requirePureEpcisDocument();
+
+        try {
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'require_pure_epcis_document' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->requirePureEpcisDocument());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'require_pure_epcis_document' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->requirePureEpcisDocument());
+        } finally {
+            TenantSettings::forTenant($tenant)->setRequirePureEpcisDocument($prior);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_block_send_on_atp_gap_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->blockSendOnAtpGap();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+        $priorGln = $settings->gln();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+                'gln' => null,
+                'block_send_on_atp_gap' => true,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'block_send_on_atp_gap' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->blockSendOnAtpGap());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'block_send_on_atp_gap' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->blockSendOnAtpGap());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'block_send_on_atp_gap' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+                'gln' => $priorGln,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_block_receive_on_destination_gln_mismatch_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->blockReceiveOnDestinationGlnMismatch();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            // demo2 may retain a stale default receive site id after facility GLN cleanup.
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'block_receive_on_destination_gln_mismatch' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->blockReceiveOnDestinationGlnMismatch());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'block_receive_on_destination_gln_mismatch' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->blockReceiveOnDestinationGlnMismatch());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'block_receive_on_destination_gln_mismatch' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_match_inbound_ship_to_site_toggle_default_off(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->matchInboundShipToSite();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+                'match_inbound_ship_to_site' => false,
+            ]);
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'match_inbound_ship_to_site' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'match_inbound_ship_to_site' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'match_inbound_ship_to_site' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_auto_open_receive_after_transfer_ship_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->autoOpenReceiveAfterTransferShip();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'auto_open_receive_after_transfer_ship' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->autoOpenReceiveAfterTransferShip());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'auto_open_receive_after_transfer_ship' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->autoOpenReceiveAfterTransferShip());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'auto_open_receive_after_transfer_ship' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_auto_complete_asn_on_ready_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->autoCompleteAsnOnReady();
+        $priorPrefix = $settings->companyPrefix();
+
+        try {
+            $orgGln = preg_replace('/\D+/', '', (string) ($settings->gln() ?? '')) ?? '';
+            if (strlen($orgGln) === 13) {
+                // Match demo2 facility SGLN split (6-digit GCP), not 7-digit.
+                $settings->setCompanyPrefix(substr($orgGln, 0, 6));
+            }
+            $settings->setAutoCompleteAsnOnReady(true);
+            $tenant->saveQuietly();
+            tenancy()->initialize($tenant->fresh());
+
+            $user = User::factory()->create([
+                'email' => 'asn-auto-complete-'.uniqid('', true).'@example.test',
+            ]);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->autoCompleteAsnOnReady());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormSet([
+                    'auto_complete_asn_on_ready' => true,
+                ]);
+
+            TenantSettings::forTenant($tenant)
+                ->setAutoCompleteAsnOnReady(false)
+                ->saveQuietly();
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->autoCompleteAsnOnReady());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormSet([
+                    'auto_complete_asn_on_ready' => false,
+                ]);
+        } finally {
+            $restored = TenantSettings::forTenant($tenant)
+                ->setAutoCompleteAsnOnReady($prior);
+            // Prefer a GLN-aligned prefix over restoring a blank/stale value that
+            // breaks later demo2 saveOrganization() calls in the same suite.
+            $orgGln = preg_replace('/\D+/', '', (string) (TenantSettings::forTenant($tenant)->gln() ?? '')) ?? '';
+            $aligned = strlen($orgGln) === 13 ? substr($orgGln, 0, 6) : $priorPrefix;
+            $restored->setCompanyPrefix($aligned ?: $priorPrefix)->saveQuietly();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function export_glns_downloads_csv_with_company_and_site_rows(): void
     {
         $tenant = $this->initializeDemo2Tenant();

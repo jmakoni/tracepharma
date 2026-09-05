@@ -21,6 +21,7 @@ use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\ResolveOutboundShipToSgln;
 use App\Support\Shipping\SsccShipCompletenessException;
+use App\Support\TenantSettings;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
@@ -93,11 +94,39 @@ final class ValidateOutboundShippingSend
             $blockers[] = $emptyPlateBlocker;
         }
 
-        if (($atpBlocker = $this->atpBlocker($session)) !== null) {
-            $blockers[] = $atpBlocker;
+        if (($atpIssue = $this->atpIssue($session)) !== null
+            && TenantSettings::forTenant(tenant())->blockSendOnAtpGap()) {
+            $blockers[] = $atpIssue;
         }
 
         return $blockers;
+    }
+
+    /**
+     * Soft ATP gaps when {@see TenantSettings::blockSendOnAtpGap()} is off.
+     *
+     * @return list<string>
+     */
+    public function warnings(OutboundShippingSession $session): array
+    {
+        if (TenantSettings::forTenant(tenant())->blockSendOnAtpGap()) {
+            return [];
+        }
+
+        $session->loadMissing(['tradingPartner', 'shipToSite', 'site']);
+        $issue = $this->atpIssue($session);
+
+        return $issue !== null ? [$issue] : [];
+    }
+
+    /**
+     * ATP destination-license issue text, or null when the gate is quiet / bypassed.
+     */
+    public function atpIssue(OutboundShippingSession $session): ?string
+    {
+        $session->loadMissing(['tradingPartner', 'shipToSite', 'site']);
+
+        return $this->atpBlocker($session);
     }
 
     /**
@@ -323,10 +352,9 @@ final class ValidateOutboundShippingSend
     }
 
     /**
-     * Inbound only soft-warns on partner ATP, but a shipment we author is a transfer of
-     * ownership to that party: a license for the tenant evaluation jurisdictions that is
-     * expired, missing, or carries no expiration date stops the send instead of trailing
-     * it as an exception.
+     * Inbound only soft-warns on partner ATP. Outbound defaults to a hard send block when
+     * the destination license is missing/expired; tenants may switch to soft warning via
+     * {@see TenantSettings::blockSendOnAtpGap()} (false).
      *
      * Silent only when there is nothing to judge at all — no customer, and no site on
      * record for the one that is selected.
@@ -346,17 +374,26 @@ final class ValidateOutboundShippingSend
         // Without org footprint or preferred receiving state, every partner reads as
         // NeedsReceivingState — say so rather than waving the shipment through.
         if ($evaluationKeys === []) {
-            return 'Add organization facility sites with country/state, or set a preferred receiving state in Organization settings, before sending — partner ATP licenses cannot be evaluated without jurisdictions.';
+            $tail = TenantSettings::forTenant(tenant())->blockSendOnAtpGap()
+                ? 'Partner ATP licenses cannot be evaluated without jurisdictions.'
+                : 'Partner ATP licenses cannot be evaluated without jurisdictions (soft warning).';
+
+            return 'Add organization facility sites with country/state, or set a preferred receiving state in Organization settings, before sending — '.$tail;
         }
 
         $destination = $this->destinationCandidates($session);
 
         if ($destination['unresolved_gln'] !== null) {
+            $tail = TenantSettings::forTenant(tenant())->blockSendOnAtpGap()
+                ? 'Add the destination site before sending.'
+                : 'Add the destination site when you can (soft warning — send is allowed).';
+
             return sprintf(
-                'Ship-to GLN %s does not match any active site on record for %s, so its ATP license for %s cannot be checked. Add the destination site before sending.',
+                'Ship-to GLN %s does not match any active site on record for %s, so its ATP license for %s cannot be checked. %s',
                 $destination['unresolved_gln'],
                 $session->tradingPartner?->name ?? 'the selected customer',
                 $jurisdictionLabel,
+                $tail,
             );
         }
 
@@ -446,42 +483,57 @@ final class ValidateOutboundShippingSend
     ): string {
         if ($sites->count() === 1) {
             return sprintf(
-                '%s Sending is blocked until a valid license is on record. %s',
+                '%s %s',
                 $this->singleSiteReason($sites->first(), $unready[0], $tenantState),
                 AtpDisclosure::SHORT,
             );
         }
 
+        $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+        $tail = $hard
+            ? 'Sending is blocked until one is.'
+            : 'Sending is allowed with a soft warning until one is.';
+
         return sprintf(
-            'Customer "%s" has no site with a valid ATP license on record for %s — checked %d site(s). Sending is blocked until one is. %s',
+            'Customer "%s" has no site with a valid ATP license on record for %s — checked %d site(s). %s %s',
             $session->tradingPartner?->name ?? 'selected customer',
             $tenantState,
             $sites->count(),
+            $tail,
             AtpDisclosure::SHORT,
         );
     }
 
     private function singleSiteReason(Site $site, SiteAtpReadinessStatus $status, string $tenantState): string
     {
+        $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+        $tail = $hard
+            ? 'Sending is blocked until a valid license is on record.'
+            : 'Sending is allowed with a soft warning until a valid license is on record.';
+
         return match ($status) {
             SiteAtpReadinessStatus::Expired => sprintf(
-                'Ship-to site "%s" has an expired ATP license for %s on record.',
+                'Ship-to site "%s" has an expired ATP license for %s on record. %s',
                 $site->name,
                 $tenantState,
+                $tail,
             ),
             SiteAtpReadinessStatus::UnknownExpiry => sprintf(
-                'Ship-to site "%s" has an ATP license for %s with no expiration date on file, so it cannot be shown to be in force.',
+                'Ship-to site "%s" has an ATP license for %s with no expiration date on file, so it cannot be shown to be in force. %s',
                 $site->name,
                 $tenantState,
+                $tail,
             ),
             SiteAtpReadinessStatus::NeedsReceivingState => sprintf(
-                'Ship-to site "%s" cannot be ATP-evaluated — organization jurisdictions are not configured.',
+                'Ship-to site "%s" cannot be ATP-evaluated — organization jurisdictions are not configured. %s',
                 $site->name,
+                $tail,
             ),
             default => sprintf(
-                'Ship-to site "%s" has no ATP license for %s on record.',
+                'Ship-to site "%s" has no ATP license for %s on record. %s',
                 $site->name,
                 $tenantState,
+                $tail,
             ),
         };
     }

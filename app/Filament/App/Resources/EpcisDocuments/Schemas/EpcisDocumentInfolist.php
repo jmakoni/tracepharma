@@ -154,11 +154,26 @@ class EpcisDocumentInfolist
                             ->placeholder('—')
                             ->visible(fn (EpcisDocument $record): bool => $record->direction === 'inbound'),
                         TextEntry::make('event_count')
-                            ->label('Events')
+                            ->label(fn (EpcisDocument $record): string => $record->direction === 'outbound'
+                                ? 'Events (TI file)'
+                                : 'Events')
+                            ->helperText(fn (EpcisDocument $record): ?string => $record->direction === 'outbound'
+                                ? 'From the partner payload. Shipping docs may project only the shipping ObjectEvent in the live event table — Download EPCIS for full TI (commission/pack/ship).'
+                                : null)
                             ->numeric(),
                         TextEntry::make('epc_count')
                             ->label('EPCs')
                             ->numeric(),
+                        TextEntry::make('payload_path')
+                            ->label(fn (EpcisDocument $record): string => $record->direction === 'outbound'
+                                ? 'Partner TI payload path'
+                                : 'Payload path')
+                            ->helperText(fn (EpcisDocument $record): ?string => $record->direction === 'outbound'
+                                ? 'Source of truth for what trading partners receive. Retain for payload_retention_years.'
+                                : null)
+                            ->fontFamily(FontFamily::Mono)
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                         TextEntry::make('creation_date')
                             ->label('Creation date')
                             ->dateTime()
@@ -201,11 +216,6 @@ class EpcisDocumentInfolist
                             ->label('SHA-256')
                             ->limit(24)
                             ->copyable()
-                            ->fontFamily(FontFamily::Mono)
-                            ->placeholder('—')
-                            ->columnSpanFull(),
-                        TextEntry::make('payload_path')
-                            ->label('Payload path')
                             ->fontFamily(FontFamily::Mono)
                             ->placeholder('—')
                             ->columnSpanFull(),

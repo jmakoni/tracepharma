@@ -10,6 +10,7 @@ use App\Models\Concerns\TenantSearchable;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\OutboundConnection;
 use App\Models\Product;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
@@ -51,6 +52,7 @@ class EpcisDocument extends Model
         'authored_kind',
         'corrects_epcis_document_id',
         'trading_partner_id',
+        'inbound_shipment_id',
         'sender_gln',
         'receiver_gln',
         'customer_po',
@@ -216,6 +218,11 @@ class EpcisDocument extends Model
     public function tradingPartner(): BelongsTo
     {
         return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function inboundShipment(): BelongsTo
+    {
+        return $this->belongsTo(InboundShipment::class, 'inbound_shipment_id');
     }
 
     public function outboundConnection(): BelongsTo
@@ -758,6 +765,7 @@ class EpcisDocument extends Model
      *     lot_count: int,
      *     lots: list<string>,
      *     item_count: int,
+     *     sscc_count: int,
      *     case_count: int,
      *     unit_count: int,
      *     case_unit_label: string,
@@ -777,6 +785,7 @@ class EpcisDocument extends Model
         if ($caseCount === 0 && $unitCount === 0) {
             $unitCount = (int) $products->sum('document_epc_count');
         }
+        $ssccCount = $this->ssccCountForCurrentGeneration();
 
         $productNdcs = $products
             ->pluck('ndc')
@@ -786,15 +795,22 @@ class EpcisDocument extends Model
             ->values()
             ->all();
 
+        $itemCount = (int) ($this->epc_count ?? 0);
+        $openTreeIds = $this->shippingOpenTreeEpcIds();
+        if ($openTreeIds !== [] && $this->usesShippingOpenTreeSummary()) {
+            $itemCount = max($itemCount, count($openTreeIds));
+        }
+
         return [
             'product_count' => $products->count(),
             'product_ndcs' => $productNdcs,
             'lot_count' => count($lots),
             'lots' => $lots,
-            'item_count' => (int) ($this->epc_count ?? 0),
+            'item_count' => $itemCount,
+            'sscc_count' => $ssccCount,
             'case_count' => $caseCount,
             'unit_count' => $unitCount,
-            'case_unit_label' => $this->formatCaseUnitLabel($caseCount, $unitCount),
+            'case_unit_label' => $this->formatCaseUnitLabel($ssccCount, $caseCount, $unitCount),
             'asn_number' => filled($this->asn_number) ? (string) $this->asn_number : null,
             'customer_po' => filled($this->customer_po) ? (string) $this->customer_po : null,
             'legal_notice' => filled($this->legal_notice) ? (string) $this->legal_notice : null,
@@ -962,27 +978,53 @@ class EpcisDocument extends Model
             }
         }
 
-        if (Schema::hasTable('epc_ilmd') && Schema::hasTable('document_epcs')) {
-            return DB::table('document_epcs as de')
-                ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'de.epc_id')
-                ->where('de.document_id', $documentId)
-                ->where('de.ingest_generation', $generation)
-                ->whereNotNull('epc_ilmd.lot_number')
-                ->where('epc_ilmd.lot_number', '!=', '')
-                ->distinct()
-                ->orderBy('epc_ilmd.lot_number')
-                ->pluck('epc_ilmd.lot_number')
-                ->map(fn ($lot) => (string) $lot)
-                ->values()
-                ->all();
+        $epcIdsForIlmd = null;
+        if ($this->usesShippingOpenTreeSummary()) {
+            $openTreeIds = $this->shippingOpenTreeEpcIds();
+            if ($openTreeIds !== []) {
+                $epcIdsForIlmd = $openTreeIds;
+            }
+        }
+
+        if (Schema::hasTable('epc_ilmd')) {
+            if ($epcIdsForIlmd !== null) {
+                return DB::table('epc_ilmd')
+                    ->whereIn('epc_id', $epcIdsForIlmd)
+                    ->whereNotNull('lot_number')
+                    ->where('lot_number', '!=', '')
+                    ->distinct()
+                    ->orderBy('lot_number')
+                    ->pluck('lot_number')
+                    ->map(fn ($lot) => (string) $lot)
+                    ->values()
+                    ->all();
+            }
+
+            if (Schema::hasTable('document_epcs')) {
+                return DB::table('document_epcs as de')
+                    ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'de.epc_id')
+                    ->where('de.document_id', $documentId)
+                    ->where('de.ingest_generation', $generation)
+                    ->whereNotNull('epc_ilmd.lot_number')
+                    ->where('epc_ilmd.lot_number', '!=', '')
+                    ->distinct()
+                    ->orderBy('epc_ilmd.lot_number')
+                    ->pluck('epc_ilmd.lot_number')
+                    ->map(fn ($lot) => (string) $lot)
+                    ->values()
+                    ->all();
+            }
         }
 
         return [];
     }
 
-    private function formatCaseUnitLabel(int $cases, int $units): string
+    private function formatCaseUnitLabel(int $ssccs, int $cases, int $units): string
     {
         $parts = [];
+        if ($ssccs > 0) {
+            $parts[] = number_format($ssccs).' '.($ssccs === 1 ? 'SSCC' : 'SSCCs');
+        }
         if ($cases > 0) {
             $parts[] = number_format($cases).' '.($cases === 1 ? 'case' : 'cases');
         }
@@ -991,6 +1033,20 @@ class EpcisDocument extends Model
         }
 
         return $parts === [] ? '—' : implode(' · ', $parts);
+    }
+
+    private function ssccCountForCurrentGeneration(): int
+    {
+        if (! Schema::hasTable('document_epcs') || ! Schema::hasTable('epcs')) {
+            return 0;
+        }
+
+        return (int) DB::table('document_epcs as de')
+            ->join('epcs', 'epcs.id', '=', 'de.epc_id')
+            ->where('de.document_id', (int) $this->getKey())
+            ->where('de.ingest_generation', (int) ($this->ingest_generation ?? 1))
+            ->where('epcs.epc_type', 'sscc')
+            ->count();
     }
 
     /**
@@ -1034,6 +1090,24 @@ class EpcisDocument extends Model
             ]);
         }
 
+        // Authored shipping docs project only outermost SSCCs onto document_epcs.
+        // Expand open aggregation children so Summary shows products/cases/units in the TI.
+        if ($epcRows->isEmpty() && $this->usesShippingOpenTreeSummary()) {
+            $openTreeIds = $this->shippingOpenTreeEpcIds();
+            if ($openTreeIds !== []) {
+                $epcRows = DB::table('epcs')
+                    ->whereIn('id', $openTreeIds)
+                    ->where('epc_type', 'sgtin')
+                    ->whereNotNull('gtin14')
+                    ->where('gtin14', '!=', '')
+                    ->get([
+                        'id as epc_id',
+                        'gtin14 as gtin',
+                        'product_id',
+                    ]);
+            }
+        }
+
         if ($epcRows->isEmpty()) {
             return collect();
         }
@@ -1042,42 +1116,31 @@ class EpcisDocument extends Model
         $caseEpcIds = [];
         $unitEpcIds = [];
 
-        if (Schema::hasTable('aggregation_links') && Schema::hasTable('epcis_events')) {
-            $eventIds = DB::table('epcis_events')
-                ->where('document_id', $documentId)
-                ->when(
-                    Schema::hasColumn('epcis_events', 'ingest_generation'),
-                    fn ($q) => $q->where('ingest_generation', $generation),
-                )
-                ->pluck('id');
+        if (Schema::hasTable('aggregation_links')) {
+            // Prefer live open hierarchy (not only links established by this document's events).
+            $caseEpcIds = DB::table('aggregation_links as al')
+                ->join('epcs as child', 'child.id', '=', 'al.child_epc_id')
+                ->whereNull('al.valid_to')
+                ->where('child.epc_type', 'sgtin')
+                ->whereIn('al.parent_epc_id', $epcIds)
+                ->distinct()
+                ->pluck('al.parent_epc_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
 
-            if ($eventIds->isNotEmpty()) {
-                $caseEpcIds = DB::table('aggregation_links as al')
-                    ->join('epcs as child', 'child.id', '=', 'al.child_epc_id')
-                    ->whereIn('al.established_by_event_id', $eventIds)
-                    ->whereNull('al.valid_to')
-                    ->where('child.epc_type', 'sgtin')
-                    ->whereIn('al.parent_epc_id', $epcIds)
-                    ->distinct()
-                    ->pluck('al.parent_epc_id')
-                    ->map(fn ($id) => (int) $id)
-                    ->all();
+            $caseEpcIdLookup = array_fill_keys($caseEpcIds, true);
 
-                $caseEpcIdLookup = array_fill_keys($caseEpcIds, true);
-
-                $unitEpcIds = DB::table('aggregation_links as al')
-                    ->join('epcs as parent', 'parent.id', '=', 'al.parent_epc_id')
-                    ->whereIn('al.established_by_event_id', $eventIds)
-                    ->whereNull('al.valid_to')
-                    ->where('parent.epc_type', 'sgtin')
-                    ->whereIn('al.child_epc_id', $epcIds)
-                    ->distinct()
-                    ->pluck('al.child_epc_id')
-                    ->map(fn ($id) => (int) $id)
-                    ->reject(fn (int $id) => isset($caseEpcIdLookup[$id]))
-                    ->values()
-                    ->all();
-            }
+            $unitEpcIds = DB::table('aggregation_links as al')
+                ->join('epcs as parent', 'parent.id', '=', 'al.parent_epc_id')
+                ->whereNull('al.valid_to')
+                ->where('parent.epc_type', 'sgtin')
+                ->whereIn('al.child_epc_id', $epcIds)
+                ->distinct()
+                ->pluck('al.child_epc_id')
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn (int $id) => isset($caseEpcIdLookup[$id]))
+                ->values()
+                ->all();
         }
 
         $caseLookup = array_fill_keys($caseEpcIds, true);
@@ -1104,6 +1167,58 @@ class EpcisDocument extends Model
                     'product_id' => $rows->pluck('product_id')->filter()->first(),
                 ];
             });
+    }
+
+    /**
+     * Outbound shipping TI projects only outermost parents onto document_epcs;
+     * Summary should expand the open aggregation tree under those parents.
+     */
+    private function usesShippingOpenTreeSummary(): bool
+    {
+        if ($this->direction !== 'outbound') {
+            return false;
+        }
+
+        $kind = $this->authored_kind;
+
+        return $kind === EpcisAuthoredKind::Shipping
+            || (is_string($kind) && $kind === EpcisAuthoredKind::Shipping->value);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function shippingOpenTreeEpcIds(): array
+    {
+        if (! $this->usesShippingOpenTreeSummary() || ! Schema::hasTable('document_epcs') || ! Schema::hasTable('epcs')) {
+            return [];
+        }
+
+        $rootIds = DB::table('document_epcs as de')
+            ->join('epcs', 'epcs.id', '=', 'de.epc_id')
+            ->where('de.document_id', (int) $this->getKey())
+            ->where('de.ingest_generation', (int) ($this->ingest_generation ?? 1))
+            ->where('epcs.epc_type', 'sscc')
+            ->pluck('epcs.id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if ($rootIds === []) {
+            $rootIds = DB::table('document_epcs')
+                ->where('document_id', (int) $this->getKey())
+                ->where('ingest_generation', (int) ($this->ingest_generation ?? 1))
+                ->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        if ($rootIds === []) {
+            return [];
+        }
+
+        return app(\App\Support\Epcis\ExtractPriorPedigreeXml::class)->collectOpenTreeEpcIds($rootIds);
     }
 
     private function formatEpcBreakdown(int $cases, int $units): string

@@ -6,11 +6,13 @@ use App\Models\LocationDevice;
 use App\Models\ReadPoint;
 use App\Models\Site;
 use App\Models\TradingPartner;
+use App\Support\Fda\DeaRegistration;
+use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Resolve a GLN to tenant master-data parties/locations without auto-creating rows.
+ * Resolve a location token (GLN, SGLN-derived GLN, or DEA registration) to tenant master-data parties/locations without auto-creating rows.
  */
 final class ResolveGlnToMasterData
 {
@@ -27,25 +29,59 @@ final class ResolveGlnToMasterData
      *     read_point: ?ReadPoint
      * }
      */
-    public function handle(string $gln): array
+    public function handle(string $token): array
     {
-        $normalized = preg_replace('/\D+/', '', $gln) ?? '';
+        $empty = $this->emptyResult('');
 
-        $empty = [
-            'gln' => $normalized,
-            'trading_partner_id' => null,
-            'site_id' => null,
-            'location_device_id' => null,
-            'read_point_id' => null,
-            'trading_partner' => null,
-            'site' => null,
-            'location_device' => null,
-            'read_point' => null,
-        ];
+        $glnNormalized = Sgln::normalizeGln($token);
+        if ($glnNormalized !== null) {
+            $result = $this->resolveGlnLadder($glnNormalized);
+            if ($this->hasMasterDataMatch($result)) {
+                return $result;
+            }
 
-        if (strlen($normalized) !== 13) {
-            return $empty;
+            if (! $this->hasValidGlnCheckDigit($glnNormalized)) {
+                $deaNormalized = DeaRegistration::normalize($token) ?? $glnNormalized;
+                $deaResult = $this->resolveByDeaRegistration($deaNormalized);
+                if ($deaResult !== null) {
+                    return $deaResult;
+                }
+            }
+
+            return $result;
         }
+
+        $deaParsed = DeaRegistration::parseFromLocationToken($token);
+        if ($deaParsed !== null) {
+            $deaResult = $this->resolveByDeaRegistration($deaParsed);
+            if ($deaResult !== null) {
+                return $deaResult;
+            }
+
+            return $this->emptyResult('');
+        }
+
+        $digits = preg_replace('/\D+/', '', $token) ?? '';
+
+        return $this->emptyResult(strlen($digits) === 13 ? $digits : '');
+    }
+
+    /**
+     * @return array{
+     *     gln: string,
+     *     trading_partner_id: ?int,
+     *     site_id: ?int,
+     *     location_device_id: ?int,
+     *     read_point_id: ?int,
+     *     trading_partner: ?TradingPartner,
+     *     site: ?Site,
+     *     location_device: ?LocationDevice,
+     *     read_point: ?ReadPoint
+     * }
+     */
+    private function resolveGlnLadder(string $normalized): array
+    {
+        $empty = $this->emptyResult($normalized);
 
         $partner = TradingPartner::query()->where('gln', $normalized)->first();
         if ($partner !== null) {
@@ -99,6 +135,107 @@ final class ResolveGlnToMasterData
         }
 
         return $empty;
+    }
+
+    /**
+     * @return array{
+     *     gln: string,
+     *     trading_partner_id: ?int,
+     *     site_id: ?int,
+     *     location_device_id: ?int,
+     *     read_point_id: ?int,
+     *     trading_partner: ?TradingPartner,
+     *     site: ?Site,
+     *     location_device: ?LocationDevice,
+     *     read_point: ?ReadPoint
+     * }|null
+     */
+    private function resolveByDeaRegistration(string $normalizedDea): ?array
+    {
+        $site = Site::query()
+            ->with('tradingPartner')
+            ->whereRaw('UPPER(REPLACE(REPLACE(dea_number, " ", ""), "-", "")) = ?', [$normalizedDea])
+            ->first();
+
+        if ($site !== null) {
+            $gln = (string) ($site->gln ?? '');
+
+            return array_merge($this->emptyResult($gln), [
+                'trading_partner_id' => $site->trading_partner_id !== null ? (int) $site->trading_partner_id : null,
+                'site_id' => (int) $site->getKey(),
+                'trading_partner' => $site->tradingPartner,
+                'site' => $site,
+            ]);
+        }
+
+        $partner = TradingPartner::query()
+            ->whereRaw('UPPER(REPLACE(REPLACE(dea_number, " ", ""), "-", "")) = ?', [$normalizedDea])
+            ->first();
+
+        if ($partner === null) {
+            return null;
+        }
+
+        $gln = (string) ($partner->gln ?? '');
+
+        return array_merge($this->emptyResult($gln), [
+            'trading_partner_id' => (int) $partner->getKey(),
+            'trading_partner' => $partner,
+        ]);
+    }
+
+    /**
+     * @return array{
+     *     gln: string,
+     *     trading_partner_id: ?int,
+     *     site_id: ?int,
+     *     location_device_id: ?int,
+     *     read_point_id: ?int,
+     *     trading_partner: ?TradingPartner,
+     *     site: ?Site,
+     *     location_device: ?LocationDevice,
+     *     read_point: ?ReadPoint
+     * }
+     */
+    private function emptyResult(string $gln): array
+    {
+        return [
+            'gln' => $gln,
+            'trading_partner_id' => null,
+            'site_id' => null,
+            'location_device_id' => null,
+            'read_point_id' => null,
+            'trading_partner' => null,
+            'site' => null,
+            'location_device' => null,
+            'read_point' => null,
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     gln: string,
+     *     trading_partner_id: ?int,
+     *     site_id: ?int,
+     *     location_device_id: ?int,
+     *     read_point_id: ?int,
+     *     trading_partner: ?TradingPartner,
+     *     site: ?Site,
+     *     location_device: ?LocationDevice,
+     *     read_point: ?ReadPoint
+     * }  $result
+     */
+    private function hasMasterDataMatch(array $result): bool
+    {
+        return $result['trading_partner_id'] !== null
+            || $result['site_id'] !== null
+            || $result['location_device_id'] !== null
+            || $result['read_point_id'] !== null;
+    }
+
+    private function hasValidGlnCheckDigit(string $gln13): bool
+    {
+        return Gtin::checkDigit(substr($gln13, 0, 12)) === substr($gln13, 12, 1);
     }
 
     /**

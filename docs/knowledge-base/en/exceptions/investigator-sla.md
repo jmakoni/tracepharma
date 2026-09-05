@@ -1,11 +1,11 @@
 ---
-title: Investigator Sla
+title: Investigator SLA
 parent: exceptions
 order: 30
 group: Receiving
 ---
 
-# Investigator Sla
+# Investigator SLA
 
 Filament classes:
 

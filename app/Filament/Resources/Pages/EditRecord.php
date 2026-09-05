@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Pages;
 use App\Filament\Support\RegulatoryCompliance;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\EditRecord as FilamentEditRecord;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
 /**
@@ -27,8 +28,12 @@ abstract class EditRecord extends FilamentEditRecord
             ->requiresConfirmation()
             ->modalHeading('Confirm save')
             ->schema(RegulatoryCompliance::fields(requireReason: false))
-            ->action(function (array $data): void {
-                RegulatoryCompliance::assert($data, 'save_record');
+            ->mountUsing(function (?Schema $schema = null): void {
+                $this->form->validate();
+                $schema?->fill();
+            })
+            ->action(function (array $data, Action $action): void {
+                RegulatoryCompliance::assert($data, 'save_record', $action);
                 RegulatoryCompliance::audit('save_record', $this->getRecord());
                 RegulatoryCompliance::markVerified('save_record');
                 $this->save();

@@ -17,6 +17,7 @@ use App\Http\Controllers\Webhooks\EpcisHubInboundWebhookController;
 use App\Http\Controllers\Webhooks\EpcisInboundWebhookController;
 use App\Http\Controllers\Webhooks\VrsResponderWebhookController;
 use App\Http\Controllers\Webhooks\WmsShipConfirmWebhookController;
+use App\Http\Middleware\EnsureAccountIsUsable;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:webhooks')->group(function (): void {
@@ -39,7 +40,7 @@ Route::middleware('throttle:webhooks')->group(function (): void {
         ->name('webhooks.as2.inbound');
 });
 
-Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v1')->group(function (): void {
+Route::middleware(['auth:sanctum', EnsureAccountIsUsable::class.':sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v1')->group(function (): void {
     Route::post('dispense-check', DispenseCheckController::class)
         ->middleware('abilities:vrs:dispense-check')
         ->name('api.v1.dispense-check');

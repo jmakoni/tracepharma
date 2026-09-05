@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\Exceptions\Actions;
 
 use App\Enums\PartnerType;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
 use App\Models\Exceptions\ExceptionCase;
@@ -15,11 +16,11 @@ use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseEditor;
 use App\Support\Gs1\GlnRules;
+use Database\Seeders\ExceptionCaseSeeder;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use App\Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
@@ -185,6 +186,8 @@ final class CorrectUnknownGlnAction
 
     private static function tryResolve(ExceptionCase $record, User $actor, string $notes): bool
     {
+        ExceptionCaseSeeder::ensureResolutionCatalog();
+
         $rootCauseId = ExceptionRootCause::query()->where('code', 'internal_mapping_error')->value('id');
         $resolutionActionId = ExceptionActionModel::query()->where('code', 'update_master_data')->value('id');
 

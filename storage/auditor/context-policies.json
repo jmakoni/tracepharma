@@ -1,0 +1,63 @@
+{
+    "gates": [
+        "command-center:access",
+        "command-center:manage-commands",
+        "command-center:prune-history",
+        "viewHorizon"
+    ],
+    "policies": {
+        "Spatie\\Activitylog\\Models\\Activity": "App\\Policies\\ActivityPolicy",
+        "Spatie\\Permission\\Models\\Role": "App\\Policies\\RolePolicy"
+    },
+    "policy_files": [
+        "ActivityPolicy.php",
+        "BuyingGroupMemberPolicy.php",
+        "Concerns/MaintainsIntegrations.php",
+        "Concerns/MaintainsMasterData.php",
+        "DevicePolicy.php",
+        "EpcisDocumentPolicy.php",
+        "EpcisJobPolicy.php",
+        "EpcisSubscriptionPolicy.php",
+        "ExceptionCasePolicy.php",
+        "Fda3911ReportPolicy.php",
+        "FdaProductPolicy.php",
+        "InboundConnectionPolicy.php",
+        "LabelPrinterPolicy.php",
+        "LocationDevicePolicy.php",
+        "OutboundConnectionPolicy.php",
+        "OutboundShippingSessionPolicy.php",
+        "PrincipalPolicy.php",
+        "ProductPolicy.php",
+        "ReadPointPolicy.php",
+        "ReceivingSessionPolicy.php",
+        "RolePolicy.php",
+        "SerializationLotPolicy.php",
+        "SitePolicy.php",
+        "SsccLabelPolicy.php",
+        "SsccNumberRangePolicy.php",
+        "TracingRequestPolicy.php",
+        "TradingPartnerPolicy.php",
+        "TransferringSessionPolicy.php",
+        "UserPolicy.php",
+        "VerificationPolicy.php"
+    ],
+    "middleware": [
+        "panel",
+        "resource-configuration",
+        "page-configuration",
+        "auth",
+        "auth.basic",
+        "auth.session",
+        "cache.headers",
+        "can",
+        "guest",
+        "password.confirm",
+        "precognitive",
+        "signed",
+        "throttle",
+        "verified",
+        "abilities",
+        "ability",
+        "tenant.active"
+    ]
+}

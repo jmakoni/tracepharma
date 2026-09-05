@@ -66,17 +66,20 @@ class OutboundConnectionForm
                             ->content('This is a built-in Email / Client portal template. Enable it and configure settings; it cannot be deleted or have its transport changed.')
                             ->visible(fn (?OutboundConnection $record): bool => $record?->isSystemTemplate() ?? false)
                             ->columnSpanFull(),
-                        Select::make('trading_partner_id')
-                            ->label('Trading partner')
-                            ->relationship('tradingPartner', 'name')
+                        Select::make('tradingPartners')
+                            ->label('Trading partners')
+                            ->relationship('tradingPartners', 'name')
+                            ->multiple()
                             ->searchable()
+                            ->preload()
                             ->nullable()
+                            ->helperText('Leave empty for a global connection usable by any customer. Select one or more partners to scope this endpoint.')
                             ->disabled(fn (?OutboundConnection $record): bool => $record?->isSystemTemplate() ?? false),
                         Toggle::make('is_active')
                             ->default(true),
                         Toggle::make('is_default')
                             ->label('Default for partner')
-                            ->helperText('When set, this connection is preferred for auto-routing to the selected trading partner (or globally when no partner is linked). Email is only used when explicitly selected as default or pinned on a shipment — never via B2B→Portal ladder fallback.'),
+                            ->helperText('When set, this connection is preferred for auto-routing to its linked trading partners (or globally when none are linked). Email is only used when explicitly selected as default or pinned on a shipment — never via B2B→Portal ladder fallback.'),
                         Placeholder::make('conformance_state_display')
                             ->label('Conformance')
                             ->content(function (?OutboundConnection $record): string {

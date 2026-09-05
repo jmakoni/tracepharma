@@ -10,6 +10,15 @@
         "epcis"
     ],
     "license": "proprietary",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/filament-ui-extras",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
     "require": {
         "php": "^8.4",
         "bokshorn-it/filament-activity-timeline": "*",
@@ -39,6 +48,8 @@
         "spatie/laravel-permission": "^8.0",
         "ssbityukov/filament-command-center": "*",
         "stancl/tenancy": "^3.10",
+        "tracepharma/filament-ui-extras": "1.0.0",
+        "watheqalshowaiter/filament-sticky-table-header": "*",
         "zeeshantariq/filament-sticky-columns": "*",
         "zvizvi/filament-notifications-tabs": "^0.0.2"
     },
@@ -49,6 +60,7 @@
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
         "mockery/mockery": "^1.6",
+        "mrpunyapal/laravel-auditor": "*",
         "nunomaduro/collision": "^8.6",
         "phpunit/phpunit": "^12.5.12"
     },

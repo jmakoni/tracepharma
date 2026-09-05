@@ -8,6 +8,8 @@ use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Support\Fda\ScheduledProductPresence;
+use App\Support\Fda\ScheduledSessionChip;
 use App\Support\Gs1\ElementString;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\ShipLayout;
@@ -39,11 +41,20 @@ trait InteractsWithOutboundShippingSessionHud
     #[Locked]
     public bool $confirmScanInFlight = false;
 
+    public ?string $chipDeaSchedule = null;
+
+    public ?bool $chipDeaMissingParty = null;
+
+    public ?string $chipDeaLabel = null;
+
+    public ?string $chipDeaColor = null;
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
 
         $this->loadOutboundShippingSessionRelations();
+        $this->hydrateDeaScheduleChip();
     }
 
     protected function outboundShippingSession(): OutboundShippingSession
@@ -217,6 +228,50 @@ trait InteractsWithOutboundShippingSessionHud
             'outboundConnection',
             'epcisDocument.outboundConnection',
         ]);
+        $this->hydrateDeaScheduleChip();
+    }
+
+    private function hydrateDeaScheduleChip(): void
+    {
+        $session = $this->outboundShippingSession();
+        $gtins = $session->scanLines()
+            ->with('epc:id,gtin14')
+            ->get()
+            ->pluck('epc.gtin14')
+            ->filter(fn ($gtin): bool => filled($gtin))
+            ->map(fn ($gtin): string => (string) $gtin)
+            ->unique()
+            ->values()
+            ->all();
+
+        $presence = ScheduledProductPresence::forGtins($gtins);
+        $highest = $presence['highest'];
+
+        $missingSuffix = '';
+        $missing = false;
+        if ($presence['has_scheduled']) {
+            $shipFromMissing = ! ScheduledSessionChip::siteHasDea($session->site);
+            $shipToPartnerId = $session->trading_partner_id !== null ? (int) $session->trading_partner_id : null;
+            $shipToMissing = ! (
+                ScheduledSessionChip::partyHasDea($shipToPartnerId)
+                || ScheduledSessionChip::siteHasDea($session->shipToSite)
+            );
+
+            $parts = [];
+            if ($shipFromMissing) {
+                $parts[] = 'No DEA on ship-from';
+            }
+            if ($shipToMissing) {
+                $parts[] = 'No DEA on ship-to';
+            }
+            $missing = $parts !== [];
+            $missingSuffix = implode(' · ', $parts);
+        }
+
+        $this->chipDeaSchedule = $highest;
+        $this->chipDeaMissingParty = $presence['has_scheduled'] ? $missing : null;
+        $this->chipDeaLabel = ScheduledSessionChip::label($highest, $missing, $missingSuffix);
+        $this->chipDeaColor = ScheduledSessionChip::badgeColor($highest);
     }
 
     public function confirmScanAction(): Action

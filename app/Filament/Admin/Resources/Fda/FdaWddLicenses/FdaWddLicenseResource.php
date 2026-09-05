@@ -13,6 +13,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class FdaWddLicenseResource extends Resource implements HasKnowledgeBase
@@ -32,6 +33,11 @@ class FdaWddLicenseResource extends Resource implements HasKnowledgeBase
     protected static ?string $modelLabel = 'License';
 
     protected static ?string $recordTitleAttribute = 'license_number';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function form(Schema $schema): Schema
     {

@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\EnsureAccountIsUsable;
+use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
 use App\Support\KnowledgeBase\PublicAssetImageRenderer;
@@ -64,7 +66,13 @@ class AdminKnowledgeBasePanelProvider extends PanelProvider
 
         return $panel
             ->plugin(
+                // MustTwoFactor (from enableTwoFactorAuthentication) always calls slug(),
+                // which requires myProfile() to have populated the plugin config.
                 TracepharmaBreezyCore::make()
+                    ->myProfile(
+                        shouldRegisterUserMenu: false,
+                        shouldRegisterNavigation: false,
+                    )
                     ->enableTwoFactorAuthentication()
             )
             ->middleware([
@@ -80,6 +88,8 @@ class AdminKnowledgeBasePanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureAccountIsUsable::class.':admin',
+                EnsurePasswordChangeRequired::class,
             ]);
     }
 }

@@ -1,11 +1,11 @@
 ---
-title: Epcis Jobs
+title: EPCIS jobs
 parent: operations
 order: 30
 group: Operations
 ---
 
-# Epcis Jobs
+# EPCIS jobs
 
 Filament classes:
 

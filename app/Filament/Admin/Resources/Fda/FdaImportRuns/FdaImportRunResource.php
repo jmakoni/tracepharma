@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class FdaImportRunResource extends Resource implements HasKnowledgeBase
@@ -31,6 +32,11 @@ class FdaImportRunResource extends Resource implements HasKnowledgeBase
     protected static ?string $navigationLabel = 'Import Runs';
 
     protected static ?string $modelLabel = 'Import Run';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function infolist(Schema $schema): Schema
     {

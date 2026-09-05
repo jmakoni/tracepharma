@@ -340,11 +340,12 @@ class UnpackWorkstationTest extends TestCase
 
             [$parent, $childA] = $this->seedOpenHierarchy($site);
 
-            $component = Livewire::test(UnpackWorkstation::class)
+            Livewire::test(UnpackWorkstation::class)
                 ->set('scan', (string) $parent->epc_uri)
                 ->call('processScan')
                 ->set('selectedChildIds', [(string) $childA->getKey()])
-                ->callAction('confirmUnpack', ['regulatory_password' => 'not-the-password']);
+                ->callAction('confirmUnpack', ['regulatory_password' => 'not-the-password'])
+                ->assertHasActionErrors(['regulatory_password' => 'The password you entered is incorrect.']);
 
             $this->assertTrue(
                 AggregationLink::query()
@@ -354,9 +355,6 @@ class UnpackWorkstationTest extends TestCase
                     ->exists(),
                 'Unpack must not run without a valid regulatory password.',
             );
-
-            $errors = json_encode($component->instance()->getErrorBag()->toArray());
-            $this->assertStringContainsString('password', strtolower((string) $errors));
 
             Livewire::test(UnpackWorkstation::class)
                 ->set('scan', (string) $parent->epc_uri)

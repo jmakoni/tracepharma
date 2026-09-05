@@ -10,19 +10,19 @@ use Tests\TestCase;
 class ShippingTiTsFragmentsDropShipmentTest extends TestCase
 {
     #[Test]
-    public function drop_shipment_indicator_xml_emits_drop_shipment_when_flagged(): void
+    public function drop_shipment_indicator_xml_emits_true_when_flagged(): void
     {
         $xml = ShippingTiTsFragments::dropShipmentIndicatorXml(true);
 
-        $this->assertNotSame('', $xml);
-        $this->assertStringContainsString('dropShipment', $xml);
-        $this->assertStringContainsString('gs1ushc:dropShipment', $xml);
+        $this->assertStringContainsString('<gs1ushc:dropShipment>true</gs1ushc:dropShipment>', $xml);
     }
 
     #[Test]
-    public function drop_shipment_indicator_xml_is_empty_when_unflagged(): void
+    public function drop_shipment_indicator_xml_emits_false_when_unflagged(): void
     {
-        $this->assertSame('', ShippingTiTsFragments::dropShipmentIndicatorXml(false));
+        $xml = ShippingTiTsFragments::dropShipmentIndicatorXml(false);
+
+        $this->assertStringContainsString('<gs1ushc:dropShipment>false</gs1ushc:dropShipment>', $xml);
     }
 
     #[Test]

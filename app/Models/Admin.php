@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccountSecurity;
+use App\Models\Concerns\HasForcedPasswordChange;
 use Database\Factories\AdminFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
@@ -16,8 +18,10 @@ use Spatie\Permission\Traits\HasRoles;
 class Admin extends Authenticatable implements FilamentUser, HasAvatar
 {
     /** @use HasFactory<AdminFactory> */
-    use HasFactory;
+    use HasAccountSecurity;
 
+    use HasFactory;
+    use HasForcedPasswordChange;
     use HasRoles;
     use Notifiable;
     use TwoFactorAuthenticatable;
@@ -33,8 +37,22 @@ class Admin extends Authenticatable implements FilamentUser, HasAvatar
         'name',
         'email',
         'password',
+        'disabled_reason',
         'oidc_issuer',
         'oidc_subject',
+        'directory_object_id',
+        'user_principal_name',
+        'employee_id',
+        'given_name',
+        'surname',
+        'job_title',
+        'department',
+        'company_name',
+        'office_location',
+        'mobile_phone',
+        'business_phone',
+        'directory_groups',
+        'directory_synced_at',
         'avatar_url',
         'preferences',
     ];
@@ -49,6 +67,8 @@ class Admin extends Authenticatable implements FilamentUser, HasAvatar
         return [
             'password' => 'hashed',
             'preferences' => 'array',
+            'directory_groups' => 'array',
+            'directory_synced_at' => 'datetime',
         ];
     }
 
@@ -102,7 +122,11 @@ class Admin extends Authenticatable implements FilamentUser, HasAvatar
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return in_array($panel->getId(), ['admin', 'admin-knowledge-base'], true);
+        if (! in_array($panel->getId(), ['admin', 'admin-knowledge-base'], true)) {
+            return false;
+        }
+
+        return $this->isUsable();
     }
 
     public function getFilamentAvatarUrl(): ?string

@@ -5,11 +5,11 @@ namespace App\Actions\Epcis;
 use App\Actions\MasterData\AddFdaPackagesToTradingPartner;
 use App\Actions\MasterData\AuthorizeFdaPackagingForPartner;
 use App\Models\Epcis\EpcisDocument;
-use App\Models\Fda\FdaProductPackaging;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\Exceptions\ExceptionType;
+use App\Models\Fda\FdaProductPackaging;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\TradingPartner;
 use App\Models\User;
@@ -19,6 +19,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Fda\FdaTenantLink;
+use Database\Seeders\ExceptionCaseSeeder;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -95,26 +96,12 @@ final class AuthorizeMissingDocumentProducts
      */
     private static function productGtinColumn(): ?string
     {
-        if (! Schema::hasTable('products')) {
-            return null;
-        }
-
-        if (Schema::hasColumn('products', 'gtin14')) {
-            return 'gtin14';
-        }
-
-        return Schema::hasColumn('products', 'gtin') ? 'gtin' : null;
+        return AssortmentFromCatalog::productGtinColumn();
     }
 
     private static function productExistsForGtin(string $gtin): bool
     {
-        $productColumn = self::productGtinColumn();
-
-        if ($productColumn === null) {
-            return false;
-        }
-
-        return DB::table('products')->where($productColumn, $gtin)->exists();
+        return AssortmentFromCatalog::productAuthorizedForGtin($gtin);
     }
 
     /**
@@ -281,6 +268,8 @@ final class AuthorizeMissingDocumentProducts
         string $notes,
         array $stillUnknownGtins = [],
     ): int {
+        ExceptionCaseSeeder::ensureResolutionCatalog();
+
         $rootCauseId = ExceptionRootCause::query()->where('code', 'internal_mapping_error')->value('id');
 
         $resolutionActionId = ExceptionActionModel::query()

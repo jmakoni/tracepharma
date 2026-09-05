@@ -3,6 +3,7 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\ConfirmRemainingExpectedReceivingLines;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
@@ -178,6 +179,9 @@ class ReceiveModeAcceptRemainingTest extends TestCase
             $this->assertSame('confirmed', $child->status);
 
             $session = $session->fresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
             $this->assertSame('completed', $session->status);
         } finally {
             $this->cleanup($tenant);

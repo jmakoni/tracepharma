@@ -229,7 +229,11 @@ class MeilisearchRolloutTest extends TestCase
 
         Queue::assertPushed(
             ProvisionTenantScoutIndexes::class,
-            fn (ProvisionTenantScoutIndexes $job): bool => $job->tenantId === $tenant->getKey(),
+            function (ProvisionTenantScoutIndexes $job) use ($tenant): bool {
+                return $job->tenantId === $tenant->getKey()
+                    && $job->timeout === 300
+                    && $job->tries === 3;
+            },
         );
     }
 

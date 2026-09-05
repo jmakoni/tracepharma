@@ -1,0 +1,41 @@
+
+ INFO Laravel Auditor status. 
+
+ Installed .. yes 
+ Version .. v0.1.5 
+ Laravel .. v13.30.1 
+ PHP .. 8.5.10 
+
+ INFO Integration. 
+
+ Laravel Boost .. not installed 
+ Mechanism .. Standalone installer / resources 
+ Standalone resources .. present 
+ Configuration .. published 
+
+ INFO Audit domains. 
+
++--------------+---------------------+
+| Domain | Label |
++--------------+---------------------+
+| security | Security |
+| performance | Performance |
+| architecture | Architecture |
+| database | Database |
+| testing | Testing |
+| conventions | Laravel conventions |
++--------------+---------------------+
+
+ INFO Rules. 
+
+ Total rules .. 75 
+ security .. 23 
+ architecture .. 8 
+ conventions .. 9 
+ database .. 6 
+ performance .. 23 
+ testing .. 6 
+
+ INFO Context tools. 
+
+ Available tools project_info, routes, models, migrations, database_schema, dependencies, configuration, policies_authorization, jobs_events_schedules, tests, subsystems 

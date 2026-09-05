@@ -23,6 +23,9 @@ class CreateUser extends CreateRecord
 
     private bool $creatingSupportEngineer = false;
 
+    /** @var array{is_active?: bool, must_change_password?: bool} */
+    private array $accountSecurityAttributes = [];
+
     protected function beforeCreate(): void
     {
         $this->assertOwnerRoleAssignmentAllowed();
@@ -39,6 +42,7 @@ class CreateUser extends CreateRecord
         $this->creatingSupportEngineer = $this->selectedRoleIdsIncludeSupportEngineer();
 
         $data = $this->extractSiteMembershipFromFormData($data);
+        $data = $this->extractAccountSecurityFromFormData($data);
 
         if ($this->creatingSupportEngineer) {
             $data['password'] = Str::password(40);
@@ -52,6 +56,10 @@ class CreateUser extends CreateRecord
         /** @var User $record */
         $record = $this->getRecord();
 
+        if ($this->accountSecurityAttributes !== []) {
+            $record->forceFill($this->accountSecurityAttributes)->save();
+        }
+
         $this->syncSiteMembershipIfNeeded($record);
 
         app(NotifyTenantUserAccountCreated::class)->handle($record);
@@ -63,5 +71,23 @@ class CreateUser extends CreateRecord
                 ->warning()
                 ->send();
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function extractAccountSecurityFromFormData(array $data): array
+    {
+        $this->accountSecurityAttributes = [];
+
+        foreach (['is_active', 'must_change_password'] as $key) {
+            if (array_key_exists($key, $data)) {
+                $this->accountSecurityAttributes[$key] = (bool) $data[$key];
+                unset($data[$key]);
+            }
+        }
+
+        return $data;
     }
 }

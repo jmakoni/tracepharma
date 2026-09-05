@@ -1,33 +1,20 @@
-# Outbound EPCIS documents
+---
+title: Outbound EPCIS
+parent: operations
+order: 40
+---
 
-Filament classes:
-
-- `App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource`
-
-## When to use
+# Outbound EPCIS
 
 Review EPCIS documents generated for partners (shipping, transfer, commissioning handoffs) and their delivery status.
 
-## Prerequisites
+## Partner TI vs live custody
 
-- Outbound connections configured.
-- Events authored by operational desks or jobs.
+- **Download EPCIS** = partner TI payload (commission/pack/ship when full history applies).
+- Live shipping-document events may be the shipping ObjectEvent only (custody).
+- Pedigree XML fragments are stored in the DB on ingest (preferred for TI rebuild); payload files remain a fallback — retain for `payload_retention_years`.
+- Packing `childEPCs` in rebuilt TI are filtered to open aggregation children; removed-case history stays in DB for a later ship.
 
-## Steps
+## Pedigree policy
 
-1. Open **Outbound EPCIS documents**. Open the page and use Help for live UI.
-2. Filter by partner, status, or created time.
-3. Open a document; inspect payload and delivery attempts.
-4. Retry failed sends after fixing connection issues.
-
-## Related pages
-
-- [epcis-jobs.md](epcis-jobs.md) — related processing jobs
-- [../integrations/connections.md](../integrations/connections.md) — outbound endpoints
-- [../compliance/l3-forward-log.md](../compliance/l3-forward-log.md) — L3 forward log
-- [../integrations/integration-health.md](../integrations/integration-health.md) — health overview
-
-## Notes
-
-- A successful local author does not guarantee partner acceptance — watch delivery status.
-- Coordinate bulk retries with the receiving partner.
+Commissioning: whole-event replay. Packing: open-tree children only. Retry Transmit remints InstanceIdentifier and stamps a new prepare-time filename (ship eventTime in XML unchanged), rebuilds shipping TI from the current hierarchy, then validates GS1 EPCIS 1.2 / GS1 US R1.3 before transmit/portal publish. Backfill: `tracepharma:epcis-backfill-pedigree-fragments --tenant=…`. Ops: `tracepharma:epcis-retention-report --check-pedigree-payloads`.

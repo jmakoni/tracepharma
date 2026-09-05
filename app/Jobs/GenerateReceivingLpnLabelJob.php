@@ -16,6 +16,8 @@ class GenerateReceivingLpnLabelJob implements ShouldQueue
 
     public int $tries = 2;
 
+    public int $timeout = 120;
+
     public function __construct(
         public readonly int $epcisDocumentId,
         public readonly string $tenantId,

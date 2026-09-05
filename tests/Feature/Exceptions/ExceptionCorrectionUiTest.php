@@ -10,18 +10,21 @@ use App\Enums\TenantRole;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
+use App\Models\Exceptions\ExceptionAction;
 use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\Exceptions\ExceptionType;
 use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\Product;
+use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
-use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Ndc;
 use Database\Seeders\ExceptionCaseSeeder;
@@ -73,10 +76,7 @@ class ExceptionCorrectionUiTest extends TestCase
         $this->assertSame(ExceptionCorrectionProfile::ACTION_ADD_PRODUCT, $gtinProfile->primaryActionKey());
         $this->assertTrue($gtinProfile->showsMasterDataProductForm());
         $this->assertTrue($gtinProfile->isSpecialized());
-        $this->assertTrue(
-            $gtinProfile->primaryActionLabel() === 'Add product to assortment'
-                || str_contains(strtolower($gtinProfile->primaryActionLabel()), 'product'),
-        );
+        $this->assertSame('Authorize product', $gtinProfile->primaryActionLabel());
 
         $parseErrorProfile = ExceptionCorrectionProfile::for('INGESTION_PARSE_ERROR');
         $this->assertSame(ExceptionCorrectionProfile::FAMILY_DOCUMENT, $parseErrorProfile->family());
@@ -121,8 +121,105 @@ class ExceptionCorrectionUiTest extends TestCase
             Livewire::test(ViewException::class, ['record' => $case->getKey()])
                 ->assertSuccessful()
                 ->assertActionVisible('addProductToAssortment')
-                ->assertSee('Add product to assortment')
+                ->assertSee('Authorize product')
                 ->assertSee('Suggested correction');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function open_unknown_gtin_shows_suggested_root_cause_and_resolve_defaults(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $gtin = $this->uniqueGtin();
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            $this->assertNull($case->fresh()->root_cause_id);
+
+            $rootCause = ExceptionRootCause::query()->where('code', 'internal_mapping_error')->firstOrFail();
+            $resolutionAction = ExceptionAction::query()->where('code', 'update_master_data')->firstOrFail();
+
+            $component = Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Suggested root cause')
+                ->assertSee('Internal mapping / master data error')
+                ->assertSee('Suggested resolution action')
+                ->assertSee('Update master data')
+                ->assertActionVisible('addProductToAssortment')
+                ->assertActionVisible('resolve')
+                ->mountAction('resolve');
+
+            $this->assertNull($case->fresh()->root_cause_id);
+
+            /** @var ViewException $page */
+            $page = $component->instance();
+
+            $schemaMethod = new \ReflectionMethod($page, 'getMountedActionSchema');
+            $schemaMethod->setAccessible(true);
+            $schema = $schemaMethod->invoke($page, mountedAction: $page->getMountedAction());
+            $components = collect($schema->getFlatComponents(withHidden: true));
+
+            $rootCauseSelect = $components->first(fn ($component): bool => $component->getName() === 'root_cause_id');
+            $actionSelect = $components->first(fn ($component): bool => $component->getName() === 'resolution_action_id');
+
+            $this->assertNotNull($rootCauseSelect);
+            $this->assertNotNull($actionSelect);
+            $this->assertSame((int) $rootCause->getKey(), (int) $rootCauseSelect->getDefaultState());
+            $this->assertSame((int) $resolutionAction->getKey(), (int) $actionSelect->getDefaultState());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function exception_header_shows_primary_actions_and_actions_menu(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $gtin = $this->uniqueGtin();
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Assign To Me')
+                ->assertSee('Authorize Product')
+                ->assertSee('Quarantine')
+                ->assertSee('More')
+                ->assertActionVisible('addProductToAssortment')
+                ->assertActionVisible('assignToMe')
+                ->assertActionVisible('escalate')
+                ->assertActionVisible('changeStatus')
+                ->assertActionVisible('resolve');
         } finally {
             $this->cleanup();
         }
@@ -418,7 +515,131 @@ class ExceptionCorrectionUiTest extends TestCase
             $this->tenantProductIds[] = (int) $product->getKey();
             $this->assertSame($gtin, $product->gtin);
             $this->assertTrue($wholesaler->products()->where('products.id', $product->id)->exists());
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertSuccessful()
+                ->assertActionHidden('addProductToAssortment')
+                ->assertSee('This GTIN is now in product master');
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function authorize_product_hidden_when_gtin_already_in_product_master(): void
+    {
+        $gtin = $this->uniqueGtin();
+        $this->createRxPackaging($gtin);
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $product = Product::query()->create([
+                'gtin' => $gtin,
+                'name' => 'Already authorized Rx '.uniqid(),
+                'is_active' => true,
+            ]);
+            $this->tenantProductIds[] = (int) $product->getKey();
+
+            $this->assertTrue(AssortmentFromCatalog::productAuthorizedForGtin($gtin));
+
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+            $document = $this->makeErrorDocument();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'document_id' => $document->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertSuccessful()
+                ->assertActionHidden('addProductToAssortment')
+                ->assertSee('Re-process the linked document to close the case');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function authorize_with_active_receiving_leaves_case_open_and_hides_authorize(): void
+    {
+        $gtin = $this->uniqueGtin();
+        $packaging = $this->createRxPackaging($gtin);
+
+        $this->initializeDemo2Tenant();
+
+        $sessionId = null;
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $wholesaler = TradingPartner::query()->create([
+                'name' => 'Exception UI Receiving Block Wholesaler '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $wholesaler->getKey();
+
+            $document = $this->makeErrorDocument();
+            $session = ReceivingSession::query()->create([
+                'epcis_document_id' => $document->getKey(),
+                'status' => 'open',
+                'expected_parent_count' => 0,
+                'confirmed_parent_count' => 0,
+                'expected_child_count' => 0,
+                'confirmed_child_count' => 0,
+                'opened_at' => now(),
+            ]);
+            $sessionId = (int) $session->getKey();
+
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'document_id' => $document->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->callAction('addProductToAssortment', [
+                    'gtin' => $gtin,
+                    'trading_partner_id' => $wholesaler->getKey(),
+                    'also_resolve' => true,
+                    'also_reprocess' => true,
+                    'resolution_notes' => 'Authorized missing GTIN from catalog.',
+                ])
+                ->assertHasNoActionErrors();
+
+            $product = Product::query()->where('fda_product_packaging_id', $packaging->id)->first();
+            $this->assertNotNull($product);
+            $this->tenantProductIds[] = (int) $product->getKey();
+
+            $this->assertSame(ExceptionStatus::Investigating, $case->fresh()->status);
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertSuccessful()
+                ->assertActionHidden('addProductToAssortment');
+        } finally {
+            if (tenancy()->initialized && $sessionId !== null) {
+                ReceivingSession::query()->whereKey($sessionId)->delete();
+            }
             $this->cleanup();
         }
     }
@@ -514,6 +735,200 @@ class ExceptionCorrectionUiTest extends TestCase
     }
 
     #[Test]
+    public function unlinked_manufacturer_matching_catalog_labeler_is_auto_linked_on_authorize(): void
+    {
+        $gtin = $this->uniqueGtin();
+        $labelerName = 'Exception UI Labeler Mfg '.uniqid();
+
+        $org = FdaOrganization::query()->create([
+            'original_name' => $labelerName,
+            'canonical_name' => strtoupper($labelerName),
+            'name' => $labelerName,
+            'partner_type' => PartnerType::Manufacturer,
+            'is_active' => true,
+        ]);
+        $this->orgIds[] = (int) $org->getKey();
+
+        $listing = FdaProduct::query()->create([
+            'product_id' => 'TEST-EXC-UI-LINK-'.uniqid(),
+            'product_ndc' => fake()->unique()->numerify('#####-###'),
+            'brand_name' => 'Auto-link Rx',
+            'product_type' => FdaProduct::PRODUCT_TYPE_HUMAN_PRESCRIPTION,
+            'fda_organization_id' => $org->id,
+            'finished' => true,
+            'is_active' => true,
+        ]);
+        $this->productIds[] = (int) $listing->getKey();
+
+        $packaging = FdaProductPackaging::query()->create([
+            'fda_product_id' => $listing->id,
+            'gtin' => $gtin,
+            'package_ndc' => fake()->unique()->numerify('#####-###-##'),
+            'ndc11' => fake()->unique()->numerify('###########'),
+            'is_active' => true,
+        ]);
+        $this->packagingIds[] = (int) $packaging->getKey();
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $manufacturer = TradingPartner::query()->create([
+                'name' => $labelerName,
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Manufacturer,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $manufacturer->getKey();
+
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::New,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->callAction('addProductToAssortment', [
+                    'gtin' => $gtin,
+                    'trading_partner_id' => $manufacturer->getKey(),
+                    'also_resolve' => false,
+                    'also_reprocess' => false,
+                    'resolution_notes' => 'Authorized missing GTIN from catalog.',
+                ])
+                ->assertHasNoActionErrors();
+
+            $manufacturer->refresh();
+            $this->assertSame((int) $org->getKey(), (int) $manufacturer->fda_organization_id);
+
+            $product = Product::query()->where('fda_product_packaging_id', $packaging->id)->first();
+            $this->assertNotNull($product);
+            $this->tenantProductIds[] = (int) $product->getKey();
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function authorize_with_document_requires_reprocess_before_auto_resolve(): void
+    {
+        $gtin = $this->uniqueGtin();
+        $packaging = $this->createRxPackaging($gtin);
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $wholesaler = TradingPartner::query()->create([
+                'name' => 'Exception UI Reprocess Gate Wholesaler '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $wholesaler->getKey();
+
+            $document = $this->makeErrorDocument();
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'document_id' => $document->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->callAction('addProductToAssortment', [
+                    'gtin' => $gtin,
+                    'trading_partner_id' => $wholesaler->getKey(),
+                    'also_resolve' => true,
+                    'also_reprocess' => false,
+                    'resolution_notes' => 'Authorized missing GTIN from catalog.',
+                ])
+                ->assertHasNoActionErrors();
+
+            $product = Product::query()->where('fda_product_packaging_id', $packaging->id)->first();
+            $this->assertNotNull($product);
+            $this->tenantProductIds[] = (int) $product->getKey();
+
+            $this->assertSame(ExceptionStatus::Investigating, $case->fresh()->status);
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->assertActionHidden('addProductToAssortment');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function authorize_with_also_resolve_seeds_missing_resolution_catalog(): void
+    {
+        $gtin = $this->uniqueGtin();
+        $this->createRxPackaging($gtin);
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            ExceptionRootCause::query()->delete();
+            ExceptionAction::query()->delete();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->actingAsExceptionViewer();
+
+            $wholesaler = TradingPartner::query()->create([
+                'name' => 'Exception UI Resolve Catalog Wholesaler '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $wholesaler->getKey();
+
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->firstOrFail();
+
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'title' => 'Unknown GTIN encountered',
+                'description' => "GTIN not found in product master: {$gtin}",
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::Investigating,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
+                ->callAction('addProductToAssortment', [
+                    'gtin' => $gtin,
+                    'trading_partner_id' => $wholesaler->getKey(),
+                    'also_resolve' => true,
+                    'also_reprocess' => false,
+                    'resolution_notes' => 'Authorized missing GTIN from catalog.',
+                ])
+                ->assertHasNoActionErrors();
+
+            $this->assertSame(ExceptionStatus::Resolved, $case->fresh()->status);
+            $this->assertNotNull(ExceptionRootCause::query()->where('code', 'internal_mapping_error')->value('id'));
+            $this->assertNotNull(ExceptionAction::query()->where('code', 'update_master_data')->value('id'));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function regulatory_compliance_gate_is_enforced_when_adding_product_from_exception(): void
     {
         $gtin = $this->uniqueGtin();
@@ -547,7 +962,7 @@ class ExceptionCorrectionUiTest extends TestCase
             ]);
             $this->caseIds[] = (int) $case->getKey();
 
-            $component = Livewire::test(ViewException::class, ['record' => $case->getKey()])
+            Livewire::test(ViewException::class, ['record' => $case->getKey()])
                 ->callAction('addProductToAssortment', [
                     'gtin' => $gtin,
                     'trading_partner_id' => $wholesaler->getKey(),
@@ -555,16 +970,10 @@ class ExceptionCorrectionUiTest extends TestCase
                     'also_reprocess' => false,
                     'resolution_notes' => 'Authorized missing GTIN from catalog.',
                     'regulatory_password' => 'not-the-password',
-                ]);
+                ])
+                ->assertHasActionErrors(['regulatory_password' => 'The password you entered is incorrect.']);
 
             $this->assertFalse(Product::query()->where('gtin', $gtin)->exists(), 'Product should not be created with an incorrect password.');
-            $errors = $component->instance()->getErrorBag()->toArray();
-            $this->assertNotSame([], $errors, 'Expected action errors; bag was empty');
-            $joined = json_encode($errors);
-            $this->assertTrue(
-                str_contains($joined, 'regulatory_password') || str_contains(strtolower($joined), 'password'),
-                'Expected a password-related validation error. Errors: '.$joined,
-            );
 
             Livewire::test(ViewException::class, ['record' => $case->getKey()])
                 ->callAction('addProductToAssortment', [

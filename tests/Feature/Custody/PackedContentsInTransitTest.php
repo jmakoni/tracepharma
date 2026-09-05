@@ -11,7 +11,9 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Services\Custody\EpcCustodyGate;
+use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Gs1\Gtin;
+use App\Support\Gs1\Sgln;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -95,8 +97,13 @@ class PackedContentsInTransitTest extends TestCase
                 $gate->assertOperableFor([$item->fresh()], 'packing');
                 $this->fail('Expected an item inside a shipped pallet to fail the custody assertion.');
             } catch (InvalidArgumentException $e) {
-                $this->assertStringContainsString('packed inside', $e->getMessage());
-                $this->assertStringContainsString((string) $pallet->sscc18, $e->getMessage());
+                // Effective last-known inherits the pallet's shipping meta, so the message
+                // may say in-transit rather than "packed inside" — either means not operable.
+                $message = $e->getMessage();
+                $this->assertTrue(
+                    str_contains($message, 'packed inside') || str_contains($message, 'in transit'),
+                    "Unexpected custody message: {$message}",
+                );
             }
 
             // Receiving the pallet back ends the transit for everything inside it.
@@ -146,6 +153,111 @@ class PackedContentsInTransitTest extends TestCase
         } finally {
             $this->cleanup();
         }
+    }
+
+    #[Test]
+    public function receiving_a_pallet_at_another_site_colocates_packed_children(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $origin = $this->createSite();
+            $destination = $this->createSite();
+            $originId = (int) $origin->getKey();
+            $destinationId = (int) $destination->getKey();
+
+            $pallet = $this->createSscc();
+            $case = $this->createSscc();
+            $item = $this->createSgtin();
+
+            $this->packInto($origin, $pallet, $case);
+            $this->packInto($origin, $case, $item);
+
+            $this->authorTransferShipping($origin, $pallet);
+            $this->authorTransferReceive($destination, $pallet);
+
+            $gate = app(EpcCustodyGate::class);
+            $shippable = app(ShippableEpcsAtSite::class);
+            $lastKnown = app(ResolveEpcLastKnownGln::class);
+            $packedIds = [(int) $case->getKey(), (int) $item->getKey()];
+
+            $destGln = Sgln::normalizeGln((string) $destination->gln);
+            $originGln = Sgln::normalizeGln((string) $origin->gln);
+
+            foreach ($packedIds as $epcId) {
+                $this->assertSame($destGln, $lastKnown->forEpc($epcId));
+                $this->assertTrue($gate->isInCustody(Epc::query()->findOrFail($epcId)));
+                $this->assertTrue($shippable->contains($destinationId, $epcId));
+                $this->assertFalse($shippable->contains($originId, $epcId));
+            }
+
+            $this->assertSame($destGln, $lastKnown->forEpc((int) $pallet->getKey()));
+            $this->assertNotSame($originGln, $destGln);
+            $this->assertNotEmpty(array_intersect($packedIds, $shippable->epcIds($destinationId)));
+            $this->assertSame([], array_intersect($packedIds, $shippable->epcIds($originId)));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function unpack_then_child_keeps_own_location_after_parent_moves(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $origin = $this->createSite();
+            $destination = $this->createSite();
+            $originId = (int) $origin->getKey();
+            $destinationId = (int) $destination->getKey();
+
+            $pallet = $this->createSscc();
+            $item = $this->createSgtin();
+            $link = $this->packInto($origin, $pallet, $item);
+
+            $link->forceFill(['valid_to' => now()])->save();
+
+            $this->authorTransferShipping($origin, $pallet);
+            $this->authorTransferReceive($destination, $pallet);
+
+            $shippable = app(ShippableEpcsAtSite::class);
+            $lastKnown = app(ResolveEpcLastKnownGln::class);
+
+            $originGln = Sgln::normalizeGln((string) $origin->gln);
+            $this->assertSame($originGln, $lastKnown->forEpc((int) $item->getKey()));
+            $this->assertTrue($shippable->contains($originId, (int) $item->getKey()));
+            $this->assertFalse($shippable->contains($destinationId, (int) $item->getKey()));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    /**
+     * Intracompany transfer ship: outbound shipping / in_transit on the outermost unit.
+     */
+    private function authorTransferShipping(Site $site, Epc $epc): void
+    {
+        $this->authorEvent(
+            site: $site,
+            bizStep: 'urn:epcglobal:cbv:bizstep:shipping',
+            disposition: 'urn:epcglobal:cbv:disp:in_transit',
+            authoredKind: EpcisAuthoredKind::Transferring,
+            notes: 'Generated transferring EPCIS for a packed contents custody test.',
+            epcRoles: [(int) $epc->getKey() => 'epcList'],
+        );
+    }
+
+    private function authorTransferReceive(Site $site, Epc $epc): void
+    {
+        $this->authorEvent(
+            site: $site,
+            bizStep: 'urn:epcglobal:cbv:bizstep:receiving',
+            disposition: 'urn:epcglobal:cbv:disp:in_progress',
+            authoredKind: EpcisAuthoredKind::Transferring,
+            notes: 'Generated transferring receive EPCIS for a packed contents custody test.',
+            epcRoles: [(int) $epc->getKey() => 'epcList'],
+            direction: 'inbound',
+        );
     }
 
     /**
@@ -205,13 +317,14 @@ class PackedContentsInTransitTest extends TestCase
         array $epcRoles,
         string $eventType = 'ObjectEvent',
         string $action = 'OBSERVE',
+        string $direction = 'outbound',
     ): EpcisEvent {
         $document = EpcisDocument::query()->create([
             'document_uuid' => (string) Str::uuid(),
             'schema_version' => '1.2',
             'creation_date' => now(),
             'received_at' => now(),
-            'direction' => 'outbound',
+            'direction' => $direction,
             'authored_kind' => $authoredKind,
             'status' => 'parsed',
             'original_filename' => 'packed-contents-'.Str::random(6).'.xml',
@@ -219,11 +332,12 @@ class PackedContentsInTransitTest extends TestCase
         ]);
         $this->documentIds[] = (int) $document->getKey();
 
+        // Stagger event_time so later authors in the same test win "latest".
         $event = EpcisEvent::query()->create([
             'document_id' => $document->getKey(),
             'event_id' => 'urn:uuid:'.(string) Str::uuid(),
             'event_type' => $eventType,
-            'event_time' => now(),
+            'event_time' => now()->addSeconds(count($this->eventIds)),
             'record_time' => now(),
             'event_timezone_offset' => '+00:00',
             'action' => $action,
@@ -335,6 +449,11 @@ class PackedContentsInTransitTest extends TestCase
         if ($this->eventIds !== []) {
             // Links and event_epcs cascade from the establishing event.
             DB::table('event_epcs')->whereIn('event_id', $this->eventIds)->delete();
+            AggregationLink::query()
+                ->whereIn('established_by_event_id', $this->eventIds)
+                ->orWhereIn('parent_epc_id', $this->epcIds)
+                ->orWhereIn('child_epc_id', $this->epcIds)
+                ->delete();
             EpcisEvent::query()->whereIn('id', $this->eventIds)->delete();
             $this->eventIds = [];
         }

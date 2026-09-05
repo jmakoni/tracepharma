@@ -15,7 +15,12 @@ class BackfillCatalogPartnerPlacesJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    /**
+     * High try budget: RateLimited releases must not exhaust attempts before retryUntil (2 days).
+     */
     public int $tries = 400;
+
+    public int $timeout = 180;
 
     /** @var list<int> */
     public array $backoff = [10, 30, 60, 120];

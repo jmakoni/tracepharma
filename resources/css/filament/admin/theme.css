@@ -1,4 +1,6 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
+@import '../../../../vendor/watheqalshowaiter/filament-sticky-table-header/resources/css/sticky-table-header.css';
+@import '../../../../packages/filament-ui-extras/resources/css/filament-ui-extras.css';
 
 @plugin "@tailwindcss/typography";
 
@@ -10,6 +12,7 @@
 @source '../../../../vendor/guava/filament-knowledge-base/resources/views/**/*';
 @source '../../../../vendor/bokshorn-it/filament-activity-timeline/resources/**/*.blade.php';
 @source '../../../../vendor/zvizvi/filament-notifications-tabs/resources/views/**/*.blade.php';
+@source '../../../../packages/filament-ui-extras/resources/views/**/*.blade.php';
 
 @plugin "daisyui" {
     themes: false;

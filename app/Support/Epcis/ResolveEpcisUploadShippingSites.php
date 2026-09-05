@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Epcis;
 
 use App\Support\Auth\SiteAccess;
+use App\Support\TenantSettings;
 
 /**
  * Resolve ship-from / ship-to site ids from an EPCIS upload before persistence.
@@ -50,9 +51,13 @@ final class ResolveEpcisUploadShippingSites
             ?? $partyGlns['destination_owning_party_gln']
             ?? $receiverGln;
 
+        $matchInboundShipToSite = TenantSettings::forTenant(tenant())->matchInboundShipToSite();
+
         return [
             'ship_from_site_id' => $this->resolveOrganizationSiteId($shipFromGln),
-            'ship_to_site_id' => $this->resolveOrganizationSiteId($shipToGln),
+            'ship_to_site_id' => $matchInboundShipToSite
+                ? $this->resolveOrganizationSiteId($shipToGln)
+                : null,
         ];
     }
 

@@ -334,8 +334,8 @@ final class ExceptionCorrectionProfile
     private const FAMILY_DEFAULTS = [
         self::FAMILY_MASTER_DATA_PRODUCT => [
             'primaryActionKey' => self::ACTION_ADD_PRODUCT,
-            'primaryActionLabel' => 'Add product to assortment',
-            'blurb' => 'This GTIN is not in your product master. Add it to the product assortment so future EPCIS events for this item stop raising this exception.',
+            'primaryActionLabel' => 'Authorize product',
+            'blurb' => 'This GTIN is not in your product master. Authorize it for the receive-from partner so future inbound EPCIS events for this item stop raising this exception.',
             'rootCause' => 'internal_mapping_error',
             'resolutionAction' => 'update_master_data',
             'quarantine' => false,
@@ -445,6 +445,7 @@ final class ExceptionCorrectionProfile
         'INVALID_GTIN_CHECK_DIGIT' => self::FAMILY_DOCUMENT,
         'INVALID_SSCC_CHECK_DIGIT' => self::FAMILY_DOCUMENT,
         'UNKNOWN_GLN' => self::FAMILY_MASTER_DATA_LOCATION,
+        'SCHEDULED_PRODUCT_MISSING_DEA' => self::FAMILY_MASTER_DATA_LOCATION,
         'INVALID_COMPANY_PREFIX' => self::FAMILY_DOCUMENT,
         'LEADING_ZERO_STRIPPED' => self::FAMILY_DOCUMENT, // hook-only today (RecordOperationalEpcisCatalogSignal); mapped for when it fires
         'GTIN_SERIAL_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
@@ -487,6 +488,7 @@ final class ExceptionCorrectionProfile
         'TIMING_INVERSION' => self::FAMILY_FALLBACK, // orphaned: catalogued/severity-mapped but never raised
         'COMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
         'EVENTS_OUT_OF_ORDER' => self::FAMILY_TIMING,
+        'PACK_HIERARCHY_TIME_INVERSION' => self::FAMILY_TIMING,
         'SHIP_BEFORE_COMMISSION' => self::FAMILY_FALLBACK, // orphaned/superseded by SERIAL_SHIPPED_NOT_COMMISSIONED + MISSING_COMMISSIONING
         'DECOMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
 
@@ -499,6 +501,10 @@ final class ExceptionCorrectionProfile
         'ENCODING_ERROR' => self::FAMILY_DOCUMENT, // hook-only today
         'MISSING_SOURCE_DESTINATION' => self::FAMILY_DOCUMENT,
         'MISSING_BIZ_TRANSACTION' => self::FAMILY_DOCUMENT,
+        'ASN_SHIPMENT_FILE_ADDED' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'ASN_SHIPMENT_PO_MISMATCH' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'DESTINATION_OWNING_PARTY_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
+        'DESTINATION_LOCATION_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
 
         // Process & DSCSA Compliance
         'MISSING_COMMISSIONING' => self::FAMILY_QUARANTINE,
@@ -531,10 +537,13 @@ final class ExceptionCorrectionProfile
      */
     private const CODE_OVERRIDES = [
         'UNKNOWN_GTIN' => [
-            'blurb' => 'GTIN not found in product master. Add this GTIN to the product assortment so future shipments for this item resolve automatically instead of raising this exception. When several GTINs are missing on one document, use the document Products tab to authorize catalog hits in bulk.',
+            'blurb' => 'GTIN not found in product master. Authorize this GTIN for the receive-from partner so future inbound shipments resolve automatically instead of raising this exception. When several GTINs are missing on one document, use the document Products tab to authorize catalog hits in bulk.',
         ],
         'UNKNOWN_GLN' => [
             'blurb' => 'GLN not recognized by the system or the trading partner. Register this GLN as one of your locations or a known partner location.',
+        ],
+        'SCHEDULED_PRODUCT_MISSING_DEA' => [
+            'blurb' => 'This shipment includes DEA-scheduled product. Add the seller or destination DEA registration on the trading partner or site, then reprocess.',
         ],
         'MASTER_DATA_SYNC_LAG' => [
             'primaryActionLabel' => 'Update product or location master data',
@@ -578,6 +587,11 @@ final class ExceptionCorrectionProfile
         ],
         'EVENTS_OUT_OF_ORDER' => [
             'blurb' => 'Events for this EPC were received out of chronological order. This is often benign (e.g. batch upload timing) — investigate with the sending system, or accept with a waiver if the sequence is otherwise explainable.',
+        ],
+        'PACK_HIERARCHY_TIME_INVERSION' => [
+            'blurb' => 'This EPC was packed into a higher parent before its own child packing event (for example inner pack → SSCC before EA → inner pack). Ask the partner to correct packing timestamps so hierarchy order is physically possible.',
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
         ],
 
         // Aggregation / hierarchy — hook-only or naturally lower-risk codes get a waive escape hatch.
@@ -668,6 +682,22 @@ final class ExceptionCorrectionProfile
         'UNSUPPORTED_EPC_TYPE' => ['waive' => true],
         'INVALID_EXTENSION_NAMESPACE' => ['waive' => true],
         'FILE_SIZE_EXCEEDED' => ['waive' => true],
+        'ASN_SHIPMENT_FILE_ADDED' => [
+            'blurb' => 'Another inbound EPCIS file joined this ASN shipment. Expected receive lines may expand; investigate only if the extra file was unexpected.',
+            'waive' => true,
+        ],
+        'ASN_SHIPMENT_PO_MISMATCH' => [
+            'blurb' => 'This file shares an ASN with an existing shipment but has a different customer PO, so it was left ungrouped. Confirm the correct PO with the partner or waive if both references are intentional.',
+            'waive' => true,
+        ],
+        'DESTINATION_OWNING_PARTY_MISMATCH' => [
+            'blurb' => 'Sold-to / destination owning party GLN is not one of your organization or facility GLNs. Confirm the file was meant for this tenant, register the GLN as an org facility if it is yours, or waive after investigation.',
+            'waive' => true,
+        ],
+        'DESTINATION_LOCATION_MISMATCH' => [
+            'blurb' => 'Ship-to / destination location GLN is not one of your organization or facility GLNs. Confirm the dock is yours, add the site GLN, or waive after investigation.',
+            'waive' => true,
+        ],
         // Internal platform validation failures require document correct/reprocess — not waiver.
         'INTERNAL_VALIDATION_FAILED' => [
             'blurb' => 'Platform business-rule validation failed for this document. Review the validation errors, correct or replace the file, and re-process. Waiver is not available for this signal.',

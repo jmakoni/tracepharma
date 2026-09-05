@@ -33,12 +33,9 @@ class PrintSsccLabelJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
-    public int $uniqueFor = 3600;
+    public int $timeout = 60;
 
-    public function __construct(
-        public Tenant $tenant,
-        public readonly int $printJobId,
-    ) {}
+    public int $uniqueFor = 3600;
 
     public function uniqueId(): string
     {

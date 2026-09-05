@@ -249,6 +249,143 @@ class OutboundMultiPartnerRoutingTest extends TestCase
         }
     }
 
+    #[Test]
+    public function one_connection_can_match_multiple_linked_partners(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partnerA = $this->createPartner('Shared conn A');
+            $partnerB = $this->createPartner('Shared conn B');
+            $partnerC = $this->createPartner('Shared conn C');
+
+            $shared = OutboundConnection::query()->create([
+                'name' => 'Shared HTTPS hub',
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'trading_partner_id' => null,
+                'is_active' => true,
+                'is_default' => true,
+                'settings' => ['endpoint_url' => 'https://hub.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $shared->getKey();
+            $shared->syncPartners([(int) $partnerA->getKey(), (int) $partnerB->getKey()]);
+
+            $this->assertTrue(OutboundConnectionResolver::connectionMatchesPartner(
+                $shared->fresh()->load('tradingPartners'),
+                (int) $partnerA->getKey(),
+            ));
+            $this->assertTrue(OutboundConnectionResolver::connectionMatchesPartner(
+                $shared->fresh()->load('tradingPartners'),
+                (int) $partnerB->getKey(),
+            ));
+            $this->assertFalse(OutboundConnectionResolver::connectionMatchesPartner(
+                $shared->fresh()->load('tradingPartners'),
+                (int) $partnerC->getKey(),
+            ));
+
+            $resolvedA = app(OutboundConnectionResolver::class)->resolve((int) $partnerA->getKey());
+            $resolvedB = app(OutboundConnectionResolver::class)->resolve((int) $partnerB->getKey());
+            $resolvedC = app(OutboundConnectionResolver::class)->resolve((int) $partnerC->getKey());
+
+            $this->assertNotNull($resolvedA);
+            $this->assertSame($shared->getKey(), $resolvedA->getKey());
+            $this->assertNotNull($resolvedB);
+            $this->assertSame($shared->getKey(), $resolvedB->getKey());
+            $this->assertNull($resolvedC);
+
+            $shared->refresh();
+            $this->assertNull($shared->trading_partner_id);
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function ladder_prefers_partner_scoped_over_global(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = $this->createPartner('Ladder partner');
+
+            $global = OutboundConnection::query()->create([
+                'name' => 'Global HTTPS ladder',
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'trading_partner_id' => null,
+                'is_active' => true,
+                'is_default' => true,
+                'settings' => ['endpoint_url' => 'https://global-ladder.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $global->getKey();
+
+            $scoped = OutboundConnection::query()->create([
+                'name' => 'Partner HTTPS ladder',
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'trading_partner_id' => $partner->getKey(),
+                'is_active' => true,
+                'is_default' => false,
+                'settings' => ['endpoint_url' => 'https://partner-ladder.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $scoped->getKey();
+
+            $resolved = app(OutboundConnectionResolver::class)->resolveWithLadder((int) $partner->getKey());
+
+            $this->assertNotNull($resolved);
+            $this->assertSame($scoped->getKey(), $resolved->getKey());
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function setting_default_clears_defaults_on_connections_sharing_any_partner(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partnerA = $this->createPartner('Overlap A');
+            $partnerB = $this->createPartner('Overlap B');
+
+            $abDefault = OutboundConnection::query()->create([
+                'name' => 'AB default',
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'is_default' => true,
+                'settings' => ['endpoint_url' => 'https://ab.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $abDefault->getKey();
+            $abDefault->syncPartners([(int) $partnerA->getKey(), (int) $partnerB->getKey()]);
+
+            $bOnly = OutboundConnection::query()->create([
+                'name' => 'B only new default',
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'is_default' => true,
+                'settings' => ['endpoint_url' => 'https://b-only.example/epcis'],
+            ]);
+            $this->connectionIds[] = (int) $bOnly->getKey();
+            $bOnly->syncPartners([(int) $partnerB->getKey()]);
+
+            OutboundConnectionDefaultSync::ensureSingleDefault($bOnly->fresh());
+
+            $abDefault->refresh();
+            $bOnly->refresh();
+
+            $this->assertFalse($abDefault->is_default);
+            $this->assertTrue($bOnly->is_default);
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
     private function createPartner(string $name): TradingPartner
     {
         $partner = TradingPartner::query()->create([

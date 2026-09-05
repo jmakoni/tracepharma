@@ -23,7 +23,7 @@ final class RequeueEpcisJob
         private readonly EpcisJobLogger $logger,
     ) {}
 
-    public function handle(EpcisJob $job, ?int $requestedBy = null): EpcisJob
+    public function handle(EpcisJob $job, ?int $requestedBy = null, bool $skipPayloadPrepare = false): EpcisJob
     {
         if (! JobRoleAccess::allowsAny(Permissions::NavIntegrations, Permissions::NavExceptions)) {
             throw new RuntimeException('Integrations or Exceptions are not authorized for your job role.');
@@ -42,7 +42,7 @@ final class RequeueEpcisJob
         }
 
         try {
-            $this->rebuildPayload->handle($job);
+            $this->rebuildPayload->handle($job, skipPrepare: $skipPayloadPrepare);
         } catch (\Throwable $e) {
             $this->logger->error($job, 'Rebuild/reprocess prep failed: '.$e->getMessage());
             $job->forceFill([

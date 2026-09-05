@@ -3,15 +3,25 @@
 namespace App\Support\Epcis;
 
 use Carbon\CarbonInterface;
+use Illuminate\Support\Str;
 
 /**
- * Product convention for SBDH DocumentIdentification/InstanceIdentifier:
- * urn:uuid:{YmdHis}{v} (UTC event time + milliseconds, 17 digits), optionally
- * suffixed with a discriminator (e.g. session id) so two documents authored
- * from the same event time cannot collide on the document_uuid unique index.
+ * SBDH DocumentIdentification/InstanceIdentifier helpers.
+ *
+ * Prefer {@see uuid()} for authored outbound documents (RFC 4122 under urn:uuid:).
+ * {@see fromEventTime()} remains for older callers that stamp a UTC timestamp.
  */
 final class SbdhInstanceIdentifier
 {
+    public static function uuid(): string
+    {
+        return 'urn:uuid:'.(string) Str::uuid();
+    }
+
+    /**
+     * Legacy product stamp: urn:uuid:{YmdHis}{v} (UTC event time + milliseconds),
+     * optionally suffixed with a discriminator (e.g. session id).
+     */
     public static function fromEventTime(CarbonInterface $eventTime, int|string|null $discriminator = null): string
     {
         $utc = $eventTime->copy()->utc();

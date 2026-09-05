@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PortalUser;
 use App\Services\Portal\ClientPortalAccess;
 use App\Services\Portal\PortalOtpService;
+use App\Support\Auth\AccountSecuritySession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -71,6 +72,7 @@ final class AuthController extends Controller
         Auth::guard('portal')->login($user);
         $request->session()->forget('portal_otp_email');
         $request->session()->regenerate();
+        AccountSecuritySession::bind($user);
 
         return $this->postLoginRedirect($user, $access);
     }

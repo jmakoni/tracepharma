@@ -3,6 +3,7 @@
 namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
@@ -12,6 +13,7 @@ use App\Models\Tenant;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -206,6 +208,71 @@ class AggregationLinkCrossDocumentTest extends TestCase
                     ->whereNull('valid_to')
                     ->count(),
                 'Child must have exactly one open parent; backdated ADD must not insert a second',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function same_document_reprocess_allows_earlier_add_than_prior_generation_open_links(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $doc = $this->ingestUniqueFixture('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->documentIds[] = (int) $doc->getKey();
+            $this->assertSame('validated', $doc->status);
+
+            $child = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+            $priorLink = AggregationLink::query()
+                ->where('child_epc_id', $child->getKey())
+                ->whereNull('valid_to')
+                ->firstOrFail();
+
+            $earlierXml = $this->aggregationAddDocumentXml(
+                self::SSCC_B_URI,
+                self::SGTIN_URI,
+                eventTime: '2026-07-01T08:00:00.000Z',
+            );
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_corr_');
+            $this->assertNotFalse($tmp);
+            $path = $tmp.'.xml';
+            rename($tmp, $path);
+            file_put_contents($path, $earlierXml);
+
+            $disk = (string) ($doc->payload_disk ?: 'local');
+            $newPayload = 'epcis/inbound/'.(string) str()->uuid().'.xml';
+            Storage::disk($disk)->put($newPayload, file_get_contents($path));
+
+            $doc->forceFill([
+                'payload_path' => $newPayload,
+                'status' => 'error',
+                'error_message' => 'simulated partner correction',
+                'file_sha256' => hash_file('sha256', $path),
+                'original_filename' => 'corrected-earlier-pack.xml',
+            ])->save();
+
+            @unlink($path);
+
+            $reprocessed = app(ReprocessEpcisDocument::class)->handle(
+                $doc->fresh(),
+                sync: true,
+                force: true,
+                authorizeExceptionsRole: false,
+            );
+
+            $this->assertStringNotContainsString(
+                'newer open link',
+                (string) $reprocessed->error_message,
+                'Same-document corrected reprocess must not be blocked by prior-generation open links (status='
+                .$reprocessed->status.' err='.(string) $reprocessed->error_message.')',
+            );
+            $this->assertFalse(
+                str_starts_with((string) $reprocessed->error_message, 'Aggregation ADD at'),
+                'Aggregation ADD must project during same-document corrected reprocess (status='
+                .$reprocessed->status.' err='.(string) $reprocessed->error_message.')',
             );
         } finally {
             $this->cleanup();

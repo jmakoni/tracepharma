@@ -70,11 +70,13 @@ class ListEpcisDocuments extends ListRecords
     {
         parent::mount();
 
+        // Header actions are cached after mount(); mountAction() here silently no-ops.
+        // Set defaultAction so the page wire:init mounts Find / Recall after boot.
         if (
             request()->boolean('findRecall')
             && TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
         ) {
-            $this->mountAction('findRecall');
+            $this->defaultAction = 'findRecall';
         }
     }
 

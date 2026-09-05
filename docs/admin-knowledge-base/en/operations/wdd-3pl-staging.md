@@ -1,11 +1,11 @@
 ---
-title: Wdd 3pl Staging
+title: WDD 3PL staging
 parent: operations
 order: 30
 group: Operations
 ---
 
-# Wdd 3pl Staging
+# WDD 3PL staging
 
 Filament classes:
 

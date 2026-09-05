@@ -130,7 +130,28 @@ class EpcisDocumentResourceTest extends TestCase
             $findRecall = collect($hub->directories())->firstWhere('label', 'Find / Recall');
             $this->assertNotNull($findRecall);
             $this->assertStringContainsString('inbound-epcis', (string) $findRecall['url']);
-            $this->assertStringContainsString('findRecall=1', (string) $findRecall['url']);
+            $this->assertStringContainsString('action=findRecall', (string) $findRecall['url']);
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function find_recall_query_param_sets_default_action_for_wire_init(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $owner = User::query()->where('email', 'owner@demo.test')->first()
+                ?? User::factory()->create(['email' => 'owner@demo.test']);
+
+            $this->actingAs($owner, 'web');
+
+            \Livewire\Livewire::withQueryParams(['findRecall' => '1'])
+                ->test(ListEpcisDocuments::class)
+                ->assertSet('defaultAction', 'findRecall');
         } finally {
             tenancy()->end();
         }

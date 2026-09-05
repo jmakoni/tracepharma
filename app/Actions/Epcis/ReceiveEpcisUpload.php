@@ -10,6 +10,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Services\Epcis\EpcisIngestionService;
 use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\EpcisSoapDocumentNormalizer;
 use App\Support\Epcis\EpcisStoragePath;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -41,6 +42,35 @@ final class ReceiveEpcisUpload
             throw new \InvalidArgumentException("EPCIS file is missing or unreadable: {$absolutePath}");
         }
 
+        $normalizedFile = app(EpcisSoapDocumentNormalizer::class)->normalizeFile($absolutePath);
+        $absolutePath = $normalizedFile['path'];
+        $temporaryUnwrapped = $normalizedFile['temporary'];
+
+        try {
+            return $this->receiveNormalizedUpload($absolutePath, $meta);
+        } finally {
+            if ($temporaryUnwrapped && is_file($absolutePath)) {
+                @unlink($absolutePath);
+            }
+        }
+    }
+
+    /**
+     * @param  array{
+     *     direction?: string,
+     *     received_via?: string|EpcisReceivedVia|null,
+     *     original_filename?: string|null,
+     *     trading_partner_id?: int|null,
+     *     inbound_connection_id?: int|null,
+     *     outbound_connection_id?: int|null,
+     *     notes?: string|null,
+     *     disk?: string|null,
+     *     dispatch?: bool,
+     *     sync?: bool
+     * }  $meta
+     */
+    private function receiveNormalizedUpload(string $absolutePath, array $meta): EpcisDocument
+    {
         $direction = (string) ($meta['direction'] ?? 'inbound');
         $disk = (string) ($meta['disk'] ?? config('tracepharma.epcis.payload_disk', 'local'));
         $originalFilename = $meta['original_filename'] ?? basename($absolutePath);

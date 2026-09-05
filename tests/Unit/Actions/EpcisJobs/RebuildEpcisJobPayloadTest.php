@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Actions\EpcisJobs;
 
+use App\Actions\Epcis\PrepareOutboundEpcisForRetransmit;
+use App\Actions\Epcis\RemintOutboundEpcisIdentityForRetransmit;
+use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Actions\EpcisJobs\RebuildEpcisJobPayload;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\EpcisJobKind;
@@ -16,6 +19,8 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Support\Epcis\BuildFullHistoryShippingEpcisXml;
 use App\Support\Epcis\EpcisStoragePath;
+use App\Support\Epcis\PersistEpcisXmlPayload;
+use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -62,100 +67,126 @@ class RebuildEpcisJobPayloadTest extends TestCase
     }
 
     #[Test]
-    public function requeueing_a_shipping_job_retransmits_the_existing_payload_untouched(): void
+    public function requeueing_prepares_via_prepare_action_then_asserts_payload(): void
+    {
+        $this->initializeDemo2();
+
+        Storage::fake('local');
+        config(['tracepharma.epcis.authored_payload_disk' => 'local']);
+
+        $oldUuid = 'urn:uuid:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+        $path = EpcisStoragePath::onDisk('local', 'epcis/outbound/remint-'.Str::lower(Str::random(6)).'.xml');
+        $xml = $this->minimalSbdhXml($oldUuid);
+        Storage::disk('local')->put($path, $xml);
+
+        $document = EpcisDocument::query()->create([
+            'document_uuid' => $oldUuid,
+            'schema_version' => '1.2',
+            'creation_date' => now(),
+            'direction' => 'outbound',
+            'authored_kind' => EpcisAuthoredKind::Receiving,
+            'format' => 'xml',
+            'original_filename' => basename($path),
+            'payload_disk' => 'local',
+            'payload_path' => $path,
+            'file_sha256' => hash('sha256', $xml),
+            'status' => 'generated',
+            'received_at' => now(),
+            'event_count' => 0,
+            'epc_count' => 0,
+            'reprocess_count' => 0,
+            'notes' => 'remint fixture',
+        ]);
+        $this->documentIds[] = (int) $document->getKey();
+
+        $job = EpcisJob::query()->create([
+            'kind' => EpcisJobKind::OutboundReceiving,
+            'status' => EpcisJobStatus::Error,
+            'receipt' => bin2hex(random_bytes(16)),
+            'epcis_document_id' => $document->getKey(),
+            'error_message' => 'fixture',
+            'received_at' => now(),
+            'finished_at' => now(),
+        ]);
+        $this->jobIds[] = (int) $job->getKey();
+
+        $this->app->instance(
+            PrepareOutboundEpcisForRetransmit::class,
+            new class(
+                app(BuildFullHistoryShippingEpcisXml::class),
+                app(PersistEpcisXmlPayload::class),
+                app(RemintOutboundEpcisIdentityForRetransmit::class),
+                app(ValidateEpcis12Document::class),
+                app(AssertOutermostSsccHasChildren::class),
+            ) extends PrepareOutboundEpcisForRetransmit
+            {
+                protected function assertGs1ValidOrFail(EpcisDocument $document): void
+                {
+                    // Minimal SBDH fixture is not a full GS1 US R1.3 shipping TI.
+                }
+            },
+        );
+
+        app(RebuildEpcisJobPayload::class)->handle($job->fresh(['document']) ?? $job);
+
+        $document->refresh();
+        $this->assertNotSame($oldUuid, (string) $document->document_uuid);
+        $this->assertNotSame(basename($path), (string) $document->original_filename);
+        $this->assertTrue(Storage::disk('local')->exists((string) $document->payload_path));
+        $this->assertTrue(
+            $job->messages()->where('message', 'like', '%Prepared outbound payload%')->exists(),
+        );
+    }
+
+    #[Test]
+    public function skip_prepare_only_asserts_existing_payload(): void
     {
         $this->initializeDemo2();
 
         Storage::fake('local');
 
-        $path = EpcisStoragePath::onDisk('local', 'epcis/outbound/ship-'.Str::lower(Str::random(6)).'.xml');
-        $xml = '<?xml version="1.0"?><EPCISDocument>as-transmitted</EPCISDocument>';
-        Storage::disk('local')->put($path, $xml);
+        $path = EpcisStoragePath::onDisk('local', 'epcis/outbound/skip-'.Str::lower(Str::random(6)).'.xml');
+        Storage::disk('local')->put($path, '<ok/>');
 
         [$document, $session, $job] = $this->seedShippingJob($path, 'local');
-        $document->forceFill(['file_sha256' => hash('sha256', $xml)])->save();
-        $document->refresh();
-
-        $originalUuid = (string) $document->document_uuid;
-        $originalFilename = (string) $document->original_filename;
-        $originalSha = (string) $document->file_sha256;
-        $originalCreationDate = $document->creation_date?->toIso8601String();
 
         $this->app->bind(
             BuildFullHistoryShippingEpcisXml::class,
-            fn () => $this->fail('Requeue must not rebuild shipping EPCIS from full history.'),
+            fn () => $this->fail('skipPrepare must not rebuild shipping EPCIS.'),
         );
 
-        app(RebuildEpcisJobPayload::class)->handle($job->fresh(['document', 'shippingSession']) ?? $job);
+        app(RebuildEpcisJobPayload::class)->handle(
+            $job->fresh(['document', 'shippingSession']) ?? $job,
+            skipPrepare: true,
+        );
 
         $document->refresh();
-
         $this->assertSame($path, $document->payload_path);
-        $this->assertSame('local', $document->payload_disk);
-        $this->assertSame($originalUuid, (string) $document->document_uuid);
-        $this->assertSame($originalFilename, (string) $document->original_filename);
-        $this->assertSame($originalSha, (string) $document->file_sha256);
-        $this->assertSame($originalCreationDate, $document->creation_date?->toIso8601String());
-
-        $this->assertTrue(Storage::disk('local')->exists($path));
-        $this->assertSame($xml, Storage::disk('local')->get($path));
-
         $this->assertTrue(
-            $job->messages()->where('message', 'like', '%existing payload%')->exists(),
+            $job->messages()->where('message', 'like', '%Skipping payload prepare%')->exists(),
         );
     }
 
-    #[Test]
-    public function assert_existing_payload_resolves_local_path_for_exists_check(): void
+    private function minimalSbdhXml(string $instanceId): string
     {
-        $this->initializeDemo2();
-
-        Storage::fake('local');
-
-        $relative = 'epcis/outbound/existing-'.Str::lower(Str::random(6)).'.xml';
-        $path = EpcisStoragePath::onDisk('local', $relative);
-        Storage::disk('local')->put($path, '<ok/>');
-
-        [$document, $session, $job] = $this->seedShippingJob($relative, 'local');
-        $job->forceFill(['kind' => EpcisJobKind::OutboundReceiving])->save();
-
-        app(RebuildEpcisJobPayload::class)->handle($job->fresh(['document']) ?? $job);
-
-        $this->assertTrue(Storage::disk('local')->exists($path));
-        $this->assertTrue(
-            $job->messages()->where('message', 'like', '%existing payload%')->exists(),
-        );
-    }
-
-    #[Test]
-    public function assert_existing_payload_passes_through_legacy_s3_tenant_key(): void
-    {
-        $this->initializeDemo2();
-
-        config([
-            'filesystems.disks.epcis_s3' => [
-                'driver' => 's3',
-                'key' => 'testing',
-                'secret' => 'testing',
-                'region' => 'us-east-1',
-                'bucket' => 'testing',
-                'throw' => true,
-            ],
-        ]);
-        Storage::fake('epcis_s3');
-
-        $legacy = 'tenants/'.self::DEMO2_TENANT_ID.'/epcis/outbound/legacy-'.Str::lower(Str::random(6)).'.xml';
-        Storage::disk('epcis_s3')->put($legacy, '<ok/>');
-
-        [$document, $session, $job] = $this->seedShippingJob($legacy, 'epcis_s3');
-        $job->forceFill(['kind' => EpcisJobKind::OutboundReceiving])->save();
-
-        app(RebuildEpcisJobPayload::class)->handle($job->fresh(['document']) ?? $job);
-
-        $this->assertTrue(Storage::disk('epcis_s3')->exists($legacy));
-        $this->assertTrue(
-            $job->messages()->where('message', 'like', '%existing payload%')->exists(),
-        );
+        return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1" xmlns:sbdh="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader" schemaVersion="1.2" creationDate="2026-01-01T00:00:00Z">
+  <EPCISHeader>
+    <sbdh:StandardBusinessDocumentHeader>
+      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>
+      <sbdh:DocumentIdentification>
+        <sbdh:Standard>EPCglobal</sbdh:Standard>
+        <sbdh:TypeVersion>1.0</sbdh:TypeVersion>
+        <sbdh:InstanceIdentifier>{$instanceId}</sbdh:InstanceIdentifier>
+        <sbdh:Type>Events</sbdh:Type>
+        <sbdh:CreationDateAndTime>2026-01-01T00:00:00Z</sbdh:CreationDateAndTime>
+      </sbdh:DocumentIdentification>
+    </sbdh:StandardBusinessDocumentHeader>
+  </EPCISHeader>
+  <EPCISBody><EventList/></EPCISBody>
+</epcis:EPCISDocument>
+XML;
     }
 
     private function initializeDemo2(): Tenant

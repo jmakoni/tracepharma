@@ -14,6 +14,12 @@ class ExceptionCaseSeeder extends Seeder
     {
         $this->call(ExceptionTypeSeeder::class);
 
+        self::ensureResolutionCatalog();
+        $this->seedSlaRules();
+    }
+
+    public static function ensureResolutionCatalog(): void
+    {
         foreach ([
             ['code' => 'partner_data_error', 'name' => 'Partner data error'],
             ['code' => 'internal_mapping_error', 'name' => 'Internal mapping / master data error'],
@@ -41,7 +47,10 @@ class ExceptionCaseSeeder extends Seeder
                 ['name' => $action['name'], 'is_active' => true],
             );
         }
+    }
 
+    private function seedSlaRules(): void
+    {
         $slaBySeverity = [
             ExceptionSeverity::Critical->value => [4, 24],
             ExceptionSeverity::High->value => [8, 48],

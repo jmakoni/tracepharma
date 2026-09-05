@@ -157,6 +157,54 @@ class MobileFloorReceivingTest extends TestCase
     }
 
     #[Test]
+    public function mobile_remove_recent_scan_line_unconfirms_scan(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.RM'.$suffix;
+            $this->epcUri = $uri;
+
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
+                ->set('scan', $uri)
+                ->call('stageScan')
+                ->call('confirmStagedScans');
+
+            $line = ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->whereIn('status', ['confirmed', 'unexpected'])
+                ->orderByDesc('id')
+                ->first();
+
+            $this->assertNotNull($line);
+
+            $component->call('removeRecentScanLine', (int) $line->getKey());
+
+            $this->assertSame(
+                0,
+                ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->whereIn('status', ['confirmed', 'unexpected'])
+                    ->count(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function desktop_view_still_mounts_and_floor_blade_has_no_discrepancy_labels(): void
     {
         $this->initializeDemo2Tenant();
@@ -591,6 +639,12 @@ class MobileFloorReceivingTest extends TestCase
             }
 
             if ($this->epcId !== null) {
+                AggregationLink::query()
+                    ->where(function ($query): void {
+                        $query->where('parent_epc_id', $this->epcId)
+                            ->orWhere('child_epc_id', $this->epcId);
+                    })
+                    ->delete();
                 Epc::query()->whereKey($this->epcId)->delete();
                 $this->epcId = null;
             }

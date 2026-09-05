@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\EpcisJobs;
 
+use App\Actions\Epcis\PrepareOutboundEpcisForRetransmit;
 use App\Models\EpcisJob;
 use App\Support\Epcis\EpcisStoragePath;
 use App\Support\EpcisJobs\EpcisJobLogger;
@@ -11,23 +12,45 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
- * Verify the outbound payload is still readable before requeue.
+ * Prepare outbound payload before requeue: shipping rebuilds TI from the current
+ * open hierarchy (new InstanceIdentifier + filename); other outbound remints
+ * identity only. Then asserts the prepared file is readable.
  *
- * Requeue is a retransmission, never a regeneration: the bytes already on disk are
- * the bytes a trading partner may have seen, and document_uuid / file_sha256 are the
- * DSCSA audit trail for them. Shipping payloads are no exception — a full-history
- * rebuild is only reachable through tracepharma:rebuild-outbound-shipping-epcis,
- * which is an explicit operator decision rather than a side effect of a retry.
+ * Pass skipPrepare=true when Retry Transmit already ran {@see PrepareOutboundEpcisForRetransmit}.
  */
 class RebuildEpcisJobPayload
 {
     public function __construct(
         private readonly EpcisJobLogger $logger,
+        private readonly PrepareOutboundEpcisForRetransmit $prepareOutboundEpcisForRetransmit,
     ) {}
 
-    public function handle(EpcisJob $job): void
+    public function handle(EpcisJob $job, bool $skipPrepare = false): void
     {
         $job = $job->fresh(['document']) ?? $job;
+
+        if (! $skipPrepare) {
+            $document = $job->document;
+            if ($document === null) {
+                throw new RuntimeException('Outbound payload is missing; cannot requeue.');
+            }
+
+            if ($document->direction === 'outbound') {
+                $prepared = $this->prepareOutboundEpcisForRetransmit->handle($document);
+                $this->logger->info(
+                    $job,
+                    sprintf(
+                        'Prepared outbound payload for requeue (%s): %s → %s',
+                        $prepared['mode'],
+                        $prepared['old_uuid'] ?: '(none)',
+                        $prepared['new_uuid'],
+                    ),
+                );
+                $job = $job->fresh(['document']) ?? $job;
+            }
+        } else {
+            $this->logger->info($job, 'Skipping payload prepare; already reminted/rebuilt for Retry Transmit.');
+        }
 
         $this->assertExistingPayload($job);
     }
@@ -51,7 +74,7 @@ class RebuildEpcisJobPayload
 
         $this->logger->info(
             $job,
-            'Requeue will transmit the existing payload unchanged.',
+            'Requeue will transmit the prepared payload.',
         );
     }
 }

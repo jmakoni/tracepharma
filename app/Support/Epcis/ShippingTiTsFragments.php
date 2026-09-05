@@ -159,7 +159,11 @@ final class ShippingTiTsFragments
         string $destLocationSgln,
         ?string $directPurchaseStatement = null,
     ): string {
-        $inner =
+        // Core EPCIS 1.2 ObjectEventExtensionType allows sourceList/destinationList
+        // then optional nested <extension> (##local only). GS1 US HC directPurchase
+        // is namespaced (##other) and must follow the ObjectEvent <extension> block.
+        $xml =
+            "        <extension>\n".
             "          <sourceList>\n".
             '            <source type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($sourceOwningSgln)."</source>\n".
             '            <source type="'.self::e(self::SDT_LOCATION).'">'.self::e($sourceLocationSgln)."</source>\n".
@@ -167,26 +171,22 @@ final class ShippingTiTsFragments
             "          <destinationList>\n".
             '            <destination type="'.self::e(self::SDT_OWNING_PARTY).'">'.self::e($destOwningSgln)."</destination>\n".
             '            <destination type="'.self::e(self::SDT_LOCATION).'">'.self::e($destLocationSgln)."</destination>\n".
-            "          </destinationList>\n";
+            "          </destinationList>\n".
+            "        </extension>\n";
 
         if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
-            $inner .= "          <extension>\n".
-                self::directPurchaseXml($directPurchaseStatement).
-                "          </extension>\n";
+            $xml .= self::directPurchaseXml($directPurchaseStatement);
         }
 
-        return
-            "        <extension>\n".
-            $inner.
-            "        </extension>\n";
+        return $xml;
     }
 
     public static function directPurchaseXml(string $statement): string
     {
         return
-            "          <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
-            '            <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
-            "          </gs1ushc:directPurchase>\n";
+            "        <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
+            '          <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
+            "        </gs1ushc:directPurchase>\n";
     }
 
     /**
@@ -203,41 +203,43 @@ final class ShippingTiTsFragments
     }
 
     /**
-     * Indented for a direct child of EPCISHeader.
+     * Indented for EPCISHeader (or nested under header extension).
+     *
+     * @param  non-empty-string  $indent
      */
-    public static function dscsaTransactionStatementXml(): string
+    public static function dscsaTransactionStatementXml(string $indent = '    '): string
     {
+        $child = $indent.'  ';
+
         return
-            "    <gs1ushc:dscsaTransactionStatement>\n".
-            "      <gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
-            '      <gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
-            "    </gs1ushc:dscsaTransactionStatement>\n";
+            $indent."<gs1ushc:dscsaTransactionStatement>\n".
+            $child."<gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>\n".
+            $child.'<gs1ushc:legalNotice>'.self::e(self::LEGAL_NOTICE)."</gs1ushc:legalNotice>\n".
+            $indent."</gs1ushc:dscsaTransactionStatement>\n";
     }
 
     /**
-     * GS1 US HC drop-shipment indicator. Inbound catalog rule
-     * {@see EpcisCatalogBusinessRules} string-scans
-     * for `dropShipment`; emit only when the ship order is flagged.
+     * GS1 US HC drop-shipment indicator. Always emits true|false so partners can
+     * distinguish an explicit non-drop ship from a missing element. Inbound catalog
+     * rule {@see EpcisCatalogBusinessRules} string-scans for `dropShipment`.
      *
-     * Empty string when unflagged so the header omits the element.
+     * @param  non-empty-string  $indent
      */
-    public static function dropShipmentIndicatorXml(bool $isDropShipment): string
+    public static function dropShipmentIndicatorXml(bool $isDropShipment, string $indent = '    '): string
     {
-        if (! $isDropShipment) {
-            return '';
-        }
+        $value = $isDropShipment ? 'true' : 'false';
 
-        return "    <gs1ushc:dropShipment>true</gs1ushc:dropShipment>\n";
+        return $indent.'<gs1ushc:dropShipment>'.$value."</gs1ushc:dropShipment>\n";
     }
 
     /**
      * GS1 US HC drop-shipment indicator on an EPCIS 2.0 JSON-LD document envelope.
      */
-    public static function withDropShipmentDocumentField(string $json): string
+    public static function withDropShipmentDocumentField(string $json, bool $isDropShipment = true): string
     {
         /** @var array<string, mixed> $document */
         $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $document['gs1ushc:dropShipment'] = true;
+        $document['gs1ushc:dropShipment'] = $isDropShipment;
 
         $encoded = json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         if ($encoded === false) {

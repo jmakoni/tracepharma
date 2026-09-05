@@ -134,6 +134,11 @@ class ViewOutboundConnection extends ViewRecord
                 }
             });
 
-        return RegulatoryCompliance::apply($action, requiresReason: false);
+        return RegulatoryCompliance::apply(
+            $action,
+            'outbound_connection_break_glass',
+            requireReason: true,
+            existingReasonField: 'reason',
+        );
     }
 }

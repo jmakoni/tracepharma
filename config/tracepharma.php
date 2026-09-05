@@ -76,7 +76,22 @@ return [
         'authored_payload_disk' => env('TRACEPHARMA_EPCIS_AUTHORED_PAYLOAD_DISK', 'local'),
         'inbound_url_ttl_minutes' => (int) env('EPCIS_INBOUND_URL_TTL', 15),
         'inbound_bucket' => env('EPCIS_INBOUND_BUCKET', env('AWS_BUCKET')),
+        // Event-row archive cutoff (MOVE into epcis_events_archive). Never deletes payloads.
         'retention_years' => (int) env('TRACEPHARMA_EPCIS_RETENTION_YEARS', 6),
+        // Fallback TI pedigree source when DB fragments are missing. Prefer
+        // epcis_pedigree_*_fragments (written on ingest). Must be >= retention_years.
+        'payload_retention_years' => (int) env(
+            'TRACEPHARMA_EPCIS_PAYLOAD_RETENTION_YEARS',
+            (int) env('TRACEPHARMA_EPCIS_RETENTION_YEARS', 6),
+        ),
+        /*
+        | Pedigree replay for outbound shipping TI:
+        | - commissioning: whole_event (verbatim ObjectEvent when it intersects the tree)
+        | - packing: open_tree_children (childEPCs filtered to current open aggregation
+        |   children under parentID; empty packs omitted). Do not delete removed-case
+        |   fragment history — it remains for a later ship of that case.
+        */
+        'outbound_pedigree_replay' => 'whole_event',
         // Compliance kill-switches: fail closed, see SafetyGate.
         'enforce_ts_for_receiving' => SafetyGate::enabled('TRACEPHARMA_EPCIS_ENFORCE_TS_RECEIVING'),
         'enforce_atp_soft_gate' => SafetyGate::enabled('TRACEPHARMA_EPCIS_ENFORCE_ATP_SOFT'),
@@ -190,6 +205,15 @@ return [
         'password_gate' => SafetyGate::enabled('TRACEPHARMA_REGULATORY_PASSWORD_GATE'),
         'max_attempts' => (int) env('TRACEPHARMA_REGULATORY_MAX_ATTEMPTS', 5),
         'lockout_seconds' => (int) env('TRACEPHARMA_REGULATORY_LOCKOUT_SECONDS', 900),
+    ],
+
+    /*
+    | Account disable / failed-login lockout for Users, Admins, and PortalUsers.
+    | Separate from the regulatory action password gate above.
+    */
+    'account_security' => [
+        'max_failed_logins' => max(1, (int) env('TRACEPHARMA_MAX_FAILED_LOGINS', 5)),
+        'lockout_minutes' => max(1, (int) env('TRACEPHARMA_LOCKOUT_MINUTES', 15)),
     ],
 
     /*

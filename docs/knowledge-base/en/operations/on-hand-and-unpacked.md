@@ -1,11 +1,11 @@
 ---
-title: On Hand And Unpacked
+title: On-hand and unpacked
 parent: operations
 order: 35
 group: Operations
 ---
 
-# On Hand And Unpacked
+# On-hand and unpacked
 
 Filament classes:
 

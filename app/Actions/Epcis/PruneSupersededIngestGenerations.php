@@ -238,6 +238,22 @@ final class PruneSupersededIngestGenerations
                 $stats['document_epcs_deleted'] = (int) $query->delete();
             }
 
+            // Pedigree XML fragments for non-active generations are disposable —
+            // outbound TI reads the active ingest_generation only.
+            if (Schema::hasTable('epcis_pedigree_event_fragments')) {
+                $query = DB::table('epcis_pedigree_event_fragments')
+                    ->where('document_id', $documentId);
+                $this->applyGenerationFilter($query, $keptGeneration, $orphansOnly);
+                $query->delete();
+            }
+
+            if (Schema::hasTable('epcis_pedigree_vocab_fragments')) {
+                $query = DB::table('epcis_pedigree_vocab_fragments')
+                    ->where('document_id', $documentId);
+                $this->applyGenerationFilter($query, $keptGeneration, $orphansOnly);
+                $query->delete();
+            }
+
             if (! $this->softSupersedeReady()) {
                 // Pre-migration safety: never hard-delete events; leave them for RCA.
                 return $stats;

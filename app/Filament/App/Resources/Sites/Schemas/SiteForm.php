@@ -7,6 +7,7 @@ use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
 use App\Support\Gs1\SglnRules;
+use App\Support\Places\UsState;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Forms\Components\Select;
@@ -15,6 +16,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Validation\Rule;
 
 class SiteForm
 {
@@ -99,7 +101,17 @@ class SiteForm
                         TextInput::make('street_address')->maxLength(255)->columnSpanFull(),
                         TextInput::make('street_address_2')->maxLength(255)->columnSpanFull(),
                         TextInput::make('city')->maxLength(255),
-                        TextInput::make('state')->maxLength(100),
+                        Select::make('state')
+                            ->label('State')
+                            ->options(UsState::selectOptions())
+                            ->searchable()
+                            ->native(false)
+                            ->nullable()
+                            ->dehydrateStateUsing(fn (?string $state): ?string => UsState::normalize($state))
+                            ->rule(fn (Get $get): mixed => strtoupper((string) ($get('country_code') ?? 'US')) === 'US'
+                                ? Rule::in(UsState::codes())
+                                : null)
+                            ->helperText('US postal code (IL). Full names from FDA prefill are normalized on save.'),
                         TextInput::make('zipcode')->maxLength(20),
                         TextInput::make('country_code')->default('US')->maxLength(3),
                         TextInput::make('timezone')->maxLength(64)->placeholder('America/New_York')->columnSpanFull(),

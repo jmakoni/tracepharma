@@ -9,7 +9,9 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\TradingPartner;
 use App\Support\Gs1\Sgln;
 use App\Support\MasterData\AtpLicenseRelevance;
+use App\Support\Shipping\AtpGateBypass;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 
 /**
  * Pre-send readiness chips for ship desks (TI/TS, ATP, destination, portal path).
@@ -138,29 +140,36 @@ final class OutboundShipReadiness
      */
     private function atpBadge(OutboundShippingSession $session): array
     {
-        if (AtpLicenseRelevance::evaluationJurisdictionKeys() === []) {
+        if (AtpGateBypass::isBypassed()) {
             return [
                 'key' => 'atp',
                 'label' => 'ATP',
-                'status' => 'block',
+                'status' => 'warn',
+                'detail' => 'Outbound ATP gate is disabled (config bypass)',
+            ];
+        }
+
+        if (AtpLicenseRelevance::evaluationJurisdictionKeys() === []) {
+            $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+
+            return [
+                'key' => 'atp',
+                'label' => 'ATP',
+                'status' => $hard ? 'block' : 'warn',
                 'detail' => 'Add org site jurisdictions or set preferred receiving state',
             ];
         }
 
-        $blockers = app(ValidateOutboundShippingSend::class)->handle($session);
-        $atpBlocker = collect($blockers)->first(
-            fn (string $line): bool => str_contains($line, 'ATP')
-                || str_contains($line, 'license')
-                || str_contains($line, 'receiving state')
-                || str_contains($line, 'jurisdictions'),
-        );
+        $issue = app(ValidateOutboundShippingSend::class)->atpIssue($session);
 
-        if (is_string($atpBlocker)) {
+        if (is_string($issue)) {
+            $hard = TenantSettings::forTenant(tenant())->blockSendOnAtpGap();
+
             return [
                 'key' => 'atp',
                 'label' => 'ATP',
-                'status' => 'block',
-                'detail' => $atpBlocker,
+                'status' => $hard ? 'block' : 'warn',
+                'detail' => $issue,
             ];
         }
 

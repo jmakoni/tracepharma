@@ -5,7 +5,9 @@ namespace App\Providers\Filament;
 use App\Filament\App\Pages\Auth\Login;
 use App\Filament\App\Pages\Dashboard;
 use App\Filament\App\Pages\OrganizationSettings;
+use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsureLegalAcceptance;
+use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Http\Middleware\EnsureTenantIsActive;
 use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
@@ -34,6 +36,8 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 use OccTherapist\AdvancedTableExportForFilament\AdvancedTableExportForFilamentPlugin;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
+use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
+use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
 use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AppPanelProvider extends PanelProvider
@@ -105,6 +109,14 @@ class AppPanelProvider extends PanelProvider
                         relyingPartyName: (string) config('app.name'),
                         scopeToPanel: true,
                     )
+            )
+            ->plugin(
+                FilamentUiExtrasPlugin::make()
+                    ->stickyTableActions(true)
+            )
+            ->plugin(
+                StickyTableHeaderPlugin::make()
+                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
             );
 
         $panel = OptionalFilamentPlugins::register(
@@ -173,6 +185,8 @@ class AppPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureAccountIsUsable::class.':web',
+                EnsurePasswordChangeRequired::class,
                 EnsureLegalAcceptance::class,
             ])
             ->renderHook(

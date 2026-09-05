@@ -1,11 +1,11 @@
 ---
-title: Epcis Subscriptions
+title: EPCIS subscriptions
 parent: integrations
 order: 30
 group: Integrations
 ---
 
-# Epcis Subscriptions
+# EPCIS subscriptions
 
 Filament classes:
 

@@ -90,7 +90,8 @@ class SystemOutboundTemplatesTest extends TestCase
         $this->assertFalse(JobRoleAccess::enabled());
 
         $policy = new OutboundConnectionPolicy;
-        $system = new OutboundConnection([
+        $system = new OutboundConnection;
+        $system->forceFill([
             'is_system' => true,
             'system_key' => OutboundConnection::SYSTEM_KEY_EMAIL_ATTACHMENT,
         ]);

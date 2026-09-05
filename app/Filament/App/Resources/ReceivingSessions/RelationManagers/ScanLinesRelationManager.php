@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\ReceivingSessions\RelationManagers;
 
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -10,7 +11,6 @@ use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
@@ -50,9 +50,15 @@ class ScanLinesRelationManager extends RelationManager
                 ->with([
                     'epc:id,epc_type,sscc18,gtin14,serial_number,epc_uri,ai_00,ai_01_21',
                 ])
+                // Parents + unexpected always; scan-first orphan units (no parent_epc_id).
+                // ASN auto-confirmed children under a parent stay hidden.
                 ->where(function (Builder $q): void {
                     $q->where('line_role', 'parent')
-                        ->orWhere('status', 'unexpected');
+                        ->orWhere('status', 'unexpected')
+                        ->orWhere(function (Builder $child): void {
+                            $child->where('line_role', 'child')
+                                ->whereNull('parent_epc_id');
+                        });
                 }))
             ->columns([
                 TextColumn::make('line_role')
@@ -146,7 +152,7 @@ class ScanLinesRelationManager extends RelationManager
             ->defaultPaginationPageOption(10)
             ->searchPlaceholder('SSCC or barcode')
             ->emptyStateHeading('No scans yet')
-            ->emptyStateDescription('Scan a pallet barcode to start.')
+            ->emptyStateDescription('Scan a pallet or unit barcode to start.')
             ->headerActions([])
             ->recordActions([
                 Action::make('removeScan')
@@ -155,12 +161,16 @@ class ScanLinesRelationManager extends RelationManager
                     ->color('danger')
                     ->visible(fn (ReceivingScanLine $record): bool => $this->canRemoveScanLine($record))
                     ->requiresConfirmation()
-                    ->modalHeading(fn (ReceivingScanLine $record): string => $record->status === 'unexpected'
-                        ? 'Remove unexpected scan?'
-                        : 'Unconfirm this pallet/case?')
-                    ->modalDescription(fn (ReceivingScanLine $record): string => $record->status === 'unexpected'
-                        ? 'Removes this unexpected scan from the session.'
-                        : 'Unconfirm this pallet/case and remove its units from this session.')
+                    ->modalHeading(fn (ReceivingScanLine $record): string => match (true) {
+                        $record->status === 'unexpected' => 'Remove unexpected scan?',
+                        $record->line_role === 'child' && $record->parent_epc_id === null => 'Unconfirm this unit?',
+                        default => 'Unconfirm this pallet/case?',
+                    })
+                    ->modalDescription(fn (ReceivingScanLine $record): string => match (true) {
+                        $record->status === 'unexpected' => 'Removes this unexpected scan from the session.',
+                        $record->line_role === 'child' && $record->parent_epc_id === null => 'Removes this unit from the session.',
+                        default => 'Unconfirm this pallet/case and remove its units from this session.',
+                    })
                     ->modalSubmitActionLabel('Remove')
                     ->action(function (ReceivingScanLine $record): void {
                         try {

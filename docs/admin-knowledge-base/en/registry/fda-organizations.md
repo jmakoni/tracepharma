@@ -1,11 +1,11 @@
 ---
-title: Fda Organizations
+title: FDA organizations
 parent: registry
 order: 25
 group: Registry
 ---
 
-# Fda Organizations
+# FDA organizations
 
 Filament classes:
 

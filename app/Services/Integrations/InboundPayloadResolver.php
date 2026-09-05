@@ -2,25 +2,26 @@
 
 namespace App\Services\Integrations;
 
+use App\Support\Epcis\EpcisSoapDocumentNormalizer;
+
 final class InboundPayloadResolver
 {
+    public function __construct(
+        private readonly EpcisSoapDocumentNormalizer $soapNormalizer = new EpcisSoapDocumentNormalizer,
+    ) {}
+
     /**
      * @return array{content: string, originalName: ?string, contentType: ?string}
      */
     public function resolve(string $rawBody, ?string $contentType = null, ?string $filename = null): array
     {
-        $trimmed = ltrim($rawBody);
+        $normalized = $this->soapNormalizer->normalize($rawBody);
+        $content = $normalized['content'];
 
-        if ($this->isSoapEnvelope($trimmed)) {
-            throw new \InvalidArgumentException(
-                'SOAP-wrapped EPCIS payloads are not supported. Send raw EPCIS XML or JSON-LD.',
-            );
-        }
-
-        $resolvedName = $this->normalizeFilename($filename, $contentType, $rawBody);
+        $resolvedName = $this->normalizeFilename($filename, $contentType, $content);
 
         return [
-            'content' => $rawBody,
+            'content' => $content,
             'originalName' => $resolvedName,
             'contentType' => $contentType,
         ];
@@ -45,11 +46,5 @@ final class InboundPayloadResolver
         }
 
         return $filename;
-    }
-
-    private function isSoapEnvelope(string $content): bool
-    {
-        return preg_match('/^<\s*(?:soap|SOAP-ENV):/i', $content) === 1
-            || str_contains(strtolower($content), ':envelope');
     }
 }

@@ -1354,6 +1354,7 @@ final class ConfirmReceivingScan
 
         $session->forceFill($sessionUpdates)->save();
 
+        $this->releaseOpenToteLockIfChildrenDone($session->refresh());
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
         $message = $confirmedChildren > 0
@@ -1413,6 +1414,7 @@ final class ConfirmReceivingScan
             'confirmed_child_count' => (int) $session->confirmed_child_count + 1,
         ])->save();
 
+        $this->releaseOpenToteLockIfChildrenDone($session->refresh());
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
         return [
@@ -1515,6 +1517,31 @@ final class ConfirmReceivingScan
     }
 
     /**
+     * Open-tote lock used to clear only inside markSessionCompletedIfReady. With
+     * explicit Complete receive, release the lock when the ASN is fully ready
+     * (locked parent's children done and no other expected work). Keep the lock
+     * while other totes remain so comingling scans are still rejected.
+     */
+    private function releaseOpenToteLockIfChildrenDone(ReceivingSession $session): void
+    {
+        if ($session->active_parent_epc_id === null) {
+            return;
+        }
+
+        if ($session->openToteLockBlocksComplete()) {
+            return;
+        }
+
+        if (! $session->isReadyToCompleteInboundAsn()) {
+            return;
+        }
+
+        $session->forceFill([
+            'active_parent_epc_id' => null,
+        ])->save();
+    }
+
+    /**
      * Flip the session to completed when every expected line is in, but do not author
      * EPCIS here: this runs inside the scan-confirm transaction, and a completion
      * failure (e.g. no SGLN on record) must not roll back the scan that was just
@@ -1526,6 +1553,10 @@ final class ConfirmReceivingScan
         // Scan-first and transfer_receive complete only via explicit CompleteReceivingSession
         // (transfer_receive triggers that from confirmTransferReceive when all lines done).
         if ($session->isScanFirst() || $session->isTransferReceive()) {
+            return false;
+        }
+
+        if (! TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady()) {
             return false;
         }
 

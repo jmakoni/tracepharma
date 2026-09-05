@@ -33,9 +33,11 @@ class OutboundConnectionsTable
                         default => OutboundConformanceState::Test->label(),
                     })
                     ->sortable(),
-                TextColumn::make('tradingPartner.name')
-                    ->label('Trading partner')
-                    ->placeholder('—')
+                TextColumn::make('tradingPartners.name')
+                    ->label('Trading partners')
+                    ->badge()
+                    ->separator(',')
+                    ->placeholder('Global')
                     ->toggleable(),
                 IconColumn::make('is_active')
                     ->boolean(),

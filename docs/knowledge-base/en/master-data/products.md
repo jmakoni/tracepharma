@@ -24,8 +24,8 @@ Maintain tenant product catalog, link FDA product reference data, and manage pri
 
 ## Steps
 
-1. Open **Products**; create or edit tenant products. Open the page and use Help for live UI.
-2. Use **FDA products** to browse registry-backed reference rows and associate where supported.
+1. Open **Product directory** from Operations Hub Directories (`/products`), or **Products** in nav; create or edit tenant products. Open the page and use Help for live UI.
+2. Open **FDA Products** from Hub Directories (`/fda-products`) to browse registry-backed reference rows and associate where supported (partner-first authorize path).
 3. Maintain **Principals** for ownership / labeling attribution.
 4. Verify GTINs appear correctly on commission and outbound flows.
 
@@ -38,5 +38,6 @@ Maintain tenant product catalog, link FDA product reference data, and manage pri
 
 ## Notes
 
+- Prefer Hub Directories for floor operators; sidebar may stay partner-scoped.
 - Prefer linking FDA reference data over free-typing NDC/GTIN when possible.
 - Product changes can affect open commission sessions — coordinate with operations.

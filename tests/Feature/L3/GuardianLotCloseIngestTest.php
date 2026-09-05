@@ -17,6 +17,7 @@ use App\Models\L3\SerializationLotContainerField;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Services\L3\GuardianDataFeedParser;
+use App\Support\Epcis\ExtractPriorPedigreeXml;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantSettings;
 use Illuminate\Http\Request;
@@ -1443,6 +1444,51 @@ class GuardianLotCloseIngestTest extends TestCase
                 $result['xml'],
             );
             $this->assertStringNotContainsString('0000000000000', $result['xml']);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    /**
+     * Outbound TI pedigree must replay Guardian-authored EPCIS (not invent history,
+     * and not treat the proprietary DataFeed as EPCIS).
+     */
+    #[Test]
+    public function guardian_authored_epcis_is_pedigree_source_for_open_pallet_tree(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenant($tenant);
+        Queue::fake();
+
+        try {
+            $xml = $this->fixtureXml();
+            tenancy()->end();
+            $response = $this->guardianPost($xml, self::API_KEY);
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+
+            $response->assertStatus(202);
+            $feedId = (int) $response->json('feed_id');
+            $this->feedIds[] = $feedId;
+
+            app()->call([new ConvertAndAcceptGuardianLotJob(self::DEMO2_TENANT_ID, $feedId), 'handle']);
+
+            tenancy()->initialize(Tenant::query()->findOrFail(self::DEMO2_TENANT_ID));
+
+            $lot = SerializationLot::query()->where('feed_id', $feedId)->firstOrFail();
+            $this->lotIds[] = (int) $lot->getKey();
+            $this->assertNotNull($lot->epcis_document_id);
+            $this->documentIds[] = (int) $lot->epcis_document_id;
+
+            $pallet = Epc::query()->where('epc_uri', self::PALLET_URI)->firstOrFail();
+            $pedigree = app(ExtractPriorPedigreeXml::class)->forOpenTree([(int) $pallet->getKey()]);
+
+            $this->assertContains((int) $lot->epcis_document_id, $pedigree['source_document_ids']);
+            $this->assertGreaterThan(0, $pedigree['event_count']);
+            $joined = implode("\n", $pedigree['event_xml']);
+            $this->assertStringContainsString('bizstep:commissioning', $joined);
+            $this->assertStringContainsString('bizstep:packing', $joined);
+            $this->assertStringContainsString(self::PALLET_URI, $joined);
+            $this->assertSame('guardian_lot_close', EpcisDocument::query()->findOrFail($lot->epcis_document_id)->received_via?->value);
         } finally {
             $this->cleanup();
         }

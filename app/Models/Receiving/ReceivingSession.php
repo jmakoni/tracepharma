@@ -23,6 +23,7 @@ class ReceivingSession extends Model
     protected $fillable = [
         'session_kind',
         'epcis_document_id',
+        'inbound_shipment_id',
         'transferring_session_id',
         'receiving_epcis_document_id',
         'matched_epcis_document_id',
@@ -66,6 +67,11 @@ class ReceivingSession extends Model
     public function document(): BelongsTo
     {
         return $this->belongsTo(EpcisDocument::class, 'epcis_document_id');
+    }
+
+    public function inboundShipment(): BelongsTo
+    {
+        return $this->belongsTo(InboundShipment::class, 'inbound_shipment_id');
     }
 
     /**

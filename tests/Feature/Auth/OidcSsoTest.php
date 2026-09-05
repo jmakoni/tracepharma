@@ -292,6 +292,180 @@ class OidcSsoTest extends TestCase
     }
 
     #[Test]
+    public function tenant_jit_persists_directory_claims_from_entra_payload(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $email = 'dir-jit-'.Str::uuid()->toString().'@acme.test';
+            $objectId = (string) Str::uuid();
+
+            $socialite = (new SocialiteUser)
+                ->map([
+                    'id' => 'oid-dir-jit-'.Str::uuid()->toString(),
+                    'name' => 'Directory JIT',
+                    'email' => $email,
+                ])
+                ->setRaw([
+                    'oid' => $objectId,
+                    'upn' => $email,
+                    'employeeId' => 'E9001',
+                    'given_name' => 'Directory',
+                    'family_name' => 'JIT',
+                    'jobTitle' => 'Technician',
+                    'department' => 'Receiving',
+                    'companyName' => 'Acme Pharmacy',
+                    'officeLocation' => 'Dock A',
+                    'mobilePhone' => '+15550001',
+                    'businessPhones' => ['+15550002'],
+                    'groups' => ['sg-receiving', 'sg-dscsa'],
+                ]);
+
+            $user = app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+            $this->userIds[] = (int) $user->getKey();
+
+            $this->assertSame($objectId, $user->directory_object_id);
+            $this->assertSame($email, $user->user_principal_name);
+            $this->assertSame('E9001', $user->employee_id);
+            $this->assertSame('Directory', $user->given_name);
+            $this->assertSame('JIT', $user->surname);
+            $this->assertSame('Technician', $user->job_title);
+            $this->assertSame('Receiving', $user->department);
+            $this->assertSame('Acme Pharmacy', $user->company_name);
+            $this->assertSame('Dock A', $user->office_location);
+            $this->assertSame('+15550001', $user->mobile_phone);
+            $this->assertSame('+15550002', $user->business_phone);
+            $this->assertSame(['sg-receiving', 'sg-dscsa'], $user->directory_groups);
+            $this->assertNotNull($user->directory_synced_at);
+        } finally {
+            $this->cleanupUsers();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_sso_does_not_clear_existing_directory_fields_when_claims_absent(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $issuer = 'https://login.microsoftonline.com/example/v2.0';
+            $email = 'dir-keep-'.Str::uuid()->toString().'@acme.test';
+            $subject = 'sub-keep-'.Str::uuid()->toString();
+
+            $existing = User::factory()->directory()->create([
+                'email' => $email,
+                'password' => 'password',
+                'oidc_issuer' => $issuer,
+                'oidc_subject' => $subject,
+                'department' => 'Pharmacy',
+                'job_title' => 'Pharmacist',
+                'directory_groups' => ['sg-keep'],
+            ]);
+            $this->userIds[] = (int) $existing->getKey();
+
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: $issuer,
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => $subject,
+                'name' => 'Keep Directory',
+                'email' => $email,
+            ]);
+
+            $user = app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+
+            $this->assertSame('Pharmacy', $user->department);
+            $this->assertSame('Pharmacist', $user->job_title);
+            $this->assertSame(['sg-keep'], $user->directory_groups);
+        } finally {
+            $this->cleanupUsers();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function admin_sso_hydrates_directory_claims(): void
+    {
+        $subject = 'admin-dir-'.Str::uuid()->toString();
+        $issuer = 'https://login.microsoftonline.com/example/v2.0';
+        $objectId = (string) Str::uuid();
+
+        $admin = Admin::factory()->create([
+            'email' => 'dir-admin-'.Str::uuid()->toString().'@tracepharma.test',
+            'oidc_issuer' => $issuer,
+            'oidc_subject' => $subject,
+            'department' => 'Legacy',
+        ]);
+
+        $config = new OidcConnectionConfig(
+            enabled: true,
+            ssoOnly: false,
+            provider: OidcProvider::Entra,
+            issuer: $issuer,
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            entraTenantId: 'example',
+            jitDefaultRole: null,
+            allowedEmailDomains: [],
+            redirectUri: 'https://admin.example/auth/oidc/callback',
+            socialiteDriver: 'azure',
+        );
+
+        $socialite = (new SocialiteUser)
+            ->map([
+                'id' => $subject,
+                'name' => 'Platform Admin',
+                'email' => $admin->email,
+            ])
+            ->setRaw([
+                'oid' => $objectId,
+                'upn' => $admin->email,
+                'given_name' => 'Platform',
+                'family_name' => 'Admin',
+                'department' => 'Support',
+                'jobTitle' => 'Platform Admin',
+                'groups' => ['sg-platform-admins'],
+            ]);
+
+        $resolved = app(OidcIdentityResolver::class)->resolveAdmin($socialite, $config)->fresh();
+
+        $this->assertSame($objectId, $resolved->directory_object_id);
+        $this->assertSame($admin->email, $resolved->user_principal_name);
+        $this->assertSame('Platform', $resolved->given_name);
+        $this->assertSame('Admin', $resolved->surname);
+        $this->assertSame('Support', $resolved->department);
+        $this->assertSame('Platform Admin', $resolved->job_title);
+        $this->assertSame(['sg-platform-admins'], $resolved->directory_groups);
+        $this->assertNotNull($resolved->directory_synced_at);
+    }
+
+    #[Test]
     public function admin_sso_requires_pre_provisioned_admin(): void
     {
         $config = new OidcConnectionConfig(

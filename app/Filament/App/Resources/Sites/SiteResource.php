@@ -31,7 +31,9 @@ class SiteResource extends Resource implements HasKnowledgeBase
 
     protected static string|UnitEnum|null $navigationGroup = 'Master Data';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 15;
+
+    protected static ?string $navigationLabel = 'Sites';
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -77,11 +79,6 @@ class SiteResource extends Resource implements HasKnowledgeBase
             'create' => CreateSite::route('/create'),
             'view' => ViewSite::route('/{record}'),
         ];
-    }
-
-    public static function shouldRegisterNavigation(): bool
-    {
-        return false;
     }
 
     public static function getDocumentation(): array|string

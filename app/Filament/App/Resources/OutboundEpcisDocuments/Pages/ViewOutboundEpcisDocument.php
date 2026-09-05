@@ -64,8 +64,11 @@ class ViewOutboundEpcisDocument extends ViewRecord
         }
         $events = number_format((int) $record->event_count);
         $epcs = number_format((int) $record->epc_count);
+        $payloadNote = filled($record->payload_path)
+            ? ' · Download = partner TI payload'
+            : '';
 
-        return "{$status}{$transmit} · {$events} events · {$epcs} EPCs · ".$record->directionDisplayLabel();
+        return "{$status}{$transmit} · {$events} events · {$epcs} EPCs · ".$record->directionDisplayLabel().$payloadNote;
     }
 
     protected function getHeaderActions(): array

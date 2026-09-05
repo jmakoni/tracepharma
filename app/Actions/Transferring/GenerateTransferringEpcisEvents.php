@@ -373,7 +373,9 @@ final class GenerateTransferringEpcisEvents
             "                <eventTime>{$eventTimeXml}</eventTime>\n".
             "                <recordTime>{$recordTimeXml}</recordTime>\n".
             "                <eventTimeZoneOffset>{$offsetXml}</eventTimeZoneOffset>\n".
-            "                <eventID>urn:uuid:{$shippingUuid}</eventID>\n".
+            "                <baseExtension>\n".
+            "                  <eventID>urn:uuid:{$shippingUuid}</eventID>\n".
+            "                </baseExtension>\n".
             "                <epcList>\n".
             "{$epcList}\n".
             "                </epcList>\n".

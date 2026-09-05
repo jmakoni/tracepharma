@@ -9,9 +9,11 @@ use App\Models\Concerns\DerivesSgln;
 use App\Models\Fda\FdaEstablishment;
 use App\Models\Fda\FdaWddFacility;
 use App\Support\MasterData\SiteReferences;
+use App\Support\Places\UsState;
 use App\Support\Receiving\EligibleReceiveSites;
 use Database\Factories\SiteFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -138,6 +140,36 @@ class Site extends Model
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
         ];
+    }
+
+    /**
+     * sites.state is VARCHAR(2). Accept full US names (FDA / typed "Illinois") and
+     * store the postal code so create does not 500 on MySQL truncation.
+     */
+    protected function state(): Attribute
+    {
+        return Attribute::make(
+            set: function (mixed $value): ?string {
+                if ($value === null || (is_string($value) && trim($value) === '')) {
+                    return null;
+                }
+
+                $string = trim((string) $value);
+                $normalized = UsState::normalize($string);
+
+                if ($normalized !== null) {
+                    return $normalized;
+                }
+
+                if (strlen($string) <= 2) {
+                    return strtoupper($string);
+                }
+
+                throw new \InvalidArgumentException(
+                    'State must be a US state or territory postal code (or full name). "'.$string.'" is too long for sites.state.',
+                );
+            },
+        );
     }
 
     /**

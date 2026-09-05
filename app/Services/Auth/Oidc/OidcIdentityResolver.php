@@ -8,6 +8,7 @@ use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Models\Admin;
 use App\Models\User;
+use App\Support\Auth\DirectoryAttributes;
 use App\Support\Auth\OidcConnectionConfig;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
@@ -33,13 +34,13 @@ final class OidcIdentityResolver
             $this->assertEmailDomainAllowed($email, $config);
             $this->assertOidcBindingCompatible($user, $issuer, $subject);
 
-            $user->forceFill([
+            $user->forceFill(array_merge([
                 'oidc_issuer' => $issuer,
                 'oidc_subject' => $subject,
                 'name' => $socialiteUser->getName() ?: $user->name,
                 'email' => $email,
                 'email_verified_at' => $user->email_verified_at ?? now(),
-            ])->save();
+            ], $this->directoryUpdates($socialiteUser)))->save();
 
             return $user;
         }
@@ -48,14 +49,14 @@ final class OidcIdentityResolver
 
         $role = $this->jitRole($config);
 
-        $user = User::query()->create([
+        $user = User::query()->create(array_merge([
             'name' => $socialiteUser->getName() ?: Str::before($email, '@'),
             'email' => $email,
             'password' => null,
             'oidc_issuer' => $issuer,
             'oidc_subject' => $subject,
             'email_verified_at' => now(),
-        ]);
+        ], $this->directoryUpdates($socialiteUser)));
 
         $user->syncRoles([$role->value]);
 
@@ -77,13 +78,23 @@ final class OidcIdentityResolver
             throw new \RuntimeException('No platform admin account is provisioned for this identity.');
         }
 
-        $admin->forceFill([
+        $admin->forceFill(array_merge([
             'oidc_issuer' => $issuer,
             'oidc_subject' => $subject,
             'name' => $socialiteUser->getName() ?: $admin->name,
-        ])->save();
+        ], $this->directoryUpdates($socialiteUser)))->save();
 
         return $admin;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function directoryUpdates(SocialiteUser $socialiteUser): array
+    {
+        return DirectoryAttributes::fillableUpdates(
+            DirectoryAttributes::fromSocialiteUser($socialiteUser)
+        );
     }
 
     private function requireEmail(SocialiteUser $socialiteUser): string

@@ -1,11 +1,11 @@
 ---
-title: Fda Establishments
+title: FDA establishments
 parent: registry
 order: 20
 group: Registry
 ---
 
-# Fda Establishments
+# FDA establishments
 
 Filament classes:
 

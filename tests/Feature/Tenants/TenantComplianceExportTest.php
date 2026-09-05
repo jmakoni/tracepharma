@@ -91,6 +91,15 @@ class TenantComplianceExportTest extends TestCase
     }
 
     #[Test]
+    public function export_job_declares_single_try_and_hour_timeout(): void
+    {
+        $job = new ExportTenantComplianceArchive(new Tenant, 1);
+
+        $this->assertSame(3600, $job->timeout);
+        $this->assertSame(1, $job->tries);
+    }
+
+    #[Test]
     public function export_job_creates_zip_with_expected_files_and_sets_last_export_at(): void
     {
         ['tenant' => $tenant, 'admin' => $admin] = $this->provisionTenantWithSampleData();

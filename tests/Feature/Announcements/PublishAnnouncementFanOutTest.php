@@ -53,6 +53,9 @@ class PublishAnnouncementFanOutTest extends TestCase
             DB::table('notifications')->delete();
             DB::table('tenant_announcements')->delete();
             $user = User::factory()->create();
+            // Polluted shared demo2 DBs can retain thousands of users; keep fan-out scoped
+            // to the fixture user so sync-queue tests stay bounded.
+            User::query()->whereKeyNot($user->getKey())->delete();
         });
 
         $announcement = Announcement::query()->create([
@@ -131,6 +134,9 @@ class PublishAnnouncementFanOutTest extends TestCase
             DB::table('notifications')->delete();
             DB::table('tenant_announcements')->delete();
             $user = User::factory()->create();
+            // Polluted shared demo2 DBs can retain thousands of users; keep fan-out scoped
+            // to the fixture user so sync-queue tests stay bounded.
+            User::query()->whereKeyNot($user->getKey())->delete();
         });
 
         $announcement = Announcement::query()->create([

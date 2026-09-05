@@ -1,11 +1,11 @@
 ---
-title: Epcis Hub Settings
+title: EPCIS hub settings
 parent: operations
 order: 20
 group: Operations
 ---
 
-# Epcis Hub Settings
+# EPCIS hub settings
 
 Filament classes:
 

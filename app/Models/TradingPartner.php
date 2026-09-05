@@ -138,6 +138,13 @@ class TradingPartner extends Model
         return $this->hasMany(Site::class);
     }
 
+    public function outboundConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(OutboundConnection::class, 'outbound_connection_trading_partner')
+            ->using(OutboundConnectionTradingPartner::class)
+            ->withTimestamps();
+    }
+
     public function ssccNumberRanges(): HasMany
     {
         return $this->hasMany(SsccNumberRange::class);

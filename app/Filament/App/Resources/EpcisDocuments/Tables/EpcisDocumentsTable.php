@@ -57,7 +57,12 @@ class EpcisDocumentsTable
                     ->state(fn (EpcisDocument $r): ?string => $r->shippingPartiesSummary()['seller']['name'])
                     ->placeholder('—')
                     ->limit(28)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $query->orderBy('ship_from_name', $dir);
+                    }),
                 TextColumn::make('ship_from_display')
                     ->label('Ship-from')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_from_site_name
@@ -66,7 +71,14 @@ class EpcisDocumentsTable
                     ->placeholder('—')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state)),
+                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state))
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $query->orderByRaw(
+                            'COALESCE(NULLIF(ship_from_site_name, \'\'), ship_from_gln) '.$dir
+                        );
+                    }),
                 TextColumn::make('sold_to_display')
                     ->label('Sold-to')
                     ->state(function (EpcisDocument $r): ?string {
@@ -77,7 +89,12 @@ class EpcisDocumentsTable
                     ->placeholder('—')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state)),
+                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state))
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $query->orderBy('ship_to_name', $dir);
+                    }),
                 TextColumn::make('ship_to_site_display')
                     ->label('Ship-to')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_to_site_name
@@ -86,11 +103,19 @@ class EpcisDocumentsTable
                     ->placeholder('—')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state)),
+                    ->fontFamily(fn (?string $state): ?FontFamily => self::monoIfGlnLike($state))
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $query->orderByRaw(
+                            'COALESCE(NULLIF(ship_to_site_name, \'\'), ship_to_gln) '.$dir
+                        );
+                    }),
                 TextColumn::make('asn_number')
                     ->label('ASN')
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
+                    ->sortable()
                     ->copyable()
                     ->limit(16)
                     ->tooltip(fn (?string $state): ?string => $state)
@@ -99,6 +124,7 @@ class EpcisDocumentsTable
                     ->label('Customer PO')
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
+                    ->sortable()
                     ->copyable()
                     ->limit(16)
                     ->tooltip(fn (?string $state): ?string => $state)
@@ -164,9 +190,7 @@ class EpcisDocumentsTable
                             default => 'gray',
                         };
                     })
-                    ->sortable()
-                    // Pin Status just left of sticky Actions (~icon-button width); z-index above scrolling cells.
-                    ->stickyRight(offset: 56, zIndex: 11),
+                    ->sortable(),
             ])
             ->defaultSort('creation_date', 'desc')
             ->filters([
@@ -321,102 +345,19 @@ class EpcisDocumentsTable
             ->filtersFormColumns(3)
             ->filtersFormWidth(Width::FiveExtraLarge)
             ->deferLoading()
-            ->extraAttributes(['class' => 'tp-inbound-epcis-table'])
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)
             ->extremePaginationLinks()
-            ->recordActions(RecordActionGroup::make([
-                ViewAction::make(),
-                RegulatoryCompliance::apply(
-                    Action::make('reprocess')
-                        ->label('Re-process')
-                        ->icon(Heroicon::OutlinedArrowPathRoundedSquare)
-                        ->color('warning')
-                        ->requiresConfirmation()
-                        ->visible(fn (EpcisDocument $record): bool => JobRoleAccess::allowsAny(
-                            Permissions::NavExceptions,
-                            Permissions::NavIntegrations,
-                        )
-                            && ! $record->isFloorReceived()
-                            && in_array($record->status, ['parsed', 'validated', 'error'], true))
-                        ->action(function (EpcisDocument $record): void {
-                            $sync = Queue::getDefaultDriver() === 'sync';
-
-                            try {
-                                $document = app(ReprocessEpcisDocument::class)->handle($record, $sync);
-                            } catch (Throwable $e) {
-                                Notification::make()
-                                    ->title('Re-process failed')
-                                    ->body($e->getMessage())
-                                    ->danger()
-                                    ->send();
-
-                                return;
-                            }
-
-                            Notification::make()
-                                ->title($sync || $document->status === 'parsed' ? 'Re-process complete' : 'Re-process queued')
-                                ->body('Status: '.$document->status.' · Reprocess #'.(int) $document->reprocess_count)
-                                ->success()
-                                ->send();
-                        }),
-                    'epcis_reprocess',
-                    requireReason: false,
-                ),
-                Action::make('refresh')
-                    ->label('Refresh')
-                    ->icon(Heroicon::OutlinedArrowPath)
-                    ->visible(fn (): bool => JobRoleAccess::allowsAny(
-                        Permissions::NavExceptions,
-                        Permissions::NavIntegrations,
-                    ))
-                    ->action(function (EpcisDocument $record): void {
-                        app(EnrichEpcisDocumentShippingFields::class)->handle($record);
-
-                        Notification::make()
-                            ->title('Shipping fields refreshed')
-                            ->success()
-                            ->send();
-                    }),
-                StartReceivingAction::forTable(),
-                Action::make('downloadXml')
-                    ->label('Download EPCIS')
-                    ->icon(Heroicon::OutlinedArrowDownTray)
-                    ->visible(fn (EpcisDocument $record): bool => filled($record->payload_path))
-                    ->disabled(fn (EpcisDocument $record): bool => ! EpcisDocumentXmlDownload::available($record))
-                    ->tooltip(fn (EpcisDocument $record): ?string => EpcisDocumentXmlDownload::available($record)
-                        ? 'Download the stored EPCIS payload'
-                        : 'Payload is missing from storage')
-                    ->action(function (EpcisDocument $record) {
-                        if (! EpcisDocumentXmlDownload::available($record)) {
-                            Notification::make()
-                                ->title('Payload file missing')
-                                ->body('The payload path is recorded but the file is not on disk.')
-                                ->danger()
-                                ->send();
-
-                            return null;
-                        }
-
-                        /** @var User|null $actor */
-                        $actor = auth()->user();
-
-                        activity()
-                            ->performedOn($record)
-                            ->causedBy($actor)
-                            ->withProperties([
-                                'filename' => EpcisDocumentXmlDownload::filename($record),
-                                'payload_path' => $record->payload_path,
-                                'schema_version' => $record->schema_version,
-                                'format' => $record->format,
-                            ])
-                            ->log('Downloaded EPCIS payload');
-
-                        return EpcisDocumentXmlDownload::response($record);
-                    }),
+            ->recordActions([
+                ViewAction::make()
+                    ->iconButton()
+                    ->color('secondary')
+                    ->tooltip(__('View')),
                 Action::make('trackTrace')
                     ->label('Track & Trace')
                     ->icon(Heroicon::OutlinedMap)
+                    ->iconButton()
+                    ->color('secondary')
                     ->disabled(fn (EpcisDocument $record): bool => ! in_array($record->status, ['parsed', 'validated'], true))
                     ->tooltip(fn (EpcisDocument $record): ?string => in_array($record->status, ['parsed', 'validated'], true)
                         ? 'Download Transaction Report PDF (one page per lot)'
@@ -446,6 +387,8 @@ class EpcisDocumentsTable
                 Action::make('serializedTrackTrace')
                     ->label('Serialized Track & Trace')
                     ->icon(Heroicon::OutlinedViewfinderCircle)
+                    ->iconButton()
+                    ->color('secondary')
                     ->disabled(fn (EpcisDocument $record): bool => ! in_array($record->status, ['parsed', 'validated'], true))
                     ->tooltip(fn (EpcisDocument $record): ?string => in_array($record->status, ['parsed', 'validated'], true)
                         ? 'Queue DSCSA Compliance Report PDF (serials by lot). You will be notified when it is ready.'
@@ -456,7 +399,96 @@ class EpcisDocumentsTable
 
                         QueueSerializedTrackTraceExport::forDocument($record, $actor);
                     }),
-            ]));
+                RecordActionGroup::make([
+                    RegulatoryCompliance::apply(
+                        Action::make('reprocess')
+                            ->label('Re-process')
+                            ->icon(Heroicon::OutlinedArrowPathRoundedSquare)
+                            ->color('warning')
+                            ->requiresConfirmation()
+                            ->visible(fn (EpcisDocument $record): bool => JobRoleAccess::allowsAny(
+                                Permissions::NavExceptions,
+                                Permissions::NavIntegrations,
+                            )
+                                && ! $record->isFloorReceived()
+                                && in_array($record->status, ['parsed', 'validated', 'error'], true))
+                            ->action(function (EpcisDocument $record): void {
+                                $sync = Queue::getDefaultDriver() === 'sync';
+
+                                try {
+                                    $document = app(ReprocessEpcisDocument::class)->handle($record, $sync);
+                                } catch (Throwable $e) {
+                                    Notification::make()
+                                        ->title('Re-process failed')
+                                        ->body($e->getMessage())
+                                        ->danger()
+                                        ->send();
+
+                                    return;
+                                }
+
+                                Notification::make()
+                                    ->title($sync || $document->status === 'parsed' ? 'Re-process complete' : 'Re-process queued')
+                                    ->body('Status: '.$document->status.' · Reprocess #'.(int) $document->reprocess_count)
+                                    ->success()
+                                    ->send();
+                            }),
+                        'epcis_reprocess',
+                        requireReason: false,
+                    ),
+                    Action::make('refresh')
+                        ->label('Refresh')
+                        ->icon(Heroicon::OutlinedArrowPath)
+                        ->visible(fn (): bool => JobRoleAccess::allowsAny(
+                            Permissions::NavExceptions,
+                            Permissions::NavIntegrations,
+                        ))
+                        ->action(function (EpcisDocument $record): void {
+                            app(EnrichEpcisDocumentShippingFields::class)->handle($record);
+
+                            Notification::make()
+                                ->title('Shipping fields refreshed')
+                                ->success()
+                                ->send();
+                        }),
+                    StartReceivingAction::forTable(),
+                    Action::make('downloadXml')
+                        ->label('Download EPCIS')
+                        ->icon(Heroicon::OutlinedArrowDownTray)
+                        ->visible(fn (EpcisDocument $record): bool => filled($record->payload_path))
+                        ->disabled(fn (EpcisDocument $record): bool => ! EpcisDocumentXmlDownload::available($record))
+                        ->tooltip(fn (EpcisDocument $record): ?string => EpcisDocumentXmlDownload::available($record)
+                            ? 'Download the stored EPCIS payload'
+                            : 'Payload is missing from storage')
+                        ->action(function (EpcisDocument $record) {
+                            if (! EpcisDocumentXmlDownload::available($record)) {
+                                Notification::make()
+                                    ->title('Payload file missing')
+                                    ->body('The payload path is recorded but the file is not on disk.')
+                                    ->danger()
+                                    ->send();
+
+                                return null;
+                            }
+
+                            /** @var User|null $actor */
+                            $actor = auth()->user();
+
+                            activity()
+                                ->performedOn($record)
+                                ->causedBy($actor)
+                                ->withProperties([
+                                    'filename' => EpcisDocumentXmlDownload::filename($record),
+                                    'payload_path' => $record->payload_path,
+                                    'schema_version' => $record->schema_version,
+                                    'format' => $record->format,
+                                ])
+                                ->log('Downloaded EPCIS payload');
+
+                            return EpcisDocumentXmlDownload::response($record);
+                        }),
+                ]),
+            ]);
     }
 
     private static function monoIfGlnLike(?string $state): ?FontFamily

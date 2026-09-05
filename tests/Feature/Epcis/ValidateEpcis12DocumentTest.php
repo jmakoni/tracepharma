@@ -1255,6 +1255,224 @@ class ValidateEpcis12DocumentTest extends TestCase
     }
 
     #[Test]
+    public function pack_hierarchy_time_inversion_flags_when_child_pack_precedes_parent_pack(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $docId = null;
+        $epcId = null;
+
+        try {
+            $suffix = (string) random_int(100000000, 999999999);
+            $uri = 'urn:epc:id:sgtin:030116.0888888.'.$suffix;
+
+            $epcId = (int) DB::table('epcs')->insertGetId([
+                'epc_uri' => $uri,
+                'epc_type' => 'sgtin',
+                'company_prefix' => '030116',
+                'indicator_digit' => '0',
+                'item_reference' => '888888',
+                'serial_number' => $suffix,
+                'gtin14' => '00301168888884',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $doc = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'ingest_generation' => 1,
+                'status' => 'parsed',
+                'creation_date' => now(),
+                'received_at' => now(),
+                'original_filename' => 'pack-hierarchy-inversion.xml',
+            ]);
+            $docId = (int) $doc->getKey();
+
+            $intoSsccEventId = (int) DB::table('epcis_events')->insertGetId([
+                'document_id' => $docId,
+                'ingest_generation' => 1,
+                'event_id' => (string) str()->uuid(),
+                'event_type' => 'AggregationEvent',
+                'event_time' => '2026-08-13 16:46:16',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $intoSsccEventId,
+                'epc_id' => $epcId,
+                'role' => 'childEPC',
+            ]);
+
+            $eaIntoInnerEventId = (int) DB::table('epcis_events')->insertGetId([
+                'document_id' => $docId,
+                'ingest_generation' => 1,
+                'event_id' => (string) str()->uuid(),
+                'event_type' => 'AggregationEvent',
+                'event_time' => '2026-08-13 16:46:36',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $eaIntoInnerEventId,
+                'epc_id' => $epcId,
+                'role' => 'parentID',
+            ]);
+
+            DB::table('document_epcs')->insert([
+                'document_id' => $docId,
+                'epc_id' => $epcId,
+                'ingest_generation' => 1,
+            ]);
+
+            $rules = app(EpcisCatalogBusinessRules::class);
+            $resolver = app(EpcisValidationProfileResolver::class);
+            $doc = EpcisDocument::query()->findOrFail($docId);
+            $findings = $rules->validate(
+                $resolver->resolve($doc, 'inbound'),
+                $doc->events()->get(),
+            );
+
+            $this->assertTrue(
+                collect($findings)->contains(
+                    fn (EpcisValidationFinding $f): bool => $f->exceptionType === 'PACK_HIERARCHY_TIME_INVERSION'
+                        && $f->epcId === $epcId
+                        && $f->eventId === $intoSsccEventId
+                        && $f->severity === 'error',
+                ),
+                'Inner pack timed into SSCC before EA→inner must raise PACK_HIERARCHY_TIME_INVERSION',
+            );
+            $this->assertSame(
+                ExceptionReceiveImpact::BusinessRule,
+                ExceptionReceiveImpactMap::forCode('PACK_HIERARCHY_TIME_INVERSION'),
+            );
+        } finally {
+            if ($docId !== null) {
+                EpcisException::query()->where('document_id', $docId)->delete();
+                DB::table('document_epcs')->where('document_id', $docId)->delete();
+                $eventIds = DB::table('epcis_events')->where('document_id', $docId)->pluck('id');
+                DB::table('event_epcs')->whereIn('event_id', $eventIds)->delete();
+                DB::table('epcis_events')->where('document_id', $docId)->delete();
+                DB::table('epcis_documents')->where('id', $docId)->delete();
+            }
+            if ($epcId !== null && ! DB::table('event_epcs')->where('epc_id', $epcId)->exists()) {
+                DB::table('epcs')->where('id', $epcId)->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function pack_hierarchy_time_inversion_does_not_flag_when_parent_pack_precedes_child_pack(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $docId = null;
+        $epcId = null;
+
+        try {
+            $suffix = (string) random_int(100000000, 999999999);
+            $uri = 'urn:epc:id:sgtin:030116.0777777.'.$suffix;
+
+            $epcId = (int) DB::table('epcs')->insertGetId([
+                'epc_uri' => $uri,
+                'epc_type' => 'sgtin',
+                'company_prefix' => '030116',
+                'indicator_digit' => '0',
+                'item_reference' => '777777',
+                'serial_number' => $suffix,
+                'gtin14' => '00301167777773',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $doc = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'ingest_generation' => 1,
+                'status' => 'parsed',
+                'creation_date' => now(),
+                'received_at' => now(),
+                'original_filename' => 'pack-hierarchy-ok.xml',
+            ]);
+            $docId = (int) $doc->getKey();
+
+            $eaIntoInnerEventId = (int) DB::table('epcis_events')->insertGetId([
+                'document_id' => $docId,
+                'ingest_generation' => 1,
+                'event_id' => (string) str()->uuid(),
+                'event_type' => 'AggregationEvent',
+                'event_time' => '2026-08-13 16:46:16',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $eaIntoInnerEventId,
+                'epc_id' => $epcId,
+                'role' => 'parentID',
+            ]);
+
+            $intoSsccEventId = (int) DB::table('epcis_events')->insertGetId([
+                'document_id' => $docId,
+                'ingest_generation' => 1,
+                'event_id' => (string) str()->uuid(),
+                'event_type' => 'AggregationEvent',
+                'event_time' => '2026-08-13 16:46:36',
+                'action' => 'ADD',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:packing',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('event_epcs')->insert([
+                'event_id' => $intoSsccEventId,
+                'epc_id' => $epcId,
+                'role' => 'childEPC',
+            ]);
+
+            DB::table('document_epcs')->insert([
+                'document_id' => $docId,
+                'epc_id' => $epcId,
+                'ingest_generation' => 1,
+            ]);
+
+            $rules = app(EpcisCatalogBusinessRules::class);
+            $resolver = app(EpcisValidationProfileResolver::class);
+            $doc = EpcisDocument::query()->findOrFail($docId);
+            $findings = $rules->validate(
+                $resolver->resolve($doc, 'inbound'),
+                $doc->events()->get(),
+            );
+
+            $this->assertFalse(
+                collect($findings)->contains(
+                    fn (EpcisValidationFinding $f): bool => $f->exceptionType === 'PACK_HIERARCHY_TIME_INVERSION'
+                        && $f->epcId === $epcId,
+                ),
+                'Correct EA→inner then inner→SSCC order must not raise PACK_HIERARCHY_TIME_INVERSION',
+            );
+        } finally {
+            if ($docId !== null) {
+                EpcisException::query()->where('document_id', $docId)->delete();
+                DB::table('document_epcs')->where('document_id', $docId)->delete();
+                $eventIds = DB::table('epcis_events')->where('document_id', $docId)->pluck('id');
+                DB::table('event_epcs')->whereIn('event_id', $eventIds)->delete();
+                DB::table('epcis_events')->where('document_id', $docId)->delete();
+                DB::table('epcis_documents')->where('id', $docId)->delete();
+            }
+            if ($epcId !== null && ! DB::table('event_epcs')->where('epc_id', $epcId)->exists()) {
+                DB::table('epcs')->where('id', $epcId)->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function missing_commissioning_flags_receiving_without_commission_in_same_document(): void
     {
         $this->initializeDemo2Tenant();

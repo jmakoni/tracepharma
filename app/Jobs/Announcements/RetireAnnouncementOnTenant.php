@@ -20,6 +20,10 @@ final class RetireAnnouncementOnTenant implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    public int $timeout = 300;
+
     public function __construct(
         public string $announcementId,
         public string $tenantId,

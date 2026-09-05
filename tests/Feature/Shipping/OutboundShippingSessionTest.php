@@ -729,8 +729,7 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertSame(self::DEMO_PARTNER_SGLN, $shipToSgln);
             $this->assertStringContainsString("<readPoint>\n          <id>{$shipFromSgln}</id>", (string) $xml);
 
-            // The shipping event omits bizLocation per the GS1 US IG; the customer is
-            // named on destinationList instead.
+            // GS1 US R1.3 / TraceLink: shipping ObjectEvents omit bizLocation.
             $this->assertStringNotContainsString('<bizLocation>', (string) $xml);
             $this->assertStringContainsString(
                 '<destination type="urn:epcglobal:cbv:sdt:location">'.$shipToSgln.'</destination>',
@@ -1421,7 +1420,7 @@ class OutboundShippingSessionTest extends TestCase
     }
 
     #[Test]
-    public function first_send_authors_ti_ts_without_inventing_history(): void
+    public function first_send_authors_ti_ts_and_full_history_when_sscc_is_packed(): void
     {
         $tenant = $this->initializeWholesalerTenant();
 
@@ -1437,6 +1436,7 @@ class OutboundShippingSessionTest extends TestCase
             ]);
 
             $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $this->documentIds[] = (int) $document->getKey();
             $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
 
             $this->assertSame(
@@ -1498,14 +1498,25 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertStringContainsString('<gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>', $xml);
             $this->assertStringContainsString('FDCA Sec. 581(27)(A)-(G)', $xml);
 
-            // A first send attests only to what we witnessed: no commissioning or packing
-            // history, and no bizLocation on the shipping event.
-            $this->assertStringNotContainsString('bizstep:commissioning', $xml);
-            $this->assertStringNotContainsString('bizstep:packing', $xml);
-            $this->assertStringNotContainsString('<AggregationEvent>', $xml);
-            $this->assertStringNotContainsString('<bizLocation>', $xml);
-            $this->assertSame(1, substr_count($xml, '<ObjectEvent>'));
-            $this->assertSame(1, (int) $document->event_count);
+            // Fixture SSCC still has open packed children, so the partner payload is the
+            // self-contained commission → pack → ship document (not the lean shipping-only XML).
+            $this->assertStringContainsString('bizstep:commissioning', $xml);
+            $this->assertStringContainsString('bizstep:packing', $xml);
+            $this->assertStringContainsString('<AggregationEvent>', $xml);
+            $this->assertStringContainsString('bizstep:shipping', $xml);
+            $this->assertGreaterThan(1, substr_count($xml, '<ObjectEvent>'));
+            $this->assertGreaterThan(1, (int) $document->event_count);
+
+            // Pedigree fidelity: inbound manufacturer commission time + SGLN, not receiving.
+            $this->assertStringContainsString('2026-06-18T23:27:32.897Z', $xml);
+            $this->assertStringContainsString('urn:epc:id:sgln:030116.000000.0', $xml);
+            $this->assertStringNotContainsString('bizstep:receiving', $xml);
+            $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:receiving', $xml);
+
+            // Live DB projection for this document is the shipping ObjectEvent (custody);
+            // partner TI file is larger — download payload, do not confuse the two.
+            $liveEventCount = EpcisEvent::query()->where('document_id', $document->getKey())->count();
+            $this->assertSame(1, $liveEventCount);
 
             $shipping = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
@@ -1686,7 +1697,7 @@ class OutboundShippingSessionTest extends TestCase
 
             $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
             $this->assertFalse((bool) $completed->is_drop_shipment);
-            $this->assertStringNotContainsString('dropShipment', $xml);
+            $this->assertStringContainsString('<gs1ushc:dropShipment>false</gs1ushc:dropShipment>', $xml);
         } finally {
             $this->cleanup($tenant);
         }
@@ -2981,6 +2992,68 @@ class OutboundShippingSessionTest extends TestCase
                 $this->documentIds[] = (int) $completed->epcis_document_id;
             }
         } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function send_soft_warns_on_atp_gap_when_tenant_disables_hard_block(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+        $priorBlock = TenantSettings::forTenant($tenant)->blockSendOnAtpGap();
+
+        try {
+            $this->setTenantReceivingState($tenant, 'TX');
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'block_send_on_atp_gap' => false,
+            ]);
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $customer = $this->createCustomerPartner('ATP Soft Customer');
+            $shipTo = $this->createCustomerSite($customer, '037015');
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+            app(ConfirmOutboundShippingScan::class)->handle($session, self::SSCC_URI);
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $customer->getKey(),
+                'ship_to_site_id' => (int) $shipTo->getKey(),
+                'ship_to_gln' => (string) $shipTo->gln,
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-ATP-SOFT-001',
+                'customer_po' => 'PO-ATP-SOFT-001',
+                'dscsa_affirm' => true,
+            ]);
+
+            $validate = app(ValidateOutboundShippingSend::class);
+            $fresh = $session->fresh();
+
+            $this->assertSame([], $this->atpBlockers($validate->handle($fresh)));
+            $warnings = $validate->warnings($fresh);
+            $this->assertNotEmpty($warnings, 'Expected ATP soft warnings; got none.');
+            $this->assertTrue(
+                collect($warnings)->contains(
+                    fn (string $line): bool => str_contains($line, 'ATP license')
+                        && str_contains($line, 'soft warning'),
+                ),
+                'Warnings: '.implode(' | ', $warnings),
+            );
+
+            $badge = collect(app(\App\Support\Shipping\OutboundShipReadiness::class)->badges($fresh))
+                ->firstWhere('key', 'atp');
+            $this->assertSame('warn', $badge['status'] ?? null);
+            $this->assertSame(
+                [],
+                $this->atpBlockers($validate->handle($fresh)),
+                'Soft ATP mode must not add ATP lines to send blockers.',
+            );
+        } finally {
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'block_send_on_atp_gap' => $priorBlock,
+            ]);
             $this->cleanup($tenant);
         }
     }
@@ -4489,6 +4562,11 @@ class OutboundShippingSessionTest extends TestCase
         if (! $this->receivingStateCaptured) {
             $this->setTenantReceivingState($tenant, 'TX');
         }
+
+        // ATP send tests expect the historical hard gate unless a case opts into soft warn.
+        TenantSettings::forTenant(tenant())->saveOrganization([
+            'block_send_on_atp_gap' => true,
+        ]);
 
         return $tenant;
     }

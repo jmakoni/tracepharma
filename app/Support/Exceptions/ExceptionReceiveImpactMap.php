@@ -49,6 +49,7 @@ final class ExceptionReceiveImpactMap
         'MIXED_EXPIRY_SAME_LOT' => ExceptionReceiveImpact::BusinessRule,
         'OVER_SHIPMENT' => ExceptionReceiveImpact::BusinessRule,
         'TIMING_INVERSION' => ExceptionReceiveImpact::BusinessRule,
+        'PACK_HIERARCHY_TIME_INVERSION' => ExceptionReceiveImpact::BusinessRule,
         'DECOMMISSION_AFTER_SHIP' => ExceptionReceiveImpact::BusinessRule,
         'PARTNER_REJECTED_FILE' => ExceptionReceiveImpact::BusinessRule,
         'L2_L3_RECONCILIATION_FAILURE' => ExceptionReceiveImpact::BusinessRule,
@@ -72,6 +73,11 @@ final class ExceptionReceiveImpactMap
         'SBDH_SOURCE_OWNING_PARTY_MISMATCH' => ExceptionReceiveImpact::Warning,
         'DROP_SHIPMENT_INDICATOR_MISSING' => ExceptionReceiveImpact::Warning,
         'AUTO_DECOMMISSION_FAILED' => ExceptionReceiveImpact::Warning,
+        'ASN_SHIPMENT_FILE_ADDED' => ExceptionReceiveImpact::Warning,
+        'ASN_SHIPMENT_PO_MISMATCH' => ExceptionReceiveImpact::Warning,
+        'DESTINATION_OWNING_PARTY_MISMATCH' => ExceptionReceiveImpact::Warning,
+        'DESTINATION_LOCATION_MISMATCH' => ExceptionReceiveImpact::Warning,
+        'SCHEDULED_PRODUCT_MISSING_DEA' => ExceptionReceiveImpact::Warning,
         'UNCLASSIFIED' => ExceptionReceiveImpact::Warning,
 
         // Soft / informational — demo-softened / never gate receive

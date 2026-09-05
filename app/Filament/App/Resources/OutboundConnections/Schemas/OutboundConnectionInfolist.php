@@ -26,9 +26,11 @@ class OutboundConnectionInfolist
                         TextEntry::make('transport')
                             ->badge()
                             ->formatStateUsing(fn (OutboundTransport $state): string => $state->label()),
-                        TextEntry::make('tradingPartner.name')
-                            ->label('Trading partner')
-                            ->placeholder('Not linked'),
+                        TextEntry::make('tradingPartners.name')
+                            ->label('Trading partners')
+                            ->badge()
+                            ->separator(',')
+                            ->placeholder('Global (any customer)'),
                         IconEntry::make('is_active')
                             ->boolean(),
                         IconEntry::make('is_default')

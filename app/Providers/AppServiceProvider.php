@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Domain\Epcis\Validation\ValidationPipeline;
 use App\Listeners\LogTenantUserImpersonationEnded;
 use App\Models\Admin;
+use App\Policies\ActivityPolicy;
+use App\Policies\RolePolicy;
 use App\Services\Auth\Oidc\GenericOpenIdConnectProvider;
 use App\Services\Epcis\ConnectionOutboundEpcisTransmitter;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
@@ -34,6 +36,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\ServiceProvider;
+use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -77,6 +81,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('command-center:access', fn ($user) => $user instanceof Admin);
         Gate::define('command-center:manage-commands', fn ($user) => $user instanceof Admin);
         Gate::define('command-center:prune-history', fn ($user) => $user instanceof Admin);
+
+        Gate::policy(Role::class, RolePolicy::class);
+        Gate::policy(Activity::class, ActivityPolicy::class);
 
         Event::listen(Logout::class, LogTenantUserImpersonationEnded::class);
 

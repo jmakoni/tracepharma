@@ -157,9 +157,9 @@ final class StartReceivingAction
                     : 'Scan in')
                 ->icon(Heroicon::OutlinedQrCode)
                 ->visible(fn (EpcisDocument $record): bool => self::canStartReceiving($record))
-                ->disabled(fn (EpcisDocument $record): bool => app(ReceivingGate::class)->documentBlockedByOpenException($record) !== null)
+                ->disabled(fn (EpcisDocument $record): bool => app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record) !== null)
                 ->tooltip(function (EpcisDocument $record): ?string {
-                    $blocking = app(ReceivingGate::class)->documentBlockedByOpenException($record);
+                    $blocking = app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record);
                     if ($blocking === null) {
                         return null;
                     }
@@ -202,10 +202,10 @@ final class StartReceivingAction
                     return self::canStartReceiving($document());
                 })
                 ->disabled(function () use ($document): bool {
-                    return app(ReceivingGate::class)->documentBlockedByOpenException($document()) !== null;
+                    return app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($document()) !== null;
                 })
                 ->tooltip(function () use ($document): ?string {
-                    $blocking = app(ReceivingGate::class)->documentBlockedByOpenException($document());
+                    $blocking = app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($document());
                     if ($blocking === null) {
                         return null;
                     }

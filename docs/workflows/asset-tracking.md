@@ -14,6 +14,7 @@ Trace an SGTIN or SSCC: current disposition, custody site, event timeline, and o
 - User authorized for EPC’s last-seen site (or all-sites access).
 - Scan resolves via `ResolveEpcFromScan` / `BuildAssetTrace`.
 - Optional `?scan=` and `?as_of=` query params for deep links.
+- Units still packed under an open SSCC inherit that container’s last-seen location after a transfer or partner receive that names the SSCC only.
 
 ## Steps (with screenshots)
 

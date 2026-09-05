@@ -13,6 +13,7 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get as SchemaGet;
 use Filament\Schemas\Schema;
@@ -50,6 +51,86 @@ class UserForm
                         ->helperText(fn (string $operation): ?string => $operation === 'edit'
                             ? 'Leave blank to keep the current password.'
                             : null),
+                    Toggle::make('is_active')
+                        ->label('Account active')
+                        ->default(true)
+                        ->disabled(fn (?User $record): bool => $record !== null && auth()->user()?->is($record))
+                        ->helperText(fn (?User $record): ?string => $record !== null && auth()->user()?->is($record)
+                            ? 'You cannot disable your own account.'
+                            : 'Inactive accounts cannot sign in (password or SSO).'),
+                    Toggle::make('must_change_password')
+                        ->label('Must change password at next login')
+                        ->helperText('Applies to password sign-in only. SSO users manage passwords in the identity provider.')
+                        ->default(false),
+                    TextInput::make('disabled_reason')
+                        ->label('Disable reason')
+                        ->maxLength(255)
+                        ->visible(fn (SchemaGet $get): bool => ! (bool) $get('is_active')),
+                ]),
+            Section::make('Directory / SSO')
+                ->compact()
+                ->columns(['md' => 2])
+                ->description('Synced from the identity provider on SSO sign-in. Read-only.')
+                ->collapsed()
+                ->schema([
+                    TextInput::make('oidc_issuer')
+                        ->label('OIDC issuer')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('oidc_subject')
+                        ->label('OIDC subject')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('directory_object_id')
+                        ->label('Directory object ID')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('user_principal_name')
+                        ->label('User principal name')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('employee_id')
+                        ->label('Employee ID')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('given_name')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('surname')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('job_title')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('department')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('company_name')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('office_location')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('mobile_phone')
+                        ->disabled()
+                        ->dehydrated(false),
+                    TextInput::make('business_phone')
+                        ->disabled()
+                        ->dehydrated(false),
+                    Placeholder::make('directory_groups_display')
+                        ->label('Directory groups')
+                        ->content(function (?User $record): string {
+                            $groups = $record?->directory_groups;
+
+                            if (! is_array($groups) || $groups === []) {
+                                return '—';
+                            }
+
+                            return implode(', ', array_map(strval(...), $groups));
+                        }),
+                    Placeholder::make('directory_synced_at_display')
+                        ->label('Directory synced at')
+                        ->content(fn (?User $record): string => $record?->directory_synced_at?->toDateTimeString() ?? '—'),
                 ]),
             Section::make('Roles')
                 ->compact()

@@ -2,11 +2,17 @@
 
 namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
+use App\Actions\Shipping\DeleteOutboundShippingSession;
+use App\Actions\Shipping\UnconfirmOutboundShippingScanLine;
 use App\Filament\App\Pages\ScanOutWorkstation;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
+use App\Filament\Notifications\Notification;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
+use DomainException;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
@@ -45,9 +51,17 @@ class MobileViewOutboundShippingSession extends ViewRecord
         return [];
     }
 
+    /**
+     * @return array<Action>
+     */
     protected function getHeaderActions(): array
     {
-        return [];
+        return [
+            UnsubmittedSessionDeleteAction::forShipping(
+                fn (OutboundShippingSession $record) => app(DeleteOutboundShippingSession::class)->handle($record, auth()->id()),
+                OutboundShippingSessionResource::getUrl(name: 'index', panel: 'app'),
+            ),
+        ];
     }
 
     public function routeDisplayLabel(): string
@@ -139,5 +153,58 @@ class MobileViewOutboundShippingSession extends ViewRecord
         }
 
         return filled($line->scan_raw) ? (string) $line->scan_raw : 'Scan #'.$line->getKey();
+    }
+
+    public function canRemoveRecentScanLine(OutboundShippingScanLine $line): bool
+    {
+        /** @var OutboundShippingSession $session */
+        $session = $this->getRecord();
+
+        if (! $session->canUnconfirmScanLines()) {
+            return false;
+        }
+
+        return $line->status === 'confirmed';
+    }
+
+    public function removeRecentScanLine(int $lineId): void
+    {
+        /** @var OutboundShippingSession $session */
+        $session = $this->getRecord();
+
+        $line = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null || ! $this->canRemoveRecentScanLine($line)) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body('This scan cannot be removed.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(UnconfirmOutboundShippingScanLine::class)->handle($line, auth()->id());
+        } catch (DomainException $e) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $this->getRecord()->refresh();
+        $this->refreshOutboundShippingSessionHud();
+
+        Notification::make()
+            ->title('Scan removed')
+            ->success()
+            ->send();
     }
 }

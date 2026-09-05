@@ -4,16 +4,17 @@ namespace App\Services\Epcis;
 
 use App\Enums\OutboundTransport;
 use App\Models\OutboundConnection;
+use Illuminate\Database\Eloquent\Builder;
 
 final class OutboundConnectionResolver
 {
     /**
      * A partner-scoped outbound connection must match the document customer. Global
-     * connections (no trading partner) may route any shipment.
+     * connections (no linked trading partners) may route any shipment.
      */
     public static function connectionMatchesPartner(OutboundConnection $connection, ?int $partnerId): bool
     {
-        if ($connection->trading_partner_id === null) {
+        if ($connection->isGlobalPartnerScope()) {
             return true;
         }
 
@@ -21,7 +22,15 @@ final class OutboundConnectionResolver
             return false;
         }
 
-        return (int) $connection->trading_partner_id === $partnerId;
+        if ($connection->relationLoaded('tradingPartners')) {
+            return $connection->tradingPartners->contains(
+                fn ($partner): bool => (int) $partner->getKey() === $partnerId,
+            );
+        }
+
+        return $connection->tradingPartners()
+            ->where('trading_partners.id', $partnerId)
+            ->exists();
     }
 
     /**
@@ -41,13 +50,13 @@ final class OutboundConnectionResolver
             ->where('is_active', true);
 
         if ($tradingPartnerId !== null) {
-            return $base->where('trading_partner_id', $tradingPartnerId)
+            return $this->scopedToPartner($base, $tradingPartnerId)
                 ->orderByDesc('is_default')
                 ->orderBy('id')
                 ->first();
         }
 
-        return $base->whereNull('trading_partner_id')
+        return $this->globalScope($base)
             ->orderByDesc('is_default')
             ->orderBy('id')
             ->first();
@@ -83,8 +92,7 @@ final class OutboundConnectionResolver
             ]);
 
         if ($tradingPartnerId !== null) {
-            $partnerScoped = (clone $base)
-                ->where('trading_partner_id', $tradingPartnerId)
+            $partnerScoped = $this->scopedToPartner((clone $base), $tradingPartnerId)
                 ->orderByDesc('is_default')
                 ->orderBy('id')
                 ->first();
@@ -96,7 +104,7 @@ final class OutboundConnectionResolver
             return null;
         }
 
-        return $base->whereNull('trading_partner_id')
+        return $this->globalScope($base)
             ->orderByDesc('is_default')
             ->orderBy('id')
             ->first();
@@ -109,8 +117,7 @@ final class OutboundConnectionResolver
             ->where('transport', OutboundTransport::Portal);
 
         if ($tradingPartnerId !== null) {
-            $partnerScoped = (clone $base)
-                ->where('trading_partner_id', $tradingPartnerId)
+            $partnerScoped = $this->scopedToPartner((clone $base), $tradingPartnerId)
                 ->orderByDesc('is_default')
                 ->orderBy('id')
                 ->first();
@@ -124,12 +131,33 @@ final class OutboundConnectionResolver
             ->where('is_active', true)
             ->where('transport', OutboundTransport::Portal)
             ->where(function ($query): void {
-                $query->whereNull('trading_partner_id')
+                $query->whereDoesntHave('tradingPartners')
                     ->orWhere('system_key', OutboundConnection::SYSTEM_KEY_CLIENT_PORTAL);
             })
             ->orderByDesc('is_system')
             ->orderByDesc('is_default')
             ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * @param  Builder<OutboundConnection>  $query
+     * @return Builder<OutboundConnection>
+     */
+    private function scopedToPartner(Builder $query, int $tradingPartnerId): Builder
+    {
+        return $query->whereHas(
+            'tradingPartners',
+            fn (Builder $partners): Builder => $partners->where('trading_partners.id', $tradingPartnerId),
+        );
+    }
+
+    /**
+     * @param  Builder<OutboundConnection>  $query
+     * @return Builder<OutboundConnection>
+     */
+    private function globalScope(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('tradingPartners');
     }
 }

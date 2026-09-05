@@ -20,6 +20,10 @@ class SeedTenantRoles implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
+    public int $timeout = 120;
+
     public function __construct(
         protected TenantWithDatabase $tenant,
     ) {}

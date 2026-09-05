@@ -9,6 +9,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Support\Integrations\OutboundTransportAvailability;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -36,8 +37,6 @@ class OutboundConnection extends Model
         'trading_partner_id',
         'is_active',
         'is_default',
-        'is_system',
-        'system_key',
         'conformance_state',
         'credentials',
         'settings',
@@ -89,11 +88,83 @@ class OutboundConnection extends Model
                 );
             }
         });
+
+        // Tests and legacy creates may set trading_partner_id without the pivot.
+        static::created(function (OutboundConnection $connection): void {
+            if ($connection->trading_partner_id === null) {
+                return;
+            }
+
+            if ($connection->tradingPartners()->exists()) {
+                return;
+            }
+
+            $connection->tradingPartners()->sync([(int) $connection->trading_partner_id]);
+        });
     }
 
     public function tradingPartner(): BelongsTo
     {
         return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function tradingPartners(): BelongsToMany
+    {
+        return $this->belongsToMany(TradingPartner::class, 'outbound_connection_trading_partner')
+            ->using(OutboundConnectionTradingPartner::class)
+            ->withTimestamps()
+            ->orderBy('trading_partners.name');
+    }
+
+    /**
+     * Denormalize trading_partner_id from the pivot: sole partner when exactly one,
+     * otherwise null (global or multi-partner).
+     */
+    public function syncTradingPartnerIdFromPartners(): void
+    {
+        $ids = $this->tradingPartners()
+            ->orderBy('trading_partners.id')
+            ->pluck('trading_partners.id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        $primary = count($ids) === 1 ? $ids[0] : null;
+
+        if ($this->trading_partner_id === null && $primary === null) {
+            return;
+        }
+
+        if ($this->trading_partner_id !== null && $primary !== null && (int) $this->trading_partner_id === $primary) {
+            return;
+        }
+
+        $this->forceFill(['trading_partner_id' => $primary])->saveQuietly();
+    }
+
+    /**
+     * @param  list<int|string>  $partnerIds
+     */
+    public function syncPartners(array $partnerIds): void
+    {
+        $ids = collect($partnerIds)
+            ->map(fn ($id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->tradingPartners()->sync($ids);
+        $this->syncTradingPartnerIdFromPartners();
+    }
+
+    public function isGlobalPartnerScope(): bool
+    {
+        if ($this->relationLoaded('tradingPartners')) {
+            return $this->tradingPartners->isEmpty();
+        }
+
+        return ! $this->tradingPartners()->exists();
     }
 
     public function documents(): HasMany

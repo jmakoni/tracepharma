@@ -1,11 +1,11 @@
 ---
-title: Fda Imports
+title: FDA imports
 parent: operations
 order: 25
 group: Operations
 ---
 
-# Fda Imports
+# FDA imports
 
 Filament classes:
 

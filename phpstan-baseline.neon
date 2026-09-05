@@ -2173,30 +2173,6 @@ parameters:
 			path: app/Filament/App/Resources/LocationDevices/LocationDeviceResource.php
 
 		-
-			message: '#^Missing parameter \$actionName \(string\) in call to static method App\\Filament\\Support\\RegulatoryCompliance\:\:apply\(\)\.$#'
-			identifier: argument.missing
-			count: 1
-			path: app/Filament/App/Resources/OutboundConnections/Pages/EditOutboundConnection.php
-
-		-
-			message: '#^Unknown parameter \$requiresReason in call to static method App\\Filament\\Support\\RegulatoryCompliance\:\:apply\(\)\.$#'
-			identifier: argument.unknown
-			count: 1
-			path: app/Filament/App/Resources/OutboundConnections/Pages/EditOutboundConnection.php
-
-		-
-			message: '#^Missing parameter \$actionName \(string\) in call to static method App\\Filament\\Support\\RegulatoryCompliance\:\:apply\(\)\.$#'
-			identifier: argument.missing
-			count: 1
-			path: app/Filament/App/Resources/OutboundConnections/Pages/ViewOutboundConnection.php
-
-		-
-			message: '#^Unknown parameter \$requiresReason in call to static method App\\Filament\\Support\\RegulatoryCompliance\:\:apply\(\)\.$#'
-			identifier: argument.unknown
-			count: 1
-			path: app/Filament/App/Resources/OutboundConnections/Pages/ViewOutboundConnection.php
-
-		-
 			message: '#^Method App\\Filament\\App\\Resources\\OutboundEpcisDocuments\\OutboundEpcisDocumentResource\:\:getEloquentQuery\(\) should return Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\Epcis\\EpcisDocument\> but returns Illuminate\\Database\\Eloquent\\Builder\<Illuminate\\Database\\Eloquent\\Model\>\.$#'
 			identifier: return.type
 			count: 3

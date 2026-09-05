@@ -260,7 +260,7 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
 
         $url = EpcisDocumentResource::getUrl('index');
 
-        return $url.(str_contains($url, '?') ? '&' : '?').'findRecall=1';
+        return $url.(str_contains($url, '?') ? '&' : '?').'action=findRecall';
     }
 
     public function verifyProductUrl(): ?string

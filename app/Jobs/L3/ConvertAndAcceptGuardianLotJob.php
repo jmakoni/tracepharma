@@ -19,6 +19,7 @@ use App\Models\Tenant;
 use App\Services\L3\GuardianDataFeedParser;
 use App\Support\Epcis\EpcisTempFile;
 use App\Support\Gs1\Sgln;
+use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantSettings;

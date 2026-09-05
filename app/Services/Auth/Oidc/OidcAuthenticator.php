@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Auth\Oidc;
 
+use App\Models\Concerns\HasAccountSecurity;
+use App\Support\Auth\AccountSecuritySession;
 use App\Support\Auth\OidcConnectionConfig;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -133,9 +135,15 @@ final class OidcAuthenticator
         string $guard,
         string $panelId,
     ): RedirectResponse {
+        if (in_array(HasAccountSecurity::class, class_uses_recursive($user), true) && ! $user->isUsable()) {
+            /** @phpstan-ignore-next-line */
+            abort(403, $user->authenticationFailureMessage());
+        }
+
         Auth::guard($guard)->login($user, remember: true);
 
         session(['auth.via' => 'oidc']);
+        AccountSecuritySession::bind($user);
 
         Filament::setCurrentPanel(Filament::getPanel($panelId));
 

@@ -24,7 +24,7 @@ Scan a unit at dispense or returns intake to verify with the Verification Router
 
 ## Steps (with screenshots)
 
-1. Open **Dispense / verify** from Receiving nav (or Operations Hub verify route).
+1. Open **Dispense / verify** from Receiving nav, or **Verify product** from Operations Hub Directories.
 
 ![Verify product desk](media/verify-product/01-entry.png)
 
@@ -51,5 +51,6 @@ Not applicable — this page creates **Verification** records (and optional **Ex
 ## Notes / known quirks
 
 - Navigation label **Dispense / verify** differs from slug `verify-product`.
+- Operations Hub Directories card is labeled **Verify product** (same `/verify-product` page).
 - Fail-closed when VRS misconfigured (`VrsConfigurationException`).
 - Scorecard visibility controlled by tenant/user policy on page.

@@ -10,10 +10,11 @@ group: Settings
 Filament classes:
 
 - `App\Filament\Admin\Resources\Admins\AdminResource`
+- `App\Filament\Admin\Resources\Roles\RoleResource`
 
 ## When to use
 
-Manage platform administrator accounts for the Admin panel (not tenant Filament users).
+Manage platform administrator accounts for the Admin panel (not tenant Filament users). Use **Roles** to adjust which platform capabilities `platform_admin` / `support` grant.
 
 ## Prerequisites
 
@@ -25,7 +26,8 @@ Manage platform administrator accounts for the Admin panel (not tenant Filament 
 1. Open **Admins**. Open the page and use Help for live UI.
 2. Create an admin with least privilege for their role.
 3. Edit or deactivate when staff change.
-4. Confirm they can reach only intended resources.
+4. Optionally open **Roles** (Settings) to change capability bundles, or reset a role to seeded defaults.
+5. Confirm they can reach only intended resources.
 
 ## Related pages
 
@@ -38,3 +40,4 @@ Manage platform administrator accounts for the Admin panel (not tenant Filament 
 
 - Platform admins can affect all tenants — treat as privileged access.
 - Prefer named accounts over shared logins.
+- The Platform Admin role always retains manage-admins / catalog / tenants capabilities.

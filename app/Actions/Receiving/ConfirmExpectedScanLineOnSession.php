@@ -7,6 +7,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\TenantSettings;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -188,23 +189,18 @@ final class ConfirmExpectedScanLineOnSession
             return false;
         }
 
-        $allParentsConfirmed = (int) $session->confirmed_parent_count >= (int) $session->expected_parent_count
-            && (int) $session->expected_parent_count > 0;
-
-        if ((int) $session->expected_parent_count === 0) {
-            $allParentsConfirmed = true;
+        if (! TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady()) {
+            return false;
         }
 
-        $childrenDone = (int) $session->expected_child_count === 0
-            || (int) $session->confirmed_child_count >= (int) $session->expected_child_count;
-
-        if (! ($allParentsConfirmed && $childrenDone)) {
+        if (! $session->isReadyToCompleteInboundAsn()) {
             return false;
         }
 
         $session->forceFill([
             'status' => 'completed',
             'completed_at' => now(),
+            'active_parent_epc_id' => null,
         ])->save();
 
         return true;

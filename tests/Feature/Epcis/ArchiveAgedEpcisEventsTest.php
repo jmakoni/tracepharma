@@ -64,7 +64,8 @@ class ArchiveAgedEpcisEventsTest extends TestCase
                 'epc_id' => $epc->getKey(),
             ]);
             $this->assertNotNull(Epc::query()->find($epc->getKey()));
-            $this->assertNotNull(EpcisDocument::query()->find($documentId));
+            $document = EpcisDocument::query()->find($documentId);
+            $this->assertNotNull($document, 'Event archive must not delete the epcis_documents row (pedigree payload pointer).');
             $this->assertNotNull(EpcisEventArchive::query()->find($oldId)?->archived_at);
         } finally {
             $this->cleanup();

@@ -4,25 +4,26 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccountSecurity;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class PortalUser extends Authenticatable
 {
+    use HasAccountSecurity;
     use Notifiable;
 
     protected $fillable = [
         'email',
         'name',
-        'is_active',
+        'disabled_reason',
         'last_login_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
             'last_login_at' => 'datetime',
         ];
     }

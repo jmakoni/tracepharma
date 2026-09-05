@@ -8,6 +8,7 @@ use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\TradingPartner;
+use App\Support\Places\UsState;
 use BackedEnum;
 use Carbon\CarbonInterface;
 
@@ -32,7 +33,7 @@ final class FdaPrefill
             'street_address' => $organization->street_address,
             'street_address_2' => $organization->street_address_2,
             'city' => $organization->city,
-            'state' => $organization->state_province,
+            'state' => UsState::normalize($organization->state_province) ?? $organization->state_province,
             'zipcode' => $organization->postal_code,
             'country_code' => $organization->country_code ?: 'US',
             'timezone' => $organization->timezone,
@@ -67,7 +68,7 @@ final class FdaPrefill
             'street_address' => $establishment->street_address,
             'street_address_2' => $establishment->street_address_2,
             'city' => $establishment->city,
-            'state' => $establishment->state_province,
+            'state' => UsState::normalize($establishment->state_province) ?? $establishment->state_province,
             'zipcode' => $establishment->postal_code,
             'country_code' => $establishment->country_code,
             'timezone' => $establishment->timezone,
@@ -98,7 +99,7 @@ final class FdaPrefill
             'street_address' => $facility->street_address,
             'street_address_2' => $facility->street_address_2,
             'city' => $facility->city,
-            'state' => $facility->state_province,
+            'state' => UsState::normalize($facility->state_province) ?? $facility->state_province,
             'zipcode' => $facility->postal_code,
             'country_code' => $facility->country_code,
             'timezone' => $facility->timezone,

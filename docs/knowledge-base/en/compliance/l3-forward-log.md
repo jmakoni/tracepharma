@@ -1,11 +1,11 @@
 ---
-title: L3 Forward Log
+title: L3 forward log
 parent: compliance
 order: 40
 group: Compliance
 ---
 
-# L3 Forward Log
+# L3 forward log
 
 Filament classes:
 

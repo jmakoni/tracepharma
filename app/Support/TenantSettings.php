@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Actions\Exceptions\SyncDestinationGlnMismatchReceiveImpact;
 use App\Actions\MasterData\RederiveOrganizationSglns;
 use App\Enums\ClientPrintBridge;
 use App\Models\Site;
@@ -1158,6 +1159,126 @@ class TenantSettings
         return $this->putSetting('epcis.accept_20', $enabled);
     }
 
+    /**
+     * When true, inbound SOAP-wrapped EPCIS is rejected. When false (default),
+     * SOAP envelopes are unwrapped and the inner EPCISDocument is ingested.
+     */
+    public function requirePureEpcisDocument(): bool
+    {
+        $value = $this->setting('epcis.require_pure_document');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setRequirePureEpcisDocument(bool $enabled): self
+    {
+        return $this->putSetting('epcis.require_pure_document', $enabled);
+    }
+
+    /**
+     * When true, open DESTINATION_* mismatch signals/cases block ASN receive
+     * (BusinessRule). Default false — Phase 1 warning-only behavior.
+     */
+    public function blockReceiveOnDestinationGlnMismatch(): bool
+    {
+        $value = $this->setting('epcis.block_receive_on_destination_gln_mismatch');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setBlockReceiveOnDestinationGlnMismatch(bool $enabled): self
+    {
+        $this->putSetting('epcis.block_receive_on_destination_gln_mismatch', $enabled);
+
+        // Elevate/demote ExceptionType.receive_impact only (no Seeder::ensure, no mass
+        // promote). Fresh signals promote lazily via RecordDestinationGlnMismatch /
+        // ReceivingGate safety net.
+        if (
+            $this->tenant !== null
+            && tenancy()->initialized
+            && tenant()?->getKey() === $this->tenant->getKey()
+        ) {
+            $impact = $enabled
+                ? \App\Enums\ExceptionReceiveImpact::BusinessRule
+                : \App\Enums\ExceptionReceiveImpact::Warning;
+
+            \App\Models\Exceptions\ExceptionType::query()
+                ->whereIn('code', SyncDestinationGlnMismatchReceiveImpact::CODES)
+                ->update(['receive_impact' => $impact->value]);
+        }
+
+        return $this;
+    }
+
+    /**
+     * When true, inbound ASN enrichment resolves ship-to GLN → sites.ship_to_site_id.
+     * Default false while testing — partner destination GLNs must not bind site access.
+     */
+    public function matchInboundShipToSite(): bool
+    {
+        $value = $this->setting('epcis.match_inbound_ship_to_site');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setMatchInboundShipToSite(bool $enabled): self
+    {
+        return $this->putSetting('epcis.match_inbound_ship_to_site', $enabled);
+    }
+
+    /**
+     * When true, missing/expired ship-to ATP licenses hard-block outbound send.
+     * When false (default), the same gaps are soft warnings — send is allowed.
+     */
+    public function blockSendOnAtpGap(): bool
+    {
+        $value = $this->setting('shipping.block_send_on_atp_gap');
+
+        // Absent key = soft warning (operators opt into hard block).
+        if ($value === null) {
+            return false;
+        }
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setBlockSendOnAtpGap(bool $enabled): self
+    {
+        return $this->putSetting('shipping.block_send_on_atp_gap', $enabled);
+    }
+
+    /**
+     * When true, Filament "Ship transfer" opens the destination receive session and
+     * redirects there. Default false — ATTP-style separate destination receive step.
+     */
+    public function autoOpenReceiveAfterTransferShip(): bool
+    {
+        $value = $this->setting('transferring.auto_open_receive_after_ship');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoOpenReceiveAfterTransferShip(bool $enabled): self
+    {
+        return $this->putSetting('transferring.auto_open_receive_after_ship', $enabled);
+    }
+
+    /**
+     * When true, ASN receive auto-completes (and authors EPCIS) once every expected
+     * line is confirmed. Default false — ATTP/TraceLink-style explicit Complete receive.
+     */
+    public function autoCompleteAsnOnReady(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.auto_complete_asn_on_ready');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoCompleteAsnOnReady(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.auto_complete_asn_on_ready', $enabled);
+    }
+
     public function sanctumApiKilled(): bool
     {
         return $this->killSwitch(TenantKillSwitches::SANCTUM_API);
@@ -1532,6 +1653,11 @@ class TenantSettings
      *     serialization_contact_name?: string|null,
      *     serialization_contact_email?: string|null,
      *     require_ti_for_scan_first?: bool|null,
+     *     require_pure_epcis_document?: bool|null,
+     *     block_receive_on_destination_gln_mismatch?: bool|null,
+     *     match_inbound_ship_to_site?: bool|null,
+     *     auto_open_receive_after_transfer_ship?: bool|null,
+     *     auto_complete_asn_on_ready?: bool|null,
      *     receiving_edge_mode?: string|ReceivingEdgeMode|null,
      *     job_roles_enabled?: bool|null,
      *     client_print_bridge?: string|null,
@@ -1595,6 +1721,12 @@ class TenantSettings
             'serialization_contact_name',
             'serialization_contact_email',
             'require_ti_for_scan_first',
+            'require_pure_epcis_document',
+            'block_receive_on_destination_gln_mismatch',
+            'match_inbound_ship_to_site',
+            'block_send_on_atp_gap',
+            'auto_open_receive_after_transfer_ship',
+            'auto_complete_asn_on_ready',
             'receiving_edge_mode',
             'job_roles_enabled',
             'client_print_bridge',
@@ -1662,6 +1794,12 @@ class TenantSettings
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
                 'require_ti_for_scan_first' => $this->setRequireTiForScanFirst((bool) $data[$key]),
+                'require_pure_epcis_document' => $this->setRequirePureEpcisDocument((bool) $data[$key]),
+                'block_receive_on_destination_gln_mismatch' => $this->setBlockReceiveOnDestinationGlnMismatch((bool) $data[$key]),
+                'match_inbound_ship_to_site' => $this->setMatchInboundShipToSite((bool) $data[$key]),
+                'block_send_on_atp_gap' => $this->setBlockSendOnAtpGap((bool) $data[$key]),
+                'auto_open_receive_after_transfer_ship' => $this->setAutoOpenReceiveAfterTransferShip((bool) $data[$key]),
+                'auto_complete_asn_on_ready' => $this->setAutoCompleteAsnOnReady((bool) $data[$key]),
                 'receiving_edge_mode' => $this->setReceivingEdgeMode($this->normalizeReceivingEdgeMode($data[$key])),
                 'job_roles_enabled' => $this->setJobRolesEnabled((bool) $data[$key]),
                 'client_print_bridge' => $this->setClientPrintBridge(

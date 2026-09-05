@@ -49,6 +49,13 @@
                             <span aria-hidden="true">→</span>
                             <span class="font-medium">{{ $this->getRecord()->tradingPartner->name }}</span>
                         @endif
+                        @if ($this->chipDeaLabel)
+                            <span @class([
+                                'badge badge-outline',
+                                'badge-error' => $this->chipDeaColor === 'danger',
+                                'badge-warning' => $this->chipDeaColor === 'warning',
+                            ])>{{ $this->chipDeaLabel }}</span>
+                        @endif
                     </div>
 
                     <div class="flex flex-wrap items-center gap-1.5">

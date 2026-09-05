@@ -1,0 +1,308 @@
+{
+    "count": 11,
+    "coverage_contract": "Each row is an exclusive ownership boundary. Do not treat this list as complete without inspecting leftover app/ directories.",
+    "subsystems": [
+        {
+            "id": "HTTP",
+            "name": "HTTP / routing",
+            "boundary": "routes/, app/Http",
+            "files": [
+                "app/Http/Controllers/Api/V1/DataExportController.php",
+                "app/Http/Controllers/Api/V1/DispenseCheckController.php",
+                "app/Http/Controllers/Api/V1/EpcisCaptureController.php",
+                "app/Http/Controllers/Api/V1/EpcisDocumentsController.php",
+                "app/Http/Controllers/Api/V1/EpcisEventsQueryController.php",
+                "app/Http/Controllers/Api/V1/EpcisGs1SubscriptionsController.php",
+                "app/Http/Controllers/Api/V1/EpcisInboundController.php",
+                "app/Http/Controllers/Api/V1/EpcisOutboundController.php",
+                "app/Http/Controllers/Api/V1/GuardianLotCloseController.php",
+                "app/Http/Controllers/Api/V1/TrackTraceExportController.php",
+                "app/Http/Controllers/Api/V1/WmsShipConfirmController.php",
+                "app/Http/Controllers/Auth/OidcController.php",
+                "app/Http/Controllers/ClientPortal/AuthController.php",
+                "app/Http/Controllers/ClientPortal/ShipmentController.php",
+                "app/Http/Controllers/ClientPortal/TraceController.php",
+                "app/Http/Controllers/Controller.php",
+                "app/Http/Controllers/CustomerPortalController.php",
+                "app/Http/Controllers/DataExportDownloadController.php",
+                "app/Http/Controllers/EpcisSubscriptionDownloadController.php",
+                "app/Http/Controllers/Labeling/ClientLabelPrintController.php"
+            ],
+            "collectors": [
+                "routes"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "MDL",
+            "name": "Eloquent models",
+            "boundary": "app/Models",
+            "files": [
+                "app/Models/Admin.php",
+                "app/Models/Announcement.php",
+                "app/Models/AnnouncementTenant.php",
+                "app/Models/AtpLicense.php",
+                "app/Models/BuyingGroupMember.php",
+                "app/Models/Concerns/DerivesSgln.php",
+                "app/Models/Concerns/HasAccountSecurity.php",
+                "app/Models/Concerns/HasForcedPasswordChange.php",
+                "app/Models/Concerns/IndexesTenantSearch.php",
+                "app/Models/Concerns/TenantSearchable.php",
+                "app/Models/CustomerOnboarding.php",
+                "app/Models/DataExport.php",
+                "app/Models/DemoRequest.php",
+                "app/Models/Device.php",
+                "app/Models/Epcis/AggregationLink.php",
+                "app/Models/Epcis/DocumentEpc.php",
+                "app/Models/Epcis/Epc.php",
+                "app/Models/Epcis/EpcIlmd.php",
+                "app/Models/Epcis/EpcisDocument.php",
+                "app/Models/Epcis/EpcisDocumentLocation.php"
+            ],
+            "collectors": [
+                "models"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "AUTH",
+            "name": "Authorization",
+            "boundary": "app/Policies, gates, auth middleware",
+            "files": [
+                "app/Policies/BuyingGroupMemberPolicy.php",
+                "app/Policies/Concerns/MaintainsIntegrations.php",
+                "app/Policies/Concerns/MaintainsMasterData.php",
+                "app/Policies/DevicePolicy.php",
+                "app/Policies/EpcisDocumentPolicy.php",
+                "app/Policies/EpcisSubscriptionPolicy.php",
+                "app/Policies/ExceptionCasePolicy.php",
+                "app/Policies/InboundConnectionPolicy.php",
+                "app/Policies/LabelPrinterPolicy.php",
+                "app/Policies/LocationDevicePolicy.php",
+                "app/Policies/OutboundConnectionPolicy.php",
+                "app/Policies/OutboundShippingSessionPolicy.php",
+                "app/Policies/PrincipalPolicy.php",
+                "app/Policies/ProductPolicy.php",
+                "app/Policies/ReadPointPolicy.php",
+                "app/Policies/ReceivingSessionPolicy.php",
+                "app/Policies/SitePolicy.php",
+                "app/Policies/SsccNumberRangePolicy.php",
+                "app/Policies/TracingRequestPolicy.php",
+                "app/Policies/TradingPartnerPolicy.php"
+            ],
+            "collectors": [
+                "policies_authorization"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "DB",
+            "name": "Database / migrations",
+            "boundary": "database/migrations and schema",
+            "files": [
+                "database/migrations/0001_01_01_000000_create_users_table.php",
+                "database/migrations/0001_01_01_000001_create_cache_table.php",
+                "database/migrations/0001_01_01_000002_create_jobs_table.php",
+                "database/migrations/2019_09_15_000010_create_tenants_table.php",
+                "database/migrations/2019_09_15_000020_create_domains_table.php",
+                "database/migrations/2020_05_15_000010_create_tenant_user_impersonation_tokens_table.php",
+                "database/migrations/2026_07_29_190335_create_activity_log_table.php",
+                "database/migrations/2026_07_29_190335_create_permission_tables.php",
+                "database/migrations/2026_07_29_190337_create_personal_access_tokens_table.php",
+                "database/migrations/2026_07_29_190338_create_breezy_sessions_table.php",
+                "database/migrations/2026_07_29_190339_alter_breezy_sessions_table.php",
+                "database/migrations/2026_07_29_190340_create_passkeys_table.php",
+                "database/migrations/2026_07_29_191000_add_tenant_profile_columns.php",
+                "database/migrations/2026_07_29_191100_create_admins_table.php",
+                "database/migrations/2026_07_29_210001_create_catalog_products_table.php",
+                "database/migrations/2026_07_29_210002_create_catalog_trading_partners_table.php",
+                "database/migrations/2026_07_29_210003_create_catalog_sites_table.php",
+                "database/migrations/2026_07_29_210004_create_catalog_devices_table.php",
+                "database/migrations/2026_07_29_220001_enrich_catalog_trading_partners_table.php",
+                "database/migrations/2026_07_29_220002_enrich_catalog_sites_table.php"
+            ],
+            "collectors": [
+                "migrations",
+                "database_schema"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "JOB",
+            "name": "Jobs / queues",
+            "boundary": "app/Jobs, queue config",
+            "files": [
+                "app/Jobs/Announcements/FanOutAnnouncementToTenant.php",
+                "app/Jobs/Announcements/RetireAnnouncementOnTenant.php",
+                "app/Jobs/BackfillCatalogPartnerPlacesJob.php",
+                "app/Jobs/DeliverEpcisSubscriptionJob.php",
+                "app/Jobs/EnsureTenantStorageDirectoriesJob.php",
+                "app/Jobs/EpcisJobs/TransmitEpcisJob.php",
+                "app/Jobs/Exports/ProcessTrackTraceExportJob.php",
+                "app/Jobs/GenerateReceivingLpnLabelJob.php",
+                "app/Jobs/ImportFdaDatasetJob.php",
+                "app/Jobs/IngestEpcisXmlJob.php",
+                "app/Jobs/L3/ConvertAndAcceptGuardianLotJob.php",
+                "app/Jobs/Labeling/ForwardCommissioningToL3.php",
+                "app/Jobs/PollSftpInboundConnection.php",
+                "app/Jobs/PrintSsccLabelJob.php",
+                "app/Jobs/ProcessEpcisDocumentJob.php",
+                "app/Jobs/PromoteEpcisExceptionToCaseJob.php",
+                "app/Jobs/Receiving/NotifyWmsReceiveConfirm.php",
+                "app/Jobs/Scout/ProvisionTenantScoutIndexes.php",
+                "app/Jobs/SeedSystemOutboundTemplates.php",
+                "app/Jobs/SeedTenantRoles.php"
+            ],
+            "collectors": [
+                "jobs_events_schedules"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "EVT",
+            "name": "Events / listeners",
+            "boundary": "app/Events, app/Listeners",
+            "files": [
+                "app/Listeners/LogTenantUserImpersonationEnded.php"
+            ],
+            "collectors": [
+                "jobs_events_schedules"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "CMD",
+            "name": "Console / schedule",
+            "boundary": "app/Console, routes/console.php",
+            "files": [
+                "app/Console/Commands/AlertExpiringAtpLicensesCommand.php",
+                "app/Console/Commands/ArchiveAgedEpcisEventsCommand.php",
+                "app/Console/Commands/BackfillEpcisDocumentVocabularyCommand.php",
+                "app/Console/Commands/BackfillFdaProductNdc11Command.php",
+                "app/Console/Commands/BackfillInboundShipmentsCommand.php",
+                "app/Console/Commands/BackfillPartnerPlacesCommand.php",
+                "app/Console/Commands/BackfillTenantFdaStampsFromCatalogCommand.php",
+                "app/Console/Commands/CheckExceptionSlaCommand.php",
+                "app/Console/Commands/CheckSsccPoolLevelsCommand.php",
+                "app/Console/Commands/CheckTracingSlaCommand.php",
+                "app/Console/Commands/CleanOrgFacilityAtpLinksCommand.php",
+                "app/Console/Commands/DeactivateSelfTradingPartnersCommand.php",
+                "app/Console/Commands/DecommissionNeverShippedCommand.php",
+                "app/Console/Commands/DedupeFdaOrganizationMatchReviewsCommand.php",
+                "app/Console/Commands/DedupeFdaPackageNdcCommand.php",
+                "app/Console/Commands/DemoteLeakedTestOrganizationSitesCommand.php",
+                "app/Console/Commands/DoctorAggregationLinkFkCommand.php",
+                "app/Console/Commands/EmitPendingMdnCatalogSignalsCommand.php",
+                "app/Console/Commands/EnsureMajorWholesalerCatalogPartnersCommand.php",
+                "app/Console/Commands/EnsureTenantStorageCommand.php"
+            ],
+            "collectors": [
+                "jobs_events_schedules"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "MAIL",
+            "name": "Mail / notifications",
+            "boundary": "app/Mail, app/Notifications",
+            "files": [
+                "app/Mail/OutboundEpcisAttachmentMail.php",
+                "app/Notifications/AggregationLinkForeignKeyAlert.php",
+                "app/Notifications/ComplianceAlertNotification.php",
+                "app/Notifications/CustomerOnboardingAcknowledgment.php",
+                "app/Notifications/CustomerOnboardingReceived.php",
+                "app/Notifications/CustomerPortalShipNotification.php",
+                "app/Notifications/DemoRequestAcknowledgment.php",
+                "app/Notifications/DemoRequestReceived.php",
+                "app/Notifications/DscsaExceptionSupplierMail.php",
+                "app/Notifications/EpcisJobFailedPlatformAlert.php",
+                "app/Notifications/ExceptionCreated.php",
+                "app/Notifications/ExceptionEscalated.php",
+                "app/Notifications/ExceptionUpdated.php",
+                "app/Notifications/MailTemplateTestSend.php",
+                "app/Notifications/ManufacturerVerificationFailed.php",
+                "app/Notifications/ManufacturerVerificationRequestMail.php",
+                "app/Notifications/PlatformExceptionSupportAlert.php",
+                "app/Notifications/PortalOtpNotification.php",
+                "app/Notifications/PortalPublicationReadyNotification.php",
+                "app/Notifications/RecallBroadcastMail.php"
+            ],
+            "collectors": [],
+            "status": "queued"
+        },
+        {
+            "id": "TST",
+            "name": "Tests",
+            "boundary": "tests/",
+            "files": [
+                "tests/Concerns/CleansDemo2EpcisArtifacts.php",
+                "tests/Feature/ActivityLogResourceTest.php",
+                "tests/Feature/Admin/ActivityLogResourceAccessTest.php",
+                "tests/Feature/Admin/AdminDashboardWidgetsTest.php",
+                "tests/Feature/Admin/AdminRoleResourceTest.php",
+                "tests/Feature/Admin/CustomerOnboardingSlugValidationTest.php",
+                "tests/Feature/Admin/EpcisHubSettingsPageTest.php",
+                "tests/Feature/Admin/FdaEstablishmentGlnValidationTest.php",
+                "tests/Feature/Admin/FdaFacilityCreateTest.php",
+                "tests/Feature/Admin/FdaImportRunQueueTest.php",
+                "tests/Feature/Admin/FdaOrganizationGlnValidationTest.php",
+                "tests/Feature/Admin/FdaOrganizationMatchReviewActionsTest.php",
+                "tests/Feature/Admin/FdaRegistryReparentOrganizationTest.php",
+                "tests/Feature/Admin/FdaRegistryResourcesTest.php",
+                "tests/Feature/Admin/FdaStreetAddressSearchTest.php",
+                "tests/Feature/Admin/FdaWdd3plAdminImportRegistryTest.php",
+                "tests/Feature/Admin/FdaWdd3plCurationPermissionTest.php",
+                "tests/Feature/Admin/FdaWdd3plStagingExpirationDateTest.php",
+                "tests/Feature/Admin/FdaWddFacilityGlnValidationTest.php",
+                "tests/Feature/Admin/MailTemplateResourceTest.php"
+            ],
+            "collectors": [
+                "tests"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "CFG",
+            "name": "Configuration",
+            "boundary": "config/",
+            "files": [
+                "config/activitylog.php",
+                "config/advanced-table-export-for-filament.php",
+                "config/app.php",
+                "config/auth.php",
+                "config/cache.php",
+                "config/command-center.php",
+                "config/database.php",
+                "config/fda.php",
+                "config/filament-activity-timeline.php",
+                "config/filament-advanced-rich-editor.php",
+                "config/filament-knowledge-base.php",
+                "config/filament-watchdog.php",
+                "config/filesystems.php",
+                "config/horizon.php",
+                "config/integrations.php",
+                "config/laravel-auditor.php",
+                "config/livewire.php",
+                "config/logging.php",
+                "config/mail.php",
+                "config/permission.php"
+            ],
+            "collectors": [
+                "configuration"
+            ],
+            "status": "queued"
+        },
+        {
+            "id": "DEP",
+            "name": "Dependencies",
+            "boundary": "composer.json / installed packages",
+            "files": [
+                "composer.json"
+            ],
+            "collectors": [
+                "dependencies"
+            ],
+            "status": "queued"
+        }
+    ]
+}

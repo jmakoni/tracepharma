@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Custody\ResolveEpcCustodyAsOf;
+use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Epcis\ArchivedEpcEvents;
 use App\Support\Epcis\LastGoodIngestProjection;
 use App\Support\Gs1\Ndc;
@@ -174,6 +175,14 @@ final class BuildAssetTrace
                 ? 'warn'
                 : ($inTransitViaParent || ! $inCustody ? 'warn' : 'ok');
             [$dispositionLabel, $dispositionUri, $dispositionAt, $lastSeen] = $this->latestEventDisplay($latestDirectEvent);
+            // Packed children follow the open parent's location (SSCC-only transfer/ship events).
+            $effectiveGln = app(ResolveEpcLastKnownGln::class)->forEpc($epc);
+            if ($effectiveGln !== null) {
+                $fromEffective = $this->locations->resolve($effectiveGln, null)['label'] ?? null;
+                if (filled($fromEffective)) {
+                    $lastSeen = $fromEffective;
+                }
+            }
         }
 
         $display = Gs1DualDisplay::forEpc($epc);

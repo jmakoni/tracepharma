@@ -1,11 +1,11 @@
 ---
-title: Pms And Wholesaler Packs
+title: PMS and wholesaler packs
 parent: integrations
 order: 45
 group: Integrations
 ---
 
-# Pms And Wholesaler Packs
+# PMS and wholesaler packs
 
 Filament classes:
 

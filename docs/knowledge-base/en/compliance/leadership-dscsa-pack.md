@@ -1,11 +1,11 @@
 ---
-title: Leadership Dscsa Pack
+title: Leadership DSCSA pack
 parent: compliance
 order: 45
 group: Compliance
 ---
 
-# Leadership Dscsa Pack
+# Leadership DSCSA pack
 
 Filament classes:
 

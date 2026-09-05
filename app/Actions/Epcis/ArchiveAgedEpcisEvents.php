@@ -16,6 +16,10 @@ use RuntimeException;
  *
  * Second pass deletes hot orphans: aged rows that already exist in archive (e.g. MOVE copied
  * then failed before hot delete) once child completeness matches MOVE checks.
+ *
+ * Does not delete or rewrite epcis_documents.payload_* files. Outbound TI pedigree rebuild
+ * ({@see \App\Support\Epcis\ExtractPriorPedigreeXml}) prefers DB pedigree XML fragments, then
+ * falls back to retained payloads for {@see config('tracepharma.epcis.payload_retention_years')}.
  */
 final class ArchiveAgedEpcisEvents
 {

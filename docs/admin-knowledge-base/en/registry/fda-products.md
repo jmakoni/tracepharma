@@ -1,11 +1,11 @@
 ---
-title: Fda Products
+title: FDA products
 parent: registry
 order: 30
 group: Registry
 ---
 
-# Fda Products
+# FDA products
 
 Filament classes:
 

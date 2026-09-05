@@ -1,11 +1,11 @@
 ---
-title: Inbound Epcis
+title: Inbound EPCIS
 parent: exceptions
 order: 25
 group: Receiving
 ---
 
-# Inbound Epcis
+# Inbound EPCIS
 
 Filament classes:
 

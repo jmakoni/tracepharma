@@ -4,6 +4,8 @@ namespace App\Providers\Filament;
 
 use App\Filament\Admin\Pages\Auth\Login;
 use App\Filament\Admin\Pages\Dashboard;
+use App\Http\Middleware\EnsureAccountIsUsable;
+use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Models\Admin;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
@@ -28,6 +30,8 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
+use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
+use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
 use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AdminPanelProvider extends PanelProvider
@@ -78,6 +82,14 @@ class AdminPanelProvider extends PanelProvider
                         relyingPartyId: (string) config('tracepharma.admin_domain'),
                         scopeToPanel: true,
                     )
+            )
+            ->plugin(
+                FilamentUiExtrasPlugin::make()
+                    ->stickyTableActions(true)
+            )
+            ->plugin(
+                StickyTableHeaderPlugin::make()
+                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
             );
 
         $panel = OptionalFilamentPlugins::register(
@@ -141,6 +153,8 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureAccountIsUsable::class.':admin',
+                EnsurePasswordChangeRequired::class,
             ])
             ->renderHook(
                 PanelsRenderHook::SIMPLE_PAGE_END,

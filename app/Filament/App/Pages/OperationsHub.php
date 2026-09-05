@@ -178,7 +178,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             $url = $this->resourceIndexUrl(EpcisDocumentResource::class);
 
             if ($url !== null) {
-                $this->redirect($url.(str_contains($url, '?') ? '&' : '?').'findRecall=1');
+                $this->redirect($url.(str_contains($url, '?') ? '&' : '?').'action=findRecall');
 
                 return;
             }
@@ -539,7 +539,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
                 'label' => 'Find / Recall',
                 'description' => 'Find units by GTIN/lot, or shipments by ASN/PO, then quarantine matches.',
                 'url' => $inboundUrl !== null
-                    ? $inboundUrl.(str_contains($inboundUrl, '?') ? '&' : '?').'findRecall=1'
+                    ? $inboundUrl.(str_contains($inboundUrl, '?') ? '&' : '?').'action=findRecall'
                     : null,
             ]);
         }

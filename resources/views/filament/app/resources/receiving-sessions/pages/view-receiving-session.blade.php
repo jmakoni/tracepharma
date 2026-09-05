@@ -70,6 +70,14 @@
                         <span class="badge badge-warning badge-outline">Transfer #{{ $this->chipTransferSessionId }}</span>
                     @endif
 
+                    @if ($this->chipDeaLabel)
+                        <span @class([
+                            'badge badge-outline',
+                            'badge-error' => $this->chipDeaColor === 'danger',
+                            'badge-warning' => $this->chipDeaColor === 'warning',
+                        ])>{{ $this->chipDeaLabel }}</span>
+                    @endif
+
                     @if ($this->isScanFirst() && $this->attachedInvoiceFilename())
                         <span class="badge badge-ghost">Invoice: {{ $this->attachedInvoiceFilename() }}</span>
                     @endif

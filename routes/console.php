@@ -164,8 +164,17 @@ Schedule::command('disposition:decommission-never-shipped')
 
 /**
  * MOVE aged epcis_events into archive tables (retention_years). Dry-run stays a CLI flag.
+ * Payloads are never deleted here — TI pedigree rebuild needs them.
  */
 Schedule::command('tracepharma:epcis-archive-events')
     ->dailyAt('03:00')
     ->withoutOverlapping()
     ->name('epcis-archive-events');
+
+/**
+ * Fail the schedule tick when commission/pack source documents lack on-disk payloads.
+ */
+Schedule::command('tracepharma:epcis-retention-report --check-pedigree-payloads')
+    ->weeklyOn(1, '03:15')
+    ->withoutOverlapping()
+    ->name('epcis-pedigree-payload-audit');

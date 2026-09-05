@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Receiving;
 
+use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
@@ -32,6 +33,8 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
     public const MAX_SCANS_PER_POST = 5000;
 
     public int $tries = 3;
+
+    public int $timeout = 600;
 
     public int $uniqueFor = 3600;
 
@@ -187,24 +190,46 @@ final class NotifyWmsReceiveConfirm implements ShouldBeUnique, ShouldQueue
      */
     private function confirmedScans(ReceivingSession $session): array
     {
-        return ReceivingScanLine::query()
+        $scans = [];
+
+        ReceivingScanLine::query()
             ->where('receiving_session_id', $session->getKey())
             ->where('status', 'confirmed')
-            ->with('epc')
+            ->select(['id', 'epc_id', 'scan_raw'])
             ->orderBy('id')
-            ->get()
-            ->map(function (ReceivingScanLine $line): string {
-                $uri = $line->epc?->epc_uri;
+            ->chunkById(500, function ($lines) use (&$scans): void {
+                $epcIds = $lines->pluck('epc_id')
+                    ->filter(fn ($id): bool => $id !== null)
+                    ->map(fn ($id): int => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all();
 
-                if (filled($uri)) {
-                    return (string) $uri;
+                $urisById = $epcIds === []
+                    ? collect()
+                    : Epc::query()
+                        ->whereIn('id', $epcIds)
+                        ->pluck('epc_uri', 'id');
+
+                foreach ($lines as $line) {
+                    $uri = $line->epc_id !== null
+                        ? $urisById->get((int) $line->epc_id)
+                        : null;
+
+                    if (filled($uri)) {
+                        $scans[] = (string) $uri;
+
+                        continue;
+                    }
+
+                    $raw = (string) ($line->scan_raw ?? '');
+                    if ($raw !== '') {
+                        $scans[] = $raw;
+                    }
                 }
+            });
 
-                return (string) ($line->scan_raw ?? '');
-            })
-            ->filter(fn (string $scan): bool => $scan !== '')
-            ->values()
-            ->all();
+        return $scans;
     }
 
     private function maxScansPerPost(): int

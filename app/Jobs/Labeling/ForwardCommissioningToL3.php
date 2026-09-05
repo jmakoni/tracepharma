@@ -32,12 +32,9 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
-    public int $uniqueFor = 3600;
+    public int $timeout = 120;
 
-    public function __construct(
-        public string $tenantId,
-        public int $documentId,
-    ) {}
+    public int $uniqueFor = 3600;
 
     public function uniqueId(): string
     {

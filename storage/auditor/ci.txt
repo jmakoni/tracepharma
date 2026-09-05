@@ -1,0 +1,61 @@
+Laravel Auditor Report
+------------------------------------------------------------
+Generated: 2026-09-04 18:20:45
+Project: TracePharma
+Laravel: v13.30.1 | PHP: 8.5.10
+Findings: 8
+ HIGH 3
+ MEDIUM 5
+[HIGH] ExportTenantComplianceArchive has neither $tries nor $timeout (Laravel conventions, confidence: Confirmed)
+ Rule: AUD-QUE-001
+ Symbol: ExportTenantComplianceArchive
+ Evidence: app/Jobs/Tenants/ExportTenantComplianceArchive.php:17
+ Long-running tenant compliance archive job (large CSV/ZIP generation) implements ShouldQueue with no $tries and no $timeout, so a hung export can occupy a worker indefinitely and retry posture is undefined.
+ Recommendation: Set $timeout aligned under DB/redis retry_after (e.g. 3600) and $tries (e.g. 1–3) consistent with ImportFdaDatasetJob / ProcessTrackTraceExportJob.
+[HIGH] WMS receive-confirm loads all confirmed scan lines via unbounded get() (Performance, confidence: Confirmed)
+ Rule: AUD-PER-012
+ Symbol: NotifyWmsReceiveConfirm::confirmedScans
+ Evidence: app/Jobs/Receiving/NotifyWmsReceiveConfirm.php:188
+ Evidence: app/Jobs/Receiving/NotifyWmsReceiveConfirm.php:107
+ NotifyWmsReceiveConfirm::confirmedScans() loads every confirmed ReceivingScanLine with epc via ->get() before chunking HTTP POSTs. Large ASN/scan-first sessions spike memory on the queue worker.
+ Recommendation: Stream/chunk URI extraction with chunkById or cursor before building POST chunks; avoid materializing the full session line set.
+[HIGH] Mutable Role and Fda3911Report Filament resources lack Eloquent policies (Security, confidence: High)
+ Rule: AUD-FIL-001
+ Evidence: app/Filament/App/Resources/Roles/RoleResource.php:28
+ Evidence: app/Filament/App/Resources/Fda3911Reports/Fda3911ReportResource.php:27
+ Evidence: app/Policies
+ RoleResource and Fda3911ReportResource are create/edit surfaces gated mainly by canAccess(), with no matching Laravel policies. User/ExceptionCase/EpcisDocument now have policies after remediation; these mutable peers do not. Filament non-strict authorization allows abilities when no policy method exists.
+ Recommendation: Add RolePolicy and Fda3911ReportPolicy mirroring existing JobRoleAccess/canAccess gates; wire Filament can* / authorize() on mutate actions.
+[MEDIUM] ProvisionTenantScoutIndexes has neither $tries nor $timeout (Laravel conventions, confidence: Confirmed)
+ Rule: AUD-QUE-001
+ Symbol: ProvisionTenantScoutIndexes
+ Evidence: app/Jobs/Scout/ProvisionTenantScoutIndexes.php:16
+ Queued Meilisearch index-settings sync shells out via Artisan with no $tries/$timeout.
+ Recommendation: Add $tries and $timeout appropriate for Meilisearch sync duration; fail closed on non-zero Artisan exit (already throws).
+[MEDIUM] Scan-first TI gate loads all confirmed receiving lines unbounded (Performance, confidence: Confirmed)
+ Rule: AUD-PER-012
+ Symbol: CompleteReceivingSession::assertScanFirstTiWhenRequired
+ Evidence: app/Actions/Receiving/CompleteReceivingSession.php:239
+ CompleteReceivingSession::assertScanFirstTiWhenRequired() pulls every confirmed ReceivingScanLine with epc via ->get() on the complete path.
+ Recommendation: Chunk/cursor TI checks or query only epc_ids needing TI verification without hydrating all lines.
+[MEDIUM] Accept-remaining confirms load all expected parents/children unbounded (Performance, confidence: Confirmed)
+ Rule: AUD-PER-012
+ Symbol: ConfirmRemainingExpectedReceivingLines
+ Evidence: app/Actions/Receiving/ConfirmRemainingExpectedReceivingLines.php:73
+ ConfirmRemainingExpectedReceivingLines loads all expected parent and child ReceivingScanLine rows (with epc) via ->get() with no chunk/cursor.
+ Recommendation: Process expected lines in chunkById batches inside the existing confirmation loop.
+[MEDIUM] Additional App Filament models still lack policies (mostly read-only) (Security, confidence: High)
+ Rule: AUD-FIL-001
+ Evidence: app/Filament/App/Resources/EpcisJobs/EpcisJobResource.php
+ Evidence: app/Filament/App/Resources/Verifications/VerificationResource.php
+ Evidence: app/Policies
+ EpcisJob, Verification, SerializationLot, SsccLabel, ActivityLog, and FdaProduct App resources have no matching policies. Most disable writes via canCreate/canEdit false, but Filament still falls through the no-policy allow path for any ability not overridden.
+ Recommendation: Add thin viewAny/view policies mirroring canAccess; keep create/update/delete false where resources are read-only.
+[MEDIUM] OutboundConnection mass-assigns is_system and system_key (Security, confidence: Medium)
+ Rule: AUD-SEC-002
+ Evidence: app/Models/OutboundConnection.php:32
+ Privileged flags is_system and system_key remain on OutboundConnection $fillable. Conformance transitions are guarded in saving(), and deletes block system templates, but fill()/create() can still set is_system/system_key if those keys reach mass assignment.
+ Recommendation: Remove is_system/system_key from fillable; set only via dedicated seeders/forceFill paths for system templates.
+
+ ERROR CI failed: 3 open finding(s) at or above high. 
+

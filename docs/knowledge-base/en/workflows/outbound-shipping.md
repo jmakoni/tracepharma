@@ -14,7 +14,7 @@ group: Operations
 
 ## When to use
 
-Ship orders to trading partners with DSCSA TI/TS outbound EPCIS. Scan Out is the desktop floor desk; Ship Order is the session list and detail view.
+Ship orders to trading partners with DSCSA TI/TS outbound EPCIS. **Scan Out** is the canonical desktop ship desk (scan → customer → send wizard). **Ship Order** is the session list and audit/detail view.
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ Ship orders to trading partners with DSCSA TI/TS outbound EPCIS. Scan Out is the
 
 - **Demo capture:** no open ship orders were available during mid-flow screenshots; **session 1101** (completed) was used for session detail and EPCIS views. That session shows **0 confirmed scans** but EPCIS was authored — useful for corrective/demo sessions, though the copy can read as contradictory (see [findings.md](../findings)).
 - **Demo env:** session 1101 **transmit failed** because outbound EPCIS is disabled for the organization (`Outbound EPCIS is disabled for this organization` — org kill-switch / outbound disabled).
-- Scan Out subheading: *Desktop ship desk. Same ship orders as Ship Order.*
+- Scan Out subheading: desktop ship desk wizard (scan, customer, send on one screen).
 - Under-scan vs expected units: use **Declare split / partial** rather than lowering `expected_count` after scanning.
 - Live / hypercare / first-live-lot connections require `expected_count > 0` before send.
 - `OutboundShipReadiness` badges surface blockers before complete.

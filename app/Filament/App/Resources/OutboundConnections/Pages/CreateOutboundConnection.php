@@ -24,6 +24,9 @@ class CreateOutboundConnection extends CreateRecord
 
     protected function afterCreate(): void
     {
-        OutboundConnectionDefaultSync::ensureSingleDefault($this->record->fresh());
+        /** @var \App\Models\OutboundConnection $record */
+        $record = $this->record;
+        $record->syncTradingPartnerIdFromPartners();
+        OutboundConnectionDefaultSync::ensureSingleDefault($record->fresh());
     }
 }

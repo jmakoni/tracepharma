@@ -96,6 +96,26 @@ final class RecordOperationalEpcisCatalogSignal
         return $this->recorder->handle($document, 'OVER_SHIPMENT', $detail);
     }
 
+    public function asnShipmentFileAdded(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'ASN_SHIPMENT_FILE_ADDED', $detail);
+    }
+
+    public function asnShipmentPoMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'ASN_SHIPMENT_PO_MISMATCH', $detail);
+    }
+
+    public function destinationOwningPartyMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'DESTINATION_OWNING_PARTY_MISMATCH', $detail);
+    }
+
+    public function destinationLocationMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'DESTINATION_LOCATION_MISMATCH', $detail);
+    }
+
     public function invalidExtensionNamespace(EpcisDocument $document, string $detail, ?int $eventId = null): EpcisException
     {
         return $this->recorder->handle($document, 'INVALID_EXTENSION_NAMESPACE', $detail, null, $eventId);
