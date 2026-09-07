@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AtpLicenseExpirationStatus;
 use App\Enums\AtpVerificationSource;
 use App\Enums\PartnerType;
 use App\Enums\SsccNumberRangeStatus;
@@ -136,6 +137,50 @@ class TradingPartner extends Model
     public function sites(): HasMany
     {
         return $this->hasMany(Site::class);
+    }
+
+    /**
+     * Licenses attached directly to the partner (company-level), as opposed to
+     * the site-scoped licenses reached through sites().
+     */
+    public function atpLicenses(): HasMany
+    {
+        return $this->hasMany(AtpLicense::class);
+    }
+
+    /**
+     * Worst-of roll-up across partner-level and site-level licenses:
+     * expired > expiring > pending > verified > unknown (no licenses on record).
+     */
+    public function atpStatus(): string
+    {
+        $licenses = AtpLicense::query()
+            ->where('trading_partner_id', $this->getKey())
+            ->orWhereIn('site_id', $this->sites()->pluck('id'))
+            ->where('is_active', true)
+            ->get();
+
+        if ($licenses->isEmpty()) {
+            return 'unknown';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Expired)) {
+            return 'expired';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Expiring)) {
+            return 'expiring';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->isPendingVerification())) {
+            return 'pending';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Active)) {
+            return 'verified';
+        }
+
+        return 'unknown';
     }
 
     public function outboundConnections(): BelongsToMany

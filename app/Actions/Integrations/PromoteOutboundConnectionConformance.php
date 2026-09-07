@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Integrations;
 
 use App\Enums\OutboundConformanceState;
+use App\Models\ConnectionGoLiveChecklist;
 use App\Models\OutboundConnection;
 use App\Models\User;
 use App\Support\Auth\Permissions;
+use App\Support\Integrations\GoLiveChecklistEvaluator;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
 
@@ -21,6 +23,13 @@ class PromoteOutboundConnectionConformance
         if ($to === null) {
             throw new InvalidArgumentException(
                 'Outbound connection conformance is already at the final state and cannot be promoted further.',
+            );
+        }
+
+        if ($to === OutboundConformanceState::Live
+            && ! app(GoLiveChecklistEvaluator::class)->isComplete($connection)) {
+            throw new InvalidArgumentException(
+                'Go-live checklist is incomplete. Complete every step (including sign-off) or use break-glass to live.',
             );
         }
 
@@ -71,6 +80,11 @@ class PromoteOutboundConnectionConformance
             'conformance_state' => $to->value,
         ])->save();
         $connection->allowConformanceTransition = false;
+
+        ConnectionGoLiveChecklist::forConnection(
+            ConnectionGoLiveChecklist::TYPE_OUTBOUND,
+            (int) $connection->getKey(),
+        )->recordBreakGlass($reason);
 
         activity()
             ->performedOn($connection)

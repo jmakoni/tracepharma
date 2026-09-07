@@ -39,6 +39,7 @@
         "league/html-to-markdown": "^5.1",
         "meilisearch/meilisearch-php": "^1.16",
         "mkwebdesign/filament-watchdog-v5": "*",
+        "notebrainslab/filament-menu-manager": "^2.0",
         "occtherapist/advanced-table-export-for-filament": "*",
         "socialiteproviders/manager": "*",
         "socialiteproviders/microsoft-azure": "*",

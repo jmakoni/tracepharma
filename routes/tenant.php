@@ -20,6 +20,7 @@ use App\Http\Controllers\CustomerPortalController;
 use App\Http\Controllers\DataExportDownloadController;
 use App\Http\Controllers\EpcisSubscriptionDownloadController;
 use App\Http\Controllers\Labeling\ClientLabelPrintController;
+use App\Http\Controllers\PartnerLicenseUpdateController;
 use App\Http\Controllers\RecallBroadcastAckPortalController;
 use App\Http\Controllers\SetCurrentSiteController;
 use App\Http\Controllers\SupplierExceptionPortalController;
@@ -97,6 +98,16 @@ Route::middleware([
     Route::get('/supplier-exceptions/{portalShareUuid}', [SupplierExceptionPortalController::class, 'index'])
         ->middleware(['signed', 'throttle:20,1'])
         ->name('tenant.supplier-exceptions.index');
+
+    Route::get('/partner-license-update/{partner}', [PartnerLicenseUpdateController::class, 'show'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->whereNumber('partner')
+        ->name('tenant.partner-license-update.show');
+
+    Route::post('/partner-license-update/{partner}', [PartnerLicenseUpdateController::class, 'store'])
+        ->middleware(['signed', 'throttle:20,1'])
+        ->whereNumber('partner')
+        ->name('tenant.partner-license-update.store');
 
     Route::get('/customer-portal/{customerPortalUuid}', [CustomerPortalController::class, 'index'])
         ->middleware(['signed', 'throttle:20,1'])

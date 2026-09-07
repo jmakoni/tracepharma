@@ -4,6 +4,34 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.6.0] — 2026-09-07
+
+ATTP-grade connections and tenant authorization: outbound network profiles, a central connection approval queue, hub GLN route directory, TracePharma-owned platform edges (AS2/SFTP), credential and connection-health lifecycle, go-live evidence, ATP depth, tenant lifecycle audit, an ops command center catalogue, and an admin menu manager.
+
+### Added
+
+- **F-1.6.1** — **Outbound network profiles**: central `OutboundNetworkProfile` per serialization network (UniTrace/Systech/SAP ICH/TraceLink reusable values), Admin resource + seeder (`tracepharma:seed-outbound-network-profiles`), tenant outbound connections link to a profile with optional endpoint override, `OutboundSendPreset` derives allowed/default transports, Email/Portal never offered as network transports
+- **F-1.6.2** — **Connection approval queue**: tenant-created inbound/outbound connections stay Pending until a platform admin approves; central `ConnectionApprovalRequest` mirror, Admin ConnectionRequests resource, `connections:review`/`connections:list` commands, tenant + admin notifications, resubmit flow, existing connections backfilled as Approved (`tracepharma:backfill-connection-approval-requests`)
+- **F-1.6.3** — **Hub GLN route directory**: `hub:routes`/`hub:register-route`/`hub:unregister-route`/`hub:providers`/`hub:enable-provider`/`hub:disable-provider` commands, `HubRouteConflictGuard`, claimable receiver-GLN directory, Admin HubRoutes resource with dry-run route test, `claimed_via` provenance on routes
+- **F-1.6.4** — **Platform edges (TracePharma-owned)**: platform AS2 station (certs, AS2 id, sender registry) with hub-inbound webhook + MDN, platform SFTP drop with per-environment poller (`epcis:poll-platform-sftp`), hub token rotation with 24h grace overlap (`hub:rotate-token`), `PlatformOutboundEgress` routing tenant sends over platform edges, Admin **Platform Connections** page with category tabs (Inbound hub / Outbound networks / AS2 station / SFTP drop) x Demo-Stage-Prod sub-tabs
+- **F-1.6.5** — **Credential lifecycle**: `credentials_expire_at` on connections, AS2 certificate expiry parsing, `connections:credential-expiry-report` alerts to tenant owners + platform support, `connections:rotate-token` (inbound regenerate / outbound partner-issued), UI expiry badges
+- **F-1.6.6** — **Connection health**: `last_success_at`/`last_failure_at`/`consecutive_failures` rollups, `connections:health-sweep` failure-streak alerts with optional auto-pause, suspend/resume commands + UI with audited reasons, suspension enforced on send/receive paths
+- **F-1.6.7** — **Go-live checklists + evidence**: per-connection `ConnectionGoLiveChecklist`, `GoLiveChecklistEvaluator`, Markdown evidence pack (`connections:go-live-report`), hypercare sign-off trail
+- **F-1.6.8** — **ATP depth**: partner-level license roll-up, license document attachments, signed self-service partner license-update links (`PartnerLicenseUpdateController` + mail), inbound ATP soft-warning escalation, OCI verifiable-credential evidence seam
+- **F-1.6.9** — **Tenant lifecycle + platform audit**: `tenant:suspend` (audited reason, cascades to pair sibling) / `tenant:activate` / `tenant:entitle` commands, suspend/activate UI, central `PlatformAuditEvent` log of admin actions on tenants and platform settings, entitlement change history
+- **F-1.6.10** — **Ops command center catalogue**: all ~101 app Artisan commands registered in Command Center, grouped (Connections, Hub, Tenants, EPCIS, Compliance, FDA Catalog, Labels & SSCC, Search, Demo & Seeding, Maintenance) with typed variables, flags, confirmations, and queue+timeout for long runs
+- **F-1.6.11** — **Admin menu manager**: `notebrainslab/filament-menu-manager` on the admin panel (Settings → Menus) with primary/sidebar/footer locations, drag-and-drop ordering, auto-save
+- **F-1.6.12** — **Role-based menu kill switch**: `TRACEPHARMA_ROLE_BASED_MENUS` (default off) opens all admin/tenant navigation regardless of roles until role matrices are seeded; tenant `JobRoleAccess` and admin `Gate::before` honor the flag; tests force it on
+- **F-1.6.13** — **Partial-shipment quantity gate**: `split_declared` flag + audited `quantity_gate_overridden` on outbound shipping sessions, shared `OpenShipOrderQuantityCase` exception cases, live-ladder enforcement unchanged for non-split sends
+
+### Fixed
+
+- Orphan-SSCC exception auto-resolves when a later aggregation event makes the SSCC a parent (break-and-pack flow)
+- Outbound EPCIS summary counts children/grandchildren (includes `sscc_commissioning` documents in the open-tree summary)
+- Outbound EPCIS product rows fall back to tenant catalog + FDA data for name/NDC/manufacturer/dosage/strength when the document lacks vocabulary (GTINs collapse into one NDC group)
+- EPC custody gate no longer reports confirmed-received EPCs as not-in-custody
+- `filament:upgrade` / `filament:assets` no longer crashes on raw-HTML assets with no file path (zebra print, scan sounds, TracePharma/daisy styles moved to `HEAD_END` render hooks)
+
 ## [1.5.1] — 2026-09-02
 
 FDA identifier expansion and registry list search.

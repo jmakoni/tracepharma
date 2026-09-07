@@ -2,9 +2,12 @@
 
 namespace App\Filament\App\Resources\InboundConnections\Pages;
 
+use App\Actions\Integrations\RegisterConnectionApprovalRequest;
+use App\Enums\ConnectionApprovalStatus;
 use App\Filament\App\Concerns\SyncsEpcisHubRouting;
 use App\Filament\App\Concerns\TransformsConnectionCredentials;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
+use App\Models\InboundConnection;
 use App\Support\InboundConnectionPartnerRoutingSync;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
@@ -62,5 +65,22 @@ class EditInboundConnection extends EditRecord
 
         $this->syncHubRouting($this->record, $this->registerHubRouting);
         $this->registerHubRouting = false;
+
+        $this->syncApprovalRequest($this->record->fresh());
+    }
+
+    private function syncApprovalRequest(InboundConnection $record): void
+    {
+        // Editing a rejected or suspended connection resubmits it for platform review.
+        if ($record->isRejected() || $record->isSuspended()) {
+            $record->approval_status = ConnectionApprovalStatus::Pending;
+            $record->approval_note = null;
+            $record->save();
+            $record->refresh();
+        }
+
+        if ($record->isPendingApproval()) {
+            app(RegisterConnectionApprovalRequest::class)->register($record);
+        }
     }
 }

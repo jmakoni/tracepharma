@@ -28,8 +28,10 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
+use NoteBrainsLab\FilamentMenuManager\FilamentMenuManagerPlugin;
 use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
 use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
 use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
@@ -71,6 +73,9 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
+            ->routes(function (): void {
+                Route::redirect('epcis-hub-settings', 'platform-connections');
+            })
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\\Filament\\Admin\\Widgets')
             ->widgets([])
             ->plugin(
@@ -128,6 +133,21 @@ class AdminPanelProvider extends PanelProvider
             $panel,
             'MKWebDesign\\FilamentWatchdog\\FilamentWatchdogPlugin',
             fn () => FilamentWatchdogPlugin::make(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            FilamentMenuManagerPlugin::class,
+            fn () => FilamentMenuManagerPlugin::make()
+                ->locations([
+                    'primary' => 'Primary',
+                    'sidebar' => 'Sidebar',
+                    'footer' => 'Footer',
+                ])
+                ->navigationGroup('Settings')
+                ->navigationLabel('Menus')
+                ->navigationIcon('heroicon-o-bars-3')
+                ->navigationSort(90),
         );
 
         return $panel

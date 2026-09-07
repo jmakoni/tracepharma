@@ -19,6 +19,7 @@ use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
+use App\Support\Shipping\OpenShipOrderQuantityCase;
 use App\Support\Shipping\ResolveOutboundShipToSgln;
 use App\Support\Shipping\SsccShipCompletenessException;
 use App\Support\TenantSettings;
@@ -180,7 +181,7 @@ final class ValidateOutboundShippingSend
             $connection = $session->outboundConnection;
 
             if ($connection !== null && $connection->conformanceState()->requiresExpectedQuantity()) {
-                if ((bool) $session->quantity_gate_overridden) {
+                if ((bool) $session->quantity_gate_overridden || (bool) $session->split_declared) {
                     return [];
                 }
 
@@ -224,49 +225,7 @@ final class ValidateOutboundShippingSend
         int $expected,
         int $confirmed,
     ): void {
-        $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
-
-        if ($type === null) {
-            (new ExceptionTypeSeeder)->run();
-            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->first();
-        }
-
-        if ($type === null) {
-            return;
-        }
-
-        $fingerprint = 'ship-order-#'.$session->getKey().'-qty';
-
-        $alreadyOpen = ExceptionCase::query()
-            ->where('exception_type_id', $type->getKey())
-            ->whereNotIn('status', [
-                ExceptionStatus::Resolved->value,
-                ExceptionStatus::Closed->value,
-                ExceptionStatus::Cancelled->value,
-            ])
-            ->where('description', 'like', '%'.$fingerprint.'%')
-            ->exists();
-
-        if ($alreadyOpen) {
-            return;
-        }
-
-        $epcIds = OutboundShippingScanLine::query()
-            ->where('outbound_shipping_session_id', $session->getKey())
-            ->where('status', 'confirmed')
-            ->pluck('epc_id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->all();
-
-        $this->exceptionService->create([
-            'exception_type_id' => $type->getKey(),
-            'document_id' => null,
-            'site_id' => $session->site_id,
-            'trading_partner_id' => $session->trading_partner_id,
-            'title' => $type->name,
-            'description' => $message.' ['.$fingerprint.'; expected='.$expected.'; confirmed='.$confirmed.']',
-            'status' => ExceptionStatus::New->value,
-        ], $epcIds);
+        app(OpenShipOrderQuantityCase::class)->handle($session, $message, $expected, $confirmed);
     }
 
     private function openHierarchyException(

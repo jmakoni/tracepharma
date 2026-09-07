@@ -2,7 +2,7 @@
 
 namespace App\Filament\Admin\Widgets;
 
-use App\Filament\Admin\Pages\EpcisHubSettings;
+use App\Filament\Admin\Pages\PlatformConnections;
 use App\Filament\Admin\Widgets\Concerns\AuthorizesAdminDashboardWidget;
 use App\Support\Dashboard\AdminDashboardLinks;
 use App\Support\Dashboard\AdminDashboardMetrics;
@@ -50,7 +50,7 @@ class HubHealthWidget extends Widget
             'aggregationLinkFkNeverChecked' => $neverChecked,
             'empty' => $empty,
             'asOf' => $metrics['as_of']->timezone(config('app.timezone'))->format('g:i A'),
-            'hubUrl' => AdminDashboardLinks::pageUrl(EpcisHubSettings::class),
+            'hubUrl' => AdminDashboardLinks::pageUrl(PlatformConnections::class),
         ];
     }
 }

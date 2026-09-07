@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\InboundConnection;
 use App\Models\OutboundConnection;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use App\Support\Integrations\PlatformSftpConfig;
 use League\Flysystem\PhpseclibV3\SftpConnectionProvider;
 
 class SftpConnectionProviderFactory
@@ -15,6 +16,20 @@ class SftpConnectionProviderFactory
         $settings = $connection->settings ?? [];
 
         return self::makeProvider($credentials, $settings);
+    }
+
+    public static function forPlatformEdge(PlatformSftpConfig $config, string $environment): SftpConnectionProvider
+    {
+        return self::makeProvider(
+            [
+                'host' => $config->host($environment),
+                'username' => $config->username($environment),
+                'password' => $config->password($environment),
+                'private_key' => $config->privateKey($environment),
+                'passphrase' => $config->passphrase($environment),
+            ],
+            ['port' => $config->port($environment)],
+        );
     }
 
     public static function forOutboundConnection(OutboundConnection $connection): SftpConnectionProvider

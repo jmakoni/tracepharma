@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\EpcisOutboundController;
 use App\Http\Controllers\Api\V1\GuardianLotCloseController;
 use App\Http\Controllers\Api\V1\TrackTraceExportController;
 use App\Http\Controllers\Api\V1\WmsShipConfirmController;
+use App\Http\Controllers\Webhooks\As2HubInboundWebhookController;
 use App\Http\Controllers\Webhooks\As2InboundWebhookController;
 use App\Http\Controllers\Webhooks\As2MdnWebhookController;
 use App\Http\Controllers\Webhooks\EpcisHubInboundWebhookController;
@@ -32,6 +33,9 @@ Route::middleware('throttle:webhooks')->group(function (): void {
 
     Route::post('webhooks/wms/{tenantId}', [WmsShipConfirmWebhookController::class, 'handle'])
         ->name('webhooks.wms.ship-confirm');
+
+    Route::post('webhooks/as2/hub', [As2HubInboundWebhookController::class, 'handle'])
+        ->name('webhooks.as2.hub');
 
     Route::post('webhooks/as2/mdn/{tenantId}/{connectionId}', [As2MdnWebhookController::class, 'handle'])
         ->name('webhooks.as2.mdn');

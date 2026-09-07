@@ -48,6 +48,18 @@ class As2InboundWebhookController
                 ->where('transport', InboundTransport::As2)
                 ->firstOrFail();
 
+            if ($connection->isPendingApproval()) {
+                abort(403, 'Inbound connection is awaiting platform approval.');
+            }
+
+            if ($connection->isRejected()) {
+                abort(403, 'Inbound connection was rejected by platform review.');
+            }
+
+            if ($connection->isSuspended()) {
+                abort(403, 'Inbound connection was suspended by the platform.');
+            }
+
             $this->assertAs2Identity($request, $connection);
 
             $rawBody = $request->getContent();

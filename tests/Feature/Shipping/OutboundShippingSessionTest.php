@@ -4,6 +4,7 @@ namespace Tests\Feature\Shipping;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\GenerateReceivingEpcisEvents;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
@@ -61,6 +62,7 @@ use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Epcis\Validation\EpcisXsdValidator;
 use App\Support\Gs1\Sgln;
 use App\Support\Shipping\AtpGateBypass;
+use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\Shipping\SearchShipToCustomers;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\Tenancy\TenantKillSwitches;
@@ -3042,7 +3044,7 @@ class OutboundShippingSessionTest extends TestCase
                 'Warnings: '.implode(' | ', $warnings),
             );
 
-            $badge = collect(app(\App\Support\Shipping\OutboundShipReadiness::class)->badges($fresh))
+            $badge = collect(app(OutboundShipReadiness::class)->badges($fresh))
                 ->firstWhere('key', 'atp');
             $this->assertSame('warn', $badge['status'] ?? null);
             $this->assertSame(
@@ -4265,6 +4267,148 @@ class OutboundShippingSessionTest extends TestCase
     }
 
     #[Test]
+    public function live_connection_declared_partial_with_unknown_expected_passes_gate_and_opens_reconciliation_case(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+            if (! ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->exists()) {
+                (new ExceptionTypeSeeder)->run();
+            }
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Partial Unknown Customer');
+            $shipTo = $this->createCustomerSite($customer, '037111');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Live);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVEP', 'PO-LIVEP', $shipTo);
+            $session->forceFill([
+                'outbound_connection_id' => $connection->getKey(),
+                'expected_count' => 0,
+            ])->save();
+
+            // Declare the partial before any send attempt, so the declaration itself
+            // is what opens the reconciliation case.
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+
+            $session = $session->fresh();
+            $this->assertTrue((bool) $session->split_declared);
+            $this->assertNotNull($session->split_declared_at);
+
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+
+            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->firstOrFail();
+            $cases = ExceptionCase::query()
+                ->where('exception_type_id', $type->getKey())
+                ->where('status', ExceptionStatus::New->value)
+                ->where('description', 'like', '%ship-order-#'.$session->getKey().'-qty%')
+                ->get();
+            $this->assertCount(1, $cases);
+            $this->assertStringContainsString('Partial/batch shipment declared', (string) $cases->first()->description);
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $this->assertSame('completed', $completed->status);
+            $this->assertSame(0, (int) $completed->expected_count);
+            $this->assertTrue((bool) $completed->split_declared);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function partial_declaration_dedupes_the_reconciliation_case_opened_by_a_blocked_send(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            if (! ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->exists()) {
+                (new ExceptionTypeSeeder)->run();
+            }
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Live Partial Dedupe Customer');
+            $shipTo = $this->createCustomerSite($customer, '037112');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Live);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-LIVED', 'PO-LIVED', $shipTo);
+            $session->forceFill([
+                'outbound_connection_id' => $connection->getKey(),
+                'expected_count' => 0,
+            ])->save();
+
+            // A blocked send attempt opens the case first (scan-station reality).
+            $blockers = app(ValidateOutboundShippingSend::class)->handle($session->fresh());
+            $this->assertTrue(
+                collect($blockers)->contains(fn (string $b): bool => str_contains(strtolower($b), 'expected unit count is required')),
+                'Blockers: '.implode(' | ', $blockers),
+            );
+
+            $type = ExceptionType::query()->where('code', 'QUANTITY_MISMATCH')->firstOrFail();
+            $openCases = fn (): int => ExceptionCase::query()
+                ->where('exception_type_id', $type->getKey())
+                ->whereNotIn('status', [
+                    ExceptionStatus::Resolved->value,
+                    ExceptionStatus::Closed->value,
+                    ExceptionStatus::Cancelled->value,
+                ])
+                ->where('description', 'like', '%ship-order-#'.$session->getKey().'-qty%')
+                ->count();
+
+            $this->assertSame(1, $openCases());
+
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+            $this->assertSame(1, $openCases());
+
+            app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+            $this->assertSame(1, $openCases());
+
+            $this->assertSame([], app(ValidateOutboundShippingSend::class)->handle($session->fresh()));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_live_connection_cannot_declare_partial_with_unknown_expected(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $customer = $this->createCustomerPartner('Test Partial Unknown Customer');
+            $shipTo = $this->createCustomerSite($customer, '037113');
+            $connection = $this->createOutboundConnection(OutboundConformanceState::Test);
+
+            $session = $this->readyToSendSession($site, $customer, 'ASN-TESTP', 'PO-TESTP', $shipTo);
+            $session->forceFill([
+                'outbound_connection_id' => $connection->getKey(),
+                'expected_count' => 0,
+            ])->save();
+
+            try {
+                app(DeclareOutboundShippingSplit::class)->handle($session->fresh());
+                $this->fail('Expected declaring a partial with unknown expected on a non-live connection to throw.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('expected unit count', strtolower($e->getMessage()));
+            }
+
+            $this->assertFalse((bool) $session->fresh()->split_declared);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function live_connection_quantity_gate_override_allows_send_with_expected_count_zero(): void
     {
         $tenant = $this->initializeWholesalerTenant();
@@ -4638,6 +4782,15 @@ class OutboundShippingSessionTest extends TestCase
                 'completed_at' => now(),
                 'receiving_events_generated_at' => $session->receiving_events_generated_at ?? now(),
             ])->save();
+
+            // ASN auto-complete (receiving.auto_complete_asn_on_ready) is a tenant
+            // setting the shared demo2 tenant may have off — author the receiving
+            // events explicitly so the fixture stock lands on-hand at the site
+            // regardless of that setting.
+            if ($session->receiving_epcis_document_id === null) {
+                app(GenerateReceivingEpcisEvents::class)->handle($session->fresh());
+                $session = $session->fresh();
+            }
         } else {
             $session->forceFill([
                 'status' => 'in_progress',

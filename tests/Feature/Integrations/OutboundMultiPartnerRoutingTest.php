@@ -6,11 +6,13 @@ namespace Tests\Feature\Integrations;
 
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
+use App\Enums\OutboundConnectionKind;
 use App\Enums\OutboundTransport;
 use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
 use App\Enums\TenantProfile;
 use App\Models\OutboundConnection;
+use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
@@ -111,10 +113,18 @@ class OutboundMultiPartnerRoutingTest extends TestCase
             ]);
             $this->connectionIds[] = (int) $second->getKey();
 
+            // Two active non-default memberships for one partner are ambiguous.
+            $resolved = app(OutboundConnectionResolver::class)->resolve((int) $partner->getKey());
+
+            $this->assertNull($resolved);
+
+            $second->forceFill(['is_default' => true])->save();
+            OutboundConnectionDefaultSync::ensureSingleDefault($second->fresh());
+
             $resolved = app(OutboundConnectionResolver::class)->resolve((int) $partner->getKey());
 
             $this->assertNotNull($resolved);
-            $this->assertSame($first->getKey(), $resolved->getKey());
+            $this->assertSame($second->getKey(), $resolved->getKey());
         } finally {
             $this->cleanup();
             tenancy()->end();
@@ -386,6 +396,82 @@ class OutboundMultiPartnerRoutingTest extends TestCase
         }
     }
 
+    #[Test]
+    public function two_active_hubs_sharing_a_partner_are_ambiguous_on_resolve(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = $this->createPartner('Ambiguous Cardinal');
+
+            $hubA = OutboundConnection::query()->create([
+                'name' => 'LSPediA hub A',
+                'serialization_provider' => SerializationProvider::Lspedia,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'is_default' => false,
+                'settings' => [
+                    'kind' => 'provider_hub',
+                    'endpoint_url' => 'https://lspedia-a.example/epcis',
+                ],
+            ]);
+            $this->connectionIds[] = (int) $hubA->getKey();
+            $hubA->syncPartners([(int) $partner->getKey()]);
+
+            $hubB = OutboundConnection::query()->create([
+                'name' => 'LSPediA hub B',
+                'serialization_provider' => SerializationProvider::Lspedia,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'is_default' => false,
+                'settings' => [
+                    'kind' => 'provider_hub',
+                    'endpoint_url' => 'https://lspedia-b.example/epcis',
+                ],
+            ]);
+            $this->connectionIds[] = (int) $hubB->getKey();
+            $hubB->syncPartners([(int) $partner->getKey()]);
+
+            $resolved = app(OutboundConnectionResolver::class)->resolveWithLadder((int) $partner->getKey());
+
+            $this->assertNull($resolved);
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function provider_hub_rejects_zero_partners(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $hub = OutboundConnection::query()->create([
+                'name' => 'Empty LSPediA',
+                'serialization_provider' => SerializationProvider::Lspedia,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'settings' => [
+                    'kind' => 'provider_hub',
+                    'endpoint_url' => 'https://lspedia-empty.example/epcis',
+                ],
+            ]);
+            $this->connectionIds[] = (int) $hub->getKey();
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('at least one trading partner');
+
+            $hub->assertAssignableConfiguration(
+                OutboundConnectionKind::ProviderHub,
+                [],
+            );
+        } finally {
+            $this->cleanup();
+            tenancy()->end();
+        }
+    }
+
     private function createPartner(string $name): TradingPartner
     {
         $partner = TradingPartner::query()->create([
@@ -458,7 +544,7 @@ class OutboundMultiPartnerRoutingTest extends TestCase
         }
 
         if ($this->sessionIds !== []) {
-            \App\Models\Shipping\OutboundShippingSession::query()->whereIn('id', $this->sessionIds)->delete();
+            OutboundShippingSession::query()->whereIn('id', $this->sessionIds)->delete();
             $this->sessionIds = [];
         }
 

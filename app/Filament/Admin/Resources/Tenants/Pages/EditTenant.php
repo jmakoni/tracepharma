@@ -9,13 +9,15 @@ use App\Actions\Tenants\DeleteTenantPair;
 use App\Filament\Admin\Resources\Tenants\Actions\ExportTenantComplianceArchiveAction;
 use App\Filament\Admin\Resources\Tenants\Actions\ImpersonateTenantUserAction;
 use App\Filament\Admin\Resources\Tenants\TenantResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Resources\Pages\EditRecord;
 use App\Models\Tenant;
-use App\Support\TenantSettings;
+use App\Support\Admin\PlatformAudit;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\TenantSettings;
 use Filament\Actions\DeleteAction;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Exceptions\Halt;
+use Illuminate\Support\Facades\Auth;
 
 class EditTenant extends EditRecord
 {
@@ -178,14 +180,70 @@ class EditTenant extends EditRecord
             TenantSettings::forTenant($this->record)->setKillSwitches($this->killSwitches);
             $this->record->save();
             app(CascadeTenantPairKillSwitches::class)->handle($this->record, $this->killSwitches);
+
+            PlatformAudit::record(
+                'tenant.kill_switches_updated',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: ['kill_switches' => $this->killSwitches],
+            );
         }
 
         if ($statusChanged) {
+            if ($this->record->status === 'suspended') {
+                $this->record->forceFill([
+                    'suspended_at' => $this->record->suspended_at ?? now(),
+                    'suspended_by' => Auth::guard('admin')->id(),
+                ])->save();
+            } else {
+                $this->record->forceFill([
+                    'suspension_reason' => null,
+                    'suspended_at' => null,
+                    'suspended_by' => null,
+                ])->save();
+            }
+
             app(CascadeTenantPairStatus::class)->handle($this->record, $this->previousStatus);
+
+            PlatformAudit::record(
+                'tenant.status_changed',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: [
+                    'previous_status' => $this->previousStatus,
+                    'new_status' => $this->record->status,
+                    'suspension_reason' => $this->record->suspension_reason,
+                ],
+            );
         }
+
+        $this->recordEntitlementDiffs();
 
         if ($prefixChanged) {
             $this->rederiveOrganizationSglns();
+        }
+    }
+
+    private function recordEntitlementDiffs(): void
+    {
+        foreach (['hub_providers', 'inbound_environment'] as $attribute) {
+            if (! $this->record->wasChanged($attribute)) {
+                continue;
+            }
+
+            PlatformAudit::record(
+                'tenant.entitlement_changed',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: [
+                    'attribute' => $attribute,
+                    'old' => $this->record->getOriginal($attribute),
+                    'new' => $this->record->getAttribute($attribute),
+                ],
+            );
         }
     }
 

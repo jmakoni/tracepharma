@@ -23,8 +23,6 @@ use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ForceDeleteAction;
-use Filament\Support\Assets\Css;
-use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
@@ -34,8 +32,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\HtmlString;
 use Illuminate\Support\ServiceProvider;
+use SocialiteProviders\Azure\Provider;
+use SocialiteProviders\Manager\SocialiteWasCalled;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 
@@ -82,27 +81,31 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('command-center:manage-commands', fn ($user) => $user instanceof Admin);
         Gate::define('command-center:prune-history', fn ($user) => $user instanceof Admin);
 
+        // Role-based menus disabled: every authenticated admin passes all
+        // permission checks (nav gates and admin policies). Temporary until
+        // the admin role matrix is seeded; see tracepharma.role_based_menus.
+        if (! config('tracepharma.role_based_menus', false)) {
+            Gate::before(fn ($user, string $ability) => $user instanceof Admin ? true : null);
+        }
+
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(Activity::class, ActivityPolicy::class);
 
         Event::listen(Logout::class, LogTenantUserImpersonationEnded::class);
 
-        Event::listen(function (\SocialiteProviders\Manager\SocialiteWasCalled $event): void {
-            $event->extendSocialite('azure', \SocialiteProviders\Azure\Provider::class);
+        Event::listen(function (SocialiteWasCalled $event): void {
+            $event->extendSocialite('azure', Provider::class);
             $event->extendSocialite('okta', \SocialiteProviders\Okta\Provider::class);
             $event->extendSocialite('generic-oidc', GenericOpenIdConnectProvider::class);
         });
 
-        FilamentAsset::register([
-            Css::make('tracepharma-filament')
-                ->html(new HtmlString(
-                    '<link rel="stylesheet" href="'.e($this->versionedPublicCss('css/tracepharma-filament.css')).'" data-navigate-track />'
-                )),
-            Css::make('daisy-filament-bridge')
-                ->html(new HtmlString(
-                    '<link rel="stylesheet" href="'.e($this->versionedPublicCss('css/filament/daisy-filament-bridge.css')).'" data-navigate-track />'
-                )),
-        ]);
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::HEAD_END,
+            fn (): string => implode('', [
+                '<link rel="stylesheet" href="'.e($this->versionedPublicCss('css/tracepharma-filament.css')).'" data-navigate-track />',
+                '<link rel="stylesheet" href="'.e($this->versionedPublicCss('css/filament/daisy-filament-bridge.css')).'" data-navigate-track />',
+            ]),
+        );
 
         FilamentView::registerRenderHook(
             PanelsRenderHook::HEAD_END,

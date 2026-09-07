@@ -7,6 +7,7 @@ use App\Models\Epcis\EpcisException;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\AtpReadinessGate;
+use App\Support\TenantSettings;
 
 /**
  * Soft ATP gate at ingest/receiving: warn when seller (trading_partner_id) or
@@ -72,7 +73,16 @@ final class RecordAtpSoftWarning
             return null;
         }
 
-        return $this->open($document, $this->buildDescription($failedParties));
+        return $this->open($document, $this->buildDescription($failedParties), $this->escalates());
+    }
+
+    /**
+     * Tenants that must treat inbound-from-unverified-partner as a compliance
+     * incident (rather than a warning) flip compliance.atp_inbound_escalation on.
+     */
+    private function escalates(): bool
+    {
+        return TenantSettings::forTenant(tenant())->atpInboundEscalation();
     }
 
     /**
@@ -89,13 +99,13 @@ final class RecordAtpSoftWarning
         );
     }
 
-    private function open(EpcisDocument $document, string $description): EpcisException
+    private function open(EpcisDocument $document, string $description, bool $escalate = false): EpcisException
     {
         return EpcisException::query()->create([
             'document_id' => $document->getKey(),
             'exception_type' => self::EXCEPTION_TYPE,
-            'severity' => 'warning',
-            'description' => $description,
+            'severity' => $escalate ? 'critical' : 'warning',
+            'description' => $escalate ? 'ESCALATED: '.$description : $description,
             'status' => 'open',
         ]);
     }

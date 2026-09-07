@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Jobs\PollSftpInboundConnection;
 use App\Models\InboundConnection;
@@ -36,6 +37,7 @@ class PollSftpInboundConnections extends Command
                 TenantRunner::run($tenant, function () use (&$count, $tenant): void {
                     InboundConnection::query()
                         ->where('is_active', true)
+                        ->where('approval_status', ConnectionApprovalStatus::Approved->value)
                         ->where('transport', InboundTransport::Sftp)
                         ->cursor()
                         ->each(function (InboundConnection $connection) use (&$count, $tenant): void {

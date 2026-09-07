@@ -3,6 +3,9 @@
 namespace App\Services\Epcis\Outbound;
 
 use App\Models\OutboundConnection;
+use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use App\Support\EpcisHub\PlatformOutboundEgress;
+use App\Support\Integrations\PlatformSftpConfig;
 use App\Support\SftpConnectionProviderFactory;
 use DomainException;
 use League\Flysystem\Filesystem;
@@ -10,6 +13,12 @@ use League\Flysystem\PhpseclibV3\SftpAdapter;
 
 class SftpOutboundSender
 {
+    public function __construct(
+        private readonly PlatformOutboundEgress $egress,
+        private readonly PlatformSftpConfig $platformSftp,
+        private readonly EpcisHubPlatformConfig $platformConfig,
+    ) {}
+
     public function send(
         OutboundConnection $connection,
         string $content,
@@ -17,6 +26,22 @@ class SftpOutboundSender
         ?Filesystem $filesystem = null,
     ): void {
         $settings = $connection->settings ?? [];
+
+        // Hub-linked connections without their own SFTP credentials drop files
+        // through the platform SFTP edge.
+        if ($filesystem === null && $this->egress->usesPlatformSftp($connection)) {
+            $environment = $this->platformConfig->currentEnvironment();
+
+            if ($this->platformSftp->isConfigured($environment)) {
+                $dir = $this->normalizedOutboundPath(
+                    (string) ($settings['outbound_path'] ?? $this->platformSftp->outboundPath($environment)),
+                );
+                $this->writeFile($this->platformFilesystem($environment), $dir, $filename, $content);
+
+                return;
+            }
+        }
+
         $credentials = $connection->credentials ?? [];
         $host = trim((string) ($credentials['host'] ?? $settings['host'] ?? ''));
         if ($host === '') {
@@ -30,6 +55,11 @@ class SftpOutboundSender
 
         $filesystem ??= $this->filesystemFor($connection);
         $dir = $this->normalizedOutboundPath((string) ($settings['outbound_path'] ?? 'outbound/epcis'));
+        $this->writeFile($filesystem, $dir, $filename, $content);
+    }
+
+    private function writeFile(Filesystem $filesystem, string $dir, string $filename, string $content): void
+    {
         $path = ($dir === '' ? '' : $dir.'/').ltrim($filename, '/');
 
         $filesystem->write($path, $content);
@@ -69,5 +99,13 @@ class SftpOutboundSender
         $root = $settings['root'] ?? '/';
 
         return new Filesystem(new SftpAdapter($provider, $root));
+    }
+
+    protected function platformFilesystem(string $environment): Filesystem
+    {
+        return new Filesystem(new SftpAdapter(
+            SftpConnectionProviderFactory::forPlatformEdge($this->platformSftp, $environment),
+            '/',
+        ));
     }
 }

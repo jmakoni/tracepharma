@@ -15,7 +15,9 @@ enum EpcisReceivedVia: string
     case HttpsWebhookHub = 'https_webhook_hub';
     case HttpsWebhook = 'https_webhook';
     case As2Webhook = 'as2_webhook';
+    case As2Hub = 'as2_hub';
     case SftpPoll = 'sftp_poll';
+    case SftpHubPoll = 'sftp_hub_poll';
     case Api = 'api';
     case Cli = 'cli';
     case GuardianLotClose = 'guardian_lot_close';
@@ -27,7 +29,9 @@ enum EpcisReceivedVia: string
             self::HttpsWebhookHub => 'Inbound hub',
             self::HttpsWebhook => 'HTTPS webhook',
             self::As2Webhook => 'AS2 webhook',
+            self::As2Hub => 'AS2 hub',
             self::SftpPoll => 'SFTP poll',
+            self::SftpHubPoll => 'SFTP hub poll',
             self::Api => 'REST API',
             self::Cli => 'CLI / internal',
             self::GuardianLotClose => 'Guardian lot-close',
@@ -47,7 +51,9 @@ enum EpcisReceivedVia: string
             self::HttpsWebhookHub->value,
             self::HttpsWebhook->value,
             self::As2Webhook->value,
+            self::As2Hub->value,
             self::SftpPoll->value,
+            self::SftpHubPoll->value,
             self::Api->value,
             self::GuardianLotClose->value,
         ];

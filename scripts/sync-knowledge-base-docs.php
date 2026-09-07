@@ -111,6 +111,13 @@ $adminGroups = [
         'nav' => 'Settings',
         'blurb' => 'Analytics, mail templates, admins, and activity log.',
     ],
+    'settings' => [
+        'title' => 'Settings',
+        'icon' => 'heroicon-o-cog-6-tooth',
+        'order' => 55,
+        'nav' => 'Settings',
+        'blurb' => 'Outbound network profiles and integration defaults.',
+    ],
 ];
 
 function kbTitleFromSlug(string $slug, array $overrides = []): string

@@ -3,8 +3,10 @@
 namespace App\Filament\App\Resources\OutboundShippingSessions\Concerns;
 
 use App\Actions\Shipping\CompleteOutboundShippingSession;
+use App\Actions\Shipping\DeclareOutboundShippingSplit;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
+use App\Enums\ConnectionApprovalStatus;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\OutboundConnection;
@@ -273,7 +275,8 @@ trait InteractsWithOutboundShippingWizard
     public function outboundConnectionOptions(): array
     {
         $query = OutboundConnection::query()
-            ->where('is_active', true);
+            ->where('is_active', true)
+            ->where('approval_status', ConnectionApprovalStatus::Approved->value);
 
         if ($this->trading_partner_id !== null) {
             $partnerId = (int) $this->trading_partner_id;
@@ -301,6 +304,74 @@ trait InteractsWithOutboundShippingWizard
         return blank($this->asn_number)
             || (blank($this->customer_po) && blank($this->invoice_number))
             || ! $this->dscsa_affirm;
+    }
+
+    public function declareSplitAction(): Action
+    {
+        return Action::make('declareSplit')
+            ->label('Declare split / partial')
+            ->icon(Heroicon::OutlinedArrowsPointingOut)
+            ->color('warning')
+            ->visible(function (): bool {
+                try {
+                    $session = $this->getOutboundShippingSession();
+                } catch (\RuntimeException) {
+                    return false;
+                }
+
+                if (! $session->isActive() || (bool) $session->split_declared) {
+                    return false;
+                }
+
+                if ((int) $session->expected_count > 0) {
+                    return true;
+                }
+
+                // Expected unknown: only meaningful when the live ladder requires a count.
+                $session->loadMissing('outboundConnection');
+                $connection = $session->outboundConnection;
+
+                return $connection !== null
+                    && $connection->conformanceState()->requiresExpectedQuantity();
+            })
+            ->requiresConfirmation()
+            ->modalHeading('Declare split / partial shipment?')
+            ->modalDescription(function (): string {
+                try {
+                    $session = $this->getOutboundShippingSession();
+                } catch (\RuntimeException) {
+                    return '';
+                }
+
+                return (int) $session->expected_count > 0
+                    ? 'Allows sending with fewer confirmed units than expected. Only confirmed EPCs are authored onto the shipping event; residual expected quantity stays on this ship order.'
+                    : 'Declare a partial/batch shipment with unknown expected total. Only confirmed EPCs are authored onto the shipping event; a reconciliation case is opened until the order completes.';
+            })
+            ->modalSubmitActionLabel('Declare split')
+            ->action(function (): void {
+                $session = $this->getOutboundShippingSession();
+
+                try {
+                    app(DeclareOutboundShippingSplit::class)->handle($session);
+                } catch (DomainException $e) {
+                    Notification::make()
+                        ->title('Split blocked')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $this->refreshOutboundShippingSession();
+                $this->hydrateWizardFromRecord();
+
+                Notification::make()
+                    ->title('Split declared')
+                    ->body('You can send with the confirmed units only.')
+                    ->success()
+                    ->send();
+            });
     }
 
     public function sendShipmentAction(): Action

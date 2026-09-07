@@ -262,7 +262,14 @@ class PlatformSettings
 
     private static function isEncryptedKey(string $key): bool
     {
-        return str_ends_with($key, 'hub_token') || str_ends_with($key, 'client_secret');
+        return str_contains($key, 'hub_token')
+            || str_ends_with($key, 'client_secret')
+            || str_contains($key, 'outbound_token')
+            || str_ends_with($key, '_pem')
+            || str_ends_with($key, 'password')
+            || str_ends_with($key, 'passphrase')
+            || str_ends_with($key, 'private_key')
+            || str_ends_with($key, '.senders');
     }
 
     private static function cacheKey(string $key): string

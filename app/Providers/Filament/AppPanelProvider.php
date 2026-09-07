@@ -20,7 +20,6 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Assets\Js;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
@@ -31,7 +30,6 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
-use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use OccTherapist\AdvancedTableExportForFilament\AdvancedTableExportForFilamentPlugin;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -79,20 +77,14 @@ class AppPanelProvider extends PanelProvider
             ->sidebarWidth('16rem')
             ->maxContentWidth(Width::Full)
             ->viteTheme('resources/css/filament/app/theme.css')
-            ->assets([
-                Js::make('zebra-browser-print')
-                    ->html(new HtmlString(
-                        '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>'
-                    )),
-                Js::make('tp-client-label-print')
-                    ->html(new HtmlString(
-                        '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>'
-                    )),
-                Js::make('tp-scan-sounds')
-                    ->html(new HtmlString(
-                        '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>'
-                    )),
-            ])
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => implode('', [
+                    '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>',
+                    '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>',
+                    '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>',
+                ]),
+            )
             ->globalSearch(false)
             ->discoverResources(in: app_path('Filament/App/Resources'), for: 'App\\Filament\\App\\Resources')
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\\Filament\\App\\Pages')

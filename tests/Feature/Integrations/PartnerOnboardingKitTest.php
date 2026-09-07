@@ -36,9 +36,10 @@ class PartnerOnboardingKitTest extends TestCase
             $kit = app(PartnerOnboardingKit::class);
             $steps = $kit->steps();
 
-            $this->assertCount(5, $steps);
+            $this->assertCount(6, $steps);
             $this->assertSame('create_partner', $steps[0]['id']);
-            $this->assertSame('downstream_portal', $steps[4]['id']);
+            $this->assertSame('outbound_hub', $steps[2]['id']);
+            $this->assertSame('downstream_portal', $steps[5]['id']);
             $this->assertStringContainsString('TracePharma partner onboarding', $kit->exportBrief());
             $this->assertGreaterThanOrEqual(0, $kit->score());
             $this->assertLessThanOrEqual(100, $kit->score());

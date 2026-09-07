@@ -29,6 +29,37 @@ final class As2InboundMdnFactory
         bool $processed,
         ?string $error = null,
     ): Response {
+        return $this->buildResponse(
+            $request,
+            as2From: (string) ($connection->settings['as2_to'] ?? ''),
+            as2To: (string) ($connection->settings['as2_from'] ?? ''),
+            processed: $processed,
+            error: $error,
+        );
+    }
+
+    /**
+     * Sync MDN for the platform AS2 hub edge: From/To swapped from the inbound
+     * headers (station answers the sender). Unsigned, matching the
+     * connection-level MDN posture.
+     */
+    public function stationResponse(
+        Request $request,
+        string $stationId,
+        string $senderId,
+        bool $processed,
+        ?string $error = null,
+    ): Response {
+        return $this->buildResponse($request, $stationId, $senderId, $processed, $error);
+    }
+
+    private function buildResponse(
+        Request $request,
+        string $as2From,
+        string $as2To,
+        bool $processed,
+        ?string $error,
+    ): Response {
         $messageId = $request->header('Message-ID') ?: $request->header('Message-Id');
         $original = is_string($messageId) && $messageId !== '' ? $messageId : '<unknown@tracepharma>';
         $boundary = 'tp-mdn-'.Str::lower((string) Str::uuid());
@@ -37,7 +68,7 @@ final class As2InboundMdnFactory
             : 'automatic-action/MDN-sent-automatically; failed/failure: unexpected-processing-error';
         $human = $processed
             ? 'The AS2 message was processed.'
-            : 'The AS2 message could not be processed.';
+            : 'The AS2 message could not be processed.'.(filled($error) ? ' '.$error : '');
 
         $body = implode("\r\n", [
             '--'.$boundary,
@@ -56,8 +87,8 @@ final class As2InboundMdnFactory
 
         return response($body, $processed ? 200 : 200)
             ->header('Content-Type', 'multipart/report; report-type=disposition-notification; boundary="'.$boundary.'"')
-            ->header('AS2-From', (string) ($connection->settings['as2_to'] ?? ''))
-            ->header('AS2-To', (string) ($connection->settings['as2_from'] ?? ''))
+            ->header('AS2-From', $as2From)
+            ->header('AS2-To', $as2To)
             ->header('Message-ID', '<mdn-'.Str::uuid().'@tracepharma>');
     }
 }

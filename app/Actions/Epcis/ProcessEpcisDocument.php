@@ -9,6 +9,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\Epcis\EpcisUnmatchedGln;
+use App\Models\InboundConnection;
 use App\Services\Epcis\EpcisJsonLd20Parser;
 use App\Services\Epcis\EpcisXml20Parser;
 use App\Services\Epcis\EpcisXmlParser;
@@ -21,6 +22,7 @@ use App\Support\Epcis\Validation\EpcisValidationCatalog;
 use App\Support\Fda\DeaRegistration;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
+use App\Support\Integrations\ConnectionHealthTracker;
 use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -261,6 +263,14 @@ final class ProcessEpcisDocument
                 app(StampSsccBatchCommissionedFromDocument::class)->handle($document);
                 app(AttachInboundDocumentToShipment::class)
                     ->expandOpenSessionAfterDocumentEligible($document->fresh());
+
+                if ($document->inbound_connection_id !== null) {
+                    $inboundConnection = InboundConnection::query()->find($document->inbound_connection_id);
+
+                    if ($inboundConnection !== null) {
+                        app(ConnectionHealthTracker::class)->recordSuccess($inboundConnection);
+                    }
+                }
             }
 
             if ($document->status === 'error') {
@@ -1195,6 +1205,15 @@ final class ProcessEpcisDocument
             foreach (array_chunk($linkRows, 1000) as $chunk) {
                 DB::table('aggregation_links')->insertOrIgnore($chunk);
             }
+
+            // Commissioning and packing are separate authored documents, so an
+            // ORPHAN_SSCC signal raised at commissioning time goes stale once the
+            // SSCC actually becomes an aggregation parent — resolve it on first use.
+            EpcisException::query()
+                ->where('exception_type', 'ORPHAN_SSCC')
+                ->where('epc_id', $parentEpcId)
+                ->where('status', 'open')
+                ->update(['status' => 'resolved', 'resolved_at' => now()]);
         }
 
         if ($action === 'DELETE' && $parentEpcId !== null && $childEpcIds !== []) {

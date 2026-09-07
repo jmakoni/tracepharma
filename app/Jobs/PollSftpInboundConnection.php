@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
@@ -45,8 +46,13 @@ class PollSftpInboundConnection implements ShouldQueue
             $connection = InboundConnection::query()
                 ->whereKey($this->connectionId)
                 ->where('is_active', true)
+                ->where('approval_status', ConnectionApprovalStatus::Approved->value)
                 ->where('transport', InboundTransport::Sftp)
-                ->firstOrFail();
+                ->first();
+
+            if ($connection === null) {
+                return;
+            }
 
             $receiver->poll($connection);
         });

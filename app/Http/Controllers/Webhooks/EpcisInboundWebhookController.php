@@ -40,6 +40,18 @@ class EpcisInboundWebhookController
                 ->where('transport', InboundTransport::Https)
                 ->firstOrFail();
 
+            if ($connection->isPendingApproval()) {
+                abort(403, 'Inbound connection is awaiting platform approval.');
+            }
+
+            if ($connection->isRejected()) {
+                abort(403, 'Inbound connection was rejected by platform review.');
+            }
+
+            if ($connection->isSuspended()) {
+                abort(403, 'Inbound connection was suspended by the platform.');
+            }
+
             $this->webhookAuth->authorize($request, $connection);
 
             [$rawBody, $originalName, $contentType] = $this->handler->extractPayload($request, $connection);

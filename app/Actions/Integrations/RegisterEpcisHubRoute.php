@@ -9,6 +9,7 @@ use App\Models\EpcisHubRoute;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use App\Support\EpcisHub\HubRouteConflictGuard;
 use RuntimeException;
 
 class RegisterEpcisHubRoute
@@ -23,6 +24,10 @@ class RegisterEpcisHubRoute
             throw new RuntimeException('Hub routing requires an HTTPS inbound connection.');
         }
 
+        if (! $connection->isApproved()) {
+            throw new RuntimeException('This connection must be approved by the platform before hub routing can be enabled.');
+        }
+
         if (! $connection->serialization_provider->supportsHubRouting()) {
             throw new RuntimeException('This serialization provider does not support centralized hub routing.');
         }
@@ -35,14 +40,36 @@ class RegisterEpcisHubRoute
 
         /** @var Tenant $tenant */
         $tenant = Tenant::query()->findOrFail($tenantId);
+        $provider = $connection->serialization_provider->hubProviderSlug();
+        $this->assertTenantMayRegister($tenant, $provider);
+
+        $adminClaims = EpcisHubRoute::query()
+            ->where('tenant_id', $tenant->getKey())
+            ->where('provider', $provider)
+            ->where('claimed_via', ClaimTenantHubReceiverGln::VIA_ADMIN)
+            ->get();
+
+        if ($adminClaims->isNotEmpty()) {
+            foreach ($adminClaims as $route) {
+                $route->forceFill([
+                    'default_inbound_connection_id' => $connection->getKey(),
+                    'is_active' => $connection->is_active,
+                ])->save();
+            }
+
+            /** @var EpcisHubRoute $first */
+            $first = $adminClaims->first();
+
+            return $first->fresh();
+        }
+
         $gln = $tenant->gln;
 
         if (! is_string($gln) || ! preg_match('/^\d{13}$/', $gln)) {
             throw new RuntimeException('Tenant GLN must be set to a 13-digit value before hub registration.');
         }
 
-        $provider = $connection->serialization_provider->hubProviderSlug();
-        $this->assertTenantMayRegister($tenant, $provider);
+        app(HubRouteConflictGuard::class)->assertExclusive($tenant, $provider, $gln);
 
         // default_inbound_connection_id is a preferred tie-break after sender GLN match
         // (see EpcisHubRouter). It must never skip unknown-sender fail-closed routing.
@@ -55,6 +82,7 @@ class RegisterEpcisHubRoute
             [
                 'default_inbound_connection_id' => $connection->getKey(),
                 'is_active' => $connection->is_active,
+                'claimed_via' => ClaimTenantHubReceiverGln::VIA_CONNECTION_AUTO,
             ],
         );
     }
@@ -71,10 +99,21 @@ class RegisterEpcisHubRoute
             return;
         }
 
+        $provider = $connection->serialization_provider->hubProviderSlug();
+        $connectionId = $connection->getKey();
+
         EpcisHubRoute::query()
             ->where('tenant_id', $tenantId)
-            ->where('provider', $connection->serialization_provider->hubProviderSlug())
-            ->where('default_inbound_connection_id', $connection->getKey())
+            ->where('provider', $provider)
+            ->where('claimed_via', ClaimTenantHubReceiverGln::VIA_ADMIN)
+            ->where('default_inbound_connection_id', $connectionId)
+            ->update(['default_inbound_connection_id' => null]);
+
+        EpcisHubRoute::query()
+            ->where('tenant_id', $tenantId)
+            ->where('provider', $provider)
+            ->where('claimed_via', ClaimTenantHubReceiverGln::VIA_CONNECTION_AUTO)
+            ->where('default_inbound_connection_id', $connectionId)
             ->delete();
     }
 

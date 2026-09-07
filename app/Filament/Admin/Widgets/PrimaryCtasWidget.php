@@ -2,8 +2,8 @@
 
 namespace App\Filament\Admin\Widgets;
 
-use App\Filament\Admin\Pages\EpcisHubSettings;
 use App\Filament\Admin\Pages\PlatformAnalytics;
+use App\Filament\Admin\Pages\PlatformConnections;
 use App\Filament\Admin\Resources\CustomerOnboardings\CustomerOnboardingResource;
 use App\Filament\Admin\Resources\Fda\FdaImportRuns\FdaImportRunResource;
 use App\Filament\Admin\Resources\Fda\FdaOrganizationMatchReviews\FdaOrganizationMatchReviewResource;
@@ -43,7 +43,7 @@ class PrimaryCtasWidget extends Widget
             $this->action('Import runs', AdminDashboardLinks::resourceIndexUrl(FdaImportRunResource::class), false),
             $this->action('Match reviews', AdminDashboardLinks::resourceIndexUrl(FdaOrganizationMatchReviewResource::class), false),
             $this->action('Organizations', AdminDashboardLinks::resourceIndexUrl(FdaOrganizationResource::class), false),
-            $this->action('EPCIS Hub', AdminDashboardLinks::pageUrl(EpcisHubSettings::class), false),
+            $this->action('Platform connections', AdminDashboardLinks::pageUrl(PlatformConnections::class), false),
             $this->action('Analytics', AdminDashboardLinks::pageUrl(PlatformAnalytics::class), false),
         ]));
 

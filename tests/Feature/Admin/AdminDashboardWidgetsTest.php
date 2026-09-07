@@ -127,7 +127,7 @@ class AdminDashboardWidgetsTest extends TestCase
             ->assertSee('Customer onboarding')
             ->assertSee('Import runs')
             ->assertSee('Match reviews')
-            ->assertSee('EPCIS Hub')
+            ->assertSee('Platform connections')
             ->assertSee('Analytics');
 
         $this->assertTrue(PlatformAnalytics::canAccess());
@@ -213,7 +213,7 @@ class AdminDashboardWidgetsTest extends TestCase
             ->assertOk()
             ->assertDontSee('Tenants')
             ->assertDontSee('Customer onboarding')
-            ->assertDontSee('EPCIS Hub')
+            ->assertDontSee('Platform connections')
             ->assertSee('Match reviews')
             ->assertSee('Organizations')
             ->assertSee('Import runs')

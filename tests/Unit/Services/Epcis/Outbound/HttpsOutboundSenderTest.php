@@ -4,14 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Epcis\Outbound;
 
+use App\Enums\OutboundTransport;
+use App\Enums\SerializationProvider;
 use App\Models\OutboundConnection;
+use App\Models\OutboundNetworkProfile;
 use App\Services\Epcis\Outbound\HttpsOutboundSender;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class HttpsOutboundSenderTest extends TestCase
 {
+    use DatabaseTransactions;
+
     private const SAFE_ENDPOINT = 'https://8.8.8.8/epcis';
 
     #[Test]
@@ -113,5 +119,75 @@ class HttpsOutboundSenderTest extends TestCase
             $this->assertSame('HTTPS outbound POST failed (HTTP 500).', $e->getMessage());
             $this->assertStringNotContainsString('secret-error-body-leak', $e->getMessage());
         }
+    }
+
+    #[Test]
+    public function linked_network_profile_url_wins_over_stale_tenant_url(): void
+    {
+        $profileUrl = 'https://8.8.8.8/profile-endpoint';
+
+        Http::fake([
+            $profileUrl => Http::response('ok', 200),
+            'https://8.8.8.8/stale-tenant' => Http::response('should-not-hit', 200),
+        ]);
+
+        $profile = OutboundNetworkProfile::query()->create([
+            'network_slug' => 'custom_https',
+            'environment' => 'prod',
+            'label' => 'Custom (HTTPS)',
+            'default_transport' => 'https',
+            'allowed_transports' => ['https'],
+            'endpoint_url' => $profileUrl,
+            'is_locked' => true,
+        ]);
+
+        $connection = new OutboundConnection([
+            'serialization_provider' => SerializationProvider::CustomHttps,
+            'transport' => OutboundTransport::Https,
+            'network_profile_id' => $profile->id,
+            'override_endpoint' => false,
+            'settings' => ['endpoint_url' => 'https://8.8.8.8/stale-tenant'],
+            'credentials' => ['webhook_token' => 'tenant-token'],
+        ]);
+
+        app(HttpsOutboundSender::class)->send($connection, '<epcis/>', 'shipment.xml');
+
+        Http::assertSent(fn ($request): bool => $request->url() === $profileUrl
+            && $request->hasHeader('X-Inbound-Token', 'tenant-token'));
+        Http::assertNotSent(fn ($request): bool => $request->url() === 'https://8.8.8.8/stale-tenant');
+    }
+
+    #[Test]
+    public function override_endpoint_uses_tenant_url(): void
+    {
+        $tenantUrl = 'https://8.8.8.8/tenant-own';
+
+        Http::fake([
+            $tenantUrl => Http::response('ok', 200),
+            'https://8.8.8.8/profile-endpoint' => Http::response('should-not-hit', 200),
+        ]);
+
+        $profile = OutboundNetworkProfile::query()->create([
+            'network_slug' => 'custom_https',
+            'environment' => 'test',
+            'label' => 'Custom (HTTPS)',
+            'default_transport' => 'https',
+            'allowed_transports' => ['https'],
+            'endpoint_url' => 'https://8.8.8.8/profile-endpoint',
+            'is_locked' => true,
+        ]);
+
+        $connection = new OutboundConnection([
+            'serialization_provider' => SerializationProvider::CustomHttps,
+            'transport' => OutboundTransport::Https,
+            'network_profile_id' => $profile->id,
+            'override_endpoint' => true,
+            'settings' => ['endpoint_url' => $tenantUrl],
+        ]);
+
+        app(HttpsOutboundSender::class)->send($connection, '<epcis/>', 'shipment.xml');
+
+        Http::assertSent(fn ($request): bool => $request->url() === $tenantUrl);
+        Http::assertNotSent(fn ($request): bool => $request->url() === 'https://8.8.8.8/profile-endpoint');
     }
 }

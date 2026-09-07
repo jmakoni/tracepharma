@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
-use App\Enums\CustomerOnboardingStatus;
 use App\Enums\TenantProfile;
 use App\Support\TenantFeatures;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDomains;
@@ -36,6 +36,9 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         'name',
         'profile',
         'status',
+        'suspension_reason',
+        'suspended_at',
+        'suspended_by',
         'gln',
         'company_prefix',
         'inbound_environment',
@@ -52,12 +55,23 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'profile' => TenantProfile::class,
             'status' => 'string',
             'hub_providers' => 'array',
+            'suspended_at' => 'datetime',
         ];
     }
 
     public function features(): TenantFeatures
     {
         return TenantFeatures::forTenant($this);
+    }
+
+    public function platformAuditEvents(): HasMany
+    {
+        return $this->hasMany(PlatformAuditEvent::class, 'tenant_id');
+    }
+
+    public function hubRoutes(): HasMany
+    {
+        return $this->hasMany(EpcisHubRoute::class, 'tenant_id');
     }
 
     protected static function booted(): void

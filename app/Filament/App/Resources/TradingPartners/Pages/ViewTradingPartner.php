@@ -2,7 +2,9 @@
 
 namespace App\Filament\App\Resources\TradingPartners\Pages;
 
+use App\Filament\App\Resources\TradingPartners\Actions\AssignOutboundHubAction;
 use App\Filament\App\Resources\TradingPartners\Actions\RecordAtpVerificationAction;
+use App\Filament\App\Resources\TradingPartners\Actions\RequestLicenseUpdateAction;
 use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Filament\Support\TradingPartnerModalActions;
 use Filament\Actions\EditAction;
@@ -34,7 +36,9 @@ class ViewTradingPartner extends ViewRecord
                     ->icon(Heroicon::OutlinedPencilSquare),
                 lockSlug: false,
             ),
+            AssignOutboundHubAction::make(),
             RecordAtpVerificationAction::make(),
+            RequestLicenseUpdateAction::make(),
         ];
     }
 }

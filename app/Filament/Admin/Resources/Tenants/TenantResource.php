@@ -64,7 +64,8 @@ class TenantResource extends Resource implements HasKnowledgeBase
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\HubReceiverGlnClaimsRelationManager::class,
+            RelationManagers\PlatformAuditEventsRelationManager::class,
         ];
     }
 

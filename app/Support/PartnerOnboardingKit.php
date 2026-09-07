@@ -6,11 +6,14 @@ namespace App\Support;
 
 use App\Enums\PartnerType;
 use App\Filament\App\Pages\InviteTradingPartner;
+use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
+use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\InboundConnection;
+use App\Models\OutboundConnection;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\TradingPartner;
 use App\Services\Outbound\CustomerPortalService;
@@ -53,11 +56,19 @@ final class PartnerOnboardingKit
                 actionLabel: 'Inbound connections',
             ),
             $this->step(
+                id: 'outbound_hub',
+                title: 'Assign outbound hub (optional)',
+                description: 'For customers you ship to: create an LSPediA / UniTrace hub and assign the partner, or use Client portal.',
+                done: $this->hasOutboundHubAssignment(),
+                href: $this->resourceIndexUrl(OutboundConnectionResource::class),
+                actionLabel: 'Outbound connections',
+            ),
+            $this->step(
                 id: 'test_inbound',
                 title: 'Validate test EPCIS',
                 description: 'Confirm at least one inbound document reached parsed or validated status (upload, webhook, or hub).',
                 done: $this->hasValidatedInboundDocument(),
-                href: $this->resourceIndexUrl(\App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource::class),
+                href: $this->resourceIndexUrl(EpcisDocumentResource::class),
                 actionLabel: 'Inbound EPCIS',
             ),
             $this->step(
@@ -95,7 +106,7 @@ final class PartnerOnboardingKit
     public function isComplete(): bool
     {
         foreach ($this->steps() as $step) {
-            if ($step['id'] === 'downstream_portal') {
+            if (in_array($step['id'], ['downstream_portal', 'outbound_hub'], true)) {
                 continue;
             }
 
@@ -185,6 +196,18 @@ final class PartnerOnboardingKit
         }
 
         return InboundConnection::query()->where('is_active', true)->exists();
+    }
+
+    private function hasOutboundHubAssignment(): bool
+    {
+        if (! tenancy()->initialized) {
+            return false;
+        }
+
+        return OutboundConnection::query()
+            ->where('is_active', true)
+            ->whereHas('tradingPartners')
+            ->exists();
     }
 
     private function hasValidatedInboundDocument(): bool

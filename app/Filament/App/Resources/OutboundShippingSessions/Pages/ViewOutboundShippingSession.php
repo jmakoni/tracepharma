@@ -4,7 +4,6 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\AddOutboundShippingEpcsFromReceivingSession;
 use App\Actions\Shipping\CancelOutboundShippingSession;
-use App\Actions\Shipping\DeclareOutboundShippingSplit;
 use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\OverrideOutboundShippingQuantityGate;
@@ -144,46 +143,6 @@ class ViewOutboundShippingSession extends ViewRecord
             'cancelled' => 'gray',
             default => 'outline',
         };
-    }
-
-    public function declareSplitAction(): Action
-    {
-        return Action::make('declareSplit')
-            ->label('Declare split / partial')
-            ->icon(Heroicon::OutlinedArrowsPointingOut)
-            ->color('warning')
-            ->visible(fn (): bool => $this->isActive()
-                && (int) $this->getRecord()->expected_count > 0
-                && ! (bool) $this->getRecord()->split_declared)
-            ->requiresConfirmation()
-            ->modalHeading('Declare split / partial shipment?')
-            ->modalDescription('Allows sending with fewer confirmed units than expected. Only confirmed EPCs are authored onto the shipping event; residual expected quantity stays on this ship order.')
-            ->modalSubmitActionLabel('Declare split')
-            ->action(function (): void {
-                /** @var OutboundShippingSession $session */
-                $session = $this->getRecord();
-
-                try {
-                    app(DeclareOutboundShippingSplit::class)->handle($session);
-                } catch (DomainException $e) {
-                    Notification::make()
-                        ->title('Split blocked')
-                        ->body($e->getMessage())
-                        ->danger()
-                        ->send();
-
-                    return;
-                }
-
-                $this->refreshOutboundShippingSession();
-                $this->hydrateWizardFromRecord();
-
-                Notification::make()
-                    ->title('Split declared')
-                    ->body('You can send with the confirmed units only.')
-                    ->success()
-                    ->send();
-            });
     }
 
     public function overrideQuantityGateAction(): Action

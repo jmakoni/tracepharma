@@ -7,7 +7,10 @@ namespace Tests\Unit\Services\Epcis\Outbound;
 use App\Models\OutboundConnection;
 use App\Services\Epcis\Outbound\As2OutboundSender;
 use App\Services\Epcis\Outbound\As2SmimeEnvelope;
+use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use App\Support\EpcisHub\PlatformOutboundEgress;
 use App\Support\Integrations\As2MdnDispositionParser;
+use App\Support\Integrations\PlatformAs2Station;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -19,6 +22,9 @@ class As2OutboundSenderSsrfTest extends TestCase
         return new As2OutboundSender(
             app(As2SmimeEnvelope::class),
             app(As2MdnDispositionParser::class),
+            app(PlatformOutboundEgress::class),
+            app(PlatformAs2Station::class),
+            app(EpcisHubPlatformConfig::class),
         );
     }
 

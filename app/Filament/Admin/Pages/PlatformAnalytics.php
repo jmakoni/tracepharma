@@ -113,7 +113,7 @@ class PlatformAnalytics extends Page implements HasKnowledgeBase
             'import_trends' => $this->resourceIndexUrl(FdaImportRunResource::class),
             'unmatched_aging' => $this->resourceIndexUrl(FdaWdd3plUnmatchedResource::class),
             'match_review_aging' => $this->resourceIndexUrl(FdaOrganizationMatchReviewResource::class),
-            'hub_coverage' => AdminDashboardLinks::pageUrl(EpcisHubSettings::class),
+            'hub_coverage' => AdminDashboardLinks::pageUrl(PlatformConnections::class),
             'activity_volume' => $this->resourceIndexUrl(ActivityLogResource::class),
             default => null,
         };

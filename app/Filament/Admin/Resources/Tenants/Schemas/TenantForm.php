@@ -18,6 +18,7 @@ use App\Support\TenantPairAvailability;
 use App\Support\TenantSettings;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -50,7 +51,15 @@ class TenantForm
                             ])
                             ->default('active')
                             ->required()
+                            ->live()
                             ->native(false),
+                        Textarea::make('suspension_reason')
+                            ->label('Suspension reason')
+                            ->rows(2)
+                            ->maxLength(500)
+                            ->visible(fn (Get $get): bool => $get('status') === 'suspended')
+                            ->required(fn (Get $get): bool => $get('status') === 'suspended')
+                            ->helperText('Recorded with the suspension and shown in the platform audit trail.'),
                         GlnRules::input()
                             ->nullable()
                             ->rule(fn (Get $get, ?Tenant $record): \Closure => self::identityConflictRule($get, $record, 'gln')),
@@ -130,7 +139,7 @@ class TenantForm
                             ->minLength(8)
                             ->revealable(),
                     ]),
-                Section::make('EPCIS hub')
+                Section::make('Hub receiving')
                     ->compact()
                     ->columns(['md' => 2])
                     ->schema([
@@ -147,7 +156,7 @@ class TenantForm
                             ->visibleOn('edit')
                             ->helperText('Which hub edge may route inbound EPCIS to this tenant. Set automatically on create (stage vs prod host).'),
                         CheckboxList::make('hub_providers')
-                            ->label('Hub providers')
+                            ->label('May receive through')
                             ->options(function (Get $get): array {
                                 $environment = $get('inbound_environment');
                                 $config = app(EpcisHubPlatformConfig::class);
@@ -156,12 +165,16 @@ class TenantForm
                                     : ['systech', 'unitrace'];
 
                                 if ($enabled === []) {
-                                    $enabled = ['systech', 'unitrace'];
+                                    $enabled = ['systech', 'unitrace', 'tracepharma'];
                                 }
+
+                                // TracePharma (this platform) always listed first, above external networks.
+                                usort($enabled, fn (string $a, string $b): int => ($b === 'tracepharma') <=> ($a === 'tracepharma'));
 
                                 return collect($enabled)
                                     ->mapWithKeys(fn (string $provider): array => [
                                         $provider => match ($provider) {
+                                            'tracepharma' => 'TracePharma hub (this platform)',
                                             'systech' => 'Systech',
                                             'unitrace' => 'UniTrace',
                                             default => $provider,
@@ -169,8 +182,13 @@ class TenantForm
                                     ])
                                     ->all();
                             })
+                            ->descriptions([
+                                'tracepharma' => 'Tenant-to-tenant documents inside this platform.',
+                                'systech' => 'External network',
+                                'unitrace' => 'External network',
+                            ])
                             ->columns(2)
-                            ->helperText('Empty means this tenant cannot register for hub routing. Tenant must also set GLN and use App Register.'),
+                            ->helperText('Empty means this tenant cannot receive hub routing. Claim receiver GLNs below, then the tenant App binds an approved inbound connection.'),
                     ]),
                 Section::make('Kill switches')
                     ->compact()

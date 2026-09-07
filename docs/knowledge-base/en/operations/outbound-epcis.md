@@ -48,12 +48,29 @@ Backfill existing tenants: `php artisan tracepharma:epcis-backfill-pedigree-frag
 
 Policy: **whole-event** replay (batch commissioning ObjectEvents are kept verbatim even if they list serials outside this shipment).
 
+## Expected quantity gate (live connections)
+
+Once an outbound connection is on the live ladder (first live lot, hypercare, live), send is blocked until the ship order has an expected unit count — set it from the ASN/order/WMS or on the ship order references. Test connections are not gated.
+
+- **Confirmed = expected** → send proceeds.
+- **Confirmed < expected** → declare a split (below) or confirm the rest.
+- **Confirmed > expected** → remove the extra scans; overscan is never sent.
+
+## Split and partial/batch shipments
+
+A PO/ASN often ships in batches over days, so the full expected total is not always known at the scan station. Use **Declare split / partial** (ship order page, or scan-out step 3 next to Send):
+
+- **Expected count known** — declaring a split authorizes sending with fewer confirmed units than expected. Only confirmed EPCs are authored onto the shipping event; the residual expected quantity stays on the ship order.
+- **Expected total unknown (expected = 0, live connections only)** — declaring a partial/batch shipment lets the send proceed with the confirmed units. A reconciliation case (quantity mismatch) is opened in the exceptions queue so the open partial stays visible until the order completes; reconcile it against the ASN/order when the remaining batches ship. The case is opened once per ship order, even across repeated blocked send attempts and declarations.
+
+A supervisor can also **override the quantity gate** with a recorded reason (audited) when neither path fits.
+
 ## Related pages
 
 - [epcis-jobs.md](../operations/epcis-jobs) — related processing jobs
-- [../integrations/connections.md](../integrations/connections) — outbound endpoints
-- [../compliance/l3-forward-log.md](../compliance/l3-forward-log) — L3 forward log
-- [../integrations/integration-health.md](../integrations/integration-health) — health overview
+- [connections.md](../integrations/connections) — outbound endpoints
+- [l3-forward-log.md](../compliance/l3-forward-log) — L3 forward log
+- [integration-health.md](../integrations/integration-health) — health overview
 
 ## Notes
 

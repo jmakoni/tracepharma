@@ -1,7 +1,7 @@
 ---
 title: Demo Requests
 parent: tenants
-order: 25
+order: 30
 group: Tenants
 ---
 

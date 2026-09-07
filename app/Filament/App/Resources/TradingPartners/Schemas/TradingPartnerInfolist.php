@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\TradingPartners\Schemas;
 
+use App\Models\AtpLicense;
 use App\Models\TradingPartner;
 use App\Support\MasterData\PartnerAtpSiteCoverage;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -55,6 +56,50 @@ class TradingPartnerInfolist
                                 ->placeholder('—'),
                         ])
                         ->placeholder('No sites yet.'),
+                    TextEntry::make('atp_status_rollup')
+                        ->label('Partner ATP status')
+                        ->badge()
+                        ->getStateUsing(fn (TradingPartner $record): string => $record->atpStatus())
+                        ->formatStateUsing(fn (string $state): string => ucfirst($state))
+                        ->color(fn (string $state): string => match ($state) {
+                            'verified' => 'success',
+                            'expiring', 'pending' => 'warning',
+                            'expired' => 'danger',
+                            default => 'gray',
+                        })
+                        ->helperText('Worst-of roll-up across partner-level and site-level licenses.'),
+                    RepeatableEntry::make('partner_licenses')
+                        ->label('Partner-level licenses')
+                        ->getStateUsing(fn (TradingPartner $record): array => $record->atpLicenses()
+                            ->where('is_active', true)
+                            ->latest('created_at')
+                            ->get()
+                            ->map(fn (AtpLicense $license): array => [
+                                'license_number' => $license->license_number,
+                                'jurisdiction' => trim(($license->license_country ?? '').' '.($license->license_state ?? '')),
+                                'expires' => $license->license_expiration_date?->toDateString() ?? '—',
+                                'verification' => $license->isPendingVerification() ? 'Pending verification' : 'Verified',
+                                'document' => $license->document_original_name ?? '—',
+                            ])
+                            ->all())
+                        ->table([
+                            TableColumn::make('License'),
+                            TableColumn::make('Jurisdiction'),
+                            TableColumn::make('Expires'),
+                            TableColumn::make('Verification'),
+                            TableColumn::make('Document'),
+                        ])
+                        ->schema([
+                            TextEntry::make('license_number')->label('License'),
+                            TextEntry::make('jurisdiction')->label('Jurisdiction')->placeholder('—'),
+                            TextEntry::make('expires')->label('Expires'),
+                            TextEntry::make('verification')
+                                ->label('Verification')
+                                ->badge()
+                                ->color(fn (string $state): string => $state === 'Verified' ? 'success' : 'warning'),
+                            TextEntry::make('document')->label('Document')->placeholder('—'),
+                        ])
+                        ->placeholder('No partner-level licenses yet — use "Request license update" to collect one.'),
                 ]),
         ]);
     }

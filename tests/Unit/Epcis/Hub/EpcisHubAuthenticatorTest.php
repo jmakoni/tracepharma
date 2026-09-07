@@ -21,6 +21,8 @@ class EpcisHubAuthenticatorTest extends TestCase
         PlatformSettings::forget('epcis_hub.demo.hub_token');
         PlatformSettings::forget('epcis_hub.stage.hub_token');
         PlatformSettings::forget('epcis_hub.prod.hub_token');
+        PlatformSettings::forget('epcis_hub.stage.hub_token_previous');
+        PlatformSettings::forget('epcis_hub.stage.hub_token_previous_expires_at');
 
         config([
             'tracepharma.epcis_hub.hub_token' => 'legacy-env-token',
@@ -41,6 +43,8 @@ class EpcisHubAuthenticatorTest extends TestCase
         PlatformSettings::forget('epcis_hub.demo.hub_token');
         PlatformSettings::forget('epcis_hub.stage.hub_token');
         PlatformSettings::forget('epcis_hub.prod.hub_token');
+        PlatformSettings::forget('epcis_hub.stage.hub_token_previous');
+        PlatformSettings::forget('epcis_hub.stage.hub_token_previous_expires_at');
 
         parent::tearDown();
     }
@@ -108,6 +112,60 @@ class EpcisHubAuthenticatorTest extends TestCase
         );
 
         $this->assertSame('demo', app(EpcisHubAuthenticator::class)->authorize($request));
+    }
+
+    #[Test]
+    public function previous_token_is_accepted_during_rotation_grace(): void
+    {
+        $config = app(EpcisHubPlatformConfig::class);
+        $config->setHubToken('stage', 'old-stage-token');
+        $newToken = $config->rotateHubToken('stage');
+
+        $oldTokenRequest = Request::create(
+            'https://stage.tracepharma.io/api/webhooks/epcis/hub/systech',
+            'POST',
+            server: [
+                'HTTP_HOST' => 'stage.tracepharma.io',
+                'HTTP_X_EPCIS_HUB_TOKEN' => 'old-stage-token',
+            ],
+        );
+
+        $this->assertSame('stage', app(EpcisHubAuthenticator::class)->authorize($oldTokenRequest));
+
+        $newTokenRequest = Request::create(
+            'https://stage.tracepharma.io/api/webhooks/epcis/hub/systech',
+            'POST',
+            server: [
+                'HTTP_HOST' => 'stage.tracepharma.io',
+                'HTTP_X_EPCIS_HUB_TOKEN' => $newToken,
+            ],
+        );
+
+        $this->assertSame('stage', app(EpcisHubAuthenticator::class)->authorize($newTokenRequest));
+    }
+
+    #[Test]
+    public function previous_token_is_rejected_after_rotation_grace(): void
+    {
+        $config = app(EpcisHubPlatformConfig::class);
+        $config->setHubToken('stage', 'old-stage-token');
+        $config->rotateHubToken('stage');
+
+        $this->travel(EpcisHubPlatformConfig::TOKEN_ROTATION_GRACE_HOURS + 1)->hours();
+
+        $request = Request::create(
+            'https://stage.tracepharma.io/api/webhooks/epcis/hub/systech',
+            'POST',
+            server: [
+                'HTTP_HOST' => 'stage.tracepharma.io',
+                'HTTP_X_EPCIS_HUB_TOKEN' => 'old-stage-token',
+            ],
+        );
+
+        $this->expectException(UnauthorizedHttpException::class);
+        $this->expectExceptionMessage('Invalid EPCIS hub token.');
+
+        app(EpcisHubAuthenticator::class)->authorize($request);
     }
 
     #[Test]

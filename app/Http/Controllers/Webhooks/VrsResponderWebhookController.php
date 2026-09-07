@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Webhooks;
 
 use App\Actions\Vrs\RespondToInboundVerification;
+use App\Models\AtpCredential;
 use App\Models\Tenant;
+use App\Support\Atp\AtpCredentialParser;
 use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantRunner;
@@ -11,6 +13,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Throwable;
 
 final class VrsResponderWebhookController
 {
@@ -32,6 +35,8 @@ final class VrsResponderWebhookController
             if (! TenantFeatures::forTenant(tenant())->supportsVrs()) {
                 return response()->json(['message' => 'VRS responder is not enabled for this tenant.'], 403);
             }
+
+            $this->captureAtpCredential($request);
 
             $data = $request->validate([
                 'gtin14' => ['nullable', 'string', 'max:14'],
@@ -98,5 +103,38 @@ final class VrsResponderWebhookController
     private function resolveResponderApiKey(Tenant $tenant): string
     {
         return TenantSettings::forTenant($tenant)->vrsResponderApiKey() ?? '';
+    }
+
+    /**
+     * OCI seam: requesters may present an ATP verifiable credential
+     * (ATP-Authorization / X-ATP-Credential header, JWT compact form). Stored
+     * as evidence of what was presented; trust-registry verification is deferred.
+     */
+    private function captureAtpCredential(Request $request): void
+    {
+        $header = $request->header('ATP-Authorization') ?? $request->header('X-ATP-Credential');
+
+        if (! is_string($header) || trim($header) === '') {
+            return;
+        }
+
+        $parsed = AtpCredentialParser::parse($header);
+
+        if ($parsed === null) {
+            return;
+        }
+
+        try {
+            AtpCredential::query()->create([
+                'endpoint' => 'vrs-responder',
+                'issuer' => $parsed['issuer'],
+                'subject_gln' => $parsed['subject_gln'],
+                'credential_expires_at' => $parsed['expires_at'],
+                'header_sha256' => hash('sha256', $header),
+                'raw_credential' => $header,
+            ]);
+        } catch (Throwable) {
+            // Evidence capture must never break a VRS response.
+        }
     }
 }

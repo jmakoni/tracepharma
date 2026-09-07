@@ -7,18 +7,27 @@ namespace Tests\Feature\Integrations;
 use App\Actions\Integrations\PromoteOutboundConnectionConformance;
 use App\Enums\As2MdnAckMode;
 use App\Enums\OutboundConformanceState;
+use App\Enums\OutboundConnectionKind;
 use App\Enums\OutboundTransport;
+use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\OutboundConnections\Pages\CreateOutboundConnection;
+use App\Filament\App\Resources\OutboundConnections\Schemas\OutboundConnectionForm;
+use App\Models\ConnectionGoLiveChecklist;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
+use App\Models\OutboundNetworkProfile;
 use App\Models\Tenant;
+use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Integrations\IntegrationHealthMetrics;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Radio;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Livewire\Livewire;
@@ -39,6 +48,12 @@ class OutboundConnectionConformanceTest extends TestCase
 
     /** @var list<int> */
     private array $connectionIds = [];
+
+    /** @var list<int> */
+    private array $documentIds = [];
+
+    /** @var list<int> */
+    private array $checklistIds = [];
 
     #[Test]
     public function new_outbound_connection_starts_in_test_conformance_state(): void
@@ -80,7 +95,11 @@ class OutboundConnectionConformanceTest extends TestCase
                     'serialization_provider' => SerializationProvider::CustomHttps->value,
                     'transport' => OutboundTransport::Https->value,
                     'is_active' => true,
-                    'settings' => ['endpoint_url' => 'https://partner.example/epcis'],
+                    'settings' => [
+                        'kind' => OutboundConnectionKind::DirectPartner->value,
+                        'endpoint_url' => 'https://partner.example/epcis',
+                    ],
+                    'tradingPartners' => [$this->createPartner()->getKey()],
                     'conformance_state' => OutboundConformanceState::Live->value,
                 ])
                 ->call('create')
@@ -117,7 +136,6 @@ class OutboundConnectionConformanceTest extends TestCase
                 OutboundConformanceState::Conformance,
                 OutboundConformanceState::FirstLiveLot,
                 OutboundConformanceState::Hypercare,
-                OutboundConformanceState::Live,
             ];
 
             $this->assertSame(OutboundConformanceState::Test, $connection->conformance_state);
@@ -126,6 +144,12 @@ class OutboundConnectionConformanceTest extends TestCase
                 $connection = $action->promoteOneStep($connection, $owner);
                 $this->assertSame($expectedState, $connection->conformance_state);
             }
+
+            // Promotion to live is gated on the go-live checklist.
+            $this->completeGoLiveChecklist($connection, $owner);
+
+            $connection = $action->promoteOneStep($connection->fresh(), $owner);
+            $this->assertSame(OutboundConformanceState::Live, $connection->conformance_state);
         } finally {
             $this->cleanup();
         }
@@ -187,10 +211,12 @@ class OutboundConnectionConformanceTest extends TestCase
                 OutboundConformanceState::Conformance,
                 OutboundConformanceState::FirstLiveLot,
                 OutboundConformanceState::Hypercare,
-                OutboundConformanceState::Live,
             ] as $_) {
                 $connection = $action->promoteOneStep($connection, $owner);
             }
+
+            $this->completeGoLiveChecklist($connection, $owner);
+            $connection = $action->promoteOneStep($connection->fresh(), $owner);
 
             $this->assertSame(OutboundConformanceState::Live, $connection->conformance_state);
 
@@ -367,6 +393,156 @@ class OutboundConnectionConformanceTest extends TestCase
         }
     }
 
+    #[Test]
+    public function create_form_renders_wizard_steps_without_customer_specific_copy(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingAs($this->createOwner());
+
+            Livewire::test(CreateOutboundConnection::class)
+                ->assertSee('Destination')
+                ->assertSee('Customers')
+                ->assertSee('Credentials');
+
+            $copy = $this->formCopy(CreateOutboundConnection::class);
+
+            $this->assertStringNotContainsString('Cardinal', $copy);
+            $this->assertStringNotContainsString('Cencora', $copy);
+            $this->assertStringNotContainsString('Xttrium', $copy);
+            $this->assertStringNotContainsString('Serialization provider', $copy);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function network_profile_options_group_platform_hub_first(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $createdIds = [];
+
+        try {
+            foreach ([
+                ['network_slug' => 'tracepharma', 'environment' => 'demo', 'label' => 'TracePharma Demo Hub'],
+                ['network_slug' => 'lspedia', 'environment' => 'demo', 'label' => 'LSPediA Demo'],
+            ] as $row) {
+                $profile = OutboundNetworkProfile::query()->firstOrCreate(
+                    ['network_slug' => $row['network_slug'], 'environment' => $row['environment']],
+                    [
+                        'label' => $row['label'],
+                        'default_transport' => OutboundTransport::Https->value,
+                        'allowed_transports' => [OutboundTransport::Https->value],
+                    ],
+                );
+
+                if ($profile->wasRecentlyCreated) {
+                    $createdIds[] = $profile->getKey();
+                }
+            }
+
+            $options = OutboundConnectionForm::groupedNetworkProfileOptions();
+
+            $this->assertSame('TracePharma hub (this platform)', array_key_first($options));
+            $this->assertArrayHasKey('External networks', $options);
+
+            $platformIds = array_keys($options['TracePharma hub (this platform)']);
+            $externalIds = array_keys($options['External networks']);
+
+            $tracepharmaIds = OutboundNetworkProfile::query()
+                ->where('network_slug', 'tracepharma')
+                ->pluck('id')
+                ->all();
+
+            foreach ($tracepharmaIds as $id) {
+                $this->assertContains($id, $platformIds);
+                $this->assertNotContains($id, $externalIds);
+            }
+        } finally {
+            if ($createdIds !== []) {
+                OutboundNetworkProfile::query()->whereIn('id', $createdIds)->delete();
+            }
+
+            $this->cleanup();
+        }
+    }
+
+    /**
+     * All static operator-facing copy (labels, helpers, descriptions, radio options)
+     * from the page's form schema — data-driven select options excluded on purpose.
+     *
+     * @param  class-string  $pageClass
+     */
+    private function formCopy(string $pageClass): string
+    {
+        $form = Livewire::test($pageClass)->instance()->form;
+
+        $copy = [];
+
+        foreach ($form->getFlatComponents(withHidden: true) as $component) {
+            foreach (['getLabel', 'getHelperText', 'getDescription', 'getPlaceholder'] as $getter) {
+                if (! method_exists($component, $getter)) {
+                    continue;
+                }
+
+                try {
+                    $value = $component->{$getter}();
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                if (is_string($value)) {
+                    $copy[] = $value;
+                } elseif ($value instanceof Htmlable) {
+                    $copy[] = $value->toHtml();
+                }
+            }
+
+            if ($component instanceof Radio) {
+                foreach ($component->getOptions() as $option) {
+                    if (is_string($option)) {
+                        $copy[] = $option;
+                    }
+                }
+                foreach ($component->getDescriptions() as $description) {
+                    if (is_string($description)) {
+                        $copy[] = $description;
+                    }
+                }
+            }
+        }
+
+        return implode("\n", array_filter($copy));
+    }
+
+    private function createPartner(): TradingPartner
+    {
+        $base = str_pad((string) random_int(100000000000, 899999999999), 12, '0', STR_PAD_LEFT);
+        $gln = $base.$this->checkDigit($base);
+
+        return TradingPartner::query()->create([
+            'name' => 'Conformance Partner '.uniqid(),
+            'gln' => $gln,
+            'partner_type' => PartnerType::Pharmacy,
+            'country_code' => 'US',
+            'is_active' => true,
+        ]);
+    }
+
+    private function checkDigit(string $base12): string
+    {
+        $sum = 0;
+
+        for ($i = 0; $i < 12; $i++) {
+            $digit = (int) $base12[$i];
+            $sum += ($i % 2 === 0) ? $digit * 3 : $digit;
+        }
+
+        return (string) ((10 - ($sum % 10)) % 10);
+    }
+
     private function createOwner(): User
     {
         app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
@@ -376,6 +552,38 @@ class OutboundConnectionConformanceTest extends TestCase
         $user->assignRole(TenantRole::Owner->value);
 
         return $user;
+    }
+
+    private function completeGoLiveChecklist(OutboundConnection $connection, User $owner): void
+    {
+        $settings = (array) $connection->settings;
+        $settings['last_probe_ok'] = true;
+        $settings['last_probe_at'] = now()->toIso8601String();
+        $connection->forceFill(['settings' => $settings])->save();
+
+        $document = EpcisDocument::query()->create([
+            'document_uuid' => (string) Str::uuid(),
+            'schema_version' => '1.2',
+            'creation_date' => now(),
+            'direction' => 'outbound',
+            'format' => 'xml',
+            'original_filename' => 'ladder-test.xml',
+            'payload_disk' => 'local',
+            'payload_path' => 'tests/ladder-'.Str::random(6).'.xml',
+            'file_sha256' => hash('sha256', 'ladder'),
+            'received_at' => now(),
+            'dscsa_affirm' => false,
+            'status' => 'validated',
+            'outbound_connection_id' => $connection->getKey(),
+        ]);
+        $this->documentIds[] = (int) $document->getKey();
+
+        $checklist = ConnectionGoLiveChecklist::forConnection(
+            ConnectionGoLiveChecklist::TYPE_OUTBOUND,
+            (int) $connection->getKey(),
+        );
+        $this->checklistIds[] = (int) $checklist->getKey();
+        $checklist->signOff($owner);
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -441,9 +649,31 @@ class OutboundConnectionConformanceTest extends TestCase
             return;
         }
 
+        if ($this->documentIds !== []) {
+            EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();
+            $this->documentIds = [];
+        }
+
+        if ($this->checklistIds !== []) {
+            ConnectionGoLiveChecklist::query()->whereIn('id', $this->checklistIds)->delete();
+            $this->checklistIds = [];
+        }
+
         if ($this->connectionIds !== []) {
             OutboundConnection::query()->whereIn('id', $this->connectionIds)->delete();
+
+            // The Filament create page registers central approval requests; remove
+            // them so other suites listing pending requests are not polluted.
+            $tenantId = tenancy()->initialized ? (string) tenant()->getKey() : self::DEMO2_TENANT_ID;
+            tenancy()->end();
+            \App\Models\ConnectionApprovalRequest::query()
+                ->where('tenant_id', $tenantId)
+                ->where('direction', 'outbound')
+                ->whereIn('connection_id', $this->connectionIds)
+                ->delete();
             $this->connectionIds = [];
+
+            return;
         }
 
         tenancy()->end();

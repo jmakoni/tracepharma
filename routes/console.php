@@ -68,6 +68,11 @@ Schedule::command('epcis:poll-sftp')
     ->withoutOverlapping()
     ->name('epcis-poll-sftp-inbound');
 
+Schedule::command('epcis:poll-platform-sftp')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->name('epcis-poll-platform-sftp-inbound');
+
 Schedule::command('epcis:fail-stale-jobs')
     ->everyFiveMinutes()
     ->withoutOverlapping()
@@ -112,6 +117,16 @@ Schedule::command('compliance:alert-license-expiry')
     ->dailyAt('07:00')
     ->withoutOverlapping()
     ->name('atp-license-expiry-alert');
+
+Schedule::command('connections:credential-expiry-report')
+    ->dailyAt('07:15')
+    ->withoutOverlapping()
+    ->name('connection-credential-expiry-report');
+
+Schedule::command('connections:health-sweep')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->name('connection-health-sweep');
 
 Schedule::command('compliance:alert-center-digest')
     ->dailyAt('07:30')

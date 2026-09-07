@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Models\OutboundConnection;
 use App\Services\Epcis\OutboundConnectionResolver;
 use App\Support\Auth\JobRoleAccess;
@@ -82,6 +83,7 @@ class EpcisOutboundRequest extends FormRequest
             if ($partnerId !== null && $connectionId !== null) {
                 $connection = OutboundConnection::query()
                     ->where('is_active', true)
+                    ->where('approval_status', ConnectionApprovalStatus::Approved->value)
                     ->find($connectionId);
 
                 if ($connection !== null && ! OutboundConnectionResolver::connectionMatchesPartner($connection, $partnerId)) {

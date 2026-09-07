@@ -23,6 +23,7 @@ use App\Support\Epcis\LiveAcceptedEpcisEventId;
 use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Integrations\As2MdnDispositionParser;
+use App\Support\Integrations\ConnectionHealthTracker;
 use App\Support\Integrations\OutboundTransportAvailability;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -39,6 +40,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
 {
     private const TRANSMIT_HEARTBEAT_SECONDS = 120;
 
+    private ?string $connectionSkipReason = null;
+
     public function __construct(
         private readonly OutboundConnectionResolver $resolver,
         private readonly HttpsOutboundSender $httpsSender,
@@ -50,6 +53,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
         private readonly ValidateEpcis12Document $validateEpcis12Document,
         private readonly OutboundEpcisWriterResolver $writerResolver,
+        private readonly ConnectionHealthTracker $healthTracker,
     ) {}
 
     public function hasRecentTransmitHeartbeat(EpcisDocument $document): bool
@@ -187,7 +191,11 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         $connection = $this->resolveConnection($document);
 
         if ($connection === null) {
-            $this->markSkipped($document, $hasExplicitConnection, 'No active outbound connection.');
+            $this->markSkipped(
+                $document,
+                $hasExplicitConnection,
+                $this->connectionSkipReason ?? 'No active outbound connection.',
+            );
 
             return;
         }
@@ -248,6 +256,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                         'last_error' => $errorMessage,
                     ])->save();
 
+                    $this->healthTracker->recordFailure($connection);
+
                     $this->catalogSignal->partnerRejected($document, $errorMessage);
 
                     return;
@@ -271,6 +281,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 'last_error' => null,
             ])->save();
 
+            $this->healthTracker->recordSuccess($connection);
+
             app(DispatchEpcisSubscriptions::class)->handle($document, 'sent');
         } catch (Throwable $e) {
             $message = $e->getMessage();
@@ -290,6 +302,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             $connection->forceFill([
                 'last_error' => $message,
             ])->save();
+
+            $this->healthTracker->recordFailure($connection);
 
             // A transient failure (timeout, dropped connection, upstream 502/503/504)
             // is not a verdict on this document — TransmitEpcisJob's backoff exists to
@@ -366,16 +380,26 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
     }
 
     /**
-     * When outbound_connection_id is pinned, honor it fail-closed: missing, inactive, or
-     * partner-mismatched pins skip transmission without falling back to the resolver.
-     * Unpinned documents use the trading-partner/default resolver.
+     * When outbound_connection_id is pinned, honor it fail-closed: missing, inactive,
+     * unapproved, or partner-mismatched pins skip transmission without falling back to
+     * the resolver. Unpinned documents use the trading-partner/default resolver.
      */
     private function resolveConnection(EpcisDocument $document): ?OutboundConnection
     {
+        $this->connectionSkipReason = null;
+
         if ($document->outbound_connection_id !== null) {
             $explicit = OutboundConnection::query()->find($document->outbound_connection_id);
 
             if ($explicit === null || ! $explicit->is_active) {
+                return null;
+            }
+
+            if (! $explicit->isApproved()) {
+                $this->connectionSkipReason = $explicit->isPendingApproval()
+                    ? 'Pinned outbound connection is awaiting platform approval.'
+                    : 'Pinned outbound connection was rejected by platform review.';
+
                 return null;
             }
 

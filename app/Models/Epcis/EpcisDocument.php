@@ -7,6 +7,8 @@ use App\Enums\EpcisReceivedVia;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
 use App\Models\Concerns\TenantSearchable;
+use App\Models\Fda\FdaOrganization;
+use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\OutboundConnection;
 use App\Models\Product;
@@ -19,6 +21,7 @@ use App\Models\TradingPartner;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Epcis\EpcisXmlReader;
+use App\Support\Epcis\ExtractPriorPedigreeXml;
 use App\Support\Gs1\Ndc;
 use App\Support\Gs1\Sgtin;
 use App\Support\Shipping\CorrectiveShipmentDocument;
@@ -624,7 +627,30 @@ class EpcisDocument extends Model
                 ->get()
                 ->keyBy('id');
 
-        $ndc11s = $fileByGtin->pluck('ndc11')->filter()->unique()->values()->all();
+        $packageIds = $productsByGtin->pluck('fda_product_packaging_id')
+            ->merge($productsById->pluck('fda_product_packaging_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $fdaPackagesById = $packageIds === []
+            ? collect()
+            : FdaProductPackaging::query()
+                ->with('product:id,brand_name,generic_name')
+                ->whereIn('id', $packageIds)
+                ->get()
+                ->keyBy('id');
+
+        // Vocabulary-less docs (SSCC commissioning/shipping TI) still resolve NDCs
+        // through the linked assortment product or its FDA package.
+        $ndc11s = $fileByGtin->pluck('ndc11')
+            ->merge($productsByGtin->pluck('ndc11'))
+            ->merge($productsById->pluck('ndc11'))
+            ->merge($fdaPackagesById->pluck('ndc11'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
         $productsByNdc11 = $ndc11s === []
             ? collect()
             : Product::query()
@@ -635,28 +661,65 @@ class EpcisDocument extends Model
 
         $fdaPackagesByNdc11 = $this->fdaPackagesByNdc11($ndc11s);
 
+        $fdaProductIds = $fdaPackagesByNdc11->pluck('fda_product_id')
+            ->merge($fdaPackagesById->pluck('fda_product_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $fdaProductsById = $fdaProductIds === []
+            ? collect()
+            : FdaProduct::query()
+                ->whereIn('id', $fdaProductIds)
+                ->get(['id', 'fda_organization_id', 'dosage_form', 'strength'])
+                ->keyBy('id');
+        $fdaOrgIds = $fdaProductsById->pluck('fda_organization_id')->filter()->unique()->values()->all();
+        $fdaOrgNames = $fdaOrgIds === []
+            ? collect()
+            : FdaOrganization::query()->whereIn('id', $fdaOrgIds)->pluck('name', 'id');
+
         /** @var array<string, array<string, mixed>> $groups */
         $groups = [];
 
         foreach ($gtinStats as $gtin => $stats) {
             $file = $fileByGtin->get($gtin);
+
+            $product = null;
+            if (filled($stats['product_id'])) {
+                $product = $productsById->get((int) $stats['product_id']);
+            }
+            $product ??= $productsByGtin->get($gtin);
+
             $ndc11 = filled($file['ndc11'] ?? null) ? (string) $file['ndc11'] : null;
+            if ($ndc11 === null && $product !== null) {
+                $ndc11 = filled($product->ndc11) ? (string) $product->ndc11 : null;
+                if ($ndc11 === null && filled($product->fda_product_packaging_id)) {
+                    $packageNdc11 = $fdaPackagesById->get((int) $product->fda_product_packaging_id)?->ndc11;
+                    $ndc11 = filled($packageNdc11) ? (string) $packageNdc11 : null;
+                }
+            }
+            if ($product === null && $ndc11 !== null) {
+                $product = $productsByNdc11->get($ndc11);
+            }
+
             $groupKey = $ndc11 ?? 'gtin:'.$gtin;
 
             if (! isset($groups[$groupKey])) {
-                $product = null;
-                if (filled($stats['product_id'])) {
-                    $product = $productsById->get((int) $stats['product_id']);
-                }
-                $product ??= $productsByGtin->get($gtin);
-                if ($product === null && $ndc11 !== null) {
-                    $product = $productsByNdc11->get($ndc11);
+                $fdaPackage = $ndc11 !== null ? $fdaPackagesByNdc11->get($ndc11) : null;
+                if ($fdaPackage === null && $product !== null && filled($product->fda_product_packaging_id)) {
+                    $fdaPackage = $fdaPackagesById->get((int) $product->fda_product_packaging_id);
                 }
 
-                $fdaPackage = $ndc11 !== null ? $fdaPackagesByNdc11->get($ndc11) : null;
+                $fdaProductRow = $fdaPackage !== null
+                    ? $fdaProductsById->get((int) $fdaPackage->fda_product_id)
+                    : null;
+                $fdaManufacturer = $fdaProductRow !== null && filled($fdaProductRow->fda_organization_id)
+                    ? ($fdaOrgNames[(int) $fdaProductRow->fda_organization_id] ?? null)
+                    : null;
 
                 // Display columns come from EPCIS XML vocabulary.
-                // Name falls back to FDA brand/generic only when the file has no name.
+                // Name falls back to FDA brand/generic, then the linked assortment
+                // product, when the file has no name (e.g. SSCC commissioning TI).
                 // Master-data badge uses FDA catalog first, then tenant assortment.
                 $sourceNdc = filled($file['ndc_raw'] ?? null)
                     ? (string) $file['ndc_raw']
@@ -678,12 +741,12 @@ class EpcisDocument extends Model
                 $groups[$groupKey] = [
                     'key' => $groupKey,
                     'gtins' => [],
-                    'name' => $fileName ?? ($fdaProductName ?? 'Unknown product'),
+                    'name' => $fileName ?? ($fdaProductName ?? (filled($product?->name) ? (string) $product->name : 'Unknown product')),
                     'ndc' => Ndc::formatPackageDisplay($sourceNdc),
-                    'dosage_form' => $file['dosage_form'] ?? null,
-                    'strength' => $file['strength'] ?? null,
-                    'manufacturer' => $file['manufacturer'] ?? null,
-                    'net_content' => $file['net_content'] ?? null,
+                    'dosage_form' => $file['dosage_form'] ?? (filled($product?->dosage_form) ? (string) $product->dosage_form : $fdaProductRow?->dosage_form),
+                    'strength' => $file['strength'] ?? (filled($product?->strength) ? (string) $product->strength : $fdaProductRow?->strength),
+                    'manufacturer' => $file['manufacturer'] ?? $fdaManufacturer,
+                    'net_content' => $file['net_content'] ?? $fdaPackage?->net_content_description,
                     'document_epc_count' => 0,
                     'case_count' => 0,
                     'unit_count' => 0,
@@ -701,19 +764,20 @@ class EpcisDocument extends Model
             $groups[$groupKey]['case_count'] += (int) $stats['cases'];
             $groups[$groupKey]['unit_count'] += (int) $stats['units'];
 
-            if ($groups[$groupKey]['product_id'] === null && filled($stats['product_id'])) {
-                $product = $productsById->get((int) $stats['product_id']) ?? $productsByGtin->get($gtin);
-                if ($product !== null) {
-                    $groups[$groupKey]['product_id'] = (int) $product->getKey();
-                    $groups[$groupKey]['linked'] = true;
-                    if ($groups[$groupKey]['catalog_status'] === 'none') {
-                        $groups[$groupKey]['catalog_status'] = 'assortment';
-                    }
+            if ($groups[$groupKey]['product_id'] === null && $product !== null) {
+                $groups[$groupKey]['product_id'] = (int) $product->getKey();
+                $groups[$groupKey]['linked'] = true;
+                if ($groups[$groupKey]['catalog_status'] === 'none') {
+                    $groups[$groupKey]['catalog_status'] = 'assortment';
                 }
             }
 
-            if (($groups[$groupKey]['name'] === 'Unknown product') && filled($file['name'] ?? null)) {
-                $groups[$groupKey]['name'] = (string) $file['name'];
+            if ($groups[$groupKey]['name'] === 'Unknown product') {
+                if (filled($file['name'] ?? null)) {
+                    $groups[$groupKey]['name'] = (string) $file['name'];
+                } elseif (filled($product?->name)) {
+                    $groups[$groupKey]['name'] = (string) $product->name;
+                }
             }
             foreach (['dosage_form', 'strength', 'manufacturer', 'net_content'] as $field) {
                 if (($groups[$groupKey][$field] ?? null) === null && filled($file[$field] ?? null)) {
@@ -1171,7 +1235,8 @@ class EpcisDocument extends Model
 
     /**
      * Outbound shipping TI projects only outermost parents onto document_epcs;
-     * Summary should expand the open aggregation tree under those parents.
+     * SSCC commissioning likewise projects only the SSCC itself. Summary should
+     * expand the open aggregation tree under those parents.
      */
     private function usesShippingOpenTreeSummary(): bool
     {
@@ -1179,10 +1244,14 @@ class EpcisDocument extends Model
             return false;
         }
 
-        $kind = $this->authored_kind;
+        $kind = $this->authored_kind instanceof EpcisAuthoredKind
+            ? $this->authored_kind->value
+            : $this->authored_kind;
 
-        return $kind === EpcisAuthoredKind::Shipping
-            || (is_string($kind) && $kind === EpcisAuthoredKind::Shipping->value);
+        return in_array($kind, [
+            EpcisAuthoredKind::Shipping->value,
+            EpcisAuthoredKind::SsccCommissioning->value,
+        ], true);
     }
 
     /**
@@ -1218,7 +1287,7 @@ class EpcisDocument extends Model
             return [];
         }
 
-        return app(\App\Support\Epcis\ExtractPriorPedigreeXml::class)->collectOpenTreeEpcIds($rootIds);
+        return app(ExtractPriorPedigreeXml::class)->collectOpenTreeEpcIds($rootIds);
     }
 
     private function formatEpcBreakdown(int $cases, int $units): string

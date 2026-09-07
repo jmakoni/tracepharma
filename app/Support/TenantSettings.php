@@ -5,6 +5,8 @@ namespace App\Support;
 use App\Actions\Exceptions\SyncDestinationGlnMismatchReceiveImpact;
 use App\Actions\MasterData\RederiveOrganizationSglns;
 use App\Enums\ClientPrintBridge;
+use App\Enums\ExceptionReceiveImpact;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Support\Dashboard\DashboardWidgetCatalog;
@@ -1199,10 +1201,10 @@ class TenantSettings
             && tenant()?->getKey() === $this->tenant->getKey()
         ) {
             $impact = $enabled
-                ? \App\Enums\ExceptionReceiveImpact::BusinessRule
-                : \App\Enums\ExceptionReceiveImpact::Warning;
+                ? ExceptionReceiveImpact::BusinessRule
+                : ExceptionReceiveImpact::Warning;
 
-            \App\Models\Exceptions\ExceptionType::query()
+            ExceptionType::query()
                 ->whereIn('code', SyncDestinationGlnMismatchReceiveImpact::CODES)
                 ->update(['receive_impact' => $impact->value]);
         }
@@ -1277,6 +1279,35 @@ class TenantSettings
     public function setAutoCompleteAsnOnReady(bool $enabled): self
     {
         return $this->putNestedSetting('receiving.auto_complete_asn_on_ready', $enabled);
+    }
+
+    /**
+     * When true, receiving from a partner with expired/missing ATP licenses opens a
+     * critical exception (alert-center escalation) instead of a soft warning.
+     * Default false — DSCSA does not mandate blocking inbound product.
+     */
+    public function atpInboundEscalation(): bool
+    {
+        $value = data_get($this->settingsBag(), 'compliance.atp_inbound_escalation');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAtpInboundEscalation(bool $enabled): self
+    {
+        return $this->putNestedSetting('compliance.atp_inbound_escalation', $enabled);
+    }
+
+    public function autoPauseOnFailureStreak(): bool
+    {
+        $value = data_get($this->settingsBag(), 'integrations.auto_pause_on_failure_streak');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoPauseOnFailureStreak(bool $enabled): self
+    {
+        return $this->putNestedSetting('integrations.auto_pause_on_failure_streak', $enabled);
     }
 
     public function sanctumApiKilled(): bool

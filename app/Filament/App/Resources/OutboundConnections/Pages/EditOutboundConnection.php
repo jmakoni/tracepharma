@@ -3,8 +3,11 @@
 namespace App\Filament\App\Resources\OutboundConnections\Pages;
 
 use App\Actions\Integrations\PromoteOutboundConnectionConformance;
+use App\Actions\Integrations\RegisterConnectionApprovalRequest;
+use App\Enums\ConnectionApprovalStatus;
 use App\Filament\App\Concerns\TransformsConnectionCredentials;
 use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\OutboundConnection;
 use App\Models\User;
@@ -13,7 +16,6 @@ use App\Support\Integrations\OutboundConnectionDefaultSync;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Textarea;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
@@ -30,7 +32,23 @@ class EditOutboundConnection extends EditRecord
         return [
             $this->promoteAction(),
             $this->breakGlassAction(),
-            DeleteAction::make(),
+            DeleteAction::make()
+                ->before(function (DeleteAction $action, OutboundConnection $record): void {
+                    $open = $record->openShippingSessionCount();
+
+                    if ($open <= 0) {
+                        return;
+                    }
+
+                    Notification::make()
+                        ->title('Connection cannot be deleted')
+                        ->body("It is linked to {$open} open ship session".($open === 1 ? '' : 's').'. Complete or cancel those ships first, or deactivate the connection.')
+                        ->warning()
+                        ->persistent()
+                        ->send();
+
+                    $action->cancel();
+                }),
         ];
     }
 
@@ -55,7 +73,26 @@ class EditOutboundConnection extends EditRecord
         /** @var OutboundConnection $record */
         $record = $this->record;
         $record->syncTradingPartnerIdFromPartners();
+        $record->refresh();
+        $record->assertAssignableConfiguration();
         OutboundConnectionDefaultSync::ensureSingleDefault($record->fresh());
+
+        $this->syncApprovalRequest($record->fresh());
+    }
+
+    private function syncApprovalRequest(OutboundConnection $record): void
+    {
+        // Editing a rejected or suspended connection resubmits it for platform review.
+        if ($record->isRejected() || $record->isSuspended()) {
+            $record->approval_status = ConnectionApprovalStatus::Pending;
+            $record->approval_note = null;
+            $record->save();
+            $record->refresh();
+        }
+
+        if ($record->isPendingApproval()) {
+            app(RegisterConnectionApprovalRequest::class)->register($record);
+        }
     }
 
     private function promoteAction(): Action

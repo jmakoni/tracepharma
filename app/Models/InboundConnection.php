@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Enums\SerializationProvider;
 use App\Models\Epcis\EpcisDocument;
@@ -24,12 +25,28 @@ class InboundConnection extends Model
         'transport',
         'trading_partner_id',
         'is_active',
+        'approval_status',
+        'approval_note',
         'credentials',
         'settings',
         'inbound_token',
+        'credentials_expire_at',
         'last_polled_at',
         'last_received_at',
         'last_error',
+        'last_success_at',
+        'last_failure_at',
+        'consecutive_failures',
+    ];
+
+    /**
+     * In-memory default mirrors the DB default so freshly created connections
+     * read as approved (grandfathered) without a refresh.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'approval_status' => 'approved',
     ];
 
     protected function casts(): array
@@ -38,10 +55,14 @@ class InboundConnection extends Model
             'serialization_provider' => SerializationProvider::class,
             'transport' => InboundTransport::class,
             'is_active' => 'boolean',
+            'approval_status' => ConnectionApprovalStatus::class,
             'credentials' => 'encrypted:array',
             'settings' => 'array',
             'last_polled_at' => 'datetime',
             'last_received_at' => 'datetime',
+            'credentials_expire_at' => 'datetime',
+            'last_success_at' => 'datetime',
+            'last_failure_at' => 'datetime',
         ];
     }
 
@@ -85,6 +106,26 @@ class InboundConnection extends Model
     public function logs(): HasMany
     {
         return $this->hasMany(InboundConnectionLog::class);
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->approval_status === ConnectionApprovalStatus::Approved;
+    }
+
+    public function isPendingApproval(): bool
+    {
+        return $this->approval_status === ConnectionApprovalStatus::Pending;
+    }
+
+    public function isRejected(): bool
+    {
+        return $this->approval_status === ConnectionApprovalStatus::Rejected;
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->approval_status === ConnectionApprovalStatus::Suspended;
     }
 
     public function multiPartnerRoutingEnabled(): bool

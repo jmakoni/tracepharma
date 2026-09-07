@@ -28,12 +28,24 @@ Owners enable templates, set recipients / notify flags, and optionally mark defa
 
 When a document has no pinned `outbound_connection_id`:
 
-1. Partner-scoped active HTTPS / SFTP / AS2  
-2. Else global active HTTPS / SFTP / AS2  
-3. Else active Client portal connection  
-4. Else skip  
+1. Partner-scoped active HTTPS / SFTP / AS2 (hub or direct; `is_default` first)  
+2. Else active Client portal (partner-scoped, then global/system)  
+3. Else skip  
+
+**Known partner:** global B2B is **not** used as a silent fallback (avoids leaking another partner’s endpoint). Legacy global B2B only applies when the document has no trading partner.
 
 **Email is never selected by the ladder** — only via explicit pin or an Email connection set as the partner/global default (`resolve()` for session defaults).
+
+Two active hubs that both list the same partner in the same Test/Live band resolve as **ambiguous** (no auto-pick) until one membership is removed.
+
+### Networks (LSPediA / UniTrace)
+
+| Setup | Channel | Assign |
+|-------|---------|--------|
+| Customers on LSPediA | One LSPediA HTTPS/AS2/SFTP connection | All of them on that connection |
+| Manufacturers on UniTrace | One UniTrace / Systech connection | All of them on that connection |
+
+File-header **sender** = tenant GLN. File-header **receiver** = customer GLN — not the network host. The customer's corporate sold-to GLN stays on the trading-partner master; the network is only the transport.
 
 ## Inbound (supplier → you)
 

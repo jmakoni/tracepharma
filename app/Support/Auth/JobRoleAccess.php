@@ -16,6 +16,10 @@ final class JobRoleAccess
 {
     public static function enabled(?Tenant $tenant = null): bool
     {
+        if (! config('tracepharma.role_based_menus', false)) {
+            return false;
+        }
+
         return TenantSettings::forTenant($tenant ?? tenant())->jobRolesEnabled();
     }
 

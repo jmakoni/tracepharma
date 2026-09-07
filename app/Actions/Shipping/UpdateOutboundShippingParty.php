@@ -2,6 +2,7 @@
 
 namespace App\Actions\Shipping;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Models\OutboundConnection;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
@@ -90,10 +91,11 @@ final class UpdateOutboundShippingParty
         if ($connectionId !== null) {
             $connection = OutboundConnection::query()
                 ->where('is_active', true)
+                ->where('approval_status', ConnectionApprovalStatus::Approved->value)
                 ->find($connectionId);
 
             if ($connection === null) {
-                throw new DomainException('Selected outbound connection was not found or is inactive.');
+                throw new DomainException('Selected outbound connection was not found, is inactive, or is awaiting platform approval.');
             }
 
             if (! OutboundConnectionResolver::connectionMatchesPartner($connection, $partnerId)) {

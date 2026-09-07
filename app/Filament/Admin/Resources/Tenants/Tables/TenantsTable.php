@@ -2,19 +2,24 @@
 
 namespace App\Filament\Admin\Resources\Tenants\Tables;
 
+use App\Actions\Tenants\ActivateTenant;
 use App\Actions\Tenants\DeleteTenantPair;
+use App\Actions\Tenants\SuspendTenant;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Tenant;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use App\Filament\Notifications\Notification;
+use Filament\Forms\Components\Textarea;
 use Filament\Support\Exceptions\Halt;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Throwable;
 
 class TenantsTable
@@ -63,6 +68,67 @@ class TenantsTable
             ])
             ->recordActions(RecordActionGroup::make([
                 EditAction::make(),
+                Action::make('suspendTenant')
+                    ->label('Suspend')
+                    ->icon('heroicon-o-pause-circle')
+                    ->color('danger')
+                    ->visible(fn (Tenant $record): bool => $record->status !== 'suspended')
+                    ->schema([
+                        Textarea::make('reason')
+                            ->label('Suspension reason')
+                            ->required()
+                            ->rows(3)
+                            ->maxLength(500)
+                            ->helperText('Recorded in the platform audit trail. Cascades to the pair sibling.'),
+                    ])
+                    ->action(function (Tenant $record, array $data): void {
+                        try {
+                            app(SuspendTenant::class)->handle(
+                                $record,
+                                (string) ($data['reason'] ?? ''),
+                                Auth::guard('admin')->user(),
+                            );
+                        } catch (Throwable $exception) {
+                            Notification::make()
+                                ->title('Suspend failed')
+                                ->body($exception->getMessage())
+                                ->danger()
+                                ->send();
+
+                            throw new Halt;
+                        }
+
+                        Notification::make()
+                            ->title('Tenant suspended')
+                            ->body($record->name.' and its pair sibling are suspended.')
+                            ->success()
+                            ->send();
+                    }),
+                Action::make('activateTenant')
+                    ->label('Activate')
+                    ->icon('heroicon-o-play-circle')
+                    ->color('success')
+                    ->visible(fn (Tenant $record): bool => $record->status === 'suspended')
+                    ->requiresConfirmation()
+                    ->modalDescription('Reactivates this tenant and its pair sibling. The suspension reason is cleared.')
+                    ->action(function (Tenant $record): void {
+                        try {
+                            app(ActivateTenant::class)->handle($record, Auth::guard('admin')->user());
+                        } catch (Throwable $exception) {
+                            Notification::make()
+                                ->title('Activate failed')
+                                ->body($exception->getMessage())
+                                ->danger()
+                                ->send();
+
+                            throw new Halt;
+                        }
+
+                        Notification::make()
+                            ->title('Tenant activated')
+                            ->success()
+                            ->send();
+                    }),
             ]))
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -82,7 +148,7 @@ class TenantsTable
                                 throw new Halt;
                             }
                         })
-                        ->using(function (DeleteBulkAction $action, EloquentCollection | Collection $records): void {
+                        ->using(function (DeleteBulkAction $action, EloquentCollection|Collection $records): void {
                             $deletePair = app(DeleteTenantPair::class);
                             $selectedIds = $records
                                 ->map(fn (mixed $record): ?string => $record instanceof Tenant ? (string) $record->id : null)

@@ -282,6 +282,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
                 ->color('primary')
                 ->visible(fn (): bool => $this->sessionId === null && ! $this->showSitePicker)
                 ->action(fn (): mixed => $this->beginNewShipOrder()),
+            $this->declareSplitAction(),
             $this->sendShipmentAction(),
         ];
     }

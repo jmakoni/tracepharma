@@ -24,7 +24,7 @@ Create and administer TracePharma tenants (databases, profiles, feature flags, i
 
 - [customer-onboarding.md](customer-onboarding.md) — onboarding queue
 - [demo-requests.md](demo-requests.md) — inbound demos that may become tenants
-- [../operations/epcis-hub-settings.md](../operations/epcis-hub-settings.md) — hub settings affecting tenants
+- [../settings/platform-connections.md](../settings/platform-connections.md) — platform connection edges affecting tenants
 - [../platform/analytics.md](../platform/analytics.md) — tenant growth metrics
 
 ## Notes

@@ -1,7 +1,7 @@
 ---
 title: Customer Onboarding
 parent: tenants
-order: 20
+order: 25
 group: Tenants
 ---
 

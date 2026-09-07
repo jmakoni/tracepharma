@@ -1,7 +1,7 @@
 ---
 title: Tenants
 parent: tenants
-order: 30
+order: 35
 group: Tenants
 ---
 
@@ -31,7 +31,7 @@ Create and administer TracePharma tenants (databases, profiles, feature flags, i
 
 - [customer-onboarding.md](../tenants/customer-onboarding) — onboarding queue
 - [demo-requests.md](../tenants/demo-requests) — inbound demos that may become tenants
-- [../operations/epcis-hub-settings.md](../operations/epcis-hub-settings) — hub settings affecting tenants
+- [../settings/platform-connections.md](../settings/platform-connections) — platform connection edges affecting tenants
 - [../platform/analytics.md](../platform/analytics) — tenant growth metrics
 
 ## Notes

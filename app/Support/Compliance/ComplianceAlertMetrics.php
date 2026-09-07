@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Compliance;
 
+use App\Actions\Epcis\RecordAtpSoftWarning;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Filament\App\Pages\AtpPartnerReadiness;
 use App\Filament\App\Pages\ExpiryWorklist;
@@ -15,6 +16,7 @@ use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
 use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
 use App\Filament\App\Resources\Sites\SiteResource;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisException;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\InboundConnection;
 use App\Models\OutboundConnection;
@@ -268,6 +270,25 @@ final class ComplianceAlertMetrics
                 $this->formatAtpSiteDetail($missing, $label, 'lack in-force licence'),
                 self::AUDIENCE_COMPLIANCE,
                 $atpHref,
+            );
+        }
+
+        $escalatedInbound = EpcisException::query()
+            ->where('exception_type', RecordAtpSoftWarning::EXCEPTION_TYPE)
+            ->where('severity', 'critical')
+            ->where('status', 'open')
+            ->count();
+
+        if ($escalatedInbound > 0) {
+            $alerts[] = $this->alert(
+                'critical',
+                'Inbound from unverified partners',
+                sprintf(
+                    '%d inbound document(s) arrived from partners with expired, missing, or undated ATP licenses. Review the receiving exceptions.',
+                    $escalatedInbound,
+                ),
+                self::AUDIENCE_COMPLIANCE,
+                $this->resourceUrl(ExceptionResource::class),
             );
         }
 

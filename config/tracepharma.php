@@ -11,13 +11,21 @@ return [
     'platform_base_domain' => env('PLATFORM_BASE_DOMAIN', 'tracepharma.io'),
     'tenant_environment' => env('TENANT_ENVIRONMENT', 'prod'),
     'pair_sibling_database' => env('PAIR_SIBLING_DB_DATABASE'),
+    /*
+     | Master switch for role-based navigation/permission gates (admin panel
+     | permissions and tenant job-role nav.* capabilities). Off means every
+     | authenticated admin/tenant user sees all menu items. Re-enable per
+     | environment with TRACEPHARMA_ROLE_BASED_MENUS=true once role matrices
+     | are seeded.
+     */
+    'role_based_menus' => (bool) env('TRACEPHARMA_ROLE_BASED_MENUS', false),
     'stage_provisioning' => [
         'enabled' => (bool) env('STAGE_PROVISION_ENABLED', false),
         'ssh_host' => env('STAGE_SSH_HOST', '127.0.0.1'),
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.4.0'),
+    'app_version' => env('APP_VERSION', '1.6.0'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))

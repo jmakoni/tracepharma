@@ -37,5 +37,4 @@ Review Authorized Trading Partner (ATP) license coverage and gaps before shippin
 ## Notes
 
 - ATP readiness is advisory for operations gates depending on tenant profile; treat gaps as blockers for DSCSA-ready trading.
-- Outbound send: Organization Settings → **Block send when ship-to ATP license is missing or expired** (default off = soft warning; on = hard block).
 - License data may also come from FDA/WDD registry sync — confirm source before editing.
