@@ -2,13 +2,13 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\Notifications\Notification;
 use App\Models\User;
 use App\Support\Admin\TenantImpersonation;
 use App\Support\Legal\LegalAcceptance;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Checkbox;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;

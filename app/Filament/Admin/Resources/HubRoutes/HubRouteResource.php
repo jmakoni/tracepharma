@@ -35,7 +35,7 @@ class HubRouteResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedMapPin;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|UnitEnum|null $navigationGroup = 'Tenants / Hub';
 
     protected static ?int $navigationSort = 21;
 

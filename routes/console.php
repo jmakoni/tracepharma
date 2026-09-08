@@ -32,15 +32,14 @@ Schedule::call(function (): void {
  * snapshot can authorize a shipment against a license that already lapsed.
  * Triage resolved in the unmatched queue is picked up by the next run.
  *
- * Successful promote dispatches per-tenant ATP sync from ImportFdaDatasetJob so
- * tenants always read promoted catalog data (no fixed follow-up slot).
+ * Successful WDD import dispatches per-tenant ATP sync from ImportFdaDatasetJob so
+ * tenants always read refreshed FDA registry licenses (no fixed follow-up slot).
  *
  * Manual `tracepharma:import-fda-wdd-3pl` shares the same overlap lock as the job.
  */
 Schedule::call(function (): void {
     if (! ImportFdaDatasetJob::dispatchIfIdle(ImportFdaDatasetJob::WDD_COMMAND, [
         '--fresh-download' => true,
-        '--promote' => true,
     ])) {
         Log::warning('FDA WDD/3PL scheduled import skipped: another import is already running.');
     }

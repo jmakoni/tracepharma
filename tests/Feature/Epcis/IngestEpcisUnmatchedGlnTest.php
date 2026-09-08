@@ -3,8 +3,8 @@
 namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\TenantProfile;
-use App\Jobs\IngestEpcisXmlJob;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisUnmatchedGln;
@@ -179,10 +179,12 @@ class IngestEpcisUnmatchedGlnTest extends TestCase
             $this->assertNotFalse($tmp);
             file_put_contents($tmp, $xml);
 
-            $document = (new IngestEpcisXmlJob($tenant, $tmp, [
+            $document = app(ReceiveEpcisUpload::class)->handle($tmp, [
                 'direction' => 'inbound',
                 'original_filename' => 'job_sync.xml',
-            ]))->handle();
+                'dispatch' => true,
+                'sync' => true,
+            ]);
 
             $this->documentId = (int) $document->getKey();
 

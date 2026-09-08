@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\Exceptions\Actions;
 
 use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
 use App\Models\Exceptions\ExceptionCase;
@@ -14,7 +15,6 @@ use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseEditor;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 use Throwable;

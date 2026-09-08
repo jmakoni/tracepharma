@@ -5,6 +5,7 @@
 .env.production
 .env.testing
 /storage/tenant*
+/storage/auditor*
 .phpactor.json
 .phpunit.result.cache
 __pycache__/

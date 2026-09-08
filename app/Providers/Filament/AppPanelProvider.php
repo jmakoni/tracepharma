@@ -63,11 +63,11 @@ class AppPanelProvider extends PanelProvider
                 'info' => Color::hex('#838589'),
                 'gray' => Color::hex('#676C73'),
             ])
-            ->topNavigation()
             ->navigationGroups([
                 'Operations',
                 'Receiving',
-                'Ship',
+                'Exceptions',
+                'Shipping',
                 'Compliance',
                 'Master Data',
                 'Integrations',
@@ -75,6 +75,7 @@ class AppPanelProvider extends PanelProvider
                 'Audit',
             ])
             ->sidebarWidth('16rem')
+            ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth(Width::Full)
             ->viteTheme('resources/css/filament/app/theme.css')
             ->renderHook(
@@ -83,6 +84,7 @@ class AppPanelProvider extends PanelProvider
                     '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>',
+                    '<script src="'.e($this->versionedPublicJs('js/tp-sidebar-accordion.js')).'" data-navigate-track></script>',
                 ]),
             )
             ->globalSearch(false)
@@ -190,6 +192,10 @@ class AppPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn (): string => view('filament.app.hooks.current-site-switcher')->render(),
+            )
+            ->renderHook(
+                PanelsRenderHook::FOOTER,
+                fn (): string => view('filament.app.hooks.tenant-footer-menu')->render(),
             )
             ->renderHook(
                 PanelsRenderHook::SIMPLE_PAGE_END,

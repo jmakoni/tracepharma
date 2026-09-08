@@ -355,12 +355,15 @@ final class ConfirmReceivingScan
 
                 $confirmedChildren = 0;
                 if ($lineRole === 'parent') {
-                    $documentIdForChildren = $matchedAsnId ?? $session->matched_epcis_document_id;
+                    // Scope children to THIS scan's ASN match only. Sticky session
+                    // matched_epcis_document_id must not block open-link fallback for
+                    // later sealed parents that have no ASN match.
+                    $documentIdForChildren = $matchedAsnId !== null ? (int) $matchedAsnId : null;
 
                     $confirmedChildren = $this->seedAndConfirmChildrenForParent(
                         $session,
                         $epc,
-                        $documentIdForChildren !== null ? (int) $documentIdForChildren : null,
+                        $documentIdForChildren,
                         $userId,
                         $autoConfirmChildren,
                         $now,
@@ -564,7 +567,8 @@ final class ConfirmReceivingScan
 
     /**
      * Seed (and optionally auto-confirm) aggregation children under a scanned SSCC
-     * for scan-first receives, using the matched inbound ASN document.
+     * for scan-first receives. Uses the matched inbound ASN document when present;
+     * otherwise falls back to open aggregation links under the parent.
      *
      * @return int Newly confirmed child count for this parent
      */
@@ -576,34 +580,41 @@ final class ConfirmReceivingScan
         bool $autoConfirmChildren,
         mixed $now,
     ): int {
-        if ($documentId === null) {
-            return 0;
+        if ($documentId !== null) {
+            $document = EpcisDocument::query()->find($documentId);
+
+            $childEpcIds = AggregationLink::query()
+                ->where('parent_epc_id', $parentEpc->getKey())
+                ->whereNull('valid_to')
+                ->whereIn('established_by_event_id', function ($query) use ($documentId, $document): void {
+                    $query->select('id')
+                        ->from('epcis_events')
+                        ->where('document_id', $documentId);
+
+                    if (
+                        $document !== null
+                        && Schema::hasColumn('epcis_events', 'ingest_generation')
+                        && Schema::hasColumn('epcis_documents', 'ingest_generation')
+                        && filled($document->getAttribute('ingest_generation'))
+                    ) {
+                        $query->where('ingest_generation', $document->getAttribute('ingest_generation'));
+                    }
+                })
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        } else {
+            $childEpcIds = AggregationLink::query()
+                ->where('parent_epc_id', $parentEpc->getKey())
+                ->whereNull('valid_to')
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
         }
-
-        $document = EpcisDocument::query()->find($documentId);
-
-        $childEpcIds = AggregationLink::query()
-            ->where('parent_epc_id', $parentEpc->getKey())
-            ->whereNull('valid_to')
-            ->whereIn('established_by_event_id', function ($query) use ($documentId, $document): void {
-                $query->select('id')
-                    ->from('epcis_events')
-                    ->where('document_id', $documentId);
-
-                if (
-                    $document !== null
-                    && Schema::hasColumn('epcis_events', 'ingest_generation')
-                    && Schema::hasColumn('epcis_documents', 'ingest_generation')
-                    && filled($document->getAttribute('ingest_generation'))
-                ) {
-                    $query->where('ingest_generation', $document->getAttribute('ingest_generation'));
-                }
-            })
-            ->pluck('child_epc_id')
-            ->map(fn ($id): int => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
 
         if ($childEpcIds === []) {
             return 0;

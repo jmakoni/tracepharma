@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Actions\Fda\ImportFdaDecrs;
-use App\Actions\Fda\MapFdaRegistryToCatalog;
 use App\Models\Fda\FdaEstablishment;
 use App\Models\Fda\FdaEstablishmentOperation;
 use App\Models\Fda\FdaImportRun;
@@ -72,53 +71,6 @@ class ImportFdaDecrsTest extends TestCase
         $this->assertSame(2, $again['updated']);
         $this->assertSame(0, $again['inserted']);
         $this->assertSame(1, FdaOrganization::query()->where('canonical_name', 'ACME PHARMA')->count());
-
-        $this->cleanup();
-    }
-
-    #[Test]
-    public function map_fda_registry_to_catalog_is_a_noop_and_leaves_fda_rows_intact(): void
-    {
-        $this->cleanup();
-
-        app(ImportFdaDecrs::class)->handle(base_path('tests/fixtures/fda/decrs_sample.txt'));
-
-        $org = FdaOrganization::query()->where('canonical_name', 'ACME PHARMA')->firstOrFail();
-        $establishment = FdaEstablishment::query()->where('fei_number', '0000001001')->firstOrFail();
-
-        $facility = FdaWddFacility::query()->create([
-            'fda_organization_id' => $org->id,
-            'facility_type' => 'wdd',
-            'facility_name' => 'Acme Fill Plant',
-            'street_address' => '100 Alpha Way',
-            'city' => 'Austin',
-            'state_province' => 'TX',
-            'postal_code' => '78701',
-            'country_code' => 'US',
-            'address_fingerprint' => $establishment->address_fingerprint,
-        ]);
-
-        FdaWddLicense::query()->create([
-            'fda_wdd_facility_id' => $facility->id,
-            'license_number' => 'LIC-ACME-TX',
-            'jurisdiction' => 'TX',
-            'expiration_date' => '2027-12-31',
-            'reporting_year' => 2026,
-            'is_active' => true,
-        ]);
-
-        $counts = app(MapFdaRegistryToCatalog::class)->handle([(int) $org->id]);
-
-        $this->assertSame(0, $counts['partners_created']);
-        $this->assertSame(0, $counts['partners_linked']);
-        $this->assertSame(0, $counts['sites_created']);
-        $this->assertSame(0, $counts['sites_linked']);
-        $this->assertSame(0, $counts['licenses_upserted']);
-        $this->assertSame(0, $counts['import_run_id']);
-
-        $this->assertSame($org->id, $establishment->fresh()->fda_organization_id);
-        $this->assertSame('0000001001', $establishment->fresh()->fei_number);
-        $this->assertSame(1, FdaWddLicense::query()->where('license_number', 'LIC-ACME-TX')->count());
 
         $this->cleanup();
     }

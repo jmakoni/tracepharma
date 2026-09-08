@@ -64,6 +64,13 @@ class AdminPanelProvider extends PanelProvider
                 'gray' => Color::hex('#676C73'),
             ])
             ->topNavigation()
+            ->navigationGroups([
+                'Tenants / Hub',
+                'FDA Registry',
+                'Platform',
+                'Settings',
+                'Audit',
+            ])
             ->globalSearch(false)
             ->sidebarWidth('16rem')
             ->maxContentWidth(Width::Full)
@@ -143,6 +150,9 @@ class AdminPanelProvider extends PanelProvider
                     'primary' => 'Primary',
                     'sidebar' => 'Sidebar',
                     'footer' => 'Footer',
+                ])
+                ->modelSources([
+                    \App\Models\AppMenuLink::class,
                 ])
                 ->navigationGroup('Settings')
                 ->navigationLabel('Menus')

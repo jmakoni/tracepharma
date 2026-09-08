@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Epcis;
 
-use App\Actions\Epcis\RecallEpcsByGtinLot;
 use App\Actions\Epcis\SearchEpcisSchema;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
@@ -107,9 +106,6 @@ class SearchEpcisSchemaTest extends TestCase
             $this->assertSame(1, $result['total']);
             $this->assertFalse($result['truncated']);
             $this->assertSame([(int) $match->id], $result['rows']->pluck('id')->map(fn ($id) => (int) $id)->all());
-
-            $viaRecall = app(RecallEpcsByGtinLot::class)->handle($gtin, $lot);
-            $this->assertSame([(int) $match->id], $viaRecall->pluck('id')->map(fn ($id) => (int) $id)->all());
         } finally {
             $this->cleanup();
         }

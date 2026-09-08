@@ -14,7 +14,7 @@ Filament classes:
 
 ## When to use
 
-Work staged WDD/3PL import rows and resolve unmatched facilities before promoting to the live registry.
+Work staged WDD/3PL import rows and resolve unmatched facilities so the next import can stage them into the FDA registry.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ Work staged WDD/3PL import rows and resolve unmatched facilities before promotin
 
 1. Open **WDD 3PL staging**; review pending rows. Open the page and use Help for live UI.
 2. Open **Unmatched** list; decide link, create, or discard.
-3. Promote or correct until unmatched backlog is acceptable.
+3. Resolve unmatched backlog (link or create organizations); re-import if needed.
 4. Verify facilities/licenses in [../registry/fda-wdd.md](../registry/fda-wdd).
 
 ## Related pages

@@ -60,40 +60,28 @@ class EpcisHubRouter
         $preferredConnectionId = $route?->default_inbound_connection_id;
 
         $connection = TenantRunner::run($tenant, function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
-            // Sender must be resolved before any preferred-connection shortcut.
-            // default_inbound_connection_id is only a tie-break among matched senders
-            // (or a fallback for truly senderless payloads) — never an unknown-sender bypass.
+            // Sender is mandatory for hub routing. Prefer default_inbound_connection_id
+            // only as a tie-break among matched senders — never a senderless bypass.
+            if ($senderGln === null) {
+                throw new RuntimeException(
+                    'SBDH sender GLN is required for hub routing; senderless payloads are rejected.',
+                );
+            }
+
             $matched = $this->connectionsMatchingSender($provider, $senderGln);
 
-            if ($senderGln !== null) {
-                if ($matched->isEmpty()) {
-                    throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
-                }
-
-                if ($preferredConnectionId !== null) {
-                    $preferred = $matched->firstWhere('id', (int) $preferredConnectionId);
-                    if ($preferred !== null) {
-                        return $preferred;
-                    }
-                }
-
-                return $matched->first();
+            if ($matched->isEmpty()) {
+                throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
             }
 
             if ($preferredConnectionId !== null) {
-                $preferred = $this->findConnection((int) $preferredConnectionId, $provider);
+                $preferred = $matched->firstWhere('id', (int) $preferredConnectionId);
                 if ($preferred !== null) {
                     return $preferred;
                 }
             }
 
-            $connection = $this->defaultConnectionForProvider($provider);
-
-            if ($connection === null) {
-                throw new RuntimeException('No active inbound connection is registered for hub routing on this tenant.');
-            }
-
-            return $connection;
+            return $matched->first();
         });
 
         if ($route !== null) {
@@ -176,35 +164,23 @@ class EpcisHubRouter
 
         try {
             $connection = TenantRunner::run($tenant, function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
+                if ($senderGln === null) {
+                    throw new RuntimeException(
+                        'SBDH sender GLN is required for hub routing; senderless payloads are rejected.',
+                    );
+                }
+
                 $matched = $this->connectionsMatchingSender($provider, $senderGln);
 
-                if ($senderGln !== null) {
-                    if ($matched->isEmpty()) {
-                        throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
-                    }
-
-                    $preferred = $preferredConnectionId !== null
-                        ? $matched->firstWhere('id', (int) $preferredConnectionId)
-                        : null;
-
-                    return $preferred ?? $matched->first();
+                if ($matched->isEmpty()) {
+                    throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
                 }
 
-                if ($preferredConnectionId !== null) {
-                    $preferred = $this->findConnection((int) $preferredConnectionId, $provider);
+                $preferred = $preferredConnectionId !== null
+                    ? $matched->firstWhere('id', (int) $preferredConnectionId)
+                    : null;
 
-                    if ($preferred !== null) {
-                        return $preferred;
-                    }
-                }
-
-                $connection = $this->defaultConnectionForProvider($provider);
-
-                if ($connection === null) {
-                    throw new RuntimeException('No active inbound connection is registered for hub routing on this tenant.');
-                }
-
-                return $connection;
+                return $preferred ?? $matched->first();
             });
 
             $steps[] = [
@@ -289,13 +265,6 @@ class EpcisHubRouter
         throw new RuntimeException("No tenant is registered for receiver GLN [{$receiverGln}].");
     }
 
-    private function findConnection(int $connectionId, string $provider): ?InboundConnection
-    {
-        return $this->approvedHubBase($provider)
-            ->whereKey($connectionId)
-            ->first();
-    }
-
     /**
      * Active, platform-approved HTTPS connections that claim this SBDH sender GLN
      * (pivot sender_gln or legacy trading_partner_id).
@@ -329,13 +298,6 @@ class EpcisHubRouter
             ->whereIn('trading_partner_id', $partnerIds)
             ->orderBy('name')
             ->get();
-    }
-
-    private function defaultConnectionForProvider(string $provider): ?InboundConnection
-    {
-        return $this->approvedHubBase($provider)
-            ->orderBy('name')
-            ->first();
     }
 
     /**

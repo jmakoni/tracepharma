@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Pages;
 
 use App\Models\Admin;
+use App\Support\Auth\OidcConnectionConfig;
 use App\Support\Auth\OidcProvider;
 use App\Support\Auth\Permissions;
 use App\Support\PlatformSettings;
@@ -37,7 +38,7 @@ class AdminSsoSettings extends Page
 
     protected static ?int $navigationSort = 25;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|UnitEnum|null $navigationGroup = 'Platform';
 
     protected string $view = 'filament.admin.pages.admin-sso-settings';
 
@@ -116,7 +117,22 @@ class AdminSsoSettings extends Page
                             ->visible(fn (Get $get): bool => (bool) $get('enabled')),
                         TextInput::make('entra_tenant_id')
                             ->label('Entra directory (tenant) ID')
+                            ->required(fn (Get $get): bool => (bool) $get('enabled')
+                                && $get('provider') === OidcProvider::Entra->value)
                             ->maxLength(64)
+                            ->helperText('Required for Entra. Use the directory GUID — not common, organizations, or consumers.')
+                            ->rules([
+                                fn (Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                    if (! (bool) $get('enabled') || $get('provider') !== OidcProvider::Entra->value) {
+                                        return;
+                                    }
+
+                                    $id = is_string($value) ? trim($value) : '';
+                                    if ($id === '' || in_array(strtolower($id), OidcConnectionConfig::ENTRA_MULTI_TENANT_ALIASES, true)) {
+                                        $fail('Enter a specific Entra directory (tenant) ID. Multi-tenant aliases are not allowed.');
+                                    }
+                                },
+                            ])
                             ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('provider') === OidcProvider::Entra->value),
                         TextInput::make('redirect_uri')
                             ->label('Redirect URI (register in IdP)')

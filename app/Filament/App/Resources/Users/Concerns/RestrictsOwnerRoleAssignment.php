@@ -3,9 +3,9 @@
 namespace App\Filament\App\Resources\Users\Concerns;
 
 use App\Enums\TenantRole;
+use App\Filament\Notifications\Notification;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
-use App\Filament\Notifications\Notification;
 use Spatie\Permission\Models\Role;
 
 trait RestrictsOwnerRoleAssignment

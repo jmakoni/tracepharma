@@ -52,7 +52,7 @@ class PlatformConnections extends Page implements HasKnowledgeBase
 
     protected static ?int $navigationSort = 20;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|UnitEnum|null $navigationGroup = 'Platform';
 
     protected string $view = 'filament.admin.pages.platform-connections';
 
@@ -147,6 +147,7 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                 'sftp_password' => '',
                 'sftp_private_key' => '',
                 'sftp_passphrase' => '',
+                'sftp_host_fingerprint' => $sftp->hostFingerprint($environment) ?? '',
                 'sftp_inbound_path' => PlatformSettings::get("platform_sftp.{$environment}.inbound_path") ?? '',
                 'sftp_processed_path' => PlatformSettings::get("platform_sftp.{$environment}.processed_path") ?? '',
                 'sftp_outbound_path' => PlatformSettings::get("platform_sftp.{$environment}.outbound_path") ?? '',
@@ -473,7 +474,7 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                         if (! $config->isConfigured($environment)) {
                             Notification::make()
                                 ->title('SFTP is not configured for '.ucfirst($environment))
-                                ->body('Save a host, username, and a password or private key first. The test uses saved settings.')
+                                ->body('Save a host, username, host key fingerprint, and a password or private key first. The test uses saved settings.')
                                 ->warning()
                                 ->send();
 
@@ -535,6 +536,10 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                     ->dehydrated(fn (?string $state): bool => filled($state))
                     ->placeholder($sftp->passphrase($environment) !== null ? '••••••••••••' : '')
                     ->helperText('Write-only. Leave blank to keep the current passphrase.'),
+                TextInput::make("{$environment}.sftp_host_fingerprint")
+                    ->label('Host key fingerprint')
+                    ->helperText('Required for connect/test. Colon-hex SSH host key fingerprint (MD5 for ssh-rsa, SHA-512 otherwise).')
+                    ->columnSpanFull(),
                 TextInput::make("{$environment}.sftp_inbound_path")
                     ->label('Inbound path')
                     ->placeholder('/')
@@ -620,6 +625,7 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                 'host' => $this->stringOrNull($envData['sftp_host'] ?? null),
                 'port' => $this->stringOrNull($envData['sftp_port'] ?? null),
                 'username' => $this->stringOrNull($envData['sftp_username'] ?? null),
+                'host_fingerprint' => $this->stringOrNull($envData['sftp_host_fingerprint'] ?? null),
                 'inbound_path' => $this->stringOrNull($envData['sftp_inbound_path'] ?? null),
                 'processed_path' => $this->stringOrNull($envData['sftp_processed_path'] ?? null),
                 'outbound_path' => $this->stringOrNull($envData['sftp_outbound_path'] ?? null),

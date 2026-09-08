@@ -37,7 +37,7 @@ final class OidcSocialiteFactory
                 'client_id' => $config->clientId,
                 'client_secret' => $config->clientSecret,
                 'redirect' => $config->redirectUri,
-                'tenant' => $config->entraTenantId ?: 'common',
+                'tenant' => $this->requirePinnedEntraTenant($config),
             ],
             OidcProvider::Okta => [
                 'client_id' => $config->clientId,
@@ -59,7 +59,7 @@ final class OidcSocialiteFactory
     private function socialiteConfig(OidcConnectionConfig $config): SocialiteConfig
     {
         $additional = match ($config->provider) {
-            OidcProvider::Entra => ['tenant' => $config->entraTenantId ?: 'common'],
+            OidcProvider::Entra => ['tenant' => $this->requirePinnedEntraTenant($config)],
             OidcProvider::Okta => ['base_url' => rtrim($config->issuer, '/')],
             OidcProvider::Oidc => ['issuer' => rtrim($config->issuer, '/')],
         };
@@ -70,6 +70,23 @@ final class OidcSocialiteFactory
             $config->redirectUri,
             $additional,
         );
+    }
+
+    /**
+     * Entra must target one directory. Falling back to "common" accepts any Entra tenant.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function requirePinnedEntraTenant(OidcConnectionConfig $config): string
+    {
+        $tenantId = $config->pinnedEntraTenantId();
+        if ($tenantId === null) {
+            throw new \InvalidArgumentException(
+                'Microsoft Entra SSO requires a specific directory (tenant) ID; multi-tenant aliases such as common are not allowed.',
+            );
+        }
+
+        return $tenantId;
     }
 
     /**

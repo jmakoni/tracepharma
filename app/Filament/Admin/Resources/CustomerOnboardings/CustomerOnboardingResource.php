@@ -36,7 +36,7 @@ class CustomerOnboardingResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Tenants';
+    protected static string|UnitEnum|null $navigationGroup = 'Tenants / Hub';
 
     protected static ?int $navigationSort = 2;
 

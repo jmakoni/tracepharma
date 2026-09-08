@@ -197,37 +197,31 @@ final class EpcisSubscriptionUrl
             return true;
         }
 
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-            $octets = array_map('intval', explode('.', $ip));
-            if (($octets[0] ?? null) === 127) {
-                return true;
-            }
-            if (($octets[0] ?? null) === 169 && ($octets[1] ?? null) === 254) {
-                return true;
-            }
-            // Deny RFC1918 + CGNAT for subscription webhooks (stricter than WMS on-prem allow).
-            if (($octets[0] ?? null) === 10) {
-                return true;
-            }
-            if (($octets[0] ?? null) === 172 && ($octets[1] ?? 0) >= 16 && ($octets[1] ?? 0) <= 31) {
-                return true;
-            }
-            if (($octets[0] ?? null) === 192 && ($octets[1] ?? null) === 168) {
-                return true;
-            }
-            if (($octets[0] ?? null) === 100 && ($octets[1] ?? 0) >= 64 && ($octets[1] ?? 0) <= 127) {
-                return true;
-            }
-
-            return false;
-        }
-
-        // IPv6: deny loopback / link-local / ULA
-        if ($ip === '::1' || str_starts_with($ip, 'fe80:') || str_starts_with($ip, 'fc') || str_starts_with($ip, 'fd')) {
+        // Same bar as literal IPs in assertSafeTargetUrl (blocks 0.0.0.0/8, 127/8,
+        // 169.254/16, 240/4, RFC1918, and reserved IPv6).
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
             return true;
         }
 
-        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return false;
+        }
+
+        $octets = array_map('intval', explode('.', $ip));
+        $first = $octets[0] ?? null;
+        $second = $octets[1] ?? 0;
+
+        // CGNAT (RFC 6598) — not always covered by FILTER_FLAG_NO_PRIV_RANGE.
+        if ($first === 100 && $second >= 64 && $second <= 127) {
+            return true;
+        }
+
+        // Multicast 224.0.0.0/4 — not in PHP's NO_RES_RANGE set.
+        if ($first !== null && $first >= 224 && $first <= 239) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

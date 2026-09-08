@@ -18,6 +18,7 @@ use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\ReceivingSessions\Pages\ViewReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -910,6 +911,197 @@ class ScanFirstReceivingTest extends TestCase
     }
 
     #[Test]
+    public function sealed_scan_first_without_asn_auto_confirms_open_aggregation_children(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $tenant->save();
+
+            [$parent, $parentUri, $childIds] = $this->createSsccWithOpenAggregationChildren(2);
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                $parentUri,
+                userId: null,
+                autoConfirmChildren: true,
+            );
+
+            $this->assertTrue($confirm['ok'], $confirm['message'] ?? '');
+            $session->refresh();
+            $this->assertSame(1, (int) $session->confirmed_parent_count);
+            $this->assertSame(2, (int) $session->confirmed_child_count);
+            $this->assertSame(2, (int) $session->expected_child_count);
+            $this->assertSame(2, ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->where('status', 'confirmed')
+                ->whereIn('epc_id', $childIds)
+                ->count());
+            $this->assertSame((int) $parent->getKey(), (int) ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->value('parent_epc_id'));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function sealed_scan_first_without_asn_seeds_expected_children_when_auto_confirm_off(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $tenant->save();
+
+            [, $parentUri, $childIds] = $this->createSsccWithOpenAggregationChildren(2);
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                $parentUri,
+                userId: null,
+                autoConfirmChildren: false,
+            );
+
+            $this->assertTrue($confirm['ok'], $confirm['message'] ?? '');
+            $session->refresh();
+            $this->assertSame(1, (int) $session->confirmed_parent_count);
+            $this->assertSame(0, (int) $session->confirmed_child_count);
+            $this->assertSame(2, (int) $session->expected_child_count);
+            $this->assertSame(2, ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->where('status', 'expected')
+                ->whereIn('epc_id', $childIds)
+                ->count());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function sealed_scan_first_with_matched_asn_does_not_pull_unrelated_open_links(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $tenant->save();
+
+            [$ssccUri, $document] = $this->ingestUniqueMinimalFixture();
+            $this->sourceDocumentId = (int) $document->getKey();
+
+            $parent = Epc::query()->where('epc_uri', $ssccUri)->firstOrFail();
+            $asnChildIds = AggregationLink::query()
+                ->where('parent_epc_id', $parent->getKey())
+                ->whereNull('valid_to')
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            $this->assertCount(1, $asnChildIds);
+
+            do {
+                $extraUri = 'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999);
+            } while (Epc::query()->where('epc_uri', $extraUri)->exists());
+            $extraChild = Epc::query()->create(Epc::materializeAttributesFromUri($extraUri));
+            $this->uniqueEpcUris[] = $extraUri;
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $extraChild->getKey(),
+                'established_by_event_id' => null,
+                'link_type' => 'aggregation',
+                'valid_from' => now(),
+                'valid_to' => null,
+            ]);
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                $ssccUri,
+                userId: null,
+                autoConfirmChildren: true,
+            );
+
+            $this->assertTrue($confirm['ok'], $confirm['message'] ?? '');
+            $this->assertNotNull($confirm['matched_asn_document_id'] ?? $session->fresh()->matched_epcis_document_id);
+
+            $session->refresh();
+            $this->assertSame(1, (int) $session->confirmed_child_count);
+            $this->assertSame(1, ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->where('status', 'confirmed')
+                ->whereIn('epc_id', $asnChildIds)
+                ->count());
+            $this->assertSame(0, ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('epc_id', $extraChild->getKey())
+                ->count());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function sticky_matched_asn_does_not_block_open_link_seed_for_later_no_asn_parent(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $tenant->save();
+
+            [$ssccUri, $document] = $this->ingestUniqueMinimalFixture();
+            $this->sourceDocumentId = (int) $document->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $asnConfirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                $ssccUri,
+                userId: null,
+                autoConfirmChildren: true,
+            );
+            $this->assertTrue($asnConfirm['ok'], $asnConfirm['message'] ?? '');
+            $session->refresh();
+            $this->assertNotNull($session->matched_epcis_document_id);
+
+            [, $laterParentUri, $laterChildIds] = $this->createSsccWithOpenAggregationChildren(2);
+
+            $laterConfirm = app(ConfirmReceivingScan::class)->handle(
+                $session->fresh(),
+                $laterParentUri,
+                userId: null,
+                autoConfirmChildren: true,
+            );
+            $this->assertTrue($laterConfirm['ok'], $laterConfirm['message'] ?? '');
+
+            $session->refresh();
+            $this->assertSame(2, ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->where('status', 'confirmed')
+                ->whereIn('epc_id', $laterChildIds)
+                ->count());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function open_transfer_receiving_session_confirm_all_completes_transfer(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -1631,6 +1823,44 @@ class ScanFirstReceivingTest extends TestCase
         $this->uniqueEpcUris = [$ssccUri, $sgtinUri];
 
         return [$ssccUri, $document];
+    }
+
+    /**
+     * Bare scan-first SSCC with open aggregation children (no matched ASN document).
+     *
+     * @return array{0: Epc, 1: string, 2: list<int>}
+     */
+    private function createSsccWithOpenAggregationChildren(int $childCount): array
+    {
+        do {
+            $ssccUri = 'urn:epc:id:sscc:030116.0'.str_pad((string) random_int(0, 9_999_999_999), 10, '0', STR_PAD_LEFT);
+        } while (Epc::query()->where('epc_uri', $ssccUri)->exists());
+
+        $parent = Epc::query()->create(Epc::materializeAttributesFromUri($ssccUri));
+        $this->uniqueEpcUris[] = $ssccUri;
+        $this->epcId = (int) $parent->getKey();
+
+        $childIds = [];
+        for ($i = 0; $i < $childCount; $i++) {
+            do {
+                $sgtinUri = 'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999);
+            } while (Epc::query()->where('epc_uri', $sgtinUri)->exists());
+
+            $child = Epc::query()->create(Epc::materializeAttributesFromUri($sgtinUri));
+            $this->uniqueEpcUris[] = $sgtinUri;
+            $childIds[] = (int) $child->getKey();
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $child->getKey(),
+                'established_by_event_id' => null,
+                'link_type' => 'aggregation',
+                'valid_from' => now(),
+                'valid_to' => null,
+            ]);
+        }
+
+        return [$parent, $ssccUri, $childIds];
     }
 
     /**

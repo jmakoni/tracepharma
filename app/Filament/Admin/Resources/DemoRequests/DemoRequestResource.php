@@ -34,7 +34,7 @@ class DemoRequestResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedInbox;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Tenants';
+    protected static string|UnitEnum|null $navigationGroup = 'Tenants / Hub';
 
     protected static ?int $navigationSort = 3;
 

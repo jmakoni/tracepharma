@@ -313,7 +313,7 @@ class AccountSecurityAuthTest extends TestCase
             'client_secret' => 'client-secret',
             'entra_tenant_id' => 'example',
             'jit_default_role' => TenantRole::ReceivingTechnician->value,
-            'allowed_email_domains' => [],
+            'allowed_email_domains' => ['example.com'],
         ])->saveQuietly();
 
         try {

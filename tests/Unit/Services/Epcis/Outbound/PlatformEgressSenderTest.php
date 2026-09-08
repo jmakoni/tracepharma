@@ -15,6 +15,7 @@ use App\Support\EpcisHub\PlatformOutboundEgress;
 use App\Support\Integrations\PlatformAs2Station;
 use App\Support\Integrations\PlatformSftpConfig;
 use App\Support\PlatformSettings;
+use DomainException;
 use Illuminate\Support\Facades\Http;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -175,22 +176,14 @@ class PlatformEgressSenderTest extends TestCase
             'host' => 'sftp.tracepharma.example.com',
             'username' => 'tracepharma',
             'password' => 'secret',
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
             'outbound_path' => 'outbound/edge',
         ]);
 
         $root = sys_get_temp_dir().'/egress-sftp-'.uniqid();
         $fakeFilesystem = new Filesystem(new LocalFilesystemAdapter($root));
 
-        $sender = new class(app(PlatformOutboundEgress::class), $sftpConfig, app(EpcisHubPlatformConfig::class)) extends SftpOutboundSender
-        {
-            public ?Filesystem $fakeFilesystem = null;
-
-            protected function platformFilesystem(string $environment): Filesystem
-            {
-                return $this->fakeFilesystem ?? parent::platformFilesystem($environment);
-            }
-        };
-        $sender->fakeFilesystem = $fakeFilesystem;
+        $sender = $this->platformSftpSender($sftpConfig, $fakeFilesystem);
 
         $connection = new OutboundConnection([
             'name' => 'UniTrace SFTP via platform',
@@ -208,6 +201,71 @@ class PlatformEgressSenderTest extends TestCase
     }
 
     #[Test]
+    public function sftp_platform_egress_ignores_tenant_outbound_path(): void
+    {
+        $sftpConfig = app(PlatformSftpConfig::class);
+        $sftpConfig->save($this->environment, [
+            'host' => 'sftp.tracepharma.example.com',
+            'username' => 'tracepharma',
+            'password' => 'secret',
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
+            'inbound_path' => 'inbound',
+            'outbound_path' => 'outbound/edge',
+        ]);
+
+        $root = sys_get_temp_dir().'/egress-sftp-ignore-'.uniqid();
+        $fakeFilesystem = new Filesystem(new LocalFilesystemAdapter($root));
+        $sender = $this->platformSftpSender($sftpConfig, $fakeFilesystem);
+
+        $connection = new OutboundConnection([
+            'name' => 'UniTrace SFTP via platform',
+            'transport' => OutboundTransport::Sftp,
+            'network_profile_id' => $this->profile('unitrace')->id,
+            'override_endpoint' => false,
+            'credentials' => [],
+            'settings' => ['outbound_path' => 'tenant/hijack'],
+        ]);
+
+        $sender->send($connection, '<epcis/>', 'doc.xml');
+
+        $this->assertFileExists($root.'/outbound/edge/doc.xml');
+        $this->assertFileDoesNotExist($root.'/tenant/hijack/doc.xml');
+    }
+
+    #[Test]
+    public function sftp_platform_egress_rejects_when_outbound_equals_inbound(): void
+    {
+        $sftpConfig = app(PlatformSftpConfig::class);
+        $sftpConfig->save($this->environment, [
+            'host' => 'sftp.tracepharma.example.com',
+            'username' => 'tracepharma',
+            'password' => 'secret',
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
+            'inbound_path' => '/shared/drop',
+            'outbound_path' => 'shared/drop',
+        ]);
+
+        $sender = $this->platformSftpSender(
+            $sftpConfig,
+            new Filesystem(new LocalFilesystemAdapter(sys_get_temp_dir().'/egress-sftp-collide-'.uniqid())),
+        );
+
+        $connection = new OutboundConnection([
+            'name' => 'UniTrace SFTP via platform',
+            'transport' => OutboundTransport::Sftp,
+            'network_profile_id' => $this->profile('unitrace')->id,
+            'override_endpoint' => false,
+            'credentials' => [],
+            'settings' => [],
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('outbound_path must not equal inbound_path');
+
+        $sender->send($connection, '<epcis/>', 'doc.xml');
+    }
+
+    #[Test]
     public function sftp_send_prefers_connection_credentials_over_platform_edge(): void
     {
         $sftpConfig = app(PlatformSftpConfig::class);
@@ -215,6 +273,7 @@ class PlatformEgressSenderTest extends TestCase
             'host' => 'sftp.tracepharma.example.com',
             'username' => 'tracepharma',
             'password' => 'secret',
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
             'outbound_path' => 'outbound/edge',
         ]);
 
@@ -234,6 +293,22 @@ class PlatformEgressSenderTest extends TestCase
 
         $this->assertFileExists($root.'/partner/inbound/doc.xml');
         $this->assertFileDoesNotExist($root.'/outbound/edge/doc.xml');
+    }
+
+    private function platformSftpSender(PlatformSftpConfig $sftpConfig, Filesystem $fakeFilesystem): SftpOutboundSender
+    {
+        $sender = new class(app(PlatformOutboundEgress::class), $sftpConfig, app(EpcisHubPlatformConfig::class)) extends SftpOutboundSender
+        {
+            public ?Filesystem $fakeFilesystem = null;
+
+            protected function platformFilesystem(string $environment): Filesystem
+            {
+                return $this->fakeFilesystem ?? parent::platformFilesystem($environment);
+            }
+        };
+        $sender->fakeFilesystem = $fakeFilesystem;
+
+        return $sender;
     }
 
     private function profile(string $slug): OutboundNetworkProfile
@@ -274,7 +349,7 @@ class PlatformEgressSenderTest extends TestCase
             PlatformSettings::forget("platform_as2.{$this->environment}.{$key}");
         }
 
-        foreach (['host', 'port', 'username', 'password', 'private_key', 'passphrase', 'inbound_path', 'processed_path', 'outbound_path'] as $key) {
+        foreach (['host', 'port', 'username', 'password', 'private_key', 'passphrase', 'host_fingerprint', 'inbound_path', 'processed_path', 'outbound_path'] as $key) {
             PlatformSettings::forget("platform_sftp.{$this->environment}.{$key}");
         }
     }

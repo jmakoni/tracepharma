@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Actions\Exceptions\StartInvestigatorSla;
 use App\Enums\ExceptionReceiveImpact;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Exceptions\ExceptionActivity;
 use App\Models\Exceptions\ExceptionCase;
 use App\Support\Auth\JobRoleAccess;
@@ -13,7 +14,6 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Exceptions\InvestigatorSlaClock;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -31,9 +31,9 @@ class InvestigatorSla extends Page implements HasKnowledgeBase
 
     protected static ?string $title = 'Investigator SLA';
 
-    protected static ?int $navigationSort = 16;
+    protected static ?int $navigationSort = 2;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Receiving';
+    protected static string|UnitEnum|null $navigationGroup = 'Exceptions';
 
     protected string $view = 'filament.app.pages.investigator-sla';
 

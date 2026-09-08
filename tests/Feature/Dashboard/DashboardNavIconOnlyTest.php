@@ -21,7 +21,7 @@ class DashboardNavIconOnlyTest extends TestCase
     private static bool $demo2TenantReady = false;
 
     #[Test]
-    public function app_dashboard_nav_item_is_icon_only(): void
+    public function app_dashboard_is_hidden_from_sidebar_nav(): void
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
 
@@ -52,7 +52,7 @@ class DashboardNavIconOnlyTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('app'));
 
         try {
-            $this->assertNavItemIsIconOnly(AppDashboard::getNavigationItems());
+            $this->assertFalse(AppDashboard::shouldRegisterNavigation());
         } finally {
             tenancy()->end();
         }

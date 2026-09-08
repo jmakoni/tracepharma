@@ -198,9 +198,14 @@ class TenantSettingsTest extends TestCase
     {
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.0.0.1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.1.2.3'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0.0.0.0'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0.1.2.3'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::ffff:0.0.0.0'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.169.254'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.1.1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0:0:0:0:0:0:0:0'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('fe80::1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::ffff:127.0.0.1'));
         $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('10.1.2.3'));
@@ -371,6 +376,31 @@ class TenantSettingsTest extends TestCase
         $this->assertNotContains('default_ship_from_site', $ids);
         $this->assertNotContains('downstream_partner', $ids);
         $this->assertNotContains('outbound_configured', $ids);
+    }
+
+    #[Test]
+    public function save_sso_config_requires_allowed_email_domains_when_enabled(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('SSO allowed email domains are required');
+
+            TenantSettings::forTenant($tenant)->saveSsoConfig([
+                'enabled' => true,
+                'sso_only' => false,
+                'provider' => 'entra',
+                'issuer' => 'https://login.microsoftonline.com/example/v2.0',
+                'client_id' => 'client-id',
+                'client_secret' => 'client-secret',
+                'entra_tenant_id' => 'example',
+                'jit_default_role' => null,
+                'allowed_email_domains' => [],
+            ]);
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
     }
 
     private function createCentralTenant(): Tenant

@@ -27,6 +27,8 @@ class EditOutboundConnection extends EditRecord
 
     protected static string $resource = OutboundConnectionResource::class;
 
+    private ?string $securityFingerprintBeforeSave = null;
+
     protected function getHeaderActions(): array
     {
         return [
@@ -61,6 +63,13 @@ class EditOutboundConnection extends EditRecord
     {
         unset($data['conformance_state']);
 
+        /** @var OutboundConnection $record */
+        $record = $this->record;
+        // Form getState() may already have written scalar attributes onto $record;
+        // fingerprint the persisted row so Approved re-pend compares pre-edit values.
+        $this->securityFingerprintBeforeSave = app(RegisterConnectionApprovalRequest::class)
+            ->securityFingerprint($record->fresh() ?? $record);
+
         $existingSettings = $this->record->settings ?? [];
         $incomingSettings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
         $data['settings'] = array_merge($existingSettings, $incomingSettings);
@@ -82,8 +91,12 @@ class EditOutboundConnection extends EditRecord
 
     private function syncApprovalRequest(OutboundConnection $record): void
     {
-        // Editing a rejected or suspended connection resubmits it for platform review.
-        if ($record->isRejected() || $record->isSuspended()) {
+        $registrar = app(RegisterConnectionApprovalRequest::class);
+        $fingerprintChanged = $this->securityFingerprintBeforeSave !== null
+            && $this->securityFingerprintBeforeSave !== $registrar->securityFingerprint($record);
+
+        // Rejected/suspended always resubmit; Approved only when security-sensitive fields change.
+        if ($record->isRejected() || $record->isSuspended() || ($record->isApproved() && $fingerprintChanged)) {
             $record->approval_status = ConnectionApprovalStatus::Pending;
             $record->approval_note = null;
             $record->save();
@@ -91,7 +104,7 @@ class EditOutboundConnection extends EditRecord
         }
 
         if ($record->isPendingApproval()) {
-            app(RegisterConnectionApprovalRequest::class)->register($record);
+            $registrar->register($record);
         }
     }
 

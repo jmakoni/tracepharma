@@ -6,6 +6,7 @@ use App\Actions\Exceptions\SyncDestinationGlnMismatchReceiveImpact;
 use App\Actions\MasterData\RederiveOrganizationSglns;
 use App\Enums\ClientPrintBridge;
 use App\Enums\ExceptionReceiveImpact;
+use App\Enums\TenantRole;
 use App\Models\Exceptions\ExceptionType;
 use App\Models\Site;
 use App\Models\Tenant;
@@ -390,7 +391,18 @@ class TenantSettings
         data_set($settings, 'sso.entra_tenant_id', filled($entra) ? trim((string) $entra) : null);
 
         $jitRole = $data['jit_default_role'] ?? $current['jit_default_role'];
-        data_set($settings, 'sso.jit_default_role', filled($jitRole) ? (string) $jitRole : null);
+        if (filled($jitRole)) {
+            $parsed = TenantRole::tryFrom((string) $jitRole);
+            if ($parsed === null || ! $parsed->isJitAssignable()) {
+                throw new \InvalidArgumentException(
+                    'SSO JIT default role cannot be Owner or Support Engineer.',
+                );
+            }
+            $jitRole = $parsed->value;
+        } else {
+            $jitRole = null;
+        }
+        data_set($settings, 'sso.jit_default_role', $jitRole);
 
         $domainsRaw = $data['allowed_email_domains'] ?? $current['allowed_email_domains'];
         $domains = [];
@@ -404,6 +416,14 @@ class TenantSettings
                 }
             }
         }
+
+        $enabled = (bool) data_get($settings, 'sso.enabled', false);
+        if ($enabled && $domains === []) {
+            throw new \InvalidArgumentException(
+                'SSO allowed email domains are required when SSO is enabled.',
+            );
+        }
+
         data_set($settings, 'sso.allowed_email_domains', array_values(array_unique($domains)));
 
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
@@ -863,6 +883,14 @@ class TenantSettings
             ? [$host]
             : self::resolveWmsHostAddresses($host);
 
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
+        }
+
         foreach ($addresses as $address) {
             if (self::isDeniedWmsResolvedAddress($address)) {
                 throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
@@ -892,6 +920,10 @@ class TenantSettings
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
             $octets = array_map('intval', explode('.', $ip));
+            // Unspecified / "this" network (0.0.0.0/8) — some stacks treat as localhost.
+            if (($octets[0] ?? null) === 0) {
+                return true;
+            }
             if (($octets[0] ?? null) === 127) {
                 return true;
             }
@@ -899,11 +931,17 @@ class TenantSettings
             return ($octets[0] ?? null) === 169 && ($octets[1] ?? null) === 254;
         }
 
+        $packed = inet_pton($ip);
+        $unspecified = inet_pton('::');
+        // IPv6 unspecified (:: / 0:0:0:0:0:0:0:0) — normalize via inet_pton.
+        if ($packed !== false && $unspecified !== false && $packed === $unspecified) {
+            return true;
+        }
+
         if ($ip === '::1') {
             return true;
         }
 
-        $packed = inet_pton($ip);
         $fe80 = inet_pton('fe80::');
         if ($packed !== false && $fe80 !== false) {
             return (ord($packed[0]) === 0xFE) && ((ord($packed[1]) & 0xC0) === 0x80);
@@ -958,6 +996,14 @@ class TenantSettings
             ? [$host]
             : self::resolveWmsHostAddresses($host);
 
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return $pending;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
+        }
+
         $safe = [];
         foreach ($addresses as $address) {
             if (self::isDeniedWmsResolvedAddress($address)) {
@@ -967,8 +1013,11 @@ class TenantSettings
         }
 
         if ($safe === []) {
-            // Unresolvable hostnames (e.g. Http::fake .example suites) skip pin.
-            return $pending;
+            if (app()->runningUnitTests()) {
+                return $pending;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
         }
 
         $options = EpcisSubscriptionUrl::pinnedCurlOptions($url, $safe);

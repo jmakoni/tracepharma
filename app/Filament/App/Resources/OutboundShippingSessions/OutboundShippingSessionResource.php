@@ -31,7 +31,7 @@ class OutboundShippingSessionResource extends Resource implements HasKnowledgeBa
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Ship';
+    protected static string|UnitEnum|null $navigationGroup = 'Shipping';
 
     protected static ?int $navigationSort = 10;
 

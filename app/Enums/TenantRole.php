@@ -32,6 +32,9 @@ enum TenantRole: string
     case PharmacyInventoryManager = 'pharmacy_inventory_manager';
     case PharmacySystemAdministrator = 'pharmacy_system_administrator';
 
+    // Buying group — least-privilege SSO JIT (not Owner / Support Engineer)
+    case BuyingGroupMember = 'buying_group_member';
+
     public function label(): string
     {
         return match ($this) {
@@ -53,7 +56,16 @@ enum TenantRole: string
             self::DispensingPharmacist => 'Dispensing Pharmacist',
             self::PharmacyInventoryManager => 'Pharmacy Inventory Manager',
             self::PharmacySystemAdministrator => 'Pharmacy System Administrator',
+            self::BuyingGroupMember => 'Buying Group Member',
         };
+    }
+
+    /**
+     * Roles that SSO JIT may assign (never Owner or Support Engineer).
+     */
+    public function isJitAssignable(): bool
+    {
+        return ! in_array($this, [self::Owner, self::SupportEngineer], true);
     }
 
     /**
@@ -97,6 +109,7 @@ enum TenantRole: string
             ],
             TenantProfile::BuyingGroup => [
                 self::SupportEngineer,
+                self::BuyingGroupMember,
             ],
         };
 
@@ -114,24 +127,45 @@ enum TenantRole: string
     }
 
     /**
-     * Least-privilege JIT default for SSO-created users (never Owner).
+     * JIT-selectable roles for a profile (excludes Owner and Support Engineer).
+     *
+     * @return array<string, string>
+     */
+    public static function jitOptionsForProfile(TenantProfile $profile): array
+    {
+        return collect(self::forProfile($profile))
+            ->filter(fn (self $role): bool => $role->isJitAssignable())
+            ->mapWithKeys(fn (self $role): array => [$role->value => $role->label()])
+            ->all();
+    }
+
+    /**
+     * Least-privilege JIT default for SSO-created users (never Owner or Support Engineer).
      */
     public static function jitDefaultForProfile(TenantProfile $profile): self
     {
-        $roles = self::forProfile($profile);
+        $roles = array_values(array_filter(
+            self::forProfile($profile),
+            static fn (self $role): bool => $role->isJitAssignable(),
+        ));
 
         foreach ([
             self::ReceivingTechnician,
             self::PackagingLineOperator,
             self::OutboundPickAndPackLead,
             self::MasterDataAdministrator,
-            self::SupportEngineer,
+            self::BuyingGroupMember,
         ] as $candidate) {
             if (in_array($candidate, $roles, true)) {
                 return $candidate;
             }
         }
 
-        return self::SupportEngineer;
+        if ($roles !== []) {
+            return $roles[0];
+        }
+
+        // Profiles always include at least one JIT-assignable persona after BuyingGroupMember.
+        return self::BuyingGroupMember;
     }
 }

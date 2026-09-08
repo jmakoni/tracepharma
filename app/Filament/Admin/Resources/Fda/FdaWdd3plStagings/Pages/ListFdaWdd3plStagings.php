@@ -2,16 +2,11 @@
 
 namespace App\Filament\Admin\Resources\Fda\FdaWdd3plStagings\Pages;
 
-use App\Actions\Fda\PromoteFdaWdd3plToCatalogSites;
-use App\Exceptions\FdaStagingCollapsedException;
-use App\Exceptions\FdaStagingImportIncompleteException;
 use App\Filament\Admin\Resources\Fda\FdaWdd3plStagings\FdaWdd3plStagingResource;
 use App\Jobs\ImportFdaDatasetJob;
-use App\Jobs\SyncTenantAtpLicensesFromFda;
 use App\Models\Fda\FdaWdd3plStaging;
 use App\Models\Fda\FdaWdd3plUnmatched;
 use App\Support\Auth\Permissions;
-use App\Support\Fda\FdaStagingSnapshotSize;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
 use App\Filament\Notifications\Notification;
@@ -72,73 +67,12 @@ class ListFdaWdd3plStagings extends ListRecords
                         ->success()
                         ->send();
                 }),
-            Action::make('promoteToCatalog')
-                ->label('Promote to catalog')
-                ->icon(Heroicon::OutlinedArrowUpCircle)
-                ->color('primary')
-                ->visible(false)
-                ->authorize(fn (): bool => self::canCurateCatalog())
-                ->requiresConfirmation()
-                ->modalHeading('Promote staging to catalog')
-                ->modalDescription(function (): string {
-                    $description = 'Creates or updates catalog sites and ATP license records from staging rows, marks licenses this snapshot no longer lists as dropped from the FDA listing, then queues tenant ATP sync. Records the listing only — it does not authorize partners.';
-                    $size = FdaStagingSnapshotSize::measure();
-
-                    return $size->hasCollapsed()
-                        ? $size->summary().' Promoting a short load would mark the facilities it left out as dropped from the FDA listing. '.$description
-                        : $description;
-                })
-                // The override only appears when there is something to override, so the
-                // usual promote stays a single confirmation.
-                ->schema(fn (): array => FdaStagingSnapshotSize::measure()->hasCollapsed()
-                    ? [
-                        Toggle::make('force')
-                            ->label('Promote anyway')
-                            ->helperText('Staging holds far fewer rows than the last import. Only promote if the short file is genuinely what the FDA published.')
-                            ->default(false),
-                    ]
-                    : [])
-                ->action(function (array $data): void {
-                    abort_unless(self::canCurateCatalog(), 403);
-
-                    try {
-                        $counts = app(PromoteFdaWdd3plToCatalogSites::class)
-                            ->handle(false, (bool) ($data['force'] ?? false));
-                    } catch (FdaStagingImportIncompleteException|FdaStagingCollapsedException $exception) {
-                        Notification::make()
-                            ->title('Promotion blocked')
-                            ->body($exception->getMessage())
-                            ->danger()
-                            ->send();
-
-                        return;
-                    }
-
-                    SyncTenantAtpLicensesFromFda::dispatchForAllTenants();
-
-                    Notification::make()
-                        ->title('Promotion complete')
-                        ->body(
-                            'Processed: '.$counts['processed']
-                            .' · Sites created: '.$counts['sites_created']
-                            .' · Sites matched: '.$counts['sites_matched']
-                            .' · Licenses upserted: '.$counts['licenses_upserted']
-                            .' · Licenses relocated: '.$counts['licenses_relocated']
-                            .' · Licenses delisted: '.$counts['licenses_delisted']
-                            .' · Skipped: '.$counts['skipped']
-                            .' · Unreadable expirations: '.$counts['expirations_unparsed']
-                            .' · Tenant ATP sync queued.'
-                        )
-                        ->success()
-                        ->send();
-                }),
         ];
     }
 
     /**
-     * Import truncates staging and promote rewrites the catalog sites and ATP licences
-     * every tenant resolves against, delisting whatever the snapshot leaves out — the same
-     * reach the catalog policies already gate, so both need the catalog permission.
+     * Import truncates staging and rewrites FDA registry facilities/licenses every
+     * tenant resolves against — the same reach the catalog policies already gate.
      */
     private static function canCurateCatalog(): bool
     {

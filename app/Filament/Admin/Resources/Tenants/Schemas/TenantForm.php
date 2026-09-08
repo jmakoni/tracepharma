@@ -7,6 +7,7 @@ use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Models\Tenant;
+use App\Support\Auth\OidcConnectionConfig;
 use App\Support\Auth\OidcProvider;
 use App\Support\Auth\Permissions;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
@@ -247,21 +248,37 @@ class TenantForm
                             ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
                         TextInput::make('sso_entra_tenant_id')
                             ->label('Entra directory (tenant) ID')
+                            ->required(fn (Get $get): bool => (bool) $get('sso_enabled')
+                                && $get('sso_provider') === OidcProvider::Entra->value)
                             ->maxLength(64)
+                            ->helperText('Required for Entra. Use the directory GUID — not common, organizations, or consumers.')
+                            ->rules([
+                                fn (Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                    if (! (bool) $get('sso_enabled') || $get('sso_provider') !== OidcProvider::Entra->value) {
+                                        return;
+                                    }
+
+                                    $id = is_string($value) ? trim($value) : '';
+                                    if ($id === '' || in_array(strtolower($id), OidcConnectionConfig::ENTRA_MULTI_TENANT_ALIASES, true)) {
+                                        $fail('Enter a specific Entra directory (tenant) ID. Multi-tenant aliases are not allowed.');
+                                    }
+                                },
+                            ])
                             ->visible(fn (Get $get): bool => (bool) $get('sso_enabled') && $get('sso_provider') === OidcProvider::Entra->value),
                         Select::make('sso_jit_default_role')
                             ->label('JIT default role')
                             ->options(fn (?Tenant $record): array => $record
-                                ? TenantRole::optionsForProfile(
+                                ? TenantRole::jitOptionsForProfile(
                                     TenantProfile::tryFrom((string) $record->profile) ?? TenantProfile::Pharmacy
                                 )
                                 : [])
                             ->native(false)
-                            ->helperText('Assigned when SSO creates a new user. Never creates Owners automatically unless selected.')
+                            ->helperText('Assigned when SSO creates a new user. Owner and Support Engineer are never assigned by JIT.')
                             ->visible(fn (Get $get): bool => (bool) $get('sso_enabled')),
                         TextInput::make('sso_allowed_email_domains')
-                            ->label('Allowed email domains (JIT)')
-                            ->helperText('Comma-separated. Empty allows any domain. Example: acme.com, acme.co')
+                            ->label('Allowed email domains (SSO)')
+                            ->required(fn (Get $get): bool => (bool) $get('sso_enabled'))
+                            ->helperText('Comma-separated. Required for SSO sign-in (including existing users). Example: acme.com, acme.co')
                             ->visible(fn (Get $get): bool => (bool) $get('sso_enabled'))
                             ->columnSpanFull(),
                     ]),

@@ -33,7 +33,7 @@ class PlatformAnalytics extends Page implements HasKnowledgeBase
 
     protected static ?int $navigationSort = 1;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Operations';
+    protected static string|UnitEnum|null $navigationGroup = 'Platform';
 
     protected string $view = 'filament.admin.pages.platform-analytics';
 

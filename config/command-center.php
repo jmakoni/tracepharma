@@ -872,8 +872,6 @@ return [
             'flags' => [
                 '--fresh-download' => ['label' => 'Fresh download'],
                 '--report' => ['label' => 'Write unmatched CSV report'],
-                '--promote' => ['label' => 'Promote to catalog sites'],
-                '--force' => ['label' => 'Force promote', 'help' => 'Promote even when this import loaded far fewer rows than the last one.'],
             ],
         ],
         'fda-import-mckesson-sold-ship-to' => [

@@ -114,6 +114,9 @@ final class TenantRoleSeeder
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
             ],
+
+            // Dashboard-only: buying-group tenants have no floor ops; Owners assign access later.
+            TenantRole::BuyingGroupMember => [],
         };
     }
 

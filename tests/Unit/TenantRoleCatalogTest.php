@@ -96,4 +96,33 @@ class TenantRoleCatalogTest extends TestCase
         $this->assertSame('Support Engineer', TenantRole::SupportEngineer->label());
         $this->assertSame('support_engineer', TenantRole::SupportEngineer->value);
     }
+
+    #[Test]
+    public function jit_default_never_returns_owner_or_support_engineer(): void
+    {
+        foreach (TenantProfile::cases() as $profile) {
+            $role = TenantRole::jitDefaultForProfile($profile);
+            $this->assertTrue($role->isJitAssignable(), $profile->value);
+            $this->assertNotSame(TenantRole::Owner, $role, $profile->value);
+            $this->assertNotSame(TenantRole::SupportEngineer, $role, $profile->value);
+        }
+    }
+
+    #[Test]
+    public function buying_group_jit_default_is_buying_group_member(): void
+    {
+        $this->assertSame(
+            TenantRole::BuyingGroupMember,
+            TenantRole::jitDefaultForProfile(TenantProfile::BuyingGroup),
+        );
+        $this->assertSame([], TenantRoleSeeder::permissionNamesFor(TenantRole::BuyingGroupMember));
+        $this->assertArrayNotHasKey(
+            TenantRole::Owner->value,
+            TenantRole::jitOptionsForProfile(TenantProfile::BuyingGroup),
+        );
+        $this->assertArrayNotHasKey(
+            TenantRole::SupportEngineer->value,
+            TenantRole::jitOptionsForProfile(TenantProfile::BuyingGroup),
+        );
+    }
 }

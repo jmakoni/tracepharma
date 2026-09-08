@@ -84,6 +84,7 @@ return [
         'authored_payload_disk' => env('TRACEPHARMA_EPCIS_AUTHORED_PAYLOAD_DISK', 'local'),
         'inbound_url_ttl_minutes' => (int) env('EPCIS_INBOUND_URL_TTL', 15),
         'inbound_bucket' => env('EPCIS_INBOUND_BUCKET', env('AWS_BUCKET')),
+        'inbound_url' => env('EPCIS_INBOUND_URL', env('AWS_URL')),
         // Event-row archive cutoff (MOVE into epcis_events_archive). Never deletes payloads.
         'retention_years' => (int) env('TRACEPHARMA_EPCIS_RETENTION_YEARS', 6),
         // Fallback TI pedigree source when DB fragments are missing. Prefer

@@ -33,7 +33,7 @@ class DashboardPreferences extends Page
 
     protected static ?int $navigationSort = 2;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|UnitEnum|null $navigationGroup = 'Platform';
 
     protected string $view = 'filament.admin.pages.dashboard-preferences';
 

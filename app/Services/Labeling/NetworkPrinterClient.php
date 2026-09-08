@@ -9,11 +9,13 @@ class NetworkPrinterClient
 {
     public function send(string $host, int $port, string $payload, int $timeoutSeconds = 5): void
     {
-        self::assertSafePrinterHost($host);
+        $addresses = self::assertSafePrinterHost($host);
+        // Pin to a resolved safe address so DNS cannot rebind to metadata/loopback after the check.
+        $connectHost = self::fsockopenHost($addresses[0]);
 
         $errno = 0;
         $errstr = '';
-        $socket = @fsockopen($host, $port, $errno, $errstr, $timeoutSeconds);
+        $socket = @fsockopen($connectHost, $port, $errno, $errstr, $timeoutSeconds);
 
         if ($socket === false) {
             throw new \RuntimeException("Unable to connect to printer at {$host}:{$port} — {$errstr} ({$errno})");
@@ -33,10 +35,13 @@ class NetworkPrinterClient
     /**
      * Deny loopback / link-local / cloud metadata before fsockopen.
      * RFC1918 remains allowed for on-prem warehouse printers (same posture as WMS).
+     * Unresolvable hostnames fail closed.
+     *
+     * @return non-empty-list<string> Safe resolved addresses (use for connect pinning).
      *
      * @throws \InvalidArgumentException
      */
-    public static function assertSafePrinterHost(string $host): void
+    public static function assertSafePrinterHost(string $host): array
     {
         $host = EpcisSubscriptionUrl::unwrapIpv4MappedAddress(trim($host));
 
@@ -70,5 +75,19 @@ class NetworkPrinterClient
                 );
             }
         }
+
+        return array_values($addresses);
+    }
+
+    /**
+     * Format a vetted IP for fsockopen (bracket IPv6).
+     */
+    public static function fsockopenHost(string $address): string
+    {
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            return '['.$address.']';
+        }
+
+        return $address;
     }
 }

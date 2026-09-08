@@ -95,7 +95,7 @@ class FdaWdd3plCurationPermissionTest extends TestCase
     }
 
     #[Test]
-    public function the_staging_screen_refuses_import_and_promote_from_support(): void
+    public function the_staging_screen_refuses_import_from_support(): void
     {
         $this->stagingRow();
 
@@ -104,20 +104,15 @@ class FdaWdd3plCurationPermissionTest extends TestCase
         Livewire::test(ListFdaWdd3plStagings::class)
             ->assertSuccessful()
             ->assertActionHidden(TestAction::make('importWdd3pl'))
-            ->assertActionHidden(TestAction::make('promoteToCatalog'))
             ->mountAction(TestAction::make('importWdd3pl'))
-            ->assertActionNotMounted()
-            ->mountAction(TestAction::make('promoteToCatalog'))
             ->assertActionNotMounted();
 
-        // Import truncates staging and promote is a no-op.
         $this->assertSame(1, FdaWdd3plStaging::query()->count());
 
         $this->actAsAdmin(AdminRole::PlatformAdmin);
 
         Livewire::test(ListFdaWdd3plStagings::class)
-            ->assertActionVisible(TestAction::make('importWdd3pl'))
-            ->assertActionHidden(TestAction::make('promoteToCatalog'));
+            ->assertActionVisible(TestAction::make('importWdd3pl'));
     }
 
     private function actAsAdmin(AdminRole $role): Admin

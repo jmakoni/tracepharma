@@ -42,12 +42,8 @@ class FdaWdd3plStagingsTable
             ])
             ->defaultSort('expiration_date')
             ->filters([
-                Filter::make('unpromoted')
-                    ->label('Unpromoted')
-                    ->toggle()
-                    ->query(fn (Builder $query): Builder => $query->unpromoted()),
-                Filter::make('missing_promote_fields')
-                    ->label('Missing promote fields')
+                Filter::make('incomplete_license_fields')
+                    ->label('Incomplete license fields')
                     ->toggle()
                     ->query(fn (Builder $query): Builder => $query->missingPromoteFields()),
                 SelectFilter::make('facility_type')

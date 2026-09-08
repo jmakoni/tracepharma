@@ -23,6 +23,7 @@ class PlatformSftpConfig
         'password',
         'private_key',
         'passphrase',
+        'host_fingerprint',
         'inbound_path',
         'processed_path',
         'outbound_path',
@@ -60,6 +61,11 @@ class PlatformSftpConfig
         return $this->value($environment, 'passphrase');
     }
 
+    public function hostFingerprint(string $environment): ?string
+    {
+        return $this->value($environment, 'host_fingerprint');
+    }
+
     public function inboundPath(string $environment): string
     {
         return $this->value($environment, 'inbound_path') ?? '/';
@@ -79,6 +85,7 @@ class PlatformSftpConfig
     {
         return $this->host($environment) !== null
             && $this->username($environment) !== null
+            && $this->hostFingerprint($environment) !== null
             && ($this->password($environment) !== null || $this->privateKey($environment) !== null);
     }
 

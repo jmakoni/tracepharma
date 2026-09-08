@@ -30,7 +30,7 @@ class FdaOrganizationResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice2;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Registry';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 10;
 

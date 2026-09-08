@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Filament\Admin\Resources\ConnectionRequests\ConnectionRequestResource;
 use App\Models\Admin;
 use App\Models\ConnectionApprovalRequest;
 use Illuminate\Bus\Queueable;
@@ -46,7 +47,10 @@ class ConnectionReviewRequestedNotification extends Notification implements Shou
                 $this->connectionName,
                 $this->counterparty !== null ? " with {$this->counterparty}" : '',
             ))
-            ->action('Review connection requests', url('/admin/connection-requests'));
+            ->action(
+                'Review connection requests',
+                ConnectionRequestResource::getUrl(panel: 'admin'),
+            );
     }
 
     /**
@@ -54,11 +58,14 @@ class ConnectionReviewRequestedNotification extends Notification implements Shou
      */
     public function toArray(object $notifiable): array
     {
+        $url = ConnectionRequestResource::getUrl(panel: 'admin');
+
         return [
             'subject' => "Connection review requested: {$this->connectionName}",
             'message' => sprintf('Tenant [%s] %s connection awaits review.', $this->tenantId, $this->direction),
             'request_id' => $this->requestId,
-            'action_path' => '/admin/connection-requests',
+            'action_url' => $url,
+            'action_path' => parse_url($url, PHP_URL_PATH) ?: '/connection-requests',
         ];
     }
 

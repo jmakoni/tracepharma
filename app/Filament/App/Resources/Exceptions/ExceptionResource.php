@@ -29,9 +29,9 @@ class ExceptionResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedExclamationTriangle;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Receiving';
+    protected static string|UnitEnum|null $navigationGroup = 'Exceptions';
 
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $navigationLabel = 'Exceptions';
 

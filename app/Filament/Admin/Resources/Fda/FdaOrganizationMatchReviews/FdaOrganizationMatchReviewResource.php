@@ -25,7 +25,7 @@ class FdaOrganizationMatchReviewResource extends Resource implements HasKnowledg
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedQueueList;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Registry';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 60;
 

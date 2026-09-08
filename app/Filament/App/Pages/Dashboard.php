@@ -37,15 +37,9 @@ class Dashboard extends BaseDashboard
 
     private const ONBOARDING_REDIRECT_SESSION_KEY = 'filament.app.onboarding_wizard_redirected';
 
-    public static function getNavigationItems(): array
+    public static function shouldRegisterNavigation(): bool
     {
-        return array_map(static function ($item) {
-            return $item->extraAttributes([
-                'class' => 'tp-nav-icon-only',
-                'title' => __('filament-panels::pages/dashboard.title'),
-                'aria-label' => __('filament-panels::pages/dashboard.title'),
-            ]);
-        }, parent::getNavigationItems());
+        return false;
     }
 
     public function mount(): void

@@ -7,8 +7,10 @@ namespace App\Support\EpcisHub;
 use App\Support\PlatformSettings;
 use App\Support\TenantHostname;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 use Stancl\Tenancy\Database\Models\Domain;
 use Throwable;
 
@@ -154,30 +156,35 @@ class EpcisHubPlatformConfig
      * Rotate the hub token: the current effective token (settings or config
      * fallback) stays accepted for a grace period so partners can cut over
      * without downtime. Returns the new token.
+     *
+     * Rotation is serialized per environment so concurrent rotates cannot
+     * clobber previous-token / grace-window metadata.
      */
     public function rotateHubToken(string $environment): string
     {
         $environment = $this->normalizeEnvironment($environment);
 
-        $current = $this->hubToken($environment);
-        $previousKey = "epcis_hub.{$environment}.hub_token_previous";
-        $expiresKey = "epcis_hub.{$environment}.hub_token_previous_expires_at";
+        return Cache::lock("epcis_hub.token_rotate.{$environment}", 10)->block(5, function () use ($environment): string {
+            $current = $this->hubToken($environment);
+            $previousKey = "epcis_hub.{$environment}.hub_token_previous";
+            $expiresKey = "epcis_hub.{$environment}.hub_token_previous_expires_at";
 
-        if (is_string($current) && $current !== '') {
-            PlatformSettings::put($previousKey, $current);
-            PlatformSettings::put(
-                $expiresKey,
-                now()->addHours(self::TOKEN_ROTATION_GRACE_HOURS)->toIso8601String(),
-            );
-        } else {
-            PlatformSettings::forget($previousKey);
-            PlatformSettings::forget($expiresKey);
-        }
+            if (is_string($current) && $current !== '') {
+                PlatformSettings::put($previousKey, $current);
+                PlatformSettings::put(
+                    $expiresKey,
+                    now()->addHours(self::TOKEN_ROTATION_GRACE_HOURS)->toIso8601String(),
+                );
+            } else {
+                PlatformSettings::forget($previousKey);
+                PlatformSettings::forget($expiresKey);
+            }
 
-        $token = Str::random(64);
-        PlatformSettings::put("epcis_hub.{$environment}.hub_token", $token);
+            $token = Str::random(64);
+            PlatformSettings::put("epcis_hub.{$environment}.hub_token", $token);
 
-        return $token;
+            return $token;
+        });
     }
 
     /**
@@ -215,13 +222,53 @@ class EpcisHubPlatformConfig
 
     /**
      * The hub environment this deployment serves, derived from the app's own host.
+     *
+     * Unmapped hosts fail closed on production-like deploys. Demo fallback is
+     * allowed only for clearly local/demo contexts (app.env local/testing, or
+     * localhost / *.test / *.local hosts).
      */
     public function currentEnvironment(): string
     {
         $host = parse_url((string) config('app.url'), PHP_URL_HOST);
-        $environment = is_string($host) ? $this->environmentForHost($host) : null;
+        $normalizedHost = is_string($host) ? strtolower(trim($host)) : null;
+        $environment = is_string($normalizedHost) && $normalizedHost !== ''
+            ? $this->environmentForHost($normalizedHost)
+            : null;
 
-        return $environment ?? 'demo';
+        if ($environment !== null) {
+            return $environment;
+        }
+
+        if ($this->allowsUnmappedHostDemoFallback($normalizedHost)) {
+            return 'demo';
+        }
+
+        $displayHost = is_string($normalizedHost) && $normalizedHost !== ''
+            ? $normalizedHost
+            : '(empty)';
+
+        throw new RuntimeException(
+            "Unable to resolve EPCIS hub environment for APP_URL host [{$displayHost}]. Map the host via hub settings or testing_hosts.",
+        );
+    }
+
+    private function allowsUnmappedHostDemoFallback(?string $host): bool
+    {
+        $appEnv = strtolower((string) config('app.env'));
+
+        if (in_array($appEnv, ['local', 'testing'], true)) {
+            return true;
+        }
+
+        if ($host === null || $host === '') {
+            return false;
+        }
+
+        if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+            return true;
+        }
+
+        return str_ends_with($host, '.test') || str_ends_with($host, '.local');
     }
 
     /**

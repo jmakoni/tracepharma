@@ -18,7 +18,7 @@ class FdaWdd3plUnmatchedResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedQuestionMarkCircle;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Operations';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 21;
 

@@ -35,6 +35,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AtpLicensesRelationManager extends RelationManager
@@ -113,7 +114,7 @@ class AtpLicensesRelationManager extends RelationManager
                 ->dehydrated(fn (Get $get): bool => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US')
                 ->formatStateUsing(fn (?string $state): ?string => UsState::normalize($state))
                 ->rule(fn (Get $get): mixed => AtpLicenseRelevance::normalizeCountry($get('license_country')) === 'US'
-                    ? \Illuminate\Validation\Rule::in(UsState::codes())
+                    ? Rule::in(UsState::codes())
                     : null)
                 ->dehydrateStateUsing(fn (?string $state): string => strtoupper(trim((string) $state))),
             TextInput::make('license_jurisdiction')
@@ -320,7 +321,7 @@ class AtpLicensesRelationManager extends RelationManager
      */
     private static function assertUniqueLicense(Model $site, array $data, ?AtpLicense $ignore = null): void
     {
-        $rule = \Illuminate\Validation\Rule::unique('atp_licenses', 'license_number')
+        $rule = Rule::unique('atp_licenses', 'license_number')
             ->where('site_id', $site->getKey())
             ->where('license_country', $data['license_country'] ?? 'US')
             ->where('license_state', $data['license_state'] ?? '');

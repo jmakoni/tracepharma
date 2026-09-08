@@ -34,6 +34,25 @@ class EpcisSubscriptionUrlTest extends TestCase
     }
 
     #[Test]
+    public function rejects_this_network_multicast_and_reserved_ipv4(): void
+    {
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('0.0.0.0'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('0.0.0.1'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('224.0.0.1'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('239.255.255.255'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('240.0.0.1'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('255.255.255.255'));
+        $this->assertTrue(EpcisSubscriptionUrl::isDeniedResolvedAddress('100.64.0.1'));
+    }
+
+    #[Test]
+    public function resolve_safe_addresses_rejects_literal_this_network_ip(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        EpcisSubscriptionUrl::resolveSafeAddresses('https://0.0.0.0/hooks/epcis');
+    }
+
+    #[Test]
     public function resolve_safe_addresses_returns_literal_public_ip(): void
     {
         $addresses = EpcisSubscriptionUrl::resolveSafeAddresses('https://8.8.8.8/hooks/epcis');

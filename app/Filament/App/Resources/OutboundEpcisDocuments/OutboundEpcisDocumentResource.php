@@ -31,7 +31,7 @@ class OutboundEpcisDocumentResource extends Resource implements HasKnowledgeBase
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPaperAirplane;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Ship';
+    protected static string|UnitEnum|null $navigationGroup = 'Shipping';
 
     protected static ?int $navigationSort = 20;
 

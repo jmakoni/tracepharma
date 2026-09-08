@@ -85,6 +85,123 @@ class OidcSsoTest extends TestCase
     }
 
     #[Test]
+    public function tenant_jit_rejects_owner_default_role(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::Owner->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'oid-sub-owner-jit',
+                'name' => 'Would Be Owner',
+                'email' => 'owner.jit@acme.test',
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessageMatches('/Owner or Support Engineer/i');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            $this->cleanupUsers();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_jit_rejects_support_engineer_default_role(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::SupportEngineer->value,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'oid-sub-se-jit',
+                'name' => 'Would Be Support',
+                'email' => 'support.jit@acme.test',
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessageMatches('/Owner or Support Engineer/i');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            $this->cleanupUsers();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function buying_group_jit_defaults_to_buying_group_member(): void
+    {
+        $tenant = $this->initializeBuyingGroupTenant();
+
+        try {
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: null,
+                allowedEmailDomains: ['acme.test'],
+                redirectUri: 'https://'.$tenant->domains->first()?->domain.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'oid-sub-bg-jit',
+                'name' => 'BG Member',
+                'email' => 'member.jit@acme.test',
+            ]);
+
+            $user = app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+            $this->userIds[] = (int) $user->getKey();
+
+            $this->assertTrue($user->hasRole(TenantRole::BuyingGroupMember->value));
+            $this->assertFalse($user->hasRole(TenantRole::SupportEngineer->value));
+            $this->assertFalse($user->hasRole(TenantRole::Owner->value));
+        } finally {
+            $this->cleanupUsers();
+            if (tenancy()->initialized) {
+                $restored = tenant();
+                if ($restored instanceof Tenant) {
+                    $restored->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+                    app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+                }
+            }
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function tenant_jit_rejects_disallowed_email_domain(): void
     {
         $this->initializeDemo2Tenant();
@@ -143,6 +260,48 @@ class OidcSsoTest extends TestCase
                 'id' => 'oid-sub-empty-domains',
                 'name' => 'No Allowlist',
                 'email' => 'user@acme.test',
+            ]);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('SSO allowed email domains must be configured');
+
+            app(OidcIdentityResolver::class)->resolveTenantUser($socialite, $config);
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function tenant_sso_rejects_existing_user_when_allowed_email_domains_empty(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $email = 'bob-'.Str::uuid()->toString().'@acme.test';
+
+            User::factory()->create([
+                'email' => $email,
+                'password' => 'password',
+            ]);
+
+            $config = new OidcConnectionConfig(
+                enabled: true,
+                ssoOnly: false,
+                provider: OidcProvider::Entra,
+                issuer: 'https://login.microsoftonline.com/example/v2.0',
+                clientId: 'client-id',
+                clientSecret: 'client-secret',
+                entraTenantId: 'example',
+                jitDefaultRole: TenantRole::ReceivingTechnician->value,
+                allowedEmailDomains: [],
+                redirectUri: 'https://'.self::DEMO2_DOMAIN.'/auth/oidc/callback',
+                socialiteDriver: 'azure',
+            );
+
+            $socialite = (new SocialiteUser)->map([
+                'id' => 'existing-sub-empty-domains',
+                'name' => 'Existing User',
+                'email' => $email,
             ]);
 
             $this->expectException(\RuntimeException::class);
@@ -536,7 +695,7 @@ class OidcSsoTest extends TestCase
             'client_secret' => 'client-secret',
             'entra_tenant_id' => 'example',
             'jit_default_role' => TenantRole::ReceivingTechnician->value,
-            'allowed_email_domains' => [],
+            'allowed_email_domains' => ['acme.test'],
         ]);
         $tenant->save();
 
@@ -654,6 +813,17 @@ class OidcSsoTest extends TestCase
         app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
 
         return $tenant;
+    }
+
+    private function initializeBuyingGroupTenant(): Tenant
+    {
+        $tenant = $this->ensureDemo2Tenant();
+        $tenant->forceFill(['profile' => TenantProfile::BuyingGroup])->save();
+
+        tenancy()->initialize($tenant);
+        app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::BuyingGroup);
+
+        return $tenant->fresh() ?? $tenant;
     }
 
     private function ensureDemo2Tenant(): Tenant

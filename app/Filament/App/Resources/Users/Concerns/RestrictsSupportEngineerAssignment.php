@@ -3,10 +3,10 @@
 namespace App\Filament\App\Resources\Users\Concerns;
 
 use App\Enums\TenantRole;
+use App\Filament\Notifications\Notification;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\SupportEngineerEmail;
-use App\Filament\Notifications\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;

@@ -31,7 +31,6 @@ use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsureClientPortalV2Enabled;
 use App\Http\Middleware\EnsureManufacturerVerificationPortalEnabled;
 use App\Http\Middleware\EnsurePortalUserHasOrganization;
-use App\Http\Middleware\EnsurePortalUserIsActive;
 use App\Http\Middleware\EnsureTenantIsActive;
 use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -138,7 +137,7 @@ Route::middleware([
                 ->middleware(['auth:portal', 'throttle:30,1'])
                 ->name('logout');
 
-            Route::middleware(['auth:portal', EnsurePortalUserIsActive::class, EnsurePortalUserHasOrganization::class])->group(function (): void {
+            Route::middleware(['auth:portal', EnsureAccountIsUsable::class.':portal', EnsurePortalUserHasOrganization::class])->group(function (): void {
                 Route::get('/', fn () => redirect()->route('tenant.client-portal.shipments.index'))
                     ->name('home');
                 Route::get('/pending', [ClientPortalAuthController::class, 'pending'])

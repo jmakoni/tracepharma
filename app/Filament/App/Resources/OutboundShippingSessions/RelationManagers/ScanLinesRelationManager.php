@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\OutboundShippingSessions\RelationManagers;
 
 use App\Actions\Shipping\UnconfirmOutboundShippingScanLine;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
@@ -10,7 +11,6 @@ use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;

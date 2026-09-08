@@ -43,8 +43,7 @@ return [
     | Each model must use the HasMenuItems trait.
     */
     'model_sources' => [
-        // \App\Models\Post::class,
-        // \App\Models\Page::class,
+        // Registered on the admin panel plugin via ->modelSources([...]).
     ],
 
     /*

@@ -24,7 +24,7 @@ Zero-copy greenfield under `/dpool/tracepharma`. No code was copied from vatengi
 | Central app master-data catalogs (products, partners, sites, devices, location devices, ATP licenses) | Custom central models + Admin Filament; tenant forms prefill via `CatalogPrefill` (no package) | Phase 2 |
 | HQ site auto-creation for a trading partner | `App\Actions\MasterData\CreateHqSiteForTradingPartner`, called from Filament page hooks (no DB triggers) | Phase 2 |
 | EPCIS 1.2 tenant schema + scan resolve | Custom tenant tables (`epcis_*` / `epcs`) + `App\Actions\Epcis\*` + `App\Support\Gs1\{Sgtin,Sscc,ElementString}` | Schema + resolve shipped |
-| EPCIS 1.2 parse/store pipeline | Custom Actions + Jobs (`IngestEpcisXmlDocument`, `IngestEpcisXmlJob`) | Shipped |
+| EPCIS 1.2 parse/store pipeline | Custom Actions + Jobs (`IngestEpcisXmlDocument`, `ProcessEpcisDocumentJob`) | Shipped |
 | VRS client | HTTP Action + Fake for tests; `VerifyProduct` page | Shipped ICP: clients + history detail + dispense-check + responder; async staged-scan verify later |
 | GS1 identifier helpers | `App\Support\Gs1\*` (Gtin, Ndc, Sgtin, Sscc, ElementString) | In use |
 | Tenant DB naming | `App\Support\TenantDatabaseName` | Phase 1 |

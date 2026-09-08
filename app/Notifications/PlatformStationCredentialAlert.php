@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Filament\Admin\Pages\PlatformConnections;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -47,6 +48,9 @@ class PlatformStationCredentialAlert extends Notification implements ShouldQueue
             $mail->line(sprintf('…and %d more.', count($this->findings) - 10));
         }
 
-        return $mail->action('Open platform connections', url('/admin/platform-connections'));
+        return $mail->action(
+            'Open platform connections',
+            PlatformConnections::getUrl(panel: 'admin'),
+        );
     }
 }

@@ -7,6 +7,7 @@ use App\Enums\InboundTransport;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Services\Integrations\SftpInboundReceiver;
+use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantRunner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -41,6 +42,12 @@ class PollSftpInboundConnection implements ShouldQueue
     public function handle(SftpInboundReceiver $receiver): void
     {
         $tenant = Tenant::query()->findOrFail($this->tenantId);
+
+        // Quiet return: queue jobs should not abort(403) like HTTP handlers.
+        // Matches epcis:poll-sftp / ConvertAndAcceptGuardianLotJob posture.
+        if (! TenantAccess::isActive($tenant)) {
+            return;
+        }
 
         TenantRunner::run($tenant, function () use ($receiver): void {
             $connection = InboundConnection::query()

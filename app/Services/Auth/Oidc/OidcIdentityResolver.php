@@ -134,7 +134,7 @@ final class OidcIdentityResolver
         $domain = Str::lower(Str::after($email, '@'));
 
         if (! in_array($domain, $config->allowedEmailDomains, true)) {
-            throw new \RuntimeException('Email domain is not allowed for SSO JIT provisioning.');
+            throw new \RuntimeException('Email domain is not allowed for SSO sign-in.');
         }
     }
 
@@ -156,11 +156,21 @@ final class OidcIdentityResolver
         if (filled($config->jitDefaultRole)) {
             $role = TenantRole::tryFrom((string) $config->jitDefaultRole);
             if ($role !== null) {
+                if (! $role->isJitAssignable()) {
+                    throw new \RuntimeException(
+                        'SSO JIT cannot assign Owner or Support Engineer. Choose a least-privilege job role or pre-provision the user.',
+                    );
+                }
+
                 return $role;
             }
         }
 
-        $profile = TenantProfile::tryFrom((string) (tenant()?->profile ?? '')) ?? TenantProfile::Pharmacy;
+        $rawProfile = tenant()?->profile;
+        $profileValue = $rawProfile instanceof TenantProfile
+            ? $rawProfile->value
+            : (string) ($rawProfile ?? '');
+        $profile = TenantProfile::tryFrom($profileValue) ?? TenantProfile::Pharmacy;
 
         return TenantRole::jitDefaultForProfile($profile);
     }

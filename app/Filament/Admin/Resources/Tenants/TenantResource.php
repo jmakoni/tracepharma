@@ -17,12 +17,17 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class TenantResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Tenant::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Tenants / Hub';
+
+    protected static ?int $navigationSort = 1;
 
     public static function canAccess(): bool
     {

@@ -185,6 +185,7 @@ class PlatformSftpInboundPollerTest extends TestCase
             'host' => 'sftp.tracepharma.io',
             'username' => 'tracepharma',
             'password' => 'secret',
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
         ]);
 
         $this->artisan('epcis:poll-platform-sftp')->assertSuccessful();

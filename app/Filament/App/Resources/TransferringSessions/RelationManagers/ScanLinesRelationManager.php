@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\TransferringSessions\RelationManagers;
 
 use App\Actions\Transferring\UnconfirmTransferringScanLine;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
@@ -10,7 +11,6 @@ use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;

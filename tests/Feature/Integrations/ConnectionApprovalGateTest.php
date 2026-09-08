@@ -16,6 +16,7 @@ use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\InboundConnections\Pages\EditInboundConnection;
 use App\Filament\App\Resources\OutboundConnections\Pages\CreateOutboundConnection;
 use App\Filament\App\Resources\OutboundConnections\Pages\EditOutboundConnection;
 use App\Http\Controllers\Webhooks\EpcisInboundWebhookController;
@@ -453,6 +454,222 @@ class ConnectionApprovalGateTest extends TestCase
             $this->requestIds[] = (int) $request->getKey();
             $this->assertSame(ConnectionApprovalStatus::Pending, $request->status);
             $this->assertSame('partner.example', $request->endpoint_host);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function editing_approved_outbound_endpoint_host_repends_for_review(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingAs($this->createOwner());
+
+            $partner = $this->createPartner();
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Approved endpoint edit '.Str::random(4),
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'approval_status' => ConnectionApprovalStatus::Approved,
+                'settings' => [
+                    'kind' => OutboundConnectionKind::DirectPartner->value,
+                    'endpoint_url' => 'https://partner.example/epcis',
+                ],
+            ]);
+            $connection->syncPartners([$partner->getKey()]);
+            $this->outboundConnectionIds[] = (int) $connection->getKey();
+
+            $request = app(RegisterConnectionApprovalRequest::class)->registerGrandfathered($connection);
+            $this->assertNotNull($request);
+            $this->requestIds[] = (int) $request->getKey();
+            $this->assertSame(ConnectionApprovalStatus::Approved, $request->status);
+            $this->assertSame('partner.example', $request->endpoint_host);
+
+            Livewire::test(EditOutboundConnection::class, ['record' => $connection->getKey()])
+                ->fillForm([
+                    'settings' => ['endpoint_url' => 'https://new-partner.example/epcis'],
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $connection->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $connection->approval_status);
+
+            $request->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $request->status);
+            $this->assertSame('new-partner.example', $request->endpoint_host);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function editing_approved_outbound_name_only_stays_approved(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingAs($this->createOwner());
+
+            $partner = $this->createPartner();
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Approved name edit '.Str::random(4),
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => OutboundTransport::Https,
+                'is_active' => true,
+                'approval_status' => ConnectionApprovalStatus::Approved,
+                'settings' => [
+                    'kind' => OutboundConnectionKind::DirectPartner->value,
+                    'endpoint_url' => 'https://partner.example/epcis',
+                ],
+            ]);
+            $connection->syncPartners([$partner->getKey()]);
+            $this->outboundConnectionIds[] = (int) $connection->getKey();
+
+            $request = app(RegisterConnectionApprovalRequest::class)->registerGrandfathered($connection);
+            $this->assertNotNull($request);
+            $this->requestIds[] = (int) $request->getKey();
+
+            $newName = $connection->name.' renamed';
+
+            Livewire::test(EditOutboundConnection::class, ['record' => $connection->getKey()])
+                ->fillForm([
+                    'name' => $newName,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $connection->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Approved, $connection->approval_status);
+            $this->assertSame($newName, $connection->name);
+
+            $request->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Approved, $request->status);
+            $this->assertSame('partner.example', $request->endpoint_host);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function editing_approved_inbound_https_partner_repends_for_review(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingAs($this->createOwner());
+
+            $partner = $this->createPartner();
+            $replacement = $this->createPartner();
+            $connection = InboundConnection::query()->create([
+                'name' => 'Approved inbound partner edit '.Str::random(4),
+                'serialization_provider' => SerializationProvider::CustomHttps,
+                'transport' => InboundTransport::Https,
+                'trading_partner_id' => $partner->getKey(),
+                'is_active' => true,
+                'approval_status' => ConnectionApprovalStatus::Approved,
+            ]);
+            $this->inboundConnectionIds[] = (int) $connection->getKey();
+
+            $registrar = app(RegisterConnectionApprovalRequest::class);
+            $request = $registrar->registerGrandfathered($connection);
+            $this->assertNotNull($request);
+            $this->requestIds[] = (int) $request->getKey();
+            $this->assertSame(ConnectionApprovalStatus::Approved, $request->status);
+
+            $before = $registrar->securityFingerprint($connection->fresh());
+            $connection->trading_partner_id = $replacement->getKey();
+            $afterMutation = $registrar->securityFingerprint($connection);
+            $this->assertNotSame($before, $afterMutation);
+            $connection->trading_partner_id = $partner->getKey();
+
+            Livewire::test(EditInboundConnection::class, ['record' => $connection->getKey()])
+                ->fillForm([
+                    'trading_partner_id' => $replacement->getKey(),
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $connection->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $connection->approval_status);
+            $this->assertSame((int) $replacement->getKey(), (int) $connection->trading_partner_id);
+
+            $request->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $request->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function editing_approved_outbound_sftp_host_fingerprint_repends_for_review(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingAs($this->createOwner());
+
+            $partner = $this->createPartner();
+            $originalFingerprint = 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99';
+            $updatedFingerprint = '11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00';
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Approved sftp fingerprint edit '.Str::random(4),
+                'serialization_provider' => SerializationProvider::CustomSftp,
+                'transport' => OutboundTransport::Sftp,
+                'is_active' => true,
+                'approval_status' => ConnectionApprovalStatus::Approved,
+                'settings' => [
+                    'kind' => OutboundConnectionKind::DirectPartner->value,
+                    'host' => '8.8.8.8',
+                    'port' => 22,
+                    'host_fingerprint' => $originalFingerprint,
+                    'outbound_path' => '/outbound/epcis',
+                    'root' => '/',
+                ],
+                'credentials' => [
+                    'username' => 'sftp-user',
+                    'password' => 'sftp-pass',
+                ],
+            ]);
+            $connection->syncPartners([$partner->getKey()]);
+            $this->outboundConnectionIds[] = (int) $connection->getKey();
+
+            $registrar = app(RegisterConnectionApprovalRequest::class);
+            $request = $registrar->registerGrandfathered($connection);
+            $this->assertNotNull($request);
+            $this->requestIds[] = (int) $request->getKey();
+            $this->assertSame(ConnectionApprovalStatus::Approved, $request->status);
+
+            $before = $registrar->securityFingerprint($connection->fresh());
+            $mutated = $connection->fresh();
+            $settings = $mutated->settings;
+            $settings['host_fingerprint'] = $updatedFingerprint;
+            $mutated->settings = $settings;
+            $this->assertNotSame($before, $registrar->securityFingerprint($mutated));
+
+            Livewire::test(EditOutboundConnection::class, ['record' => $connection->getKey()])
+                ->fillForm([
+                    'settings' => [
+                        'host' => '8.8.8.8',
+                        'port' => 22,
+                        'host_fingerprint' => $updatedFingerprint,
+                        'outbound_path' => '/outbound/epcis',
+                        'root' => '/',
+                    ],
+                    'sftp_username' => 'sftp-user',
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $connection->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $connection->approval_status);
+            $this->assertSame($updatedFingerprint, $connection->settings['host_fingerprint'] ?? null);
+
+            $request->refresh();
+            $this->assertSame(ConnectionApprovalStatus::Pending, $request->status);
         } finally {
             $this->cleanup();
         }

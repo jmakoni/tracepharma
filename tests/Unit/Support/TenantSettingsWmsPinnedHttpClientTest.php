@@ -28,4 +28,42 @@ class TenantSettingsWmsPinnedHttpClientTest extends TestCase
 
         TenantSettings::wmsPinnedHttpClient('https://169.254.169.254/receive-confirm');
     }
+
+    #[Test]
+    public function pinned_client_fails_closed_when_hostname_cannot_be_resolved_outside_unit_tests(): void
+    {
+        $previous = $this->app['env'];
+        $this->app['env'] = 'production';
+
+        try {
+            $this->assertFalse(app()->runningUnitTests());
+
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessageMatches('/could not be resolved/i');
+
+            TenantSettings::wmsPinnedHttpClient(
+                'https://definitely-not-a-real-host-'.uniqid('', true).'.invalid/receive-confirm',
+            );
+        } finally {
+            $this->app['env'] = $previous;
+        }
+    }
+
+    #[Test]
+    public function assert_wms_host_at_connect_fails_closed_when_unresolvable_outside_unit_tests(): void
+    {
+        $previous = $this->app['env'];
+        $this->app['env'] = 'production';
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessageMatches('/could not be resolved/i');
+
+            TenantSettings::assertWmsReceiveConfirmHostAtConnect(
+                'https://definitely-not-a-real-host-'.uniqid('', true).'.invalid/receive-confirm',
+            );
+        } finally {
+            $this->app['env'] = $previous;
+        }
+    }
 }

@@ -3,8 +3,8 @@
 namespace App\Filament\App\Resources\OutboundShippingSessions\Tables;
 
 use App\Actions\Shipping\DeleteOutboundShippingSession;
-use App\Models\Shipping\OutboundShippingSession;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
+use App\Models\Shipping\OutboundShippingSession;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\Shipping\ShipLayout;
 use App\Support\TenantFeatures;

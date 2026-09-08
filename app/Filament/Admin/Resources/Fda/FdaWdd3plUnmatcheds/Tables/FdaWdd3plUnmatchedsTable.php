@@ -10,8 +10,7 @@ use App\Models\Fda\FdaWdd3plUnmatched;
 use App\Support\Auth\Permissions;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\CompanyNameNormalizer;
-use App\Support\Fda\WddOrganizationName;
-use App\Support\PartnerSlug;
+use App\Support\Fda\WddUnmatchedTriage;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -114,7 +113,7 @@ class FdaWdd3plUnmatchedsTable
             ->modalHeading('Create organization')
             ->fillForm(fn (FdaWdd3plUnmatched $record): array => [
                 'name' => $record->facility_name,
-                'partner_type' => self::proposedPartnerType($record)->value,
+                'partner_type' => WddUnmatchedTriage::proposedPartnerType($record)->value,
             ])
             ->schema([
                 TextInput::make('name')
@@ -170,8 +169,8 @@ class FdaWdd3plUnmatchedsTable
                 Select::make('fda_organization_id')
                     ->label('FDA organization')
                     ->searchable()
-                    ->options(fn (FdaWdd3plUnmatched $record): array => self::nearDuplicateOptions($record))
-                    ->helperText(fn (FdaWdd3plUnmatched $record): string => self::nearDuplicateOptions($record) === []
+                    ->options(fn (FdaWdd3plUnmatched $record): array => WddUnmatchedTriage::nearDuplicateOrganizations($record))
+                    ->helperText(fn (FdaWdd3plUnmatched $record): string => WddUnmatchedTriage::nearDuplicateOrganizations($record) === []
                         ? 'Search by name, canonical name or GLN.'
                         : 'Organizations with a matching name family are listed first.')
                     ->getSearchResultsUsing(function (?string $search): array {

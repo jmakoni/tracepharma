@@ -29,6 +29,8 @@ class SyncTenantAtpLicensesFromFda implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 3600;
 
+    public function __construct(public Tenant $tenant) {}
+
     public function uniqueId(): string
     {
         return 'fda-atp-'.(string) $this->tenant->getKey();

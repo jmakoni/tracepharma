@@ -44,7 +44,7 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
 
     protected static ?int $navigationSort = 11;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Ship';
+    protected static string|UnitEnum|null $navigationGroup = 'Shipping';
 
     protected string $view = 'filament.app.pages.scan-out-workstation';
 

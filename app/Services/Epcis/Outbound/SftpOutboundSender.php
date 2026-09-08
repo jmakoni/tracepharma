@@ -33,9 +33,18 @@ class SftpOutboundSender
             $environment = $this->platformConfig->currentEnvironment();
 
             if ($this->platformSftp->isConfigured($environment)) {
+                // Platform edge path is owned by PlatformSftpConfig — never trust
+                // tenant settings.outbound_path on the shared drop FS.
                 $dir = $this->normalizedOutboundPath(
-                    (string) ($settings['outbound_path'] ?? $this->platformSftp->outboundPath($environment)),
+                    $this->platformSftp->outboundPath($environment),
                 );
+                $inbound = trim($this->platformSftp->inboundPath($environment), '/');
+                if ($dir === $inbound) {
+                    throw new DomainException(
+                        'Platform SFTP outbound_path must not equal inbound_path.',
+                    );
+                }
+
                 $this->writeFile($this->platformFilesystem($environment), $dir, $filename, $content);
 
                 return;
@@ -53,8 +62,8 @@ class SftpOutboundSender
             throw new DomainException('SFTP outbound connection is missing username.');
         }
 
-        $filesystem ??= $this->filesystemFor($connection);
         $dir = $this->normalizedOutboundPath((string) ($settings['outbound_path'] ?? 'outbound/epcis'));
+        $filesystem ??= $this->filesystemFor($connection);
         $this->writeFile($filesystem, $dir, $filename, $content);
     }
 

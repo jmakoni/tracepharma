@@ -8,9 +8,9 @@ use App\Filament\App\Resources\Users\Concerns\RestrictsOwnerRoleAssignment;
 use App\Filament\App\Resources\Users\Concerns\RestrictsSupportEngineerAssignment;
 use App\Filament\App\Resources\Users\Concerns\SyncsUserSiteMembership;
 use App\Filament\App\Resources\Users\UserResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Resources\Pages\CreateRecord;
 use App\Models\User;
-use App\Filament\Notifications\Notification;
 use Illuminate\Support\Str;
 
 class CreateUser extends CreateRecord

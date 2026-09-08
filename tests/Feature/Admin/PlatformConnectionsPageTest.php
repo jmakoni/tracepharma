@@ -72,7 +72,7 @@ class PlatformConnectionsPageTest extends TestCase
                 PlatformSettings::forget("platform_as2.{$environment}.{$key}");
             }
 
-            foreach (['host', 'port', 'username', 'password', 'private_key', 'passphrase', 'inbound_path', 'processed_path', 'outbound_path'] as $key) {
+            foreach (['host', 'port', 'username', 'password', 'private_key', 'passphrase', 'host_fingerprint', 'inbound_path', 'processed_path', 'outbound_path'] as $key) {
                 PlatformSettings::forget("platform_sftp.{$environment}.{$key}");
             }
         }

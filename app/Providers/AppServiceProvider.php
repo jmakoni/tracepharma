@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 use SocialiteProviders\Azure\Provider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
 use Spatie\Activitylog\Models\Activity;
@@ -76,6 +77,11 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->configureFilamentActions();
+
+        Livewire::component(
+            'filament-menu-manager.menu-panel',
+            \App\Livewire\MenuManager\MenuPanel::class,
+        );
 
         Gate::define('command-center:access', fn ($user) => $user instanceof Admin);
         Gate::define('command-center:manage-commands', fn ($user) => $user instanceof Admin);

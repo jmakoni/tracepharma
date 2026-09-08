@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\EpcisDocuments\Actions;
 
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingSession;
 use App\Services\Receiving\ReceivingGate;
@@ -13,7 +14,6 @@ use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Http\RedirectResponse;
 use Livewire\Features\SupportRedirects\Redirector;

@@ -436,6 +436,11 @@ class OutboundConnectionForm
                 TextInput::make('settings.port')
                     ->numeric()
                     ->default(22),
+                TextInput::make('settings.host_fingerprint')
+                    ->label('Host key fingerprint')
+                    ->required(fn (Get $get): bool => $get('transport') === OutboundTransport::Sftp->value)
+                    ->helperText('Required. Colon-hex SSH host key fingerprint (MD5 for ssh-rsa, SHA-512 otherwise). Prevents MITM.')
+                    ->columnSpanFull(),
                 TextInput::make('settings.outbound_path')
                     ->label('Outbound path')
                     ->default('/outbound/epcis')

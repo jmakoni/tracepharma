@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\App\Resources\EpcisSubscriptions\Pages;
 
 use App\Filament\App\Resources\EpcisSubscriptions\EpcisSubscriptionResource;
-use App\Models\Epcis\EpcisSubscription;
 use App\Filament\Notifications\Notification;
+use App\Models\Epcis\EpcisSubscription;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Str;
 

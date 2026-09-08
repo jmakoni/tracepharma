@@ -28,6 +28,7 @@ class PlatformEdgeConfigTest extends TestCase
         'platform_sftp.demo.password',
         'platform_sftp.demo.private_key',
         'platform_sftp.demo.passphrase',
+        'platform_sftp.demo.host_fingerprint',
         'platform_sftp.demo.inbound_path',
         'platform_sftp.demo.processed_path',
         'platform_sftp.demo.outbound_path',
@@ -149,6 +150,7 @@ class PlatformEdgeConfigTest extends TestCase
             'port' => '2222',
             'username' => 'tracepharma',
             'private_key' => "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            'host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
             'inbound_path' => '/drops/inbound',
         ]);
 
@@ -156,6 +158,7 @@ class PlatformEdgeConfigTest extends TestCase
         $this->assertSame('sftp.tracepharma.io', $sftp->host('demo'));
         $this->assertSame(2222, $sftp->port('demo'));
         $this->assertSame('/drops/inbound', $sftp->inboundPath('demo'));
+        $this->assertSame('aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99', $sftp->hostFingerprint('demo'));
 
         $raw = PlatformSetting::query()->where('key', 'platform_sftp.demo.private_key')->firstOrFail();
         $this->assertStringNotContainsString('OPENSSH', (string) $raw->value);
@@ -163,7 +166,7 @@ class PlatformEdgeConfigTest extends TestCase
     }
 
     #[Test]
-    public function sftp_is_configured_requires_host_username_and_one_credential(): void
+    public function sftp_is_configured_requires_host_username_fingerprint_and_one_credential(): void
     {
         $sftp = app(PlatformSftpConfig::class);
 
@@ -174,6 +177,9 @@ class PlatformEdgeConfigTest extends TestCase
         $this->assertFalse($sftp->isConfigured('demo'));
 
         $sftp->save('demo', ['password' => 'secret']);
+        $this->assertFalse($sftp->isConfigured('demo'));
+
+        $sftp->save('demo', ['host_fingerprint' => 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99']);
         $this->assertTrue($sftp->isConfigured('demo'));
     }
 }

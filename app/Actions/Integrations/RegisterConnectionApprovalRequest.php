@@ -107,6 +107,22 @@ class RegisterConnectionApprovalRequest
     }
 
     /**
+     * Stable hash of security-sensitive endpoint fields. Used by tenant edit
+     * pages to detect when an Approved connection must be re-pended for review.
+     */
+    public function securityFingerprint(InboundConnection|OutboundConnection $connection): string
+    {
+        $settings = is_array($connection->settings) ? $connection->settings : [];
+        $credentials = $this->safeCredentials($connection);
+
+        $parts = $connection instanceof OutboundConnection
+            ? $this->outboundSecurityFingerprintParts($connection, $settings, $credentials)
+            : $this->inboundSecurityFingerprintParts($connection, $settings, $credentials);
+
+        return hash('sha256', implode("\n", $parts));
+    }
+
+    /**
      * Backfill a central row for a connection that predates the approval gate.
      * Mirrors the connection's current status and leaves any existing central
      * row (e.g. a live pending request) untouched.
@@ -162,7 +178,7 @@ class RegisterConnectionApprovalRequest
             ->all();
 
         if ($names === [] && $connection->trading_partner_id !== null) {
-            $fallback = $connection->tradingPartner()?->name;
+            $fallback = $connection->tradingPartner?->name;
             $names = is_string($fallback) && $fallback !== '' ? [$fallback] : [];
         }
 
@@ -179,23 +195,192 @@ class RegisterConnectionApprovalRequest
 
     private function endpointHost(InboundConnection|OutboundConnection $connection): ?string
     {
-        $url = null;
+        $settings = is_array($connection->settings) ? $connection->settings : [];
+        $credentials = $this->safeCredentials($connection);
 
         if ($connection instanceof OutboundConnection) {
             $url = $connection->effectiveEndpointUrl() ?? $connection->effectiveAs2Url();
-        } elseif ($connection->transport === InboundTransport::Sftp) {
-            $host = $connection->settings['host'] ?? null;
 
-            return is_string($host) && trim($host) !== '' ? trim($host) : null;
+            if (is_string($url) && trim($url) !== '') {
+                $host = parse_url(trim($url), PHP_URL_HOST);
+
+                return is_string($host) && $host !== '' ? $host : null;
+            }
+
+            // SFTP-only outbound: surface the SSH host on the central request snapshot.
+            return $this->sftpHost($credentials, $settings);
         }
 
-        if (! is_string($url) || trim($url) === '') {
-            return null;
+        if ($connection->transport === InboundTransport::Sftp) {
+            return $this->sftpHost($credentials, $settings);
         }
 
-        $host = parse_url(trim($url), PHP_URL_HOST);
+        return null;
+    }
 
-        return is_string($host) && $host !== '' ? $host : null;
+    /**
+     * @return array<string, mixed>
+     */
+    private function safeCredentials(InboundConnection|OutboundConnection $connection): array
+    {
+        try {
+            $credentials = $connection->credentials;
+        } catch (Throwable) {
+            // Legacy rows may fail decrypt under a rotated APP_KEY; fall back to settings-only host.
+            return [];
+        }
+
+        return is_array($credentials) ? $credentials : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $credentials
+     * @return list<string>
+     */
+    private function outboundSecurityFingerprintParts(
+        OutboundConnection $connection,
+        array $settings,
+        array $credentials,
+    ): array {
+        return [
+            $this->normalizeFingerprintValue($connection->effectiveEndpointUrl() ?? ($settings['endpoint_url'] ?? null)),
+            $this->normalizeFingerprintValue($connection->effectiveAs2Url() ?? ($settings['as2_url'] ?? null)),
+            $this->normalizeFingerprintValue($connection->effectiveAs2To() ?? ($settings['as2_to'] ?? null)),
+            $this->normalizeFingerprintValue($settings['as2_from'] ?? null),
+            $this->normalizeFingerprintValue($this->sftpHost($credentials, $settings)),
+            $this->normalizeFingerprintValue($this->endpointHost($connection)),
+            $this->normalizeFingerprintValue($this->sftpHostFingerprint($credentials, $settings)),
+            $this->normalizeFingerprintValue($credentials['username'] ?? null),
+            $this->normalizeFingerprintValue($settings['outbound_path'] ?? null),
+            $this->normalizeFingerprintValue($settings['root'] ?? null),
+            $this->hashedCredential($credentials, 'webhook_token'),
+            $this->certificateFingerprint($credentials['signing_cert_pem'] ?? null),
+            $this->certificateFingerprint($credentials['partner_encrypt_cert_pem'] ?? null),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $credentials
+     * @return list<string>
+     */
+    private function inboundSecurityFingerprintParts(
+        InboundConnection $connection,
+        array $settings,
+        array $credentials,
+    ): array {
+        return [
+            $this->normalizeFingerprintValue($connection->transport?->value),
+            $this->normalizeFingerprintValue($connection->trading_partner_id !== null
+                ? (string) $connection->trading_partner_id
+                : null),
+            $this->inboundSenderGlnMappings($connection),
+            $this->hashedCredential($credentials, 'webhook_token'),
+            $this->hashedCredential($credentials, 'webhook_secret'),
+            $this->hashedCredential($credentials, 'token'),
+            $this->hashedCredential($credentials, 'as2_mdn_webhook_secret'),
+            $this->normalizeFingerprintValue($this->sftpHost($credentials, $settings)),
+            $this->normalizeFingerprintValue($settings['port'] ?? $credentials['port'] ?? null),
+            $this->normalizeFingerprintValue($credentials['username'] ?? null),
+            $this->normalizeFingerprintValue($settings['inbound_path'] ?? null),
+            $this->normalizeFingerprintValue($settings['root'] ?? null),
+            $this->normalizeFingerprintValue($this->sftpHostFingerprint($credentials, $settings)),
+        ];
+    }
+
+    private function inboundSenderGlnMappings(InboundConnection $connection): string
+    {
+        $partners = $connection->relationLoaded('tradingPartners')
+            ? $connection->tradingPartners
+            : $connection->tradingPartners()->get();
+
+        $entries = $partners
+            ->map(function ($partner): string {
+                $id = (int) $partner->getKey();
+                $gln = trim((string) ($partner->pivot->sender_gln ?? ''));
+
+                return $id.':'.$gln;
+            })
+            ->all();
+
+        sort($entries, SORT_STRING);
+
+        return implode(',', $entries);
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
+    private function hashedCredential(array $credentials, string $key): string
+    {
+        $value = $credentials[$key] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            return '';
+        }
+
+        return hash('sha256', trim($value));
+    }
+
+    private function certificateFingerprint(mixed $pem): string
+    {
+        if (! is_string($pem)) {
+            return '';
+        }
+
+        $trimmed = trim($pem);
+
+        if ($trimmed === '') {
+            return '';
+        }
+
+        $fingerprint = @openssl_x509_fingerprint($trimmed, 'sha256');
+
+        if (is_string($fingerprint) && $fingerprint !== '') {
+            return $fingerprint;
+        }
+
+        return hash('sha256', $trimmed);
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $settings
+     */
+    private function sftpHost(array $credentials, array $settings): ?string
+    {
+        $host = $credentials['host'] ?? $settings['host'] ?? null;
+
+        return is_string($host) && trim($host) !== '' ? trim($host) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $settings
+     */
+    private function sftpHostFingerprint(array $credentials, array $settings): ?string
+    {
+        $fingerprint = $settings['host_fingerprint']
+            ?? $settings['hostFingerprint']
+            ?? $credentials['host_fingerprint']
+            ?? $credentials['hostFingerprint']
+            ?? null;
+
+        return is_string($fingerprint) && trim($fingerprint) !== '' ? trim($fingerprint) : null;
+    }
+
+    private function normalizeFingerprintValue(mixed $value): string
+    {
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+
+        if (! is_string($value)) {
+            return '';
+        }
+
+        return trim($value);
     }
 
     private function requestedBy(): ?string
