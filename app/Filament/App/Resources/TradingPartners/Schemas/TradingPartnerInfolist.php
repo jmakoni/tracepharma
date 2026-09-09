@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\TradingPartners\Schemas;
 
+use App\Models\AtpCredential;
 use App\Models\AtpLicense;
 use App\Models\TradingPartner;
 use App\Support\MasterData\PartnerAtpSiteCoverage;
@@ -68,6 +69,40 @@ class TradingPartnerInfolist
                             default => 'gray',
                         })
                         ->helperText('Worst-of roll-up across partner-level and site-level licenses.'),
+                    TextEntry::make('oci_live_credential_status')
+                        ->label('Latest OCI credential (VRS)')
+                        ->badge()
+                        ->placeholder('None captured')
+                        ->getStateUsing(function (TradingPartner $record): ?string {
+                            $gln = preg_replace('/\D+/', '', (string) ($record->gln ?? '')) ?: null;
+                            if ($gln === null || strlen($gln) !== 13) {
+                                return null;
+                            }
+
+                            return AtpCredential::query()
+                                ->where('subject_gln', $gln)
+                                ->latest('id')
+                                ->value('verification_status');
+                        })
+                        ->formatStateUsing(fn (?string $state): string => match ($state) {
+                            AtpCredential::STATUS_VERIFIED => 'Verified (wallet)',
+                            AtpCredential::STATUS_SKIPPED => 'Captured (not verified)',
+                            AtpCredential::STATUS_EXPIRED => 'Expired',
+                            AtpCredential::STATUS_INVALID => 'Invalid',
+                            AtpCredential::STATUS_MISSING => 'Missing',
+                            AtpCredential::STATUS_ERROR => 'Error',
+                            default => $state ? ucfirst($state) : 'None',
+                        })
+                        ->color(fn (?string $state): string => match ($state) {
+                            AtpCredential::STATUS_VERIFIED => 'success',
+                            AtpCredential::STATUS_SKIPPED => 'gray',
+                            AtpCredential::STATUS_EXPIRED,
+                            AtpCredential::STATUS_INVALID,
+                            AtpCredential::STATUS_MISSING,
+                            AtpCredential::STATUS_ERROR => 'danger',
+                            default => 'gray',
+                        })
+                        ->helperText('Live wallet outcome from inbound VRS ATP headers — not FDA WDD and not manual OCI partner evidence.'),
                     RepeatableEntry::make('partner_licenses')
                         ->label('Partner-level licenses')
                         ->getStateUsing(fn (TradingPartner $record): array => $record->atpLicenses()

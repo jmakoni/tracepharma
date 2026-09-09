@@ -10,6 +10,8 @@ use App\Policies\RolePolicy;
 use App\Services\Auth\Oidc\GenericOpenIdConnectProvider;
 use App\Services\Epcis\ConnectionOutboundEpcisTransmitter;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
+use App\Services\Atp\FakeOciWalletClient;
+use App\Services\Atp\OciWalletClient;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Services\Vrs\FakeVrsClient;
 use App\Services\Vrs\HttpVrsClient;
@@ -54,6 +56,16 @@ class AppServiceProvider extends ServiceProvider
                 'http' => $app->make(HttpVrsClient::class),
                 'fake' => $app->make(FakeVrsClient::class),
                 default => $app->make(NullVrsClient::class),
+            };
+        });
+        $this->app->bind(OciWalletClient::class, function ($app): OciWalletClient {
+            return match (config('atp_oci.driver', 'http')) {
+                'fake' => $app->make(FakeOciWalletClient::class),
+                default => OciWalletClient::fromTenantSettings(
+                    function_exists('tenant') && tenancy()->initialized && tenant()
+                        ? \App\Support\TenantSettings::forTenant(tenant())
+                        : null,
+                ),
             };
         });
     }

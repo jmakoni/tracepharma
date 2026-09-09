@@ -44,10 +44,12 @@ Also runs automatically on **new** tenant create via `SeedSystemOutboundTemplate
 
 ## 4. Enable Client portal (per tenant)
 
-1. Set tenant setting `features.client_portal_v2` = `true` (tenant `settings` JSON)
+1. Filament → Settings → Organization → **Customer portal** → enable **Client portal v2 (OTP login)** (writes `features.client_portal_v2`)
 2. Outbound Connections → **Client portal** → Active (+ notify emails optional)
 3. Master Data → Customer portal → **Invite to client portal** (partner + email)
 4. Buyer opens `https://{tenant-host}/client-portal/login` → OTP email → Shipments / Trace
+
+Ops / scripts can still set `features.client_portal_v2` in tenant `settings` JSON directly if needed.
 
 ## 5. Verify
 

@@ -33,7 +33,6 @@ class ViewVerification extends ViewRecord
                 ->icon(Heroicon::OutlinedEnvelope)
                 ->color('warning')
                 ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsManufacturerVerificationPortal()
-                    && $this->getRecord()->status !== 'verified'
                     && $this->getRecord()->verificationRequestCase === null)
                 ->requiresConfirmation()
                 ->modalDescription('Email the manufacturer a secure portal link to submit a positive or negative verification response. A confirmation email is sent to your VRS contact when they answer positively.')

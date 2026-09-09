@@ -3,11 +3,14 @@
 namespace Tests\Feature\Vrs;
 
 use App\Enums\TenantProfile;
+use App\Models\AtpCredential;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Tenant;
 use App\Models\Verification;
+use App\Services\Atp\FakeOciWalletClient;
+use App\Services\Atp\OciWalletClient;
 use App\Services\Quarantine\QuarantineService;
 use App\Support\TenantSettings;
 use Database\Seeders\ExceptionCaseSeeder;
@@ -47,6 +50,11 @@ class VrsResponderWebhookTest extends TestCase
     private array $extraTenantIds = [];
 
     private bool $clearedTenantResponderKey = false;
+
+    private bool $resetAtpOciMode = false;
+
+    /** @var list<int> */
+    private array $credentialIds = [];
 
     #[Test]
     public function responder_verifies_known_serial(): void
@@ -308,6 +316,202 @@ class VrsResponderWebhookTest extends TestCase
         }
     }
 
+
+    #[Test]
+    public function oci_off_stores_skipped_without_wallet_call(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $this->setAtpOciMode($tenant, 'off');
+
+        $spy = (new FakeOciWalletClient)->willVerifyAs('error', 'should not be called');
+        $this->app->instance(OciWalletClient::class, $spy);
+
+        try {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.OCI'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                ['gtin14' => $epc->gtin14, 'serial' => $epc->serial_number],
+                [
+                    'X-Vrs-Api-Key' => self::RESPONDER_KEY,
+                    'ATP-Authorization' => $this->sampleAtpVp(),
+                ],
+            );
+
+            $response->assertOk();
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+            $credential = AtpCredential::query()->latest('id')->first();
+            $this->assertNotNull($credential);
+            $this->credentialIds[] = (int) $credential->getKey();
+            $this->assertSame(AtpCredential::STATUS_SKIPPED, $credential->verification_status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function oci_warn_stores_verified_status_for_valid_vp(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $this->setAtpOciMode($tenant, 'warn');
+        $this->app->instance(OciWalletClient::class, (new FakeOciWalletClient)->willVerifyAs('valid'));
+
+        try {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.OCI'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                ['gtin14' => $epc->gtin14, 'serial' => $epc->serial_number],
+                [
+                    'X-Vrs-Api-Key' => self::RESPONDER_KEY,
+                    'ATP-Authorization' => $this->sampleAtpVp(),
+                ],
+            );
+
+            $response->assertOk();
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+            $credential = AtpCredential::query()->latest('id')->first();
+            $this->assertNotNull($credential);
+            $this->credentialIds[] = (int) $credential->getKey();
+            $this->assertSame(AtpCredential::STATUS_VERIFIED, $credential->verification_status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function oci_warn_continues_when_vp_expired(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $this->setAtpOciMode($tenant, 'warn');
+        $this->app->instance(OciWalletClient::class, (new FakeOciWalletClient)->willVerifyAs('expired'));
+
+        try {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.OCI'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                ['gtin14' => $epc->gtin14, 'serial' => $epc->serial_number],
+                [
+                    'X-Vrs-Api-Key' => self::RESPONDER_KEY,
+                    'ATP-Authorization' => $this->sampleAtpVp(),
+                ],
+            );
+
+            $response->assertOk();
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+            $credential = AtpCredential::query()->latest('id')->first();
+            $this->assertNotNull($credential);
+            $this->credentialIds[] = (int) $credential->getKey();
+            $this->assertSame(AtpCredential::STATUS_EXPIRED, $credential->verification_status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function oci_require_rejects_missing_credential(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $this->setAtpOciMode($tenant, 'require');
+        $this->app->instance(OciWalletClient::class, new FakeOciWalletClient);
+
+        try {
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                ['gtin14' => '30301164005162', 'serial' => 'SN-MISSING'],
+                ['X-Vrs-Api-Key' => self::RESPONDER_KEY],
+            );
+
+            $response->assertUnauthorized()
+                ->assertJsonPath('verification_status', AtpCredential::STATUS_MISSING);
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $credential = AtpCredential::query()->latest('id')->first();
+            $this->assertNotNull($credential);
+            $this->credentialIds[] = (int) $credential->getKey();
+            $this->assertSame(AtpCredential::STATUS_MISSING, $credential->verification_status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function oci_require_rejects_invalid_credential(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $this->setAtpOciMode($tenant, 'require');
+        $this->app->instance(OciWalletClient::class, (new FakeOciWalletClient)->willVerifyAs('invalid'));
+
+        try {
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                ['gtin14' => '30301164005162', 'serial' => 'SN-INVALID'],
+                [
+                    'X-Vrs-Api-Key' => self::RESPONDER_KEY,
+                    'ATP-Authorization' => $this->sampleAtpVp(),
+                ],
+            );
+
+            $response->assertForbidden()
+                ->assertJsonPath('verification_status', AtpCredential::STATUS_INVALID);
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $credential = AtpCredential::query()->latest('id')->first();
+            $this->assertNotNull($credential);
+            $this->credentialIds[] = (int) $credential->getKey();
+            $this->assertSame(AtpCredential::STATUS_INVALID, $credential->verification_status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+
+    private function sampleAtpVp(): string
+    {
+        $payload = rtrim(strtr(base64_encode(json_encode([
+            'iss' => 'did:web:oci.example',
+            'sub' => '0300001000001',
+            'exp' => now()->addHour()->timestamp,
+        ])), '+/', '-_'), '=');
+
+        return 'eyJhbGciOiJub25lIn0.'.$payload.'.sig';
+    }
+
+    private function setAtpOciMode(Tenant $tenant, string $mode): void
+    {
+        TenantSettings::forTenant($tenant)->setAtpOciMode($mode);
+        $tenant->save();
+        $this->resetAtpOciMode = true;
+    }
+
     private function configureTenantResponderKey(Tenant $tenant, string $key = self::RESPONDER_KEY): void
     {
         TenantSettings::forTenant($tenant)->setVrsResponderApiKey($key);
@@ -341,7 +545,8 @@ class VrsResponderWebhookTest extends TestCase
 
         tenancy()->initialize($tenant);
 
-        $this->seed(ExceptionCaseSeeder::class);
+        // Avoid \$this->seed() → tenants:seed option resolution under tenancy.
+        (new ExceptionCaseSeeder)->run();
 
         return $tenant;
     }
@@ -384,6 +589,15 @@ class VrsResponderWebhookTest extends TestCase
 
     private function cleanup(): void
     {
+
+        if ($this->resetAtpOciMode) {
+            $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
+            if ($tenant !== null) {
+                TenantSettings::forTenant($tenant)->setAtpOciMode('off');
+                $tenant->save();
+            }
+            $this->resetAtpOciMode = false;
+        }
         if ($this->clearedTenantResponderKey) {
             $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
             if ($tenant !== null) {
@@ -405,6 +619,11 @@ class VrsResponderWebhookTest extends TestCase
         }
 
         if (tenancy()->initialized) {
+            if ($this->credentialIds !== []) {
+                AtpCredential::query()->whereKey($this->credentialIds)->delete();
+                $this->credentialIds = [];
+            }
+
             if ($this->verificationIds !== []) {
                 Verification::query()->whereKey($this->verificationIds)->delete();
                 $this->verificationIds = [];

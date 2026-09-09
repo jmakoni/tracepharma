@@ -105,6 +105,11 @@ class TradingPartnerForm
                                     TextInput::make('telephone')->tel()->maxLength(50),
                                     TextInput::make('email')->email()->maxLength(255),
                                 ]),
+                                TextInput::make('vrs_notify_email')
+                                    ->label('VRS notify email')
+                                    ->email()
+                                    ->maxLength(255)
+                                    ->helperText('Where manufacturer verification failures are emailed. Leave blank to use the partner email for manufacturers.'),
                                 TextInput::make('website')->url()->maxLength(255),
                             ]),
                     ]),

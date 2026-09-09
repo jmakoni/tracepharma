@@ -129,6 +129,107 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function save_persists_manufacturer_verification_portal_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Manufacturer Portal Toggle Site',
+                'gln' => '0366159000095',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('manufacturer_verification_portal')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'manufacturer_verification_portal' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'manufacturer_verification_portal' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+        } finally {
+            TenantSettings::forTenant($tenant)->setManufacturerVerificationPortalEnabled($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_client_portal_v2_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->clientPortalV2Enabled();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Client Portal V2 Toggle Site',
+                'gln' => '0366159000096',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('client_portal_v2')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'client_portal_v2' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'client_portal_v2' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
+            $this->assertFalse(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+        } finally {
+            TenantSettings::forTenant($tenant)->setClientPortalV2Enabled($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function save_persists_block_send_on_atp_gap_toggle(): void
     {
         $tenant = $this->initializeDemo2Tenant();

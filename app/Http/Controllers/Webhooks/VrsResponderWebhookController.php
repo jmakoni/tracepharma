@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Webhooks;
 use App\Actions\Vrs\RespondToInboundVerification;
 use App\Models\AtpCredential;
 use App\Models\Tenant;
+use App\Services\Atp\OciVerifyResult;
+use App\Services\Atp\OciWalletClient;
 use App\Support\Atp\AtpCredentialParser;
 use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
@@ -19,6 +21,7 @@ final class VrsResponderWebhookController
 {
     public function __construct(
         private readonly RespondToInboundVerification $respond,
+        private readonly OciWalletClient $ociWallet,
     ) {}
 
     public function handle(Request $request, string $tenantId): JsonResponse
@@ -36,7 +39,10 @@ final class VrsResponderWebhookController
                 return response()->json(['message' => 'VRS responder is not enabled for this tenant.'], 403);
             }
 
-            $this->captureAtpCredential($request);
+            $rejection = $this->captureAtpCredential($request);
+            if ($rejection !== null) {
+                return $rejection;
+            }
 
             $data = $request->validate([
                 'gtin14' => ['nullable', 'string', 'max:14'],
@@ -106,20 +112,58 @@ final class VrsResponderWebhookController
     }
 
     /**
-     * OCI seam: requesters may present an ATP verifiable credential
-     * (ATP-Authorization / X-ATP-Credential header, JWT compact form). Stored
-     * as evidence of what was presented; trust-registry verification is deferred.
+     * OCI seam: capture ATP-Authorization / X-ATP-Credential. Mode off stores
+     * parse-only (skipped). Warn/require call the wallet verify adapter; require
+     * rejects missing/invalid/expired/error without running product verify.
+     * FDA licenses and manual OCI partner evidence are not substitutes.
+     *
+     * @return JsonResponse|null Rejection when mode=require and ATP fails.
      */
-    private function captureAtpCredential(Request $request): void
+    private function captureAtpCredential(Request $request): ?JsonResponse
     {
+        $mode = TenantSettings::forTenant(tenant())->atpOciMode();
         $header = $request->header('ATP-Authorization') ?? $request->header('X-ATP-Credential');
+        $header = is_string($header) ? trim($header) : '';
 
-        if (! is_string($header) || trim($header) === '') {
-            return;
+        if ($mode === 'off') {
+            if ($header !== '') {
+                $this->storeOffMode($header);
+            }
+
+            return null;
         }
 
-        $parsed = AtpCredentialParser::parse($header);
+        if ($header === '') {
+            $result = OciVerifyResult::missing();
+            $this->persistFromResult(null, $result);
 
+            return $mode === 'require'
+                ? response()->json([
+                    'message' => 'ATP credential required.',
+                    'verification_status' => $result->status,
+                ], 401)
+                : null;
+        }
+
+        $result = $this->ociWallet->verify($header);
+        $this->persistFromResult($header, $result);
+
+        if ($mode === 'require' && ! $result->isAcceptable()) {
+            $status = $result->status === AtpCredential::STATUS_MISSING ? 401 : 403;
+
+            return response()->json([
+                'message' => 'ATP credential verification failed.',
+                'verification_status' => $result->status,
+                'reason' => $result->reason,
+            ], $status);
+        }
+
+        return null;
+    }
+
+    private function storeOffMode(string $header): void
+    {
+        $parsed = AtpCredentialParser::parse($header);
         if ($parsed === null) {
             return;
         }
@@ -131,10 +175,32 @@ final class VrsResponderWebhookController
                 'subject_gln' => $parsed['subject_gln'],
                 'credential_expires_at' => $parsed['expires_at'],
                 'header_sha256' => hash('sha256', $header),
+                'verification_status' => AtpCredential::STATUS_SKIPPED,
+                'verification_reason' => null,
                 'raw_credential' => $header,
             ]);
         } catch (Throwable) {
-            // Evidence capture must never break a VRS response.
+            // Evidence capture must never break a VRS response in off mode.
+        }
+    }
+
+    private function persistFromResult(?string $header, OciVerifyResult $result): void
+    {
+        $parsed = filled($header) ? AtpCredentialParser::parse((string) $header) : null;
+
+        try {
+            AtpCredential::query()->create([
+                'endpoint' => 'vrs-responder',
+                'issuer' => $result->issuer ?? $parsed['issuer'] ?? null,
+                'subject_gln' => $result->subjectGln ?? $parsed['subject_gln'] ?? null,
+                'credential_expires_at' => $result->expiresAt ?? $parsed['expires_at'] ?? null,
+                'header_sha256' => hash('sha256', $header ?? ''),
+                'verification_status' => $result->status,
+                'verification_reason' => $result->reason,
+                'raw_credential' => filled($header) ? $header : null,
+            ]);
+        } catch (Throwable) {
+            // Prefer rejecting in require mode after a best-effort persist attempt.
         }
     }
 }

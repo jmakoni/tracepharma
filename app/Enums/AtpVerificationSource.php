@@ -8,7 +8,8 @@ namespace App\Enums;
  * DSCSA leaves the method of verification to the buyer, so the record has to name it:
  * a DECRS plant lookup, an FDA WDD/3PL registry lookup, and a state board lookup age
  * differently, and a document the partner sent us is only as good as the day it was issued.
- * Pulse / OCI cases are manual partner-supplied evidence only — not API sync, not Pulse-listed.
+ * Pulse / OCI partner-evidence cases are manual partner-supplied diligence only —
+ * not API sync, not Pulse-listed. OciLiveVerified is distinct: wallet verify outcome.
  */
 enum AtpVerificationSource: string
 {
@@ -20,6 +21,8 @@ enum AtpVerificationSource: string
     case PulsePartnerEvidence = 'pulse_partner_evidence';
     /** Manual partner-supplied OCI / directory evidence — not an OCI API integration. */
     case OciPartnerEvidence = 'oci_partner_evidence';
+    /** Live OCI wallet verify of a presented VP — not manual evidence, not FDA WDD. */
+    case OciLiveVerified = 'oci_live_verified';
     case Other = 'other';
 
     public function label(): string
@@ -31,6 +34,7 @@ enum AtpVerificationSource: string
             self::PartnerDocument => 'Partner-supplied document',
             self::PulsePartnerEvidence => 'NABP Pulse (partner-supplied evidence)',
             self::OciPartnerEvidence => 'OCI / directory (partner-supplied evidence)',
+            self::OciLiveVerified => 'OCI live verified (wallet)',
             self::Other => 'Other',
         };
     }

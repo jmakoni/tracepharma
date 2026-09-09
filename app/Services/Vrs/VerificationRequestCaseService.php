@@ -18,6 +18,7 @@ use App\Models\VerificationRequestResponse;
 use App\Notifications\ManufacturerVerificationRequestMail;
 use App\Notifications\VerificationRequestPositiveConfirmationMail;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\TenantAppUrl;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Illuminate\Http\UploadedFile;
@@ -112,7 +113,7 @@ final class VerificationRequestCaseService
 
     public function caseUrl(VerificationRequestCase $case): string
     {
-        return route('tenant.verification-request.show', ['caseUuid' => $case->uuid]);
+        return TenantAppUrl::forPath('/verification-request/'.$case->uuid);
     }
 
     public function verifySecureCode(VerificationRequestCase $case, string $secureCode): bool

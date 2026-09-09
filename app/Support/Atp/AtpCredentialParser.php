@@ -8,9 +8,9 @@ use Carbon\Carbon;
 
 /**
  * Parses OCI-style ATP verifiable credential headers (JWT compact form) for
- * evidence capture. Payload claims are read WITHOUT signature verification —
- * verification against an OCI trust registry is intentionally deferred; the
- * stored row proves what the requester presented.
+ * local claim display. Payload claims are read WITHOUT signature verification —
+ * cryptographic verify belongs to OciWalletClient when tenant OCI mode is
+ * warn/require. This parser remains payload-only after wallet verify.
  */
 class AtpCredentialParser
 {

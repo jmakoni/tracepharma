@@ -4,11 +4,11 @@
 
 @section('content')
 <div class="card bg-base-100 shadow">
-    <div class="card-body gap-4">
-        <h1 class="card-title">Submit verification response</h1>
-        <p class="text-sm">{{ $case->requestor_name }} was unable to complete VRS verification for this product. Please verify whether the product identifier corresponds to the NDC (GTIN), serial number, lot number, and expiration date assigned by you.</p>
+    <div class="card-body gap-5 text-base">
+        <h1 class="card-title text-2xl">Submit verification response</h1>
+        <p>{{ $case->requestor_name }} was unable to complete VRS verification for this product. Please verify whether the product identifier corresponds to the NDC (GTIN), serial number, lot number, and expiration date assigned by you.</p>
 
-        <div class="bg-base-200 rounded-lg p-4 text-sm space-y-1">
+        <div class="bg-base-200 rounded-lg p-5 space-y-2">
             <div><strong>GTIN:</strong> {{ $case->gtin14 }}</div>
             <div><strong>Serial:</strong> {{ $case->serial }}</div>
             <div><strong>Lot:</strong> {{ $case->lot ?? '—' }}</div>
@@ -19,44 +19,44 @@
             @endif
         </div>
 
-        <form method="post" action="{{ route('tenant.verification-request.submit', $case->uuid) }}" enctype="multipart/form-data" class="space-y-4">
+        <form method="post" action="{{ route('tenant.verification-request.submit', $case->uuid) }}" enctype="multipart/form-data" class="space-y-5">
             @csrf
-            <fieldset class="space-y-2">
-                <legend class="font-medium text-sm">Please select a response</legend>
+            <fieldset class="flex flex-col gap-3">
+                <legend class="font-medium mb-1">Please select a response</legend>
                 @foreach ($outcomes as $outcome)
-                    <label class="label cursor-pointer justify-start gap-3">
-                        <input type="radio" name="outcome" value="{{ $outcome->value }}" class="radio" required @checked(old('outcome') === $outcome->value)>
-                        <span class="label-text">{{ $outcome->label() }}</span>
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="radio" name="outcome" value="{{ $outcome->value }}" class="radio radio-lg shrink-0" required @checked(old('outcome') === $outcome->value)>
+                        <span>{{ $outcome->label() }}</span>
                     </label>
                 @endforeach
             </fieldset>
 
-            <label class="form-control w-full">
-                <span class="label-text">Please choose why you selected this response</span>
-                <select name="reason_code" class="select select-bordered w-full" required>
+            <div class="flex flex-col gap-1.5 w-full">
+                <label for="reason_code" class="font-medium">Please choose why you selected this response</label>
+                <select id="reason_code" name="reason_code" class="select select-bordered select-lg w-full" required>
                     <option value="">Select…</option>
                     @foreach ($reasons as $reason)
                         <option value="{{ $reason->value }}" @selected(old('reason_code') === $reason->value)>{{ $reason->label() }}</option>
                     @endforeach
                 </select>
+            </div>
+
+            <div class="flex flex-col gap-1.5 w-full">
+                <label for="comments" class="font-medium">Additional comments</label>
+                <textarea id="comments" name="comments" class="textarea textarea-bordered textarea-lg w-full" rows="5">{{ old('comments') }}</textarea>
+            </div>
+
+            <div class="flex flex-col gap-1.5 w-full">
+                <label for="attachment" class="font-medium">Barcode photo (optional)</label>
+                <input id="attachment" type="file" name="attachment" class="file-input file-input-bordered file-input-lg w-full" accept="image/jpeg,image/png,application/pdf">
+            </div>
+
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="terms_accepted" value="1" class="checkbox checkbox-lg shrink-0 mt-0.5" required>
+                <span>I certify this response is accurate.</span>
             </label>
 
-            <label class="form-control w-full">
-                <span class="label-text">Additional comments</span>
-                <textarea name="comments" class="textarea textarea-bordered" rows="3">{{ old('comments') }}</textarea>
-            </label>
-
-            <label class="form-control w-full">
-                <span class="label-text">Barcode photo (optional)</span>
-                <input type="file" name="attachment" class="file-input file-input-bordered w-full" accept="image/jpeg,image/png,application/pdf">
-            </label>
-
-            <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" name="terms_accepted" value="1" class="checkbox" required>
-                <span class="label-text">I certify this response is accurate.</span>
-            </label>
-
-            <button type="submit" class="btn btn-primary">Submit response</button>
+            <button type="submit" class="btn btn-primary btn-lg">Submit response</button>
         </form>
     </div>
 </div>

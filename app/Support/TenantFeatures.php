@@ -279,9 +279,7 @@ class TenantFeatures
             return false;
         }
 
-        $settings = $tenant->getAttribute('settings');
-
-        return (bool) data_get(is_array($settings) ? $settings : [], 'features.client_portal_v2', false);
+        return TenantSettings::forTenant($tenant)->clientPortalV2Enabled();
     }
 
     /**
@@ -298,9 +296,7 @@ class TenantFeatures
             return false;
         }
 
-        $settings = $tenant->getAttribute('settings');
-
-        return (bool) data_get(is_array($settings) ? $settings : [], 'features.manufacturer_verification_portal', false);
+        return TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
     }
 
     /**

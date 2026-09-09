@@ -4,6 +4,7 @@ namespace App\Services\Vrs;
 
 use App\Exceptions\VrsConfigurationException;
 use App\Models\Tenant;
+use App\Services\Atp\OciWalletClient;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\TenantSettings;
@@ -159,6 +160,11 @@ final class HttpVrsClient implements VrsClient
 
             if (filled($apiKey)) {
                 $pending = $pending->withToken((string) $apiKey);
+            }
+
+            $atpHeader = $this->outboundAtpAuthorizationHeader();
+            if ($atpHeader !== null) {
+                $pending = $pending->withHeaders(['ATP-Authorization' => $atpHeader]);
             }
 
             $response = $pending
@@ -322,5 +328,46 @@ final class HttpVrsClient implements VrsClient
         $gln ??= config('vrs.http.requestor_gln');
 
         return filled($gln) ? (string) $gln : null;
+    }
+
+
+    /**
+     * Best-effort OCI wallet present for outbound VRS. Failures are logged and
+     * the verify call continues without ATP-Authorization.
+     */
+    private function outboundAtpAuthorizationHeader(): ?string
+    {
+        $tenant = function_exists('tenant') && tenancy()->initialized ? tenant() : null;
+        if (! $tenant instanceof Tenant) {
+            return null;
+        }
+
+        $settings = TenantSettings::forTenant($tenant);
+        if (! $settings->atpOciPresentOutbound()) {
+            return null;
+        }
+
+        try {
+            $wallet = app(OciWalletClient::class);
+            if (! $wallet->isConfigured()) {
+                return null;
+            }
+
+            $vp = $wallet->present($this->requestorGln());
+            if ($vp === '') {
+                return null;
+            }
+
+            return str_starts_with(strtolower($vp), 'bearer ')
+                ? $vp
+                : 'Bearer '.$vp;
+        } catch (Throwable $exception) {
+            Log::warning('OCI wallet present failed; continuing VRS without ATP-Authorization.', [
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

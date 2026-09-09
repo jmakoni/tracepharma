@@ -12,7 +12,7 @@
         <span class="font-semibold">DSCSA verification portal</span>
         <span class="text-sm opacity-60 ml-2">{{ tenant()?->name }}</span>
     </div>
-    <main class="max-w-2xl mx-auto px-4 py-8">
+    <main class="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         @if (session('submitted'))
             <div class="alert alert-success mb-6">Response submitted successfully!</div>
         @endif

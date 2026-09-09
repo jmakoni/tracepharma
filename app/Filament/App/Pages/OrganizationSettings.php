@@ -135,6 +135,8 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'alert_digest_enabled' => $settings->alertDigestEnabled(),
             'alert_digest_frequency' => $settings->alertDigestFrequency(),
             'email_portal_on_ship' => $settings->emailPortalOnShipEnabled(),
+            'manufacturer_verification_portal' => $settings->manufacturerVerificationPortalEnabled(),
+            'client_portal_v2' => $settings->clientPortalV2Enabled(),
         ], $settings->organizationAddress()));
     }
 
@@ -342,6 +344,28 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->helperText('When off (default), missing/expired destination ATP licenses are a soft warning on the ship desk and send is allowed. When on, outbound send is refused until a valid license is on record.')
                             ->default(false)
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments())
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('VRS / verification')
+                    ->compact()
+                    ->description('Verification Router Service fallbacks when automated verify does not confirm a product.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs())
+                    ->schema([
+                        Toggle::make('manufacturer_verification_portal')
+                            ->label('Manufacturer verification portal')
+                            ->helperText('When on, Verification history shows “Request manufacturer verification” for non-verified scans. Manufacturers get an emailed secure link to respond. Requires a manufacturer notify email on the trading partner.')
+                            ->default(false)
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Customer portal')
+                    ->compact()
+                    ->description('OTP client portal for buyer downloads (Master Data → Customer portal). Separate from email attachment and the supplier exception portal.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsMasterData())
+                    ->schema([
+                        Toggle::make('client_portal_v2')
+                            ->label('Client portal v2 (OTP login)')
+                            ->helperText('When on, buyers can use /client-portal/login with emailed one-time codes. Activate the Client portal outbound connection and invite partners from Master Data → Customer portal.')
+                            ->default(false)
                             ->columnSpanFull(),
                     ]),
                 Section::make('Dashboard')
@@ -608,6 +632,14 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         $organization['match_inbound_ship_to_site'] = (bool) ($data['match_inbound_ship_to_site'] ?? false);
         $organization['auto_open_receive_after_transfer_ship'] = (bool) ($data['auto_open_receive_after_transfer_ship'] ?? false);
         $organization['auto_complete_asn_on_ready'] = (bool) ($data['auto_complete_asn_on_ready'] ?? false);
+
+        if (TenantFeatures::forTenant(tenant())->supportsVrs()) {
+            $organization['manufacturer_verification_portal'] = (bool) ($data['manufacturer_verification_portal'] ?? false);
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsMasterData()) {
+            $organization['client_portal_v2'] = (bool) ($data['client_portal_v2'] ?? false);
+        }
 
         if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             $organization['block_send_on_atp_gap'] = (bool) ($data['block_send_on_atp_gap'] ?? false);

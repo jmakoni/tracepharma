@@ -1151,6 +1151,143 @@ class TenantSettings
         return is_string($email) && filled($email) ? strtolower(trim($email)) : null;
     }
 
+    /**
+     * OCI wallet ATP mode for inbound VRS responder: off | warn | require.
+     * Default off — parse/store without wallet verification.
+     */
+    public function atpOciMode(): string
+    {
+        $mode = data_get($this->settingsBag(), 'atp.oci_mode', 'off');
+
+        return in_array($mode, ['off', 'warn', 'require'], true) ? $mode : 'off';
+    }
+
+    public function setAtpOciMode(string $mode): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        $mode = in_array($mode, ['off', 'warn', 'require'], true) ? $mode : 'off';
+        data_set($settings, 'atp.oci_mode', $mode);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciPresentOutbound(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'atp.oci_present_outbound', false);
+    }
+
+    public function setAtpOciPresentOutbound(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'atp.oci_present_outbound', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciWalletBaseUrl(): ?string
+    {
+        $url = data_get($this->settingsBag(), 'atp.oci_wallet_base_url');
+
+        return is_string($url) && filled($url) ? rtrim(trim($url), '/') : null;
+    }
+
+    public function setAtpOciWalletBaseUrl(?string $url): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'atp.oci_wallet_base_url', filled($url) ? rtrim(trim($url), '/') : null);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciWalletApiKey(): ?string
+    {
+        $encrypted = data_get($this->settingsBag(), 'atp.oci_wallet_api_key');
+
+        if (blank($encrypted)) {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString((string) $encrypted);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function setAtpOciWalletApiKey(?string $key): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+
+        if (blank($key)) {
+            data_set($settings, 'atp.oci_wallet_api_key', null);
+        } else {
+            data_set($settings, 'atp.oci_wallet_api_key', Crypt::encryptString(trim($key)));
+        }
+
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciVerifyPath(): ?string
+    {
+        $path = data_get($this->settingsBag(), 'atp.oci_verify_path');
+
+        return is_string($path) && filled($path) ? '/'.ltrim(trim($path), '/') : null;
+    }
+
+    public function atpOciPresentPath(): ?string
+    {
+        $path = data_get($this->settingsBag(), 'atp.oci_present_path');
+
+        return is_string($path) && filled($path) ? '/'.ltrim(trim($path), '/') : null;
+    }
+
+    /**
+     * Manufacturer verification request portal (email + secure respond link). Default off.
+     */
+    public function manufacturerVerificationPortalEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.manufacturer_verification_portal', false);
+    }
+
+    public function setManufacturerVerificationPortalEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.manufacturer_verification_portal', $enabled);
+    }
+
+    /**
+     * Opt-in client portal v2 (OTP auth + org membership). Default off.
+     */
+    public function clientPortalV2Enabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.client_portal_v2', false);
+    }
+
+    public function setClientPortalV2Enabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.client_portal_v2', $enabled);
+    }
+
     public function stateLicenseNumber(): ?string
     {
         $value = data_get($this->settingsBag(), 'compliance.state_license_number');
@@ -1825,6 +1962,8 @@ class TenantSettings
             'alert_digest_frequency',
             'email_portal_on_ship',
             'allow_assign_partner_glns_from_prefix',
+            'manufacturer_verification_portal',
+            'client_portal_v2',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -1916,6 +2055,8 @@ class TenantSettings
                 ),
                 'email_portal_on_ship' => $this->setEmailPortalOnShipEnabled((bool) $data[$key]),
                 'allow_assign_partner_glns_from_prefix' => $this->setAllowAssignPartnerGlnsFromPrefix((bool) $data[$key]),
+                'manufacturer_verification_portal' => $this->setManufacturerVerificationPortalEnabled((bool) $data[$key]),
+                'client_portal_v2' => $this->setClientPortalV2Enabled((bool) $data[$key]),
             };
         }
 

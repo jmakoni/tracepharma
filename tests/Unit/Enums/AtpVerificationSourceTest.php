@@ -26,6 +26,12 @@ class AtpVerificationSourceTest extends TestCase
             'OCI / directory (partner-supplied evidence)',
             AtpVerificationSource::OciPartnerEvidence->label(),
         );
+
+        $this->assertSame('oci_live_verified', AtpVerificationSource::OciLiveVerified->value);
+        $this->assertSame(
+            'OCI live verified (wallet)',
+            AtpVerificationSource::OciLiveVerified->label(),
+        );
     }
 
     #[Test]
@@ -43,6 +49,12 @@ class AtpVerificationSourceTest extends TestCase
         $this->assertSame(
             'OCI / directory (partner-supplied evidence)',
             $options[AtpVerificationSource::OciPartnerEvidence->value],
+        );
+
+        $this->assertArrayHasKey(AtpVerificationSource::OciLiveVerified->value, $options);
+        $this->assertSame(
+            'OCI live verified (wallet)',
+            $options[AtpVerificationSource::OciLiveVerified->value],
         );
     }
 }
