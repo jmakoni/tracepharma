@@ -74,6 +74,11 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         return $this->hasMany(EpcisHubRoute::class, 'tenant_id');
     }
 
+    public function hubReceiverGlnClaimRequests(): HasMany
+    {
+        return $this->hasMany(HubReceiverGlnClaimRequest::class, 'tenant_id');
+    }
+
     protected static function booted(): void
     {
         static::deleting(function (Tenant $tenant): void {
