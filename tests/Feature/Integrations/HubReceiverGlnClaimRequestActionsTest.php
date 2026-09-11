@@ -6,6 +6,7 @@ namespace Tests\Feature\Integrations;
 
 use App\Actions\Integrations\RequestHubReceiverGlnClaim;
 use App\Actions\Integrations\ReviewHubReceiverGlnClaimRequest;
+use App\Enums\AdminRole;
 use App\Enums\HubReceiverGlnClaimRequestStatus;
 use App\Enums\TenantProfile;
 use App\Models\Admin;
@@ -13,9 +14,14 @@ use App\Models\EpcisHubRoute;
 use App\Models\HubReceiverGlnClaimRequest;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\HubReceiverGlnClaimReviewRequestedNotification;
+use App\Support\Auth\AdminRoleSeeder;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Notification;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class HubReceiverGlnClaimRequestActionsTest extends TestCase
@@ -92,6 +98,67 @@ class HubReceiverGlnClaimRequestActionsTest extends TestCase
             ->where('tenant_id', $this->tenant()->getKey())
             ->pending()
             ->count());
+    }
+
+    #[Test]
+    public function request_notifies_platform_reviewers_and_throttles_repeated_submissions(): void
+    {
+        Notification::fake();
+        config()->set('tracepharma.platform_support_email', 'support@example.com');
+        app(AdminRoleSeeder::class)->seed();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->admin = Admin::factory()->create();
+        $this->admin->assignRole(AdminRole::PlatformAdmin->value);
+
+        $action = app(RequestHubReceiverGlnClaim::class);
+        $user = new User(['name' => 'Tenant Owner', 'email' => 'owner@example.com']);
+
+        $request = $action->request(
+            $this->tenant(),
+            'systech',
+            self::GLN,
+            'Enable hub receiving.',
+            $user,
+        );
+
+        $action->request(
+            $this->tenant(),
+            'systech',
+            self::GLN,
+            'Updated reason.',
+            $user,
+        );
+
+        Notification::assertSentToTimes(
+            $this->admin,
+            HubReceiverGlnClaimReviewRequestedNotification::class,
+            1,
+        );
+        Notification::assertSentTo(
+            $this->admin,
+            HubReceiverGlnClaimReviewRequestedNotification::class,
+            fn (HubReceiverGlnClaimReviewRequestedNotification $notification): bool => $notification->requestId === (int) $request->getKey()
+                && $notification->tenantId === (string) $this->tenant()->getKey()
+                && $notification->gln === self::GLN
+                && $notification->provider === 'systech',
+        );
+        Notification::assertSentOnDemand(
+            HubReceiverGlnClaimReviewRequestedNotification::class,
+            fn (
+                HubReceiverGlnClaimReviewRequestedNotification $notification,
+                array $channels,
+                object $notifiable,
+            ): bool => ($notifiable->routes['mail'] ?? null) === 'support@example.com'
+                && $channels === ['mail']
+                && $notification->requestId === (int) $request->getKey(),
+        );
+        Notification::assertSentOnDemandTimes(
+            HubReceiverGlnClaimReviewRequestedNotification::class,
+            1,
+        );
+
+        Cache::forget('hub_receiver_gln_claim_review_requested:'.$request->getKey());
     }
 
     #[Test]

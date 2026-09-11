@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace App\Actions\Integrations;
 
 use App\Enums\HubReceiverGlnClaimRequestStatus;
+use App\Models\Admin;
 use App\Models\EpcisHubRoute;
 use App\Models\HubReceiverGlnClaimRequest;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\HubReceiverGlnClaimReviewRequestedNotification;
+use App\Support\Auth\Permissions;
 use App\Support\EpcisHub\ClaimableReceiverGlns;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use RuntimeException;
+use Throwable;
 
 class RequestHubReceiverGlnClaim
 {
@@ -93,9 +99,50 @@ class RequestHubReceiverGlnClaim
                 return $request;
             });
 
-        // Task 5 will notify platform reviewers after the pending row is persisted.
+        $this->notifyReviewers($request);
 
         return $request;
+    }
+
+    /**
+     * Alert platform reviewers without allowing notification failures to block the request.
+     */
+    private function notifyReviewers(HubReceiverGlnClaimRequest $request): void
+    {
+        $cacheKey = 'hub_receiver_gln_claim_review_requested:'.$request->getKey();
+
+        if (Cache::has($cacheKey)) {
+            return;
+        }
+
+        $resume = tenancy()->initialized ? tenant() : null;
+
+        if ($resume !== null) {
+            tenancy()->end();
+        }
+
+        try {
+            $notification = HubReceiverGlnClaimReviewRequestedNotification::fromRequest($request);
+            $admins = Admin::permission(Permissions::TenantsManage)->get();
+
+            if ($admins->isNotEmpty()) {
+                Notification::send($admins, $notification);
+            }
+
+            $supportEmail = config('tracepharma.platform_support_email');
+
+            if (is_string($supportEmail) && $supportEmail !== '') {
+                Notification::route('mail', $supportEmail)->notify($notification);
+            }
+
+            Cache::put($cacheKey, now()->toIso8601String(), now()->addHour());
+        } catch (Throwable) {
+            // Reviewer alerts must never block claim-request persistence.
+        } finally {
+            if ($resume !== null) {
+                tenancy()->initialize($resume);
+            }
+        }
     }
 
     private function requestedBy(User $user): string
