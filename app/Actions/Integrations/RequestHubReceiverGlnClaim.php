@@ -10,6 +10,7 @@ use App\Models\HubReceiverGlnClaimRequest;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\EpcisHub\ClaimableReceiverGlns;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class RequestHubReceiverGlnClaim
@@ -57,21 +58,40 @@ class RequestHubReceiverGlnClaim
             throw new RuntimeException('A reason is required for a hub receiver GLN claim request.');
         }
 
-        $request = HubReceiverGlnClaimRequest::query()->updateOrCreate(
-            [
-                'tenant_id' => $tenant->getKey(),
-                'provider' => $provider,
-                'gln' => $normalizedGln,
-                'status' => HubReceiverGlnClaimRequestStatus::Pending,
-            ],
-            [
-                'reason' => $reason,
-                'requested_by' => $this->requestedBy($requestingUser),
-                'reviewed_by_admin_id' => null,
-                'reviewed_at' => null,
-                'review_note' => null,
-            ],
-        );
+        $identity = [
+            'tenant_id' => $tenant->getKey(),
+            'provider' => $provider,
+            'gln' => $normalizedGln,
+        ];
+
+        $request = DB::connection((new HubReceiverGlnClaimRequest)->getConnectionName())
+            ->transaction(function () use ($identity, $reason, $requestingUser): HubReceiverGlnClaimRequest {
+                $request = HubReceiverGlnClaimRequest::query()
+                    ->where($identity)
+                    ->whereIn('status', [
+                        HubReceiverGlnClaimRequestStatus::Pending,
+                        HubReceiverGlnClaimRequestStatus::Rejected,
+                    ])
+                    ->orderByRaw(
+                        'CASE WHEN status = ? THEN 0 ELSE 1 END',
+                        [HubReceiverGlnClaimRequestStatus::Pending->value],
+                    )
+                    ->lockForUpdate()
+                    ->first();
+
+                $request ??= new HubReceiverGlnClaimRequest($identity);
+
+                $request->forceFill([
+                    'status' => HubReceiverGlnClaimRequestStatus::Pending,
+                    'reason' => $reason,
+                    'requested_by' => $this->requestedBy($requestingUser),
+                    'reviewed_by_admin_id' => null,
+                    'reviewed_at' => null,
+                    'review_note' => null,
+                ])->save();
+
+                return $request;
+            });
 
         // Task 5 will notify platform reviewers after the pending row is persisted.
 

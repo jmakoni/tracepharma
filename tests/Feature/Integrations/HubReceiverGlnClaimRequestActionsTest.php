@@ -173,6 +173,41 @@ class HubReceiverGlnClaimRequestActionsTest extends TestCase
         app(ReviewHubReceiverGlnClaimRequest::class)->approve($request, $this->admin);
     }
 
+    #[Test]
+    public function tenant_can_reset_a_rejected_request_to_pending_without_creating_a_duplicate_or_route(): void
+    {
+        $request = $this->pendingRequest();
+        $this->admin = Admin::factory()->create();
+
+        app(ReviewHubReceiverGlnClaimRequest::class)->reject($request, $this->admin, 'Evidence did not match.');
+
+        $resubmitted = app(RequestHubReceiverGlnClaim::class)->request(
+            $this->tenant(),
+            'systech',
+            self::GLN,
+            'New ownership evidence is available.',
+            new User(['name' => 'New Owner', 'email' => 'new-owner@example.com']),
+        );
+
+        $this->assertTrue($request->is($resubmitted));
+        $this->assertSame(HubReceiverGlnClaimRequestStatus::Pending, $resubmitted->status);
+        $this->assertSame('New ownership evidence is available.', $resubmitted->reason);
+        $this->assertSame('New Owner (new-owner@example.com)', $resubmitted->requested_by);
+        $this->assertNull($resubmitted->reviewed_by_admin_id);
+        $this->assertNull($resubmitted->reviewed_at);
+        $this->assertNull($resubmitted->review_note);
+        $this->assertSame(1, HubReceiverGlnClaimRequest::query()
+            ->where('tenant_id', $this->tenant()->getKey())
+            ->where('provider', 'systech')
+            ->where('gln', self::GLN)
+            ->count());
+        $this->assertSame(1, HubReceiverGlnClaimRequest::query()
+            ->where('tenant_id', $this->tenant()->getKey())
+            ->pending()
+            ->count());
+        $this->assertFalse(EpcisHubRoute::query()->where('tenant_id', $this->tenant()->getKey())->exists());
+    }
+
     private function pendingRequest(): HubReceiverGlnClaimRequest
     {
         return app(RequestHubReceiverGlnClaim::class)->request(
