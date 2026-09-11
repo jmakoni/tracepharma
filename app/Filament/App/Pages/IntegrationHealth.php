@@ -2,10 +2,12 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\App\Actions\RequestHubReceiverGlnClaimAction;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
 use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
+use App\Filament\Notifications\Notification;
 use App\Models\InboundConnection;
 use App\Models\OutboundConnection;
 use App\Support\Auth\JobRoleAccess;
@@ -15,7 +17,6 @@ use App\Support\Integrations\OutboundTransportAvailability;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -174,36 +175,40 @@ class IntegrationHealth extends Page implements HasKnowledgeBase
      */
     protected function getHeaderActions(): array
     {
+        $actions = [
+            RequestHubReceiverGlnClaimAction::withGlnSelect(),
+        ];
+
         if (! $this->canDeactivateLegacySftpOutbound()) {
-            return [];
+            return $actions;
         }
 
         $count = $this->activeLegacySftpOutboundCount();
 
-        return [
-            Action::make('deactivateLegacySftp')
-                ->label('Deactivate SFTP outbound')
-                ->icon(Heroicon::OutlinedNoSymbol)
-                ->color('warning')
-                ->requiresConfirmation()
-                ->visible(fn (): bool => $this->canDeactivateLegacySftpOutbound())
-                ->modalHeading('Deactivate SFTP outbound connections?')
-                ->modalDescription(
-                    'This will deactivate '.$count.' active SFTP outbound connection(s). '
-                    .'Use when cleaning up unused SFTP endpoints.',
-                )
-                ->modalSubmitActionLabel('Deactivate all')
-                ->action(function (): void {
-                    abort_unless($this->canDeactivateLegacySftpOutbound(), 403);
+        $actions[] = Action::make('deactivateLegacySftp')
+            ->label('Deactivate SFTP outbound')
+            ->icon(Heroicon::OutlinedNoSymbol)
+            ->color('warning')
+            ->requiresConfirmation()
+            ->visible(fn (): bool => $this->canDeactivateLegacySftpOutbound())
+            ->modalHeading('Deactivate SFTP outbound connections?')
+            ->modalDescription(
+                'This will deactivate '.$count.' active SFTP outbound connection(s). '
+                .'Use when cleaning up unused SFTP endpoints.',
+            )
+            ->modalSubmitActionLabel('Deactivate all')
+            ->action(function (): void {
+                abort_unless($this->canDeactivateLegacySftpOutbound(), 403);
 
-                    $deactivated = OutboundTransportAvailability::deactivateActiveLegacySftpConnections();
+                $deactivated = OutboundTransportAvailability::deactivateActiveLegacySftpConnections();
 
-                    Notification::make()
-                        ->title("Deactivated {$deactivated} SFTP outbound connection(s)")
-                        ->success()
-                        ->send();
-                }),
-        ];
+                Notification::make()
+                    ->title("Deactivated {$deactivated} SFTP outbound connection(s)")
+                    ->success()
+                    ->send();
+            });
+
+        return $actions;
     }
 
     /**
