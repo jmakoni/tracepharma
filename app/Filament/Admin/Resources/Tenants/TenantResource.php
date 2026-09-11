@@ -70,6 +70,7 @@ class TenantResource extends Resource implements HasKnowledgeBase
     {
         return [
             RelationManagers\HubReceiverGlnClaimsRelationManager::class,
+            RelationManagers\HubReceiverGlnClaimRequestsRelationManager::class,
             RelationManagers\PlatformAuditEventsRelationManager::class,
         ];
     }
