@@ -95,7 +95,10 @@ class ClaimTenantHubReceiverGln
         }
     }
 
-    private function assertTenantMayClaim(Tenant $tenant, string $provider): void
+    /**
+     * Assert provider/environment entitlement without creating a hub route.
+     */
+    public function assertTenantMayClaim(Tenant $tenant, string $provider): void
     {
         $environment = $tenant->inbound_environment;
 
