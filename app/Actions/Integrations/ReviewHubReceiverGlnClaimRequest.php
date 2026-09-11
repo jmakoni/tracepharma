@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace App\Actions\Integrations;
 
 use App\Enums\HubReceiverGlnClaimRequestStatus;
+use App\Enums\TenantRole;
 use App\Models\Admin;
 use App\Models\HubReceiverGlnClaimRequest;
 use App\Models\Tenant;
+use App\Models\User;
+use App\Notifications\HubReceiverGlnClaimReviewedNotification;
 use App\Support\Admin\PlatformAudit;
+use App\Support\Tenancy\TenantRunner;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use RuntimeException;
+use Spatie\Permission\Exceptions\RoleDoesNotExist;
+use Throwable;
 
 class ReviewHubReceiverGlnClaimRequest
 {
@@ -53,55 +61,91 @@ class ReviewHubReceiverGlnClaimRequest
         $note = $this->normalizeNote($note);
         $connection = $request->getConnectionName();
 
-        DB::connection($connection)->transaction(function () use ($request, $admin, $status, $note): void {
-            $lockedRequest = HubReceiverGlnClaimRequest::query()
-                ->lockForUpdate()
-                ->find($request->getKey());
+        [$reviewedRequest, $tenant] = DB::connection($connection)->transaction(
+            function () use ($request, $admin, $status, $note): array {
+                $lockedRequest = HubReceiverGlnClaimRequest::query()
+                    ->lockForUpdate()
+                    ->find($request->getKey());
 
-            if ($lockedRequest === null) {
-                throw new RuntimeException('Hub receiver GLN claim request no longer exists.');
-            }
+                if ($lockedRequest === null) {
+                    throw new RuntimeException('Hub receiver GLN claim request no longer exists.');
+                }
 
-            if (! $lockedRequest->isPending()) {
-                throw new RuntimeException('Only pending hub receiver GLN claim requests can be reviewed.');
-            }
+                if (! $lockedRequest->isPending()) {
+                    throw new RuntimeException('Only pending hub receiver GLN claim requests can be reviewed.');
+                }
 
-            $tenant = Tenant::query()->find($lockedRequest->tenant_id);
+                $tenant = Tenant::query()->find($lockedRequest->tenant_id);
 
-            if ($tenant === null) {
-                throw new RuntimeException('Tenant not found for this hub receiver GLN claim request.');
-            }
+                if ($tenant === null) {
+                    throw new RuntimeException('Tenant not found for this hub receiver GLN claim request.');
+                }
 
-            if ($status === HubReceiverGlnClaimRequestStatus::Approved) {
-                $this->claimAction->claim(
-                    $tenant,
-                    $lockedRequest->provider,
-                    $lockedRequest->gln,
+                if ($status === HubReceiverGlnClaimRequestStatus::Approved) {
+                    $this->claimAction->claim(
+                        $tenant,
+                        $lockedRequest->provider,
+                        $lockedRequest->gln,
+                    );
+                }
+
+                $lockedRequest->forceFill([
+                    'status' => $status,
+                    'reviewed_by_admin_id' => (int) $admin->getKey(),
+                    'reviewed_at' => now(),
+                    'review_note' => $note,
+                ])->save();
+
+                PlatformAudit::record(
+                    'hub_receiver_gln_claim_request.'.$status->value,
+                    tenantId: (string) $tenant->getKey(),
+                    targetType: HubReceiverGlnClaimRequest::class,
+                    targetId: (string) $lockedRequest->getKey(),
+                    payload: [
+                        'provider' => $lockedRequest->provider,
+                        'gln' => $lockedRequest->gln,
+                        'note' => $note,
+                    ],
+                    actor: $admin,
                 );
-            }
 
-            $lockedRequest->forceFill([
-                'status' => $status,
-                'reviewed_by_admin_id' => (int) $admin->getKey(),
-                'reviewed_at' => now(),
-                'review_note' => $note,
-            ])->save();
+                return [$lockedRequest, $tenant];
+            },
+        );
 
-            PlatformAudit::record(
-                'hub_receiver_gln_claim_request.'.$status->value,
-                tenantId: (string) $tenant->getKey(),
-                targetType: HubReceiverGlnClaimRequest::class,
-                targetId: (string) $lockedRequest->getKey(),
-                payload: [
-                    'provider' => $lockedRequest->provider,
-                    'gln' => $lockedRequest->gln,
-                    'note' => $note,
-                ],
-                actor: $admin,
-            );
+        Cache::forget('hub_receiver_gln_claim_review_requested:'.$reviewedRequest->getKey());
+        $this->notifyTenantOwners($reviewedRequest, $tenant, $status, $note);
+    }
 
-            // Task 5 will notify the requesting tenant after review is persisted.
-        });
+    private function notifyTenantOwners(
+        HubReceiverGlnClaimRequest $request,
+        Tenant $tenant,
+        HubReceiverGlnClaimRequestStatus $status,
+        ?string $note,
+    ): void {
+        try {
+            TenantRunner::run($tenant, function () use ($request, $tenant, $status, $note): void {
+                try {
+                    $owners = User::role(TenantRole::Owner->value)->get();
+                } catch (RoleDoesNotExist) {
+                    $owners = collect();
+                }
+
+                if ($owners->isEmpty()) {
+                    return;
+                }
+
+                Notification::send($owners, new HubReceiverGlnClaimReviewedNotification(
+                    (string) $request->gln,
+                    (string) $request->provider,
+                    $status,
+                    $note,
+                    (string) $tenant->getKey(),
+                ));
+            });
+        } catch (Throwable) {
+            // Notification delivery must never block a review decision.
+        }
     }
 
     private function normalizeNote(?string $note): ?string

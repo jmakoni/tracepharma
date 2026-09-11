@@ -65,7 +65,7 @@ class HubReceiverGlnClaimRequestTest extends TestCase
     }
 
     #[Test]
-    public function duplicate_pending_request_for_the_same_tenant_provider_and_gln_is_rejected(): void
+    public function duplicate_identity_is_rejected_even_when_the_request_status_differs(): void
     {
         $tenantId = (string) Str::uuid();
         $attributes = [
@@ -84,11 +84,14 @@ class HubReceiverGlnClaimRequestTest extends TestCase
         ]);
 
         try {
-            HubReceiverGlnClaimRequest::query()->create($attributes);
+            HubReceiverGlnClaimRequest::query()->create([
+                ...$attributes,
+                'status' => HubReceiverGlnClaimRequestStatus::Approved,
+            ]);
 
             try {
                 HubReceiverGlnClaimRequest::query()->create($attributes);
-                $this->fail('The database must reject a duplicate pending request.');
+                $this->fail('The database must reject a duplicate tenant, provider, and GLN identity.');
             } catch (QueryException $exception) {
                 $this->assertSame('23000', $exception->getCode());
             }

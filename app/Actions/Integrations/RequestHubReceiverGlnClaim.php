@@ -74,14 +74,6 @@ class RequestHubReceiverGlnClaim
             ->transaction(function () use ($identity, $reason, $requestingUser): HubReceiverGlnClaimRequest {
                 $request = HubReceiverGlnClaimRequest::query()
                     ->where($identity)
-                    ->whereIn('status', [
-                        HubReceiverGlnClaimRequestStatus::Pending,
-                        HubReceiverGlnClaimRequestStatus::Rejected,
-                    ])
-                    ->orderByRaw(
-                        'CASE WHEN status = ? THEN 0 ELSE 1 END',
-                        [HubReceiverGlnClaimRequestStatus::Pending->value],
-                    )
                     ->lockForUpdate()
                     ->first();
 

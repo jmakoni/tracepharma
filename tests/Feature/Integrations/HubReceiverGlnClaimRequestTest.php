@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Integrations;
 
+use App\Actions\Integrations\ClaimTenantHubReceiverGln;
 use App\Actions\Integrations\RequestHubReceiverGlnClaim;
 use App\Actions\Integrations\ReviewHubReceiverGlnClaimRequest;
 use App\Enums\HubReceiverGlnClaimRequestStatus;
@@ -16,10 +17,12 @@ use App\Models\HubReceiverGlnClaimRequest;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\HubReceiverGlnClaimReviewedNotification;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Gs1\Gtin;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -84,9 +87,16 @@ class HubReceiverGlnClaimRequestTest extends TestCase
         HubReceiverGlnClaimRequest::query()->where('tenant_id', $this->tenant->getKey())->delete();
         EpcisHubRoute::query()->where('tenant_id', $this->tenant->getKey())->delete();
 
-        if (tenancy()->initialized) {
+        if ($this->siteIds !== [] || $this->userIds !== []) {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($this->tenant);
+            }
+
             Site::query()->whereIn('id', $this->siteIds)->delete();
             User::query()->whereIn('id', $this->userIds)->delete();
+        }
+
+        if (tenancy()->initialized) {
             tenancy()->end();
         }
 
@@ -127,6 +137,7 @@ class HubReceiverGlnClaimRequestTest extends TestCase
     #[Test]
     public function admin_approval_creates_an_admin_claim_and_approves_the_request(): void
     {
+        Notification::fake();
         $request = $this->requestClaim();
         $this->admin = Admin::factory()->create();
 
@@ -144,6 +155,7 @@ class HubReceiverGlnClaimRequestTest extends TestCase
     #[Test]
     public function admin_rejection_rejects_the_request_without_creating_a_route(): void
     {
+        Notification::fake();
         $request = $this->requestClaim();
         $this->admin = Admin::factory()->create();
 
@@ -153,6 +165,38 @@ class HubReceiverGlnClaimRequestTest extends TestCase
         $this->assertFalse(EpcisHubRoute::query()
             ->where('tenant_id', $this->tenant->getKey())
             ->exists());
+    }
+
+    #[Test]
+    public function tenant_owners_are_notified_when_a_claim_request_is_approved_and_rejected(): void
+    {
+        Notification::fake();
+        $this->initializeTenantDatabase();
+        $owner = $this->createOwner();
+        tenancy()->end();
+        $this->admin = Admin::factory()->create();
+        $review = app(ReviewHubReceiverGlnClaimRequest::class);
+
+        $approved = $this->requestClaim();
+        $review->approve($approved, $this->admin, 'Ownership verified.');
+        app(ClaimTenantHubReceiverGln::class)
+            ->unclaim($this->tenant, 'systech', self::COMPANY_GLN);
+
+        $resubmitted = $this->requestClaim();
+        $review->reject($resubmitted, $this->admin, 'Updated evidence is required.');
+
+        Notification::assertSentTo(
+            $owner,
+            HubReceiverGlnClaimReviewedNotification::class,
+            fn (HubReceiverGlnClaimReviewedNotification $notification): bool => $notification->decision === HubReceiverGlnClaimRequestStatus::Approved
+                && $notification->reviewNote === 'Ownership verified.',
+        );
+        Notification::assertSentTo(
+            $owner,
+            HubReceiverGlnClaimReviewedNotification::class,
+            fn (HubReceiverGlnClaimReviewedNotification $notification): bool => $notification->decision === HubReceiverGlnClaimRequestStatus::Rejected
+                && $notification->reviewNote === 'Updated evidence is required.',
+        );
     }
 
     #[Test]

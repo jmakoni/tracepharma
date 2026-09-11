@@ -45,6 +45,30 @@ class HubReceiverGlnClaimAppUiTest extends TestCase
     /** @var array{profile: mixed, gln: mixed, inbound_environment: mixed, hub_providers: mixed}|null */
     private ?array $originalTenantState = null;
 
+    protected function tearDown(): void
+    {
+        $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
+
+        if ($tenant !== null) {
+            HubReceiverGlnClaimRequest::query()->where('tenant_id', $tenant->getKey())->delete();
+            EpcisHubRoute::query()->where('tenant_id', $tenant->getKey())->delete();
+
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+
+            Site::query()->whereLike('code', 'HUB-UI-%')->delete();
+            User::query()->whereIn('id', $this->userIds)->delete();
+            tenancy()->end();
+
+            if ($this->originalTenantState !== null) {
+                $tenant->forceFill($this->originalTenantState)->save();
+            }
+        }
+
+        parent::tearDown();
+    }
+
     #[Test]
     public function integration_health_owner_can_request_a_claim_for_a_claimable_receiver_gln(): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Integrations;
 
+use App\Actions\Integrations\ClaimTenantHubReceiverGln;
 use App\Actions\Integrations\RequestHubReceiverGlnClaim;
 use App\Actions\Integrations\ReviewHubReceiverGlnClaimRequest;
 use App\Enums\AdminRole;
@@ -273,6 +274,68 @@ class HubReceiverGlnClaimRequestActionsTest extends TestCase
             ->pending()
             ->count());
         $this->assertFalse(EpcisHubRoute::query()->where('tenant_id', $this->tenant()->getKey())->exists());
+    }
+
+    #[Test]
+    public function approved_claim_can_be_unclaimed_resubmitted_and_approved_on_the_same_request(): void
+    {
+        $request = $this->pendingRequest();
+        $this->admin = Admin::factory()->create();
+        $review = app(ReviewHubReceiverGlnClaimRequest::class);
+
+        $review->approve($request, $this->admin);
+        app(ClaimTenantHubReceiverGln::class)->unclaim($this->tenant(), 'systech', self::GLN);
+
+        $resubmitted = app(RequestHubReceiverGlnClaim::class)->request(
+            $this->tenant(),
+            'systech',
+            self::GLN,
+            'Receiving must be restored.',
+            new User(['name' => 'Tenant Owner', 'email' => 'owner@example.com']),
+        );
+
+        $review->approve($resubmitted, $this->admin);
+
+        $this->assertTrue($request->is($resubmitted));
+        $this->assertSame(HubReceiverGlnClaimRequestStatus::Approved, $resubmitted->fresh()?->status);
+        $this->assertSame(1, HubReceiverGlnClaimRequest::query()
+            ->where('tenant_id', $this->tenant()->getKey())
+            ->where('provider', 'systech')
+            ->where('gln', self::GLN)
+            ->count());
+    }
+
+    #[Test]
+    public function review_clears_the_reviewer_alert_throttle_for_a_resubmission(): void
+    {
+        Notification::fake();
+        app(AdminRoleSeeder::class)->seed();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->admin = Admin::factory()->create();
+        $this->admin->assignRole(AdminRole::PlatformAdmin->value);
+
+        $request = $this->pendingRequest();
+        $cacheKey = 'hub_receiver_gln_claim_review_requested:'.$request->getKey();
+
+        $this->assertTrue(Cache::has($cacheKey));
+
+        app(ReviewHubReceiverGlnClaimRequest::class)->reject($request, $this->admin);
+
+        $this->assertFalse(Cache::has($cacheKey));
+
+        app(RequestHubReceiverGlnClaim::class)->request(
+            $this->tenant(),
+            'systech',
+            self::GLN,
+            'Updated ownership evidence.',
+            new User(['name' => 'Tenant Owner', 'email' => 'owner@example.com']),
+        );
+
+        Notification::assertSentToTimes(
+            $this->admin,
+            HubReceiverGlnClaimReviewRequestedNotification::class,
+            2,
+        );
     }
 
     private function pendingRequest(): HubReceiverGlnClaimRequest
