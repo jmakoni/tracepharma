@@ -14,6 +14,7 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\TradingPartner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use DomainException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -55,15 +56,19 @@ final class AutoReceiveCmoInboundDocument
             foreach ($parentLines as $line) {
                 $uri = $line->epc?->epc_uri;
                 if (! is_string($uri) || $uri === '') {
-                    continue;
+                    throw new DomainException('Expected parent line is missing an EPC URI.');
                 }
 
-                $this->confirmReceivingScan->handle(
+                $confirm = $this->confirmReceivingScan->handle(
                     $session->fresh() ?? $session,
                     $uri,
                     userId: null,
                     autoConfirmChildren: true,
                 );
+
+                if (! ($confirm['ok'] ?? false)) {
+                    throw new DomainException((string) ($confirm['message'] ?? 'Confirm scan failed.'));
+                }
             }
 
             $session = $session->fresh() ?? $session;
