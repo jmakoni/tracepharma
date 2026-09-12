@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Resources\Sites\Pages;
 
+use App\Filament\App\Actions\RequestHubReceiverGlnClaimAction;
 use App\Filament\App\Resources\Sites\RelationManagers\AtpLicensesRelationManager;
 use App\Filament\App\Resources\Sites\Schemas\SiteInfolist;
 use App\Filament\App\Resources\Sites\SiteResource;
@@ -61,6 +62,7 @@ class ViewSite extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            RequestHubReceiverGlnClaimAction::forSiteGln($this->getRecord()->gln),
             RegulatoryCompliance::apply(
                 EditAction::make()
                     ->label('Edit site')

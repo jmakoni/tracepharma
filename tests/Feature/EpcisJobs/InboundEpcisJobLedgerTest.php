@@ -12,16 +12,16 @@ use App\Actions\EpcisJobs\RequeueEpcisJob;
 use App\Enums\EpcisJobKind;
 use App\Enums\EpcisJobStatus;
 use App\Jobs\ProcessEpcisDocumentJob;
-use App\Jobs\ValidateAndCommitEpcisDocumentJob;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
 use App\Models\EpcisJob;
 use App\Models\Tenant;
+use App\Notifications\EpcisJobFailedPlatformAlert;
 use App\Services\Epcis\EpcisIngestionService;
 use App\Support\EpcisJobs\SyncInboundEpcisJobFromDocument;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
-use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -430,6 +430,21 @@ class InboundEpcisJobLedgerTest extends TestCase
     }
 
     #[Test]
+    public function process_epcis_document_job_failed_dispatches_platform_alert(): void
+    {
+        Notification::fake();
+        config(['tracepharma.platform_support_email' => 'ops@example.test']);
+
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedInboundDocument();
+
+        (new ProcessEpcisDocumentJob($tenant, (int) $document->getKey()))
+            ->failed(new RuntimeException('worker died before parse'));
+
+        Notification::assertSentOnDemand(EpcisJobFailedPlatformAlert::class);
+    }
+
+    #[Test]
     public function force_fail_while_document_received_sets_error(): void
     {
         $this->initializeDemo2();
@@ -502,33 +517,6 @@ class InboundEpcisJobLedgerTest extends TestCase
         $document->refresh();
         $this->assertSame('error', $document->status);
         $this->assertStringContainsString('worker died mid-parse', (string) $document->error_message);
-    }
-
-    #[Test]
-    public function validate_and_commit_failed_while_inbound_received_marks_document_error(): void
-    {
-        $tenant = $this->initializeDemo2();
-        [$document] = $this->seedInboundDocument();
-        $this->assertSame('received', $document->status);
-
-        $job = EpcisJob::query()->create([
-            'receipt' => str_replace('-', '', (string) Str::uuid()),
-            'kind' => EpcisJobKind::InboundProcess,
-            'status' => EpcisJobStatus::Queued,
-            'epcis_document_id' => $document->getKey(),
-            'original_filename' => $document->original_filename,
-            'received_at' => now(),
-            'attempt_count' => 0,
-        ]);
-        $this->jobIds[] = (int) $job->getKey();
-
-        (new ValidateAndCommitEpcisDocumentJob($tenant, (int) $document->getKey()))
-            ->failed(new RuntimeException('validate-commit worker died before parse'));
-
-        $document->refresh();
-        $this->assertSame('error', $document->status);
-        $this->assertStringContainsString('validate-commit worker died before parse', (string) $document->error_message);
-        $this->assertSame(EpcisJobStatus::Error, $job->fresh()->status);
     }
 
     private function initializeDemo2(): Tenant

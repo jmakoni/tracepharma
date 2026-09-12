@@ -195,6 +195,78 @@ class FdaPrefillTest extends TestCase
     }
 
     #[Test]
+    public function merge_keeps_typed_dea_hin_duns_when_registry_row_has_none(): void
+    {
+        $merged = FdaPrefill::mergeKeepingFilledGln(
+            [
+                'name' => 'Typed',
+                'dea_number' => 'RS1234563',
+                'hin_number' => 'H123456789',
+                'duns_number' => '80373640412345',
+                'chemical_reg_number' => 'CR-TYPED-001',
+            ],
+            [
+                'name' => 'From FDA',
+                'dea_number' => null,
+                'hin_number' => null,
+                'duns_number' => null,
+                'chemical_reg_number' => null,
+                'city' => 'Glenview',
+            ],
+        );
+
+        $this->assertSame('From FDA', $merged['name']);
+        $this->assertSame('Glenview', $merged['city']);
+        $this->assertSame('RS1234563', $merged['dea_number']);
+        $this->assertSame('H123456789', $merged['hin_number']);
+        $this->assertSame('80373640412345', $merged['duns_number']);
+        $this->assertSame('CR-TYPED-001', $merged['chemical_reg_number']);
+    }
+
+    #[Test]
+    public function establishment_and_wdd_attributes_include_dea_hin_duns(): void
+    {
+        $establishment = FdaEstablishment::unguarded(fn () => new FdaEstablishment([
+            'id' => 7,
+            'name' => 'Plant',
+            'firm_name' => 'Plant Firm',
+            'duns_number' => '11122233344455',
+            'dea_number' => 'RA1111111',
+            'hin_number' => 'HIN111',
+            'chemical_reg_number' => 'CR-EST-ATTR',
+            'is_active' => true,
+        ]));
+
+        $estAttrs = FdaPrefill::establishmentAttributes($establishment);
+        $this->assertSame('11122233344455', $estAttrs['duns_number']);
+        $this->assertSame('RA1111111', $estAttrs['dea_number']);
+        $this->assertSame('HIN111', $estAttrs['hin_number']);
+        $this->assertSame('CR-EST-ATTR', $estAttrs['chemical_reg_number']);
+
+        $facility = FdaWddFacility::unguarded(fn () => new FdaWddFacility([
+            'id' => 8,
+            'name' => 'DC',
+            'facility_name' => 'DC Name',
+            'duns_number' => '44455566677788',
+            'dea_number' => 'RW2222222',
+            'hin_number' => 'HIN222',
+            'chemical_reg_number' => 'CR-WDD-ATTR',
+            'is_active' => true,
+        ]));
+
+        $wddAttrs = FdaPrefill::wddFacilityAttributes($facility);
+        $this->assertSame('44455566677788', $wddAttrs['duns_number']);
+        $this->assertSame('RW2222222', $wddAttrs['dea_number']);
+        $this->assertSame('HIN222', $wddAttrs['hin_number']);
+        $this->assertSame('CR-WDD-ATTR', $wddAttrs['chemical_reg_number']);
+
+        $this->assertTrue(FdaPrefill::isBlankIdentityValue('dea_number', null));
+        $this->assertFalse(FdaPrefill::isBlankIdentityValue('dea_number', 'RA1111111'));
+        $this->assertTrue(FdaPrefill::isBlankIdentityValue('chemical_reg_number', null));
+        $this->assertFalse(FdaPrefill::isBlankIdentityValue('chemical_reg_number', 'CR-EST-ATTR'));
+    }
+
+    #[Test]
     public function merge_lets_a_registry_gln_replace_the_typed_value(): void
     {
         $merged = FdaPrefill::mergeKeepingFilledGln(

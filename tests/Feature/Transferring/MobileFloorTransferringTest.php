@@ -216,6 +216,57 @@ class MobileFloorTransferringTest extends TestCase
     }
 
     #[Test]
+    public function mobile_remove_recent_scan_line_unconfirms_scan(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            [$fromSite, $toSite] = $this->createTransferSites($tenant);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.RM'.random_int(10000000, 99999999);
+
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+            $this->receiveAtSite($fromSite, $epc);
+
+            $session = app(OpenTransferringSession::class)->handle(
+                fromSiteId: (int) $fromSite->getKey(),
+                toSiteId: (int) $toSite->getKey(),
+            );
+            $this->sessionId = (int) $session->getKey();
+
+            $component = Livewire::test(MobileViewTransferringSession::class, ['record' => $session->getKey()])
+                ->call('stageScan', $uri);
+
+            $line = TransferringScanLine::query()
+                ->where('transferring_session_id', $session->getKey())
+                ->where('status', 'confirmed')
+                ->first();
+
+            $this->assertNotNull($line);
+
+            $component->call('removeRecentScanLine', (int) $line->getKey());
+
+            $this->assertSame(
+                0,
+                TransferringScanLine::query()
+                    ->where('transferring_session_id', $session->getKey())
+                    ->where('status', 'confirmed')
+                    ->count(),
+            );
+            $this->assertSame(0, (int) $session->fresh()->confirmed_count);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function transfer_layout_session_url_prefers_floor_when_cookie_set(): void
     {
         $tenant = $this->initializeDemo2Tenant();

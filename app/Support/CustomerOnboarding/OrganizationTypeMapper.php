@@ -39,7 +39,7 @@ class OrganizationTypeMapper
             'wholesaler' => 'Drug wholesaler',
             'manufacturer' => 'Drug manufacturer',
             'logistics_3pl' => '3PL / logistics',
-            'buying_group' => 'Pharmacy buying group',
+            'buying_group' => 'Buying group',
             'dental_medical' => 'Dental / medical supply',
             'prepackager' => 'Prepackager / repackager',
             'other' => 'Other dispenser or distributor',

@@ -1,0 +1,255 @@
+{{--
+    filament-ui-extras OVERRIDE of filament-panels::components.page.index
+    Purpose: add independent dual sub-navigation slots alongside Filament cluster/resource sub-nav.
+    Keep this diff minimal when reconciling Filament upgrades.
+--}}
+@props([
+    'fullHeight' => false,
+])
+
+@php
+    use Filament\Pages\Enums\SubNavigationPosition;
+    use Tracepharma\FilamentUiExtras\Enums\DualSubNavigationPosition;
+
+    $subNavigation = $this->getCachedSubNavigation();
+    $subNavigationPosition = $this->getSubNavigationPosition();
+    $widgetData = $this->getWidgetData();
+
+    $dualSubNavigation = method_exists($this, 'getCachedDualSubNavigation')
+        ? $this->getCachedDualSubNavigation()
+        : [];
+    $dualSubNavigationPosition = method_exists($this, 'getDualSubNavigationPositionEnum')
+        ? $this->getDualSubNavigationPositionEnum()
+        : null;
+    $hasDualSubNavigation = filled($dualSubNavigation) && $dualSubNavigationPosition;
+@endphp
+
+@php
+    $pageClasses = [
+        'fi-page',
+        'fi-height-full' => $fullHeight,
+        'fi-page-has-sub-navigation' => filled($subNavigation),
+        'fi-page-has-dual-sub-navigation' => $hasDualSubNavigation,
+        ...$this->getPageClasses(),
+    ];
+
+    // Avoid interpolating ->value in array keys when position enums are null
+    // (PHP evaluates keys even when the class flag value is false).
+    if (filled($subNavigation) && $subNavigationPosition) {
+        $pageClasses["fi-page-has-sub-navigation-{$subNavigationPosition->value}"] = true;
+    }
+
+    if ($hasDualSubNavigation && $dualSubNavigationPosition) {
+        $pageClasses["fi-page-has-dual-sub-navigation-{$dualSubNavigationPosition->value}"] = true;
+    }
+@endphp
+
+<div
+    {{
+        $attributes->class($pageClasses)
+    }}
+>
+    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_START, scopes: $this->getRenderHookScopes()) }}
+
+    <div class="fi-page-header-main-ctn">
+        @if ($subNavigation)
+            <div
+                class="fi-page-main-sub-navigation-mobile-menu-render-hook-ctn"
+            >
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_BEFORE, scopes: $this->getRenderHookScopes()) }}
+            </div>
+
+            <x-filament-panels::page.sub-navigation.mobile-menu
+                :navigation="$subNavigation"
+            />
+
+            <div
+                class="fi-page-main-sub-navigation-mobile-menu-render-hook-ctn"
+            >
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_AFTER, scopes: $this->getRenderHookScopes()) }}
+            </div>
+        @endif
+
+        {{-- filament-ui-extras: dual sub-nav mobile (top) --}}
+        @if ($hasDualSubNavigation && $dualSubNavigationPosition === DualSubNavigationPosition::Top)
+            <nav
+                class="fi-uie-dual-sub-navigation-mobile"
+                aria-label="{{ __('filament-ui-extras::ui.dual_sub_navigation') }}"
+            >
+                <x-filament-panels::page.sub-navigation.mobile-menu
+                    :navigation="$dualSubNavigation"
+                />
+            </nav>
+        @endif
+
+        @if ($header = $this->getHeader())
+            {{ $header }}
+        @else
+            @php
+                $heading = $this->getHeading();
+                $headerActions = $this->getCachedHeaderActions();
+                $headerActionsAlignment = $this->getHeaderActionsAlignment();
+                $breadcrumbs = filament()->hasBreadcrumbs() ? $this->getBreadcrumbs() : [];
+                $subheading = $this->getSubheading();
+            @endphp
+
+            @if (filled($headerActions) || $breadcrumbs || filled($heading) || filled($subheading) || (method_exists($this, 'getCachedBeforeHeaderActions') && filled($this->getCachedBeforeHeaderActions())))
+                <x-filament-panels::header
+                    :actions="$headerActions"
+                    :actions-alignment="$headerActionsAlignment"
+                    :breadcrumbs="$breadcrumbs"
+                    :heading="$heading"
+                    :subheading="$subheading"
+                >
+                    @if ($heading instanceof \Illuminate\Contracts\Support\Htmlable)
+                        <x-slot name="heading">
+                            {{ $heading }}
+                        </x-slot>
+                    @endif
+
+                    @if ($subheading instanceof \Illuminate\Contracts\Support\Htmlable)
+                        <x-slot name="subheading">
+                            {{ $subheading }}
+                        </x-slot>
+                    @endif
+                </x-filament-panels::header>
+            @endif
+        @endif
+
+        <div class="fi-page-main">
+            {{-- filament-ui-extras: dual sub-nav start --}}
+            @if ($hasDualSubNavigation && $dualSubNavigationPosition === DualSubNavigationPosition::Start)
+                <nav
+                    class="fi-uie-dual-sub-navigation-sidebar-ctn"
+                    aria-label="{{ __('filament-ui-extras::ui.dual_sub_navigation') }}"
+                >
+                    <x-filament-panels::page.sub-navigation.sidebar
+                        :navigation="$dualSubNavigation"
+                    />
+                </nav>
+            @endif
+
+            @if ($subNavigation)
+                @if ($subNavigationPosition === SubNavigationPosition::Start)
+                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_START_BEFORE, scopes: $this->getRenderHookScopes()) }}
+
+                    <x-filament-panels::page.sub-navigation.sidebar
+                        :navigation="$subNavigation"
+                    />
+
+                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_START_AFTER, scopes: $this->getRenderHookScopes()) }}
+                @endif
+
+                @if ($subNavigationPosition === SubNavigationPosition::Top)
+                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_BEFORE, scopes: $this->getRenderHookScopes()) }}
+
+                    <x-filament-panels::page.sub-navigation.tabs
+                        :navigation="$subNavigation"
+                    />
+
+                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_AFTER, scopes: $this->getRenderHookScopes()) }}
+                @endif
+            @endif
+
+            <div class="fi-page-content">
+                {{-- filament-ui-extras: dual sub-nav top tabs --}}
+                @if ($hasDualSubNavigation && $dualSubNavigationPosition === DualSubNavigationPosition::Top)
+                    <nav
+                        class="fi-uie-dual-sub-navigation-tabs"
+                        aria-label="{{ __('filament-ui-extras::ui.dual_sub_navigation') }}"
+                    >
+                        <x-filament-panels::page.sub-navigation.tabs
+                            :navigation="$dualSubNavigation"
+                        />
+                    </nav>
+                @endif
+
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
+
+                {{ $this->headerWidgets }}
+
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
+
+                {{ $slot }}
+
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_FOOTER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
+
+                {{ $this->footerWidgets }}
+
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_FOOTER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
+            </div>
+
+            @if ($subNavigation && $subNavigationPosition === SubNavigationPosition::End)
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_END_BEFORE, scopes: $this->getRenderHookScopes()) }}
+
+                <x-filament-panels::page.sub-navigation.sidebar
+                    :navigation="$subNavigation"
+                />
+
+                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_END_AFTER, scopes: $this->getRenderHookScopes()) }}
+            @endif
+
+            {{-- filament-ui-extras: dual sub-nav end --}}
+            @if ($hasDualSubNavigation && $dualSubNavigationPosition === DualSubNavigationPosition::End)
+                <nav
+                    class="fi-uie-dual-sub-navigation-sidebar-ctn"
+                    aria-label="{{ __('filament-ui-extras::ui.dual_sub_navigation') }}"
+                >
+                    <x-filament-panels::page.sub-navigation.sidebar
+                        :navigation="$dualSubNavigation"
+                    />
+                </nav>
+            @endif
+        </div>
+
+        @if ($footer = $this->getFooter())
+            {{ $footer }}
+        @endif
+    </div>
+
+    @if (! ($this instanceof \Filament\Tables\Contracts\HasTable))
+        <x-filament-actions::modals />
+    @elseif ($this->isTableLoaded() && filled($this->defaultTableAction))
+        <div
+            wire:init="mountAction(@js($this->defaultTableAction) , @if (filled($this->defaultTableActionArguments)) @js($this->defaultTableActionArguments) @else {} @endif , @js($this->getDefaultTableActionUrlContext()))"
+        ></div>
+    @endif
+
+    @if (filled($this->defaultAction))
+        <div
+            wire:init="mountAction(@js($this->defaultAction) , @if (filled($this->defaultActionArguments)) @js($this->defaultActionArguments) @else {} @endif , @js($this->getDefaultActionUrlContext()))"
+        ></div>
+    @endif
+
+    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_END, scopes: $this->getRenderHookScopes()) }}
+
+    @if (method_exists($this, 'hasUnsavedDataChangesAlert') && $this->hasUnsavedDataChangesAlert())
+        @if (\Filament\Support\Facades\FilamentView::hasSpaMode())
+            @script
+                <script>
+                    setUpSpaModeUnsavedDataChangesAlert({
+                        body: @js(__('filament-panels::unsaved-changes-alert.body')),
+                        resolveLivewireComponentUsing: () => @this,
+                        $wire,
+                    })
+                </script>
+            @endscript
+        @else
+            @script
+                <script>
+                    setUpUnsavedDataChangesAlert({ $wire })
+                </script>
+            @endscript
+        @endif
+    @endif
+
+    @if (! app()->hasDebugModeEnabled())
+        @script
+            <script>
+                window.filamentErrorNotifications = @js($this->hasErrorNotifications() ? $this->getErrorNotifications() : null)
+            </script>
+        @endscript
+    @endif
+
+    <x-filament-panels::unsaved-action-changes-alert />
+</div>

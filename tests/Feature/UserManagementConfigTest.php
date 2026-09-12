@@ -52,10 +52,27 @@ class UserManagementConfigTest extends TestCase
     }
 
     #[Test]
-    public function buying_group_only_gets_owner(): void
+    public function prepackager_keeps_manufacturer_personas_and_adds_wholesaler_receive(): void
+    {
+        $roles = TenantRole::forProfile(TenantProfile::Prepackager);
+
+        $this->assertContains(TenantRole::PackagingLineOperator, $roles);
+        $this->assertContains(TenantRole::ReceivingTechnician, $roles);
+        $this->assertContains(TenantRole::OutboundPickAndPackLead, $roles);
+        $this->assertNotContains(TenantRole::DispensingPharmacist, $roles);
+    }
+
+    #[Test]
+    public function buying_group_gets_owner_support_engineer_and_network_personas(): void
     {
         $this->assertSame(
-            [TenantRole::Owner],
+            [
+                TenantRole::Owner,
+                TenantRole::SupportEngineer,
+                TenantRole::BuyingGroupNetworkAdmin,
+                TenantRole::BuyingGroupAnalyst,
+                TenantRole::BuyingGroupMember,
+            ],
             TenantRole::forProfile(TenantProfile::BuyingGroup)
         );
     }

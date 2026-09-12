@@ -11,6 +11,17 @@
                             @endforeach
                         </select>
                     </label>
+                    @if ($this->supportsPrincipalFilter())
+                        <label class="form-control gap-1 flex-1">
+                            <span class="label-text text-sm font-medium">Principal</span>
+                            <select wire:model.live="principalId" class="select select-bordered">
+                                <option value="">All principals</option>
+                                @foreach ($this->principalOptions() as $id => $label)
+                                    <option value="{{ $id }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                    @endif
                     <label class="form-control gap-1">
                         <span class="label-text text-sm font-medium">Window</span>
                         <select wire:model.live="windowDays" class="select select-bordered">
@@ -29,6 +40,9 @@
                                 <th>Lot</th>
                                 <th>Expiry</th>
                                 <th>Days</th>
+                                @if ($this->canQuarantine())
+                                    <th></th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
@@ -38,10 +52,21 @@
                                     <td>{{ $epc->ilmd?->lot_number ?? '—' }}</td>
                                     <td>{{ $epc->ilmd?->expiry_date?->toDateString() ?? '—' }}</td>
                                     <td>{{ $this->daysLeft($epc) ?? '—' }}</td>
+                                    @if ($this->canQuarantine())
+                                        <td class="text-right">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-error btn-outline"
+                                                wire:click="mountAction('quarantineHit', { epc: {{ (int) $epc->getKey() }} })"
+                                            >
+                                                Quarantine
+                                            </button>
+                                        </td>
+                                    @endif
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-sm opacity-70">No on-hand serials expire in this window.</td>
+                                    <td colspan="{{ $this->canQuarantine() ? 5 : 4 }}" class="text-sm opacity-70">No on-hand serials expire in this window.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -50,4 +75,6 @@
             </div>
         </div>
     </div>
+
+    <x-filament-actions::modals />
 </x-filament-panels::page>

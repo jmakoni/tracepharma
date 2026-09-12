@@ -3,13 +3,19 @@
 namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\PersistEpcisDocumentVocabulary;
+use App\Enums\EpcisAuthoredKind;
+use App\Enums\EpcisReceivedVia;
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Filament\App\Resources\EpcisDocuments\Pages\ViewEpcisDocument;
+use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
+use App\Filament\App\Resources\OutboundEpcisDocuments\Pages\ViewOutboundEpcisDocument;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -36,6 +42,9 @@ class EpcisDocumentSummaryTabTest extends TestCase
 
     /** @var list<int> */
     private array $eventIds = [];
+
+    /** @var list<int> */
+    private array $userIds = [];
 
     #[Test]
     public function view_page_uses_summary_as_first_combined_content_tab(): void
@@ -67,7 +76,8 @@ class EpcisDocumentSummaryTabTest extends TestCase
             $this->assertTrue($summary['dscsa_affirm']);
             $this->assertSame(1, $summary['case_count']);
             $this->assertSame(1, $summary['unit_count']);
-            $this->assertSame('1 case · 1 unit', $summary['case_unit_label']);
+            $this->assertSame(1, $summary['sscc_count']);
+            $this->assertSame('1 SSCC · 1 case · 1 unit', $summary['case_unit_label']);
         } finally {
             $this->cleanup();
         }
@@ -79,11 +89,9 @@ class EpcisDocumentSummaryTabTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            $user = User::query()->first();
-            $this->assertNotNull($user);
+            $user = $this->actingOwner();
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
-            $this->actingAs($user);
 
             $document = $this->makeSummaryDocument();
 
@@ -100,6 +108,155 @@ class EpcisDocumentSummaryTabTest extends TestCase
         } finally {
             $this->cleanup();
         }
+    }
+
+    #[Test]
+    public function inbound_partner_document_shows_transaction_statement_section(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->actingOwner();
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $document = $this->makeSummaryDocument();
+
+            Livewire::test(ViewEpcisDocument::class, ['record' => $document->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Transaction statement affirmed')
+                ->assertSee('Legal notice');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function transferring_document_hides_transaction_statement_section(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $this->actingOwnerForProfile(TenantProfile::DrugWholesaler);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(
+                OutboundEpcisDocumentResource::canAccess(),
+                'expected DrugWholesaler Owner to access Outbound EPCIS',
+            );
+
+            $document = $this->makeAuthoredDocument(EpcisAuthoredKind::Transferring, 'transfer-ui-hide.xml');
+
+            Livewire::test(ViewOutboundEpcisDocument::class, ['record' => $document->getKey()])
+                ->assertSuccessful()
+                ->assertDontSee('Transaction statement affirmed');
+        } finally {
+            $this->cleanupWholesaler($tenant);
+        }
+    }
+
+    #[Test]
+    public function generated_receiving_document_hides_transaction_statement_section(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $this->actingOwnerForProfile(TenantProfile::DrugWholesaler);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(OutboundEpcisDocumentResource::canAccess());
+
+            $document = $this->makeAuthoredDocument(EpcisAuthoredKind::Receiving, 'receiving-ui-hide.xml');
+
+            Livewire::test(ViewOutboundEpcisDocument::class, ['record' => $document->getKey()])
+                ->assertSuccessful()
+                ->assertDontSee('Transaction statement affirmed');
+        } finally {
+            $this->cleanupWholesaler($tenant);
+        }
+    }
+
+    private function actingOwner(): User
+    {
+        return $this->actingOwnerForProfile(TenantProfile::Pharmacy);
+    }
+
+    private function actingOwnerForProfile(TenantProfile $profile): User
+    {
+        app(TenantRoleSeeder::class)->seedForProfile($profile);
+
+        $user = User::factory()->create([
+            'email' => 'dscsa-ts-ui-'.uniqid().'@example.test',
+        ]);
+        $user->assignRole(TenantRole::Owner->value);
+        $this->userIds[] = (int) $user->getKey();
+        $this->actingAs($user);
+
+        return $user;
+    }
+
+    private ?TenantProfile $priorProfile = null;
+
+    private function initializeWholesalerTenant(): Tenant
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        $this->priorProfile = $tenant->profile instanceof TenantProfile
+            ? $tenant->profile
+            : TenantProfile::tryFrom((string) $tenant->profile);
+
+        tenancy()->end();
+        $tenant->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+        tenancy()->initialize($tenant->fresh());
+
+        return $tenant;
+    }
+
+    private function cleanupWholesaler(Tenant $tenant): void
+    {
+        $this->cleanup();
+
+        if ($this->priorProfile !== null) {
+            $tenant->forceFill(['profile' => $this->priorProfile])->save();
+            $this->priorProfile = null;
+        }
+    }
+
+    private function makeAuthoredDocument(EpcisAuthoredKind $kind, string $filename): EpcisDocument
+    {
+        $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1" schemaVersion="1.2" creationDate="2026-08-04T16:33:46.366Z">
+  <EPCISBody><EventList/></EPCISBody>
+</epcis:EPCISDocument>
+XML;
+
+        $path = 'epcis/outbound/'.(string) str()->uuid().'.xml';
+        Storage::disk('local')->put($path, $xml);
+
+        $document = EpcisDocument::query()->create([
+            'document_uuid' => (string) str()->uuid(),
+            'schema_version' => '1.2',
+            'creation_date' => now(),
+            'direction' => 'outbound',
+            'authored_kind' => $kind,
+            'format' => 'xml',
+            'original_filename' => $filename,
+            'file_sha256' => hash('sha256', $xml),
+            'payload_disk' => 'local',
+            'payload_path' => $path,
+            'dscsa_affirm' => false,
+            'legal_notice' => null,
+            'status' => 'generated',
+            'event_count' => 0,
+            'epc_count' => 0,
+            'received_at' => now(),
+            'ingest_generation' => 1,
+            'reprocess_count' => 0,
+            'notes' => 'Generated '.$kind->value.' for UI visibility test',
+        ]);
+        $this->documentIds[] = (int) $document->id;
+
+        return $document;
     }
 
     private function makeSummaryDocument(): EpcisDocument
@@ -146,6 +303,7 @@ XML;
             'file_sha256' => hash('sha256', $xml),
             'payload_disk' => 'local',
             'payload_path' => $path,
+            'received_via' => EpcisReceivedVia::FilamentUpload,
             'dscsa_affirm' => true,
             'legal_notice' => 'Seller has complied with each applicable subsection of FDCA Sec. 581(27)(A)-(G).',
             'customer_po' => '198167',
@@ -332,6 +490,11 @@ XML;
         if ($this->documentIds !== []) {
             EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();
             $this->documentIds = [];
+        }
+
+        if ($this->userIds !== []) {
+            User::query()->whereKey($this->userIds)->delete();
+            $this->userIds = [];
         }
 
         tenancy()->end();

@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Vrs;
 
+use App\Exceptions\VrsConfigurationException;
 use App\Services\Vrs\FakeVrsClient;
 use App\Services\Vrs\HttpVrsClient;
 use App\Services\Vrs\NullVrsClient;
@@ -65,14 +66,19 @@ class VrsExpiryPassthroughTest extends TestCase
     }
 
     #[Test]
-    public function fake_and_null_clients_echo_the_expiry_back(): void
+    public function fake_client_echoes_the_expiry_back(): void
     {
         $fake = app(FakeVrsClient::class)->verify('00301164024167', 'GOOD1', 'LOT-A', '260731');
         $this->assertSame('260731', $fake['expiry_yymmdd']);
         $this->assertSame('verified', $fake['status']);
+    }
 
-        $null = app(NullVrsClient::class)->verify('00301164024167', 'GOOD1', null, '260731');
-        $this->assertSame('260731', $null['expiry_yymmdd']);
-        $this->assertSame('deferred', $null['status']);
+    #[Test]
+    public function null_client_throws_configuration_exception(): void
+    {
+        $this->expectException(VrsConfigurationException::class);
+        $this->expectExceptionMessage('VRS_DRIVER');
+
+        app(NullVrsClient::class)->verify('00301164024167', 'GOOD1', null, '260731');
     }
 }

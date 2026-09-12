@@ -5,6 +5,7 @@ namespace App\Support\Exceptions;
 use App\Actions\Epcis\ProcessEpcisDocument;
 use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Actions\Epcis\ValidateEpcis12Document;
+use App\Console\Commands\EmitPendingMdnCatalogSignalsCommand;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
 use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
@@ -21,14 +22,17 @@ use Database\Seeders\ExceptionTypeSeeder;
  * actually emitted by {@see EpcisCatalogBusinessRules},
  * {@see ValidateEpcis12Document} and {@see ProcessEpcisDocument}.
  *
- * Codes that exist in the catalog only as unwired stubs — the partner/MDN/VRS/L2-L3 hooks in
- * {@see RecordOperationalEpcisCatalogSignal} that no job/controller calls yet
- * (PARTNER_REJECTED_FILE, MISSING_MDN, LATE_MDN, L2_L3_RECONCILIATION_FAILURE,
- * L3_TRANSMISSION_FAILURE, AUTO_DECOMMISSION_FAILED) — plus the orphaned TIMING_INVERSION and
+ * Codes that exist in the catalog only as unwired stubs — the orphaned TIMING_INVERSION and
  * SHIP_BEFORE_COMMISSION (declared in the catalog/severity map but never raised by a validator;
  * superseded for live detection by {@see EpcisCatalogBusinessRules} emitting
  * SERIAL_SHIPPED_NOT_COMMISSIONED and MISSING_COMMISSIONING instead — keep stub-hidden, no new emitter)
  * intentionally fall through to the generic {@see self::FAMILY_FALLBACK} profile.
+ *
+ * AUTO_DECOMMISSION_FAILED is live (DecommissionNeverShippedEpcs) and operator-visible.
+ * L2_L3_RECONCILIATION_FAILURE is live (ReconcileSsccBatchL3L4) and operator-visible.
+ * L3_TRANSMISSION_FAILURE is live (ForwardCommissioningToL3 → RecordOperationalEpcisCatalogSignal)
+ * and is operator-visible. PARTNER_REJECTED_FILE / MISSING_MDN / LATE_MDN are live from AS2 MDN
+ * reject paths and {@see EmitPendingMdnCatalogSignalsCommand}.
  */
 final class ExceptionCorrectionProfile
 {
@@ -250,12 +254,6 @@ final class ExceptionCorrectionProfile
     public static function operatorHiddenStubCodes(): array
     {
         return [
-            'PARTNER_REJECTED_FILE',
-            'MISSING_MDN',
-            'LATE_MDN',
-            'L2_L3_RECONCILIATION_FAILURE',
-            'L3_TRANSMISSION_FAILURE',
-            'AUTO_DECOMMISSION_FAILED',
             'TIMING_INVERSION',
             'SHIP_BEFORE_COMMISSION',
         ];
@@ -336,8 +334,8 @@ final class ExceptionCorrectionProfile
     private const FAMILY_DEFAULTS = [
         self::FAMILY_MASTER_DATA_PRODUCT => [
             'primaryActionKey' => self::ACTION_ADD_PRODUCT,
-            'primaryActionLabel' => 'Add product to assortment',
-            'blurb' => 'This GTIN is not in your product master. Add it to the product assortment so future EPCIS events for this item stop raising this exception.',
+            'primaryActionLabel' => 'Authorize product',
+            'blurb' => 'This GTIN is not in your product master. Authorize it for the receive-from partner so future inbound EPCIS events for this item stop raising this exception.',
             'rootCause' => 'internal_mapping_error',
             'resolutionAction' => 'update_master_data',
             'quarantine' => false,
@@ -447,6 +445,7 @@ final class ExceptionCorrectionProfile
         'INVALID_GTIN_CHECK_DIGIT' => self::FAMILY_DOCUMENT,
         'INVALID_SSCC_CHECK_DIGIT' => self::FAMILY_DOCUMENT,
         'UNKNOWN_GLN' => self::FAMILY_MASTER_DATA_LOCATION,
+        'SCHEDULED_PRODUCT_MISSING_DEA' => self::FAMILY_MASTER_DATA_LOCATION,
         'INVALID_COMPANY_PREFIX' => self::FAMILY_DOCUMENT,
         'LEADING_ZERO_STRIPPED' => self::FAMILY_DOCUMENT, // hook-only today (RecordOperationalEpcisCatalogSignal); mapped for when it fires
         'GTIN_SERIAL_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
@@ -478,7 +477,7 @@ final class ExceptionCorrectionProfile
 
         // Quantity, Lot & Expiry
         'LOT_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
-        'QUANTITY_MISMATCH' => self::FAMILY_DOCUMENT, // hook-only today
+        'QUANTITY_MISMATCH' => self::FAMILY_DOCUMENT, // emitted on outbound under-scan without declared split
         'MISSING_EXPIRY' => self::FAMILY_DOCUMENT,
         'EXPIRED_PRODUCT_SHIPPED' => self::FAMILY_QUARANTINE,
         'MIXED_EXPIRY_SAME_LOT' => self::FAMILY_DOCUMENT,
@@ -489,18 +488,23 @@ final class ExceptionCorrectionProfile
         'TIMING_INVERSION' => self::FAMILY_FALLBACK, // orphaned: catalogued/severity-mapped but never raised
         'COMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
         'EVENTS_OUT_OF_ORDER' => self::FAMILY_TIMING,
+        'PACK_HIERARCHY_TIME_INVERSION' => self::FAMILY_TIMING,
         'SHIP_BEFORE_COMMISSION' => self::FAMILY_FALLBACK, // orphaned/superseded by SERIAL_SHIPPED_NOT_COMMISSIONED + MISSING_COMMISSIONING
         'DECOMMISSION_AFTER_SHIP' => self::FAMILY_TIMING,
 
         // Transmission & Partner
-        'PARTNER_REJECTED_FILE' => self::FAMILY_FALLBACK, // stub: RecordOperationalEpcisCatalogSignal hook, no caller yet
-        'MISSING_MDN' => self::FAMILY_FALLBACK, // stub: MDN hook, no caller yet
-        'LATE_MDN' => self::FAMILY_FALLBACK, // stub: MDN hook, no caller yet
+        'PARTNER_REJECTED_FILE' => self::FAMILY_FALLBACK, // live: ProcessAs2AsyncMdn + ConnectionOutboundEpcisTransmitter
+        'MISSING_MDN' => self::FAMILY_FALLBACK, // live: epcis:emit-pending-mdn-signals
+        'LATE_MDN' => self::FAMILY_FALLBACK, // live: epcis:emit-pending-mdn-signals
         'DUPLICATE_TRANSMISSION' => self::FAMILY_DOCUMENT,
         'FILE_SIZE_EXCEEDED' => self::FAMILY_DOCUMENT,
         'ENCODING_ERROR' => self::FAMILY_DOCUMENT, // hook-only today
         'MISSING_SOURCE_DESTINATION' => self::FAMILY_DOCUMENT,
         'MISSING_BIZ_TRANSACTION' => self::FAMILY_DOCUMENT,
+        'ASN_SHIPMENT_FILE_ADDED' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'ASN_SHIPMENT_PO_MISMATCH' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'DESTINATION_OWNING_PARTY_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
+        'DESTINATION_LOCATION_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
 
         // Process & DSCSA Compliance
         'MISSING_COMMISSIONING' => self::FAMILY_QUARANTINE,
@@ -513,9 +517,9 @@ final class ExceptionCorrectionProfile
         'OWNERSHIP_TRANSFER_UNCLEAR' => self::FAMILY_DOCUMENT,
 
         // System / Operational
-        'L2_L3_RECONCILIATION_FAILURE' => self::FAMILY_FALLBACK, // stub: L2/L3 hook, no caller yet
-        'L3_TRANSMISSION_FAILURE' => self::FAMILY_FALLBACK, // stub: L2/L3 hook, no caller yet
-        'AUTO_DECOMMISSION_FAILED' => self::FAMILY_FALLBACK, // stub: hook, no caller yet
+        'L2_L3_RECONCILIATION_FAILURE' => self::FAMILY_DOCUMENT, // emitted by ReconcileSsccBatchL3L4
+        'L3_TRANSMISSION_FAILURE' => self::FAMILY_FALLBACK, // live: ForwardCommissioningToL3
+        'AUTO_DECOMMISSION_FAILED' => self::FAMILY_FALLBACK, // live: DecommissionNeverShippedEpcs
         'MASTER_DATA_SYNC_LAG' => self::FAMILY_MASTER_DATA_PRODUCT,
         'INGESTION_PARSE_ERROR' => self::FAMILY_DOCUMENT,
         'INTERNAL_VALIDATION_FAILED' => self::FAMILY_DOCUMENT,
@@ -533,10 +537,13 @@ final class ExceptionCorrectionProfile
      */
     private const CODE_OVERRIDES = [
         'UNKNOWN_GTIN' => [
-            'blurb' => 'GTIN not found in product master. Add this GTIN to the product assortment so future shipments for this item resolve automatically instead of raising this exception. When several GTINs are missing on one document, use the document Products tab to authorize catalog hits in bulk.',
+            'blurb' => 'GTIN not found in product master. Authorize this GTIN for the receive-from partner so future inbound shipments resolve automatically instead of raising this exception. When several GTINs are missing on one document, use the document Products tab to authorize catalog hits in bulk.',
         ],
         'UNKNOWN_GLN' => [
             'blurb' => 'GLN not recognized by the system or the trading partner. Register this GLN as one of your locations or a known partner location.',
+        ],
+        'SCHEDULED_PRODUCT_MISSING_DEA' => [
+            'blurb' => 'This shipment includes DEA-scheduled product. Add the seller or destination DEA registration on the trading partner or site, then reprocess.',
         ],
         'MASTER_DATA_SYNC_LAG' => [
             'primaryActionLabel' => 'Update product or location master data',
@@ -580,6 +587,11 @@ final class ExceptionCorrectionProfile
         ],
         'EVENTS_OUT_OF_ORDER' => [
             'blurb' => 'Events for this EPC were received out of chronological order. This is often benign (e.g. batch upload timing) — investigate with the sending system, or accept with a waiver if the sequence is otherwise explainable.',
+        ],
+        'PACK_HIERARCHY_TIME_INVERSION' => [
+            'blurb' => 'This EPC was packed into a higher parent before its own child packing event (for example inner pack → SSCC before EA → inner pack). Ask the partner to correct packing timestamps so hierarchy order is physically possible.',
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
         ],
 
         // Aggregation / hierarchy — hook-only or naturally lower-risk codes get a waive escape hatch.
@@ -670,6 +682,22 @@ final class ExceptionCorrectionProfile
         'UNSUPPORTED_EPC_TYPE' => ['waive' => true],
         'INVALID_EXTENSION_NAMESPACE' => ['waive' => true],
         'FILE_SIZE_EXCEEDED' => ['waive' => true],
+        'ASN_SHIPMENT_FILE_ADDED' => [
+            'blurb' => 'Another inbound EPCIS file joined this ASN shipment. Expected receive lines may expand; investigate only if the extra file was unexpected.',
+            'waive' => true,
+        ],
+        'ASN_SHIPMENT_PO_MISMATCH' => [
+            'blurb' => 'This file shares an ASN with an existing shipment but has a different customer PO, so it was left ungrouped. Confirm the correct PO with the partner or waive if both references are intentional.',
+            'waive' => true,
+        ],
+        'DESTINATION_OWNING_PARTY_MISMATCH' => [
+            'blurb' => 'Sold-to / destination owning party GLN is not one of your organization or facility GLNs. Confirm the file was meant for this tenant, register the GLN as an org facility if it is yours, or waive after investigation.',
+            'waive' => true,
+        ],
+        'DESTINATION_LOCATION_MISMATCH' => [
+            'blurb' => 'Ship-to / destination location GLN is not one of your organization or facility GLNs. Confirm the dock is yours, add the site GLN, or waive after investigation.',
+            'waive' => true,
+        ],
         // Internal platform validation failures require document correct/reprocess — not waiver.
         'INTERNAL_VALIDATION_FAILED' => [
             'blurb' => 'Platform business-rule validation failed for this document. Review the validation errors, correct or replace the file, and re-process. Waiver is not available for this signal.',

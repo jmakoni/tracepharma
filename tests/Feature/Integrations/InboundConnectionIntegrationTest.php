@@ -5,13 +5,20 @@ namespace Tests\Feature\Integrations;
 use App\Enums\InboundTransport;
 use App\Enums\SerializationProvider;
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Filament\App\Pages\ApiTokens;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
+use App\Filament\App\Resources\InboundConnections\Pages\CreateInboundConnection;
 use App\Http\Controllers\Webhooks\EpcisInboundWebhookController;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
+use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantFeatures;
+use Filament\Facades\Filament;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\CleansDemo2EpcisArtifacts;
 use Tests\TestCase;
@@ -131,6 +138,33 @@ class InboundConnectionIntegrationTest extends TestCase
             $tenant->setAttribute('profile', $original);
 
             $this->assertFalse(ApiTokens::canAccess());
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function create_form_renders_source_wizard_without_spec_jargon(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create([
+                'email' => 'inbound-form-'.Str::uuid().'@example.com',
+            ]);
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(CreateInboundConnection::class)
+                ->assertSee('Source')
+                ->assertSee('Who sends to you')
+                ->assertSee('Handoff details')
+                ->assertSee('TracePharma hub')
+                ->assertDontSee('Serialization provider')
+                ->assertDontSee('Multi-partner routing')
+                ->assertDontSee('SBDH');
         } finally {
             tenancy()->end();
         }

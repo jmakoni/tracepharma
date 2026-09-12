@@ -475,7 +475,9 @@ final class GenerateTransferringReceiveEpcisEvents
             "                <eventTime>{$shippingEventTimeXml}</eventTime>\n".
             "                <recordTime>{$recordTimeXml}</recordTime>\n".
             "                <eventTimeZoneOffset>{$shipOffsetXml}</eventTimeZoneOffset>\n".
-            "                <eventID>urn:uuid:{$shippingUuid}</eventID>\n".
+            "                <baseExtension>\n".
+            "                  <eventID>urn:uuid:{$shippingUuid}</eventID>\n".
+            "                </baseExtension>\n".
             "                <epcList>\n".
             "{$shippingEpcList}\n".
             "                </epcList>\n".
@@ -490,7 +492,9 @@ final class GenerateTransferringReceiveEpcisEvents
             "                <eventTime>{$receivingEventTimeXml}</eventTime>\n".
             "                <recordTime>{$recordTimeXml}</recordTime>\n".
             "                <eventTimeZoneOffset>{$receiveOffsetXml}</eventTimeZoneOffset>\n".
-            "                <eventID>urn:uuid:{$receivingUuid}</eventID>\n".
+            "                <baseExtension>\n".
+            "                  <eventID>urn:uuid:{$receivingUuid}</eventID>\n".
+            "                </baseExtension>\n".
             "                <epcList>\n".
             "{$receivingEpcList}\n".
             "                </epcList>\n".

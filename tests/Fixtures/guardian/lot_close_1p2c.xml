@@ -1,0 +1,253 @@
+<?xml version='1.0' encoding='utf-8'?>
+<DataFeed>
+  <Envelope>
+    <MessageID>8061EE51-05B4-4F9C-BDE4-82D34601D69E</MessageID>
+    <ProcessFlowAction>Serialization</ProcessFlowAction>
+    <FromSystem>Xttrium Guardian</FromSystem>
+    <ToSystem>Xttrium UniTrace</ToSystem>
+    <NotificationTime>2026-08-27T13:43:54.697</NotificationTime>
+    <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+  </Envelope>
+  <Header>
+    <Location>
+      <SiteName>Xttrium</SiteName>
+      <SiteId>0301160000009</SiteId>
+      <LineName>MP 109</LineName>
+      <LineDescription>MP 109</LineDescription>
+    </Location>
+    <LotInfo>
+      <LotNumber>608464T</LotNumber>
+      <LotProcessedTime>2026-08-27T13:43:50</LotProcessedTime>
+      <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+      <ExpireDate>2028-07-31</ExpireDate>
+      <ProductName>Xttrium Oral Rinse</ProductName>
+      <ProductDescription>0.12% CHG Oral Rinse</ProductDescription>
+      <ProductCode Name="NDC">0116-2001-16</ProductCode>
+      <LineData />
+      <ProductData>
+        <Data Name="GTIN">00301162001165</Data>
+        <Data Name="IPSRework">Xttrium.ips</Data>
+      </ProductData>
+      <LotControlData>
+        <Data Name="PalletPrintData5">N/A</Data>
+        <Data Name="WorkOrderNumber">N/A</Data>
+        <Data Name="ExpDatePalletLabel">JUL/2028</Data>
+        <Data Name="MfgDateHDMA">260825</Data>
+        <Data Name="MfgDateUnitPrint">Aug/2026</Data>
+        <Data Name="MfgDateBundleLabel">Aug/2026</Data>
+        <Data Name="MfgDateCaseLabel">Aug/2026</Data>
+        <Data Name="MfgDatePalletLabel">Aug/2026</Data>
+        <Data Name="LotId">608464T</Data>
+        <Data Name="ExpDate">JUL/2028</Data>
+        <Data Name="GExpDate">N/A</Data>
+        <Data Name="MfgDate">20260825</Data>
+        <Data Name="PO">N/A</Data>
+        <Data Name="POLINE">N/A</Data>
+        <Data Name="MaterialNo">N/A</Data>
+        <Data Name="UserName">Estiben Cardenas Ruiz</Data>
+        <Data Name="GProductClass">NDC</Data>
+        <Data Name="GProductClassId">0116-2001-16</Data>
+        <Data Name="UnitGTIN">00301162001165</Data>
+        <Data Name="BundleGTIN">N/A</Data>
+        <Data Name="CaseGTIN">50301162001160</Data>
+        <Data Name="CompanyPrefix">030116</Data>
+        <Data Name="UnitFilterValue">N/A</Data>
+        <Data Name="BundleFilterValue">N/A</Data>
+        <Data Name="CaseFilterValue">N/A</Data>
+        <Data Name="PalletFilterValue">N/A</Data>
+        <Data Name="UnitEDMC_ProductCode">N/A</Data>
+        <Data Name="BundleEDMC_ProductCode">N/A</Data>
+        <Data Name="CaseEDMC_ProductCode">N/A</Data>
+        <Data Name="NDC">0116-2001-16</Data>
+        <Data Name="BundleRowQty">N/A</Data>
+        <Data Name="BundleQty">N/A</Data>
+        <Data Name="CaseRowQty">N/A</Data>
+        <Data Name="CaseLayerQty">1</Data>
+        <Data Name="CaseQty">3</Data>
+        <Data Name="PalletQty">N/A</Data>
+        <Data Name="UnitPrintFile">CLASS_101.txt</Data>
+        <Data Name="UnitLabelPrintFile">EZ-CODE_SERIALIZED</Data>
+        <Data Name="BundlePrintFile">N/A</Data>
+        <Data Name="CasePrintFile">1999CHG16CLBLA</Data>
+        <Data Name="CaseTempPrintFile">N/A</Data>
+        <Data Name="PalletPrintFile">C:\tips\config\Labels\PalletLabel.zpl</Data>
+        <Data Name="BundleRework_PrintFile">N/A</Data>
+        <Data Name="CaseRework_PrintFile">N/A</Data>
+        <Data Name="PalletRework_PrintFile">C:\tips\config\Labels\PalletLabel.zpl</Data>
+        <Data Name="ComponentCode">N/A</Data>
+        <Data Name="OutsertCommodityCode">N/A</Data>
+        <Data Name="TopsertCommodityCode">N/A</Data>
+        <Data Name="Price">N/A</Data>
+        <Data Name="Potency">N/A</Data>
+        <Data Name="ManufacturedIn">N/A</Data>
+        <Data Name="CaseSeqNo">N/A</Data>
+        <Data Name="UnitSerializedRecipe">1</Data>
+        <Data Name="BundleSerializedRecipe">1</Data>
+        <Data Name="CaseSerializedRecipe">1</Data>
+        <Data Name="PalletSerializedRecipe">1</Data>
+        <Data Name="UnitMachineFormat">N/A</Data>
+        <Data Name="BundleMachineFormat">N/A</Data>
+        <Data Name="CaseMachineFormat">N/A</Data>
+        <Data Name="PalletMachineFormat">N/A</Data>
+        <Data Name="UnitCWFormat">N/A</Data>
+        <Data Name="BundleCWFormat">N/A</Data>
+        <Data Name="CaseCWFormat">N/A</Data>
+        <Data Name="UnitPrintData1">N/A</Data>
+        <Data Name="UnitPrintData2">N/A</Data>
+        <Data Name="UnitPrintData3">N/A</Data>
+        <Data Name="UnitPrintData4">N/A</Data>
+        <Data Name="UnitPrintData5">N/A</Data>
+        <Data Name="BundlePrintData1">N/A</Data>
+        <Data Name="BundlePrintData2">N/A</Data>
+        <Data Name="BundlePrintData3">N/A</Data>
+        <Data Name="BundlePrintData4">N/A</Data>
+        <Data Name="BundlePrintData5">N/A</Data>
+        <Data Name="CasePrintData1">N/A</Data>
+        <Data Name="CasePrintData2">1220</Data>
+        <Data Name="CasePrintData3">1.8</Data>
+        <Data Name="CasePrintData4">1</Data>
+        <Data Name="CasePrintData5">200</Data>
+        <Data Name="PalletPrintData1">N/A</Data>
+        <Data Name="PalletPrintData2">N/A</Data>
+        <Data Name="PalletPrintData3">N/A</Data>
+        <Data Name="PalletPrintData4">N/A</Data>
+        <Data Name="ExpirationDateText">2028-07-31</Data>
+        <Data Name="ExpDateHDMA">280731</Data>
+        <Data Name="ExpDateUnitPrint">JUL/2028</Data>
+        <Data Name="ExpDateBundleLabel">JUL/28</Data>
+        <Data Name="ExpDateCaseLabel">JUL/2028</Data>
+        <Data Name="360BottleSize">68</Data>
+        <Data Name="360OutsertSize">0</Data>
+        <Data Name="360VisionProject">360DataMatrix.tvp</Data>
+        <Data Name="ExpDateInFormat">MMM/YYYY</Data>
+        <Data Name="ExpDateInLocale">en-us-ucase</Data>
+        <Data Name="ExpDateOutLocale">en-us-ucase</Data>
+        <Data Name="ExpDateHDMAFormat">YYMMLL</Data>
+        <Data Name="ExpDateUnitPrintFormat">MMM/YYYY</Data>
+        <Data Name="ExpDateBundleLabelFormat">MMM/YY</Data>
+        <Data Name="ExpDateCaseLabelFormat">MMM/YYYY</Data>
+        <Data Name="ExpDatePalletLabelFormat">MMM/YYYY</Data>
+        <Data Name="MfgDateInFormat">YYYYMMDD</Data>
+        <Data Name="MfgDateInLocale">en-us</Data>
+        <Data Name="MfgDateOutLocale">en-us</Data>
+        <Data Name="MfgDateHDMAFormat">YYMMDD</Data>
+        <Data Name="MfgDateUnitPrintFormat">MMM/YYYY</Data>
+        <Data Name="MfgDateBundleLabelFormat">MMM/YYYY</Data>
+        <Data Name="MfgDateCaseLabelFormat">MMM/YYYY</Data>
+        <Data Name="MfgDatePalletLabelFormat">MMM/YYYY</Data>
+        <Data Name="Sentri1_Autopage">12</Data>
+        <Data Name="Sentri2_Autopage">12</Data>
+        <Data Name="__SptLotInfo.TipsProduct__">Xttrium Oral Rinse</Data>
+        <Data Name="__SptLotInfo.LotInfoSaved__">2026-08-25T15:42:08Z</Data>
+      </LotControlData>
+    </LotInfo>
+  </Header>
+  <Details>
+    <ObjectEvent>
+      <Quantity>1</Quantity>
+      <Container>
+        <Type>Pallet</Type>
+        <EventTimeStampUTC>2026-08-25T19:10:14.620</EventTimeStampUTC>
+        <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+        <ContainerId Name="GS1">(00)003011610012279676</ContainerId>
+        <ContainerId Name="GS1_EPCIS">00003011610012279676</ContainerId>
+        <ContainerId Name="URI">urn:epc:id:sscc:030116.01001227967</ContainerId>
+        <Quantity>126</Quantity>
+        <Items>
+          <Container>
+            <Type>Case</Type>
+            <EventTimeStampUTC>2026-08-25T18:50:17.880</EventTimeStampUTC>
+            <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+            <ContainerId Name="GS1">015030116200116021100000096797721728073110608464T</ContainerId>
+            <ContainerId Name="GS1_EPCIS">01503011620011602110000009679772</ContainerId>
+            <ContainerId Name="GS1_XML">(01)50301162001160(21)10000009679772(17)280731(10)608464T</ContainerId>
+            <ContainerId Name="RawSeq">608464TCase.0115</ContainerId>
+            <ContainerId Name="URI">urn:epc:id:sgtin:030116.5200116.10000009679772</ContainerId>
+            <Quantity>12</Quantity>
+            <Items>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:49:20.200</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835465631728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083546563</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083546563(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251350359209</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083546563</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:28:13.983</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835452691728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083545269</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083545269(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251112589709</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083545269</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:28:19.913</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835452721728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083545272</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083545272(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251112580009</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083545272</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+            </Items>
+          </Container>
+          <Container>
+            <Type>Case</Type>
+            <EventTimeStampUTC>2026-08-25T18:49:13.050</EventTimeStampUTC>
+            <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+            <ContainerId Name="GS1">015030116200116021100000096797631728073110608464T</ContainerId>
+            <ContainerId Name="GS1_EPCIS">01503011620011602110000009679763</ContainerId>
+            <ContainerId Name="GS1_XML">(01)50301162001160(21)10000009679763(17)280731(10)608464T</ContainerId>
+            <ContainerId Name="RawSeq">608464TCase.0106</ContainerId>
+            <ContainerId Name="URI">urn:epc:id:sgtin:030116.5200116.10000009679763</ContainerId>
+            <Quantity>12</Quantity>
+            <Items>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:47:24.660</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835464171728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083546417</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083546417(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251348384809</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083546417</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:47:25.587</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835464181728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083546418</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083546418(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251348384909</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083546418</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+              <Container>
+                <Type>Bottle</Type>
+                <EventTimeStampUTC>2026-08-25T18:47:30.597</EventTimeStampUTC>
+                <TimeZoneOffset>-05:00:00</TimeZoneOffset>
+                <ContainerId Name="GS1">010030116200116521100000835464291728073110608464T</ContainerId>
+                <ContainerId Name="GS1_EPCIS">01003011620011652110000083546429</ContainerId>
+                <ContainerId Name="GS1_XML">(01)00301162001165(21)10000083546429(17)280731(10)608464T</ContainerId>
+                <ContainerId Name="Helper2D">2608251348456009</ContainerId>
+                <ContainerId Name="URI">urn:epc:id:sgtin:030116.0200116.10000083546429</ContainerId>
+                <Quantity>0</Quantity>
+              </Container>
+            </Items>
+          </Container>
+        </Items>
+      </Container>
+    </ObjectEvent>
+  </Details>
+</DataFeed>

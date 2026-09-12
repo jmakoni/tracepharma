@@ -134,7 +134,7 @@ Hierarchy:
 ### Top 6 major wholesalers
 
 - Central catalog seeds Top 6 majors (`MajorWholesalers`: McKesson, Cardinal, Cencora, Anda, Morris & Dickson, Smith Drug) via `php artisan catalog:ensure-major-wholesalers`
-- FDA Add product receive-from shows “{Name} (Wholesaler — not set up)” sentinels for majors not yet tenant partners; **Add wholesaler** (`EnsureWholesalerPartnerFromCatalog`) when selected; sentinels hidden once any major is an authorized tenant partner
+- FDA Add product receive-from shows “{Name} (Wholesaler — not set up)” sentinels for majors not yet tenant partners; **Add wholesaler** (`EnsureOrganizationPartnerFromFda`) when selected; sentinels hidden once any major is an authorized tenant partner
 
 ### Tables (Admin Catalog + App)
 

@@ -7,6 +7,7 @@ use App\Models\Fda\FdaEstablishment;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\Site;
 use App\Models\TradingPartner;
+use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Rules\ValidGln;
 use App\Support\Catalog\DisplayName;
@@ -129,6 +130,12 @@ final class PartnerSiteCreate
             }
 
             (new RejectTenantGln)->validate('gln', $gln, $collect);
+
+            if ($problem !== null) {
+                return $problem;
+            }
+
+            (new RejectPartnerGlnUnderOrgPrefix)->validate('gln', $gln, $collect);
 
             if ($problem !== null) {
                 return $problem;

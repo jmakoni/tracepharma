@@ -89,13 +89,13 @@ class MarketingIntegrationPages
                 'summary' => 'LSPedia OneScan and Exchange serve many US trading partners. TracePharma interoperates via HTTPS webhook when partners push EPCIS to your tenant. Use it alongside—or instead of—a OneScan module for US L4 workflows you actually operate.',
                 'inbound' => [
                     'HTTPS inbound webhook with tenant-scoped token authentication.',
-                    'EPCIS 1.2 XML and JSON-LD capture into unified receiving.',
+                    'EPCIS 1.2 XML and opt-in 2.0 JSON-LD capture into unified receiving.',
                     '3T matching and exception surfacing before inventory acceptance.',
                 ],
                 'outbound' => [
                     'Outbound EPCIS generation for pharmacies, wholesalers, and 3PL customers.',
                     'Partner-specific routing and ACK monitoring per connection.',
-                    'EPCIS 2.0 repository with queries and subscriptions for investigation.',
+                    'EPCIS 1.2 GA event repository; 2.0 JSON-LD opt-in for investigation (not full CBV 2.0 subscriptions).',
                 ],
                 'cutover' => [
                     'Confirm whether partners push via LSPedia Exchange or direct HTTPS.',
@@ -133,7 +133,7 @@ class MarketingIntegrationPages
                 'inbound' => [
                     'HTTPS webhook preset for InfiniTrak-as-provider inbound scenarios.',
                     'EPCIS receiving with scan-first shipment matching at the pharmacy or DC.',
-                    'VRS verification workstation and PMS dispense-check APIs on the same tenant.',
+                    'VRS verification workstation and POST /api/v1/dispense-check on the same tenant.',
                 ],
                 'outbound' => [
                     'Not typically required for independent pharmacies; buying groups may ship internal transfers.',
@@ -149,7 +149,7 @@ class MarketingIntegrationPages
                 'best_for' => [
                     'Independents outgrowing verify-only who keep InfiniTrak wholesaler relationships.',
                     'Buying groups needing member health dashboards plus EPCIS investigation.',
-                    'Pharmacies requiring PMS dispense-check APIs with full receiving audit trails.',
+                    'Pharmacies requiring dispense-check gating with full receiving audit trails.',
                 ],
                 'compare_route' => 'marketing.compare.infinitrak',
                 'faq' => [
@@ -172,7 +172,7 @@ class MarketingIntegrationPages
                 'transports' => ['SFTP'],
                 'meta_description' => 'Connect TracePharma to Advasur 360 partners via SFTP EPCIS polling. Pharmacy and light-wholesaler cutover with structured receiving and exceptions.',
                 'hero_description' => 'Advasur 360 focuses on guided pharmacy and light-wholesaler onboarding. TracePharma interoperates via SFTP preset when partners drop EPCIS shipment files to your tenant inbox.',
-                'summary' => 'Advasur is a Pulse-listed pharmacy compliance platform with partner onboarding services. TracePharma receives Advasur-path EPCIS through SFTP polling. Scale beyond dispenser-only scope with EPCIS 2.0 depth, wholesaler workflows, and multi-site reporting.',
+                'summary' => 'Advasur is a Pulse-listed pharmacy compliance platform with partner onboarding services. TracePharma receives Advasur-path EPCIS through SFTP polling. Scale beyond dispenser-only scope with EPCIS event-store depth (1.2 GA; 2.0 capture + query-as-2.0), wholesaler workflows, and multi-site reporting.',
                 'inbound' => [
                     'SFTP polling preset with tenant-scoped inbound paths.',
                     'EPCIS 1.2 XML parsing into receiving and 3T matching.',
@@ -253,8 +253,8 @@ class MarketingIntegrationPages
                 'summary' => 'Systech is a Pulse-listed global serialization vendor. The TracePharma UniTrace preset supports HTTPS inbound when plant or corporate systems push EPCIS. Keep Guardian at L3—TracePharma runs your L4 corporate hub.',
                 'inbound' => [
                     'HTTPS webhook preset with UniTrace-specific settings hints (program ID, facility ID).',
-                    'Commissioning reconcile for manufacturers linking L3 serial allocation.',
-                    'EPCIS 2.0 capture and trace search for investigation workflows.',
+                    'Commissioning forward when manufacturers configure an L3 endpoint in Organization settings.',
+                    'EPCIS 1.2 GA capture; opt-in 2.0 JSON-LD and event-store trace search for investigation.',
                 ],
                 'outbound' => [
                     'Outbound EPCIS to wholesalers and downstream distributors.',
@@ -264,8 +264,8 @@ class MarketingIntegrationPages
                 'cutover' => [
                     'Map UniTrace HTTPS endpoints and credentials with your serialization IT contact.',
                     'Create UniTrace serialization provider preset in Integrations.',
-                    'Pair L3 serial allocation with outbound go-live (manufacturers).',
-                    'Test commissioning inbound against allocated SGTIN ranges.',
+                    'Configure L3 commissioning forward alongside outbound go-live (manufacturers).',
+                    'Test commissioning forward to your plant or corporate L3 endpoint.',
                 ],
                 'best_for' => [
                     'Manufacturers on UniTrace shipping to US wholesalers.',
@@ -331,7 +331,7 @@ class MarketingIntegrationPages
                 'summary' => 'Antares rfXcel is a Pulse-listed enterprise L4 engine within the DIAMIND ecosystem. TracePharma does not replace line-level inspection or serialization hardware. Interoperate when corporate systems drop EPCIS shipment files to your tenant SFTP inbox.',
                 'inbound' => [
                     'SFTP polling preset for rfXcel EPCIS 1.2 XML drops.',
-                    'Commissioning reconcile when paired with L3 serial allocation.',
+                    'Commissioning forward when paired with an Organization settings L3 endpoint.',
                     'Exception surfacing for missing serials or 3T gaps.',
                 ],
                 'outbound' => [
@@ -343,7 +343,7 @@ class MarketingIntegrationPages
                     'Coordinate SFTP credentials and file schedule with rfXcel PS or serialization IT.',
                     'Create inbound connection with rfXcel serialization provider preset.',
                     'Validate sample commissioning and shipping files on Receiving.',
-                    'Align L3 allocation ranges before production outbound go-live.',
+                    'Configure L3 commissioning forward before production outbound go-live.',
                 ],
                 'best_for' => [
                     'US manufacturers on rfXcel shipping to domestic wholesalers.',
@@ -366,12 +366,12 @@ class MarketingIntegrationPages
                 'preset' => 'tracktracerx',
                 'transports' => ['HTTPS'],
                 'meta_description' => 'TracePharma interoperates with TrackTraceRx pharmacy networks via HTTPS EPCIS webhooks when you need full L4 depth beyond partner onboarding.',
-                'hero_description' => 'TrackTraceRx targets rapid pharmacy network deployment with partner location scale. TracePharma connects via HTTPS preset when dispensers or buying groups need EPCIS 2.0 investigation and structured exceptions.',
+                'hero_description' => 'TrackTraceRx targets rapid pharmacy network deployment with partner location scale. TracePharma connects via HTTPS preset when dispensers or buying groups need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0) and structured exceptions.',
                 'summary' => 'TrackTraceRx is a Pulse-listed pharmacy DSCSA vendor emphasizing network location directory and onboarding economics. TracePharma interoperates at the HTTPS EPCIS layer. Add wholesaler-grade receiving, exceptions, and multi-profile reporting.',
                 'inbound' => [
                     'HTTPS webhook preset with tenant-scoped token authentication.',
                     'EPCIS receiving with scan-first shipment matching.',
-                    'VRS verification and PMS dispense-check APIs on pharmacy profiles.',
+                    'VRS verification and POST /api/v1/dispense-check on pharmacy profiles.',
                 ],
                 'outbound' => [
                     'Compliance exports and FDA 3911 for failed verifications.',
@@ -393,7 +393,7 @@ class MarketingIntegrationPages
                 'faq' => [
                     [
                         'question' => 'Is TrackTraceRx the same category as TracePharma?',
-                        'answer' => 'Both serve pharmacy DSCSA. TrackTraceRx emphasizes network onboarding scale; TracePharma emphasizes full L4 EPCIS receiving, exceptions, and EPCIS 2.0 depth for teams that outgrow connectivity-only workflows.',
+                        'answer' => 'Both serve pharmacy DSCSA. TrackTraceRx emphasizes network onboarding scale; TracePharma emphasizes full L4 EPCIS receiving, exceptions, and EPCIS 1.2 GA with 2.0 capture/query/subscriptions for teams that outgrow connectivity-only workflows.',
                     ],
                 ],
             ],
@@ -414,12 +414,12 @@ class MarketingIntegrationPages
                 ],
                 'outbound' => [
                     'Outbound EPCIS to US wholesalers and pharmacies with ACK health monitoring.',
-                    'L3 serial provisioning handoff for manufacturers keeping VerifyBrand at plant edge.',
+                    'L3 commissioning forward for manufacturers keeping VerifyBrand at plant edge.',
                     'Compliance exports and exception investigation at partner edge.',
                 ],
                 'cutover' => [
                     'Document partner EPCIS delivery paths independent of VerifyBrand middleware.',
-                    'Provision standard transport presets pointing to TracePharma tenant endpoints.',
+                    'Configure standard transport presets pointing to TracePharma tenant endpoints.',
                     'Test receiving on sample shipments before decommissioning legacy L4 storage.',
                     'Review the compare page when evaluating TraceLink → OPTEL → TracePharma paths.',
                 ],
@@ -453,7 +453,7 @@ class MarketingIntegrationPages
                 'inbound' => [
                     'HTTPS webhook preset (sap_ich) for SAP Integration Suite / ICH delivery.',
                     'EPCIS capture into unified receiving and 3T matching.',
-                    'Commissioning reconcile against L3 allocations when manufacturers bridge SAP to L4.',
+                    'Commissioning forward when manufacturers configure an L3 endpoint alongside SAP-to-L4 bridging.',
                 ],
                 'outbound' => [
                     'Outbound EPCIS to wholesalers not routed through SAP directly.',

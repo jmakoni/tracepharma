@@ -8,7 +8,7 @@ use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
 
 /**
  * Operational hooks for catalog exception types that are not produced by inbound XML rules
- * (MDN, VRS, L2/L3, partner reject, auto-decommission). Call from future jobs/workflows.
+ * (MDN, VRS, partner reject). Call from future jobs/workflows.
  *
  * Deliberately excludes any code owned/emitted by {@see EpcisCatalogBusinessRules}
  * or {@see ValidateEpcis12Document} (e.g. TIMING_INVERSION, MISSING_COMMISSIONING,
@@ -51,19 +51,9 @@ final class RecordOperationalEpcisCatalogSignal
         return $this->recorder->handle($document, 'SUSPECT_PRODUCT', $detail, null, null, $epcId);
     }
 
-    public function l2L3ReconciliationFailure(EpcisDocument $document, string $detail): EpcisException
-    {
-        return $this->recorder->handle($document, 'L2_L3_RECONCILIATION_FAILURE', $detail);
-    }
-
     public function l3TransmissionFailure(EpcisDocument $document, string $detail): EpcisException
     {
         return $this->recorder->handle($document, 'L3_TRANSMISSION_FAILURE', $detail);
-    }
-
-    public function autoDecommissionFailed(EpcisDocument $document, string $detail): EpcisException
-    {
-        return $this->recorder->handle($document, 'AUTO_DECOMMISSION_FAILED', $detail);
     }
 
     public function leadingZeroStripped(EpcisDocument $document, string $detail): EpcisException
@@ -104,6 +94,26 @@ final class RecordOperationalEpcisCatalogSignal
     public function overShipment(EpcisDocument $document, string $detail): EpcisException
     {
         return $this->recorder->handle($document, 'OVER_SHIPMENT', $detail);
+    }
+
+    public function asnShipmentFileAdded(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'ASN_SHIPMENT_FILE_ADDED', $detail);
+    }
+
+    public function asnShipmentPoMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'ASN_SHIPMENT_PO_MISMATCH', $detail);
+    }
+
+    public function destinationOwningPartyMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'DESTINATION_OWNING_PARTY_MISMATCH', $detail);
+    }
+
+    public function destinationLocationMismatch(EpcisDocument $document, string $detail): EpcisException
+    {
+        return $this->recorder->handle($document, 'DESTINATION_LOCATION_MISMATCH', $detail);
     }
 
     public function invalidExtensionNamespace(EpcisDocument $document, string $detail, ?int $eventId = null): EpcisException

@@ -4,16 +4,17 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Support\Auth\CurrentSite;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\ShowsPrincipalsHonestyBanner;
 use App\Support\TenantSettings;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -22,6 +23,8 @@ use InvalidArgumentException;
 
 class ListOutboundShippingSessions extends ListRecords
 {
+    use ShowsPrincipalsHonestyBanner;
+
     protected static string $resource = OutboundShippingSessionResource::class;
 
     protected function getHeaderActions(): array

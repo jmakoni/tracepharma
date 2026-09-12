@@ -4,7 +4,9 @@ namespace App\Filament\App\Pages\AssetTracking\Schemas;
 
 use App\Filament\App\Pages\AssetTracking;
 use App\Services\Tracing\BuildAssetTrace;
+use App\Support\L3\FormatKeyValueMap;
 use App\Support\Tracing\CbvStatusColor;
+use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
@@ -186,7 +188,42 @@ class AssetTrackingInfolist
                 Tab::make('Parties / Origin')
                     ->columns(['md' => 2])
                     ->schema(self::partyEntries($page)),
+                Tab::make('Fields')
+                    ->visible(fn (): bool => $page->containerField() !== null)
+                    ->columns(['md' => 2])
+                    ->schema(self::fieldsEntries($page)),
             ]);
+    }
+
+    /**
+     * Guardian L3 per-container fields (GS1_XML / RawSeq / URI / ...) for the
+     * currently traced EPC — {@see AssetTracking::containerField()}.
+     *
+     * @return list<Component>
+     */
+    private static function fieldsEntries(AssetTracking $page): array
+    {
+        return [
+            TextEntry::make('container_lot_number')
+                ->label('Lot number')
+                ->state(fn (): ?string => $page->containerField()?->lot?->lot_number)
+                ->fontFamily(FontFamily::Mono)
+                ->url(fn (): ?string => $page->containerFieldLotUrl())
+                ->color(fn (): string => filled($page->containerFieldLotUrl()) ? 'primary' : 'gray')
+                ->copyable()
+                ->placeholder('—'),
+            TextEntry::make('container_type')
+                ->label('Container type')
+                ->state(fn (): ?string => $page->containerField()?->container_type)
+                ->placeholder('—'),
+            KeyValueEntry::make('container_fields')
+                ->label('')
+                ->keyLabel('Field')
+                ->valueLabel('Value')
+                ->columnSpanFull()
+                ->state(fn (): array => FormatKeyValueMap::withNaPlaceholders($page->containerField()?->fields))
+                ->placeholder('No Guardian fields recorded for this unit.'),
+        ];
     }
 
     /**

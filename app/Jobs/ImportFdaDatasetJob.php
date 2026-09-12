@@ -93,8 +93,7 @@ class ImportFdaDatasetJob implements ShouldBeUnique, ShouldQueue
 
     private function shouldChainTenantAtpSync(): bool
     {
-        return $this->command === self::WDD_COMMAND
-            && ($this->parameters['--promote'] ?? false) === true;
+        return $this->command === self::WDD_COMMAND;
     }
 
     /**

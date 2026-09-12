@@ -11,6 +11,7 @@ enum SiteAtpReadinessStatus: string
     case NoLicenses = 'no_licenses';
     case NeedsReceivingState = 'needs_receiving_state';
     case FdaRegistered = 'fda_registered';
+    case NotMonitored = 'not_monitored';
 
     public function label(): string
     {
@@ -19,9 +20,10 @@ enum SiteAtpReadinessStatus: string
             self::Expiring => 'Expiring',
             self::Expired => 'Expired',
             self::UnknownExpiry => 'Unknown expiry',
-            self::NoLicenses => 'No license for state',
-            self::NeedsReceivingState => 'Set receiving state',
+            self::NoLicenses => 'No license for jurisdictions',
+            self::NeedsReceivingState => 'No org site jurisdictions',
             self::FdaRegistered => 'FDA registered (all states)',
+            self::NotMonitored => 'Manufacturer HQ · not monitored',
         };
     }
 
@@ -35,6 +37,7 @@ enum SiteAtpReadinessStatus: string
             self::NoLicenses => 'gray',
             self::NeedsReceivingState => 'gray',
             self::FdaRegistered => 'success',
+            self::NotMonitored => 'gray',
         };
     }
 }

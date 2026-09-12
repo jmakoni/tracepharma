@@ -82,6 +82,35 @@ class TransferReceiveDeadlockRecoveryTest extends TestCase
     private ?string $priorTenantGln = null;
 
     #[Test]
+    public function manual_complete_is_available_when_transfer_receive_stuck_after_epcis_failure(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            [$fromSite, $toSite] = $this->createTransferSites($tenant);
+            [$receiving] = $this->stuckCompletedTransferReceive($fromSite, $toSite);
+
+            // Simulate last-scan complete that failed after confirming lines: session
+            // reverted to in_progress with no expected lines left.
+            $receiving->forceFill([
+                'status' => 'in_progress',
+                'completed_at' => null,
+            ])->save();
+
+            $this->actingAs($this->createUserWithSites([(int) $toSite->getKey()]));
+
+            $component = Livewire::test(ViewReceivingSession::class, ['record' => $receiving->getKey()]);
+
+            $this->assertTrue($component->instance()->canCompleteManually());
+            $component->assertActionVisible('completeReceiving');
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function retry_receive_epcis_action_authors_events_for_completed_transfer_receive_without_epcis(): void
     {
         $tenant = $this->initializeDemo2Tenant();

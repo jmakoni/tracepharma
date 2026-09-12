@@ -20,17 +20,18 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class OutboundEpcisDocumentResource extends Resource
+class OutboundEpcisDocumentResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = EpcisDocument::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPaperAirplane;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Ship';
+    protected static string|UnitEnum|null $navigationGroup = 'Shipping';
 
     protected static ?int $navigationSort = 20;
 
@@ -44,8 +45,30 @@ class OutboundEpcisDocumentResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations())
+        $features = TenantFeatures::forTenant(tenant());
+
+        return ($features->supportsOutboundIntegrations() || $features->supportsPharmacyFullOutbound())
             && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    public static function canViewAny(): bool
+    {
+        return static::canAccess();
+    }
+
+    public static function canView(Model $record): bool
+    {
+        if (! static::canAccess()) {
+            return false;
+        }
+
+        if (! $record instanceof EpcisDocument || $record->direction !== 'outbound') {
+            return false;
+        }
+
+        return static::getEloquentQuery()
+            ->whereKey($record->getKey())
+            ->exists();
     }
 
     public static function canCreate(): bool
@@ -110,5 +133,10 @@ class OutboundEpcisDocumentResource extends Resource
             'index' => ListOutboundEpcisDocuments::route('/'),
             'view' => ViewOutboundEpcisDocument::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.outbound-epcis';
     }
 }

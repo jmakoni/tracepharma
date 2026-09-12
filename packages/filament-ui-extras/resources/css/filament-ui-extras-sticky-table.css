@@ -1,0 +1,60 @@
+/*
+ * Opt-in sticky table actions + custom horizontal scroll.
+ * Import only when FilamentUiExtrasPlugin::stickyTableActions() is enabled:
+ *
+ *   @import '../../../../packages/filament-ui-extras/resources/css/filament-ui-extras-sticky-table.css';
+ */
+
+.fi-uie-sticky-table-actions .fi-ta-table {
+    position: relative;
+}
+
+.fi-uie-sticky-table-actions .fi-ta-actions-header-cell,
+.fi-uie-sticky-table-actions .fi-ta-actions-cell,
+.fi-uie-sticky-table-actions th.fi-ta-header-cell:last-child,
+.fi-uie-sticky-table-actions td.fi-ta-cell:last-child:has(.fi-ta-actions),
+.fi-uie-sticky-table-actions .fi-ta-row > .fi-ta-cell:has(> .fi-ta-actions) {
+    position: sticky;
+    inset-inline-end: 0;
+    z-index: 2;
+    background: color-mix(in oklab, var(--gray-50) 92%, transparent);
+    box-shadow: -6px 0 8px -6px color-mix(in oklab, var(--gray-950) 18%, transparent);
+}
+
+/*
+ * Filament dropdownTeleport only switches float strategy to fixed — the panel
+ * stays inside this sticky stacking context (z-index: 2). Neighbouring sticky
+ * cells (and later rows) then paint over the menu. Lift the open cell above them.
+ */
+.fi-uie-sticky-table-actions .fi-ta-row > .fi-ta-cell:has(> .fi-ta-actions .fi-dropdown-trigger [aria-expanded="true"]),
+.fi-uie-sticky-table-actions .fi-ta-row > .fi-ta-cell:has(> .fi-ta-actions .fi-dropdown-panel[style*="display: block"]) {
+    z-index: 50;
+}
+
+.dark .fi-uie-sticky-table-actions .fi-ta-actions-header-cell,
+.dark .fi-uie-sticky-table-actions .fi-ta-actions-cell,
+.dark .fi-uie-sticky-table-actions th.fi-ta-header-cell:last-child,
+.dark .fi-uie-sticky-table-actions td.fi-ta-cell:last-child:has(.fi-ta-actions),
+.dark .fi-uie-sticky-table-actions .fi-ta-row > .fi-ta-cell:has(> .fi-ta-actions),
+.fi-uie-sticky-table-actions:where(.dark *) .fi-ta-actions-header-cell,
+.fi-uie-sticky-table-actions:where(.dark *) .fi-ta-actions-cell,
+.fi-uie-sticky-table-actions:where(.dark *) th.fi-ta-header-cell:last-child,
+.fi-uie-sticky-table-actions:where(.dark *) td.fi-ta-cell:last-child:has(.fi-ta-actions),
+.fi-uie-sticky-table-actions:where(.dark *) .fi-ta-row > .fi-ta-cell:has(> .fi-ta-actions) {
+    background: color-mix(in oklab, var(--gray-900) 92%, transparent);
+    box-shadow: -6px 0 8px -6px color-mix(in oklab, black 45%, transparent);
+}
+
+.fi-uie-sticky-table-actions .fi-ta-content,
+.fi-uie-sticky-table-actions .fi-ta-table-ctn {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    cursor: grab;
+}
+
+.fi-uie-sticky-table-actions .fi-ta-content.is-dragging,
+.fi-uie-sticky-table-actions .fi-ta-table-ctn.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+}

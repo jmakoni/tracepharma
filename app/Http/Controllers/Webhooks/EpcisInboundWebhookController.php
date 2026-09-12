@@ -6,8 +6,10 @@ use App\Enums\InboundTransport;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Support\Integrations\InboundWebhookAuthenticator;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,18 +25,32 @@ class EpcisInboundWebhookController
         string $tenantId,
         int $connectionId,
     ): JsonResponse {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         TenantAccess::assertActive($tenant);
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
 
-        return $tenant->run(function () use ($request, $connectionId): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request, $connectionId): JsonResponse {
             $connection = InboundConnection::query()
                 ->whereKey($connectionId)
                 ->where('is_active', true)
                 ->where('transport', InboundTransport::Https)
                 ->firstOrFail();
+
+            if ($connection->isPendingApproval()) {
+                abort(403, 'Inbound connection is awaiting platform approval.');
+            }
+
+            if ($connection->isRejected()) {
+                abort(403, 'Inbound connection was rejected by platform review.');
+            }
+
+            if ($connection->isSuspended()) {
+                abort(403, 'Inbound connection was suspended by the platform.');
+            }
 
             $this->webhookAuth->authorize($request, $connection);
 

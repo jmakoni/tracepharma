@@ -14,12 +14,12 @@ use App\Models\Quarantine\QuarantineHold;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
 use DOMDocument;
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -340,11 +340,12 @@ class UnpackWorkstationTest extends TestCase
 
             [$parent, $childA] = $this->seedOpenHierarchy($site);
 
-            $component = Livewire::test(UnpackWorkstation::class)
+            Livewire::test(UnpackWorkstation::class)
                 ->set('scan', (string) $parent->epc_uri)
                 ->call('processScan')
                 ->set('selectedChildIds', [(string) $childA->getKey()])
-                ->callAction('confirmUnpack', ['regulatory_password' => 'not-the-password']);
+                ->callAction('confirmUnpack', ['regulatory_password' => 'not-the-password'])
+                ->assertHasActionErrors(['regulatory_password' => 'The password you entered is incorrect.']);
 
             $this->assertTrue(
                 AggregationLink::query()
@@ -354,9 +355,6 @@ class UnpackWorkstationTest extends TestCase
                     ->exists(),
                 'Unpack must not run without a valid regulatory password.',
             );
-
-            $errors = json_encode($component->instance()->getErrorBag()->toArray());
-            $this->assertStringContainsString('password', strtolower((string) $errors));
 
             Livewire::test(UnpackWorkstation::class)
                 ->set('scan', (string) $parent->epc_uri)
@@ -409,7 +407,7 @@ class UnpackWorkstationTest extends TestCase
 
             [$parent, $childA] = $this->seedOpenHierarchy($site);
 
-            $held = Cache::lock('pack-child:'.$tenant->getKey().':'.$childA->getKey(), 30);
+            $held = EpcisCacheLock::lock('pack-child:'.$tenant->getKey().':'.$childA->getKey(), 30);
             $this->assertTrue($held->get());
 
             try {
@@ -420,7 +418,7 @@ class UnpackWorkstationTest extends TestCase
                     ->set('selectedChildIds', [(string) $childA->getKey()])
                     ->callAction('confirmUnpack')
                     ->assertSet('lastTone', 'error')
-                    ->assertSet('lastMessage', 'Another pack is in progress for one of these children. Try again in a moment.');
+                    ->assertSet('lastMessage', 'Another pack or unpack is in progress for one of these children. Try again in a moment.');
             } finally {
                 $held->release();
             }
@@ -455,6 +453,161 @@ class UnpackWorkstationTest extends TestCase
             $this->assertNotNull($unpacking);
             $this->assertStringContainsString('unpack-workstation', (string) $unpacking['url']);
         } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function confirm_unpack_action_is_disabled_without_selection(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent] = $this->seedOpenHierarchy($site);
+
+            Livewire::test(UnpackWorkstation::class)
+                ->set('scan', (string) $parent->epc_uri)
+                ->call('processScan')
+                ->assertSet('parentEpcId', (int) $parent->getKey())
+                ->assertActionDisabled('confirmUnpack')
+                ->set('selectedChildIds', [(string) array_key_first(
+                    app(UnpackReceivingHierarchy::class)->openChildOptionsForParent($parent),
+                )])
+                ->assertActionEnabled('confirmUnpack');
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function scanning_child_first_loads_parent_and_selects_child(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent, $childA] = $this->seedOpenHierarchy($site);
+
+            $component = Livewire::test(UnpackWorkstation::class)
+                ->set('scan', (string) $childA->epc_uri)
+                ->call('processScan')
+                ->assertSet('parentEpcId', (int) $parent->getKey())
+                ->assertSet('lastTone', 'ok');
+
+            $instance = $component->instance();
+            $this->assertSame([(int) $childA->getKey()], array_keys($instance->selectedChildren()));
+            $this->assertArrayNotHasKey((int) $childA->getKey(), $instance->containerChildren());
+            $this->assertSame(1, $instance->selectedCount());
+            $this->assertNotNull($instance->packWorkstationUrl());
+            $this->assertNotNull($instance->unpackedItemsUrl());
+            $this->assertStringContainsString($site->name, $instance->commissionSiteLabel());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function scan_toggle_moves_child_between_selected_and_container_zones(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent, $childA, $childB] = $this->seedOpenHierarchy($site);
+
+            $component = Livewire::test(UnpackWorkstation::class)
+                ->set('scan', (string) $parent->epc_uri)
+                ->call('processScan')
+                ->assertSet('parentEpcId', (int) $parent->getKey());
+
+            $component
+                ->set('scan', (string) $childA->epc_uri)
+                ->call('processScan');
+
+            $instance = $component->instance();
+            $this->assertSame([(int) $childA->getKey()], array_keys($instance->selectedChildren()));
+            $this->assertArrayHasKey((int) $childB->getKey(), $instance->containerChildren());
+            $this->assertArrayNotHasKey((int) $childA->getKey(), $instance->containerChildren());
+
+            $component
+                ->set('scan', (string) $childB->epc_uri)
+                ->call('processScan');
+
+            $instance = $component->instance();
+            $this->assertSame(
+                [(int) $childB->getKey(), (int) $childA->getKey()],
+                array_keys($instance->selectedChildren()),
+            );
+
+            $component
+                ->set('scan', (string) $childB->epc_uri)
+                ->call('processScan');
+
+            $instance = $component->instance();
+            $this->assertSame([(int) $childA->getKey()], array_keys($instance->selectedChildren()));
+            $this->assertArrayHasKey((int) $childB->getKey(), $instance->containerChildren());
+            $this->assertSame('Returned to container.', $component->get('lastMessage'));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function successful_unpack_exposes_handoff_and_site_label(): void
+    {
+        Storage::fake('local');
+        config(['tracepharma.regulatory_compliance.password_gate' => false]);
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent, $childA] = $this->seedOpenHierarchy($site);
+
+            $component = Livewire::test(UnpackWorkstation::class)
+                ->set('scan', (string) $parent->epc_uri)
+                ->call('processScan')
+                ->set('selectedChildIds', [(string) $childA->getKey()])
+                ->callAction('confirmUnpack')
+                ->assertSet('showPostUnpackHandoff', true)
+                ->assertSet('lastTone', 'ok');
+
+            $this->assertSame($site->name, $component->instance()->commissionSiteLabel());
+        } finally {
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
             $this->cleanup($tenant);
         }
     }

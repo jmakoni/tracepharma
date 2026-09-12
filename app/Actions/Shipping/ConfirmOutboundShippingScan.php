@@ -13,6 +13,7 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
@@ -45,7 +46,7 @@ final class ConfirmOutboundShippingScan
      *     message: string,
      *     line: ?OutboundShippingScanLine,
      *     epc: ?Epc,
-     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'
+     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'|'overscan'
      * }
      */
     public function handle(
@@ -109,6 +110,20 @@ final class ConfirmOutboundShippingScan
                 ];
             }
 
+            $expected = (int) $session->expected_count;
+            if ($expected > 0 && (int) $session->confirmed_count >= $expected) {
+                return [
+                    'ok' => false,
+                    'message' => sprintf(
+                        'Expected unit count (%d) already confirmed. Remove a scan or raise expected units before adding more.',
+                        $expected,
+                    ),
+                    'line' => null,
+                    'epc' => $epc,
+                    'effect' => 'overscan',
+                ];
+            }
+
             // Inside the transaction: a hold opened after the barcode resolved must still
             // block the line, and the session row is already locked against a racing scan.
             $hold = $this->receivingGate->epcBlockedByOpenHold($epc);
@@ -147,6 +162,10 @@ final class ConfirmOutboundShippingScan
                             : null,
                         $session->site_id !== null ? (int) $session->site_id : null,
                     );
+                    PrincipalCustody::forTenant()->assertMatches(
+                        $session->principal_id !== null ? (int) $session->principal_id : null,
+                        $epc,
+                    );
                 } catch (InvalidArgumentException $e) {
                     return [
                         'ok' => false,
@@ -157,7 +176,25 @@ final class ConfirmOutboundShippingScan
                     ];
                 }
             } else {
-                if (! $this->shippableEpcsAtSite->contains((int) $session->site_id, (int) $epc->getKey())) {
+                $sessionPrincipalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+
+                try {
+                    PrincipalCustody::forTenant()->assertMatches($sessionPrincipalId, $epc);
+                } catch (InvalidArgumentException $e) {
+                    return [
+                        'ok' => false,
+                        'message' => $e->getMessage(),
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => 'wrong_principal',
+                    ];
+                }
+
+                if (! $this->shippableEpcsAtSite->contains(
+                    (int) $session->site_id,
+                    (int) $epc->getKey(),
+                    $sessionPrincipalId,
+                )) {
                     return [
                         'ok' => false,
                         'message' => 'This unit is not shippable inventory at the ship-from site.',
@@ -170,7 +207,11 @@ final class ConfirmOutboundShippingScan
                 // Quarantine was checked above in this transaction; custody alone here avoids
                 // a duplicate hold message.
                 try {
-                    $this->custodyGate->assertInCustody($epc, 'shipping');
+                    $this->custodyGate->assertInCustody(
+                        $epc,
+                        'shipping',
+                        $sessionPrincipalId,
+                    );
                 } catch (InvalidArgumentException $e) {
                     return [
                         'ok' => false,

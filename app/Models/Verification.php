@@ -16,6 +16,7 @@ class Verification extends Model
         'scanned_barcode',
         'verified_by',
         'exception_id',
+        'verification_request_case_id',
         'request_payload',
         'response_payload',
         'message',
@@ -39,5 +40,10 @@ class Verification extends Model
     public function exception(): BelongsTo
     {
         return $this->belongsTo(ExceptionCase::class, 'exception_id');
+    }
+
+    public function verificationRequestCase(): BelongsTo
+    {
+        return $this->belongsTo(VerificationRequestCase::class);
     }
 }

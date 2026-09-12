@@ -1,0 +1,179 @@
+- generic [active] [ref=f98e1]:
+  - link "Skip to content" [ref=f98e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f98e4]:
+    - link [ref=f98e6] [cursor=pointer]:
+      - /url: https://demo2.internal.vatengi.com/help
+      - img "TracePharma Help logo" [ref=f98e7]
+    - generic [ref=f98e8]:
+      - generic [ref=f98e11]:
+        - generic [ref=f98e12]: Global search
+        - searchbox "Global search" [ref=f98e18]
+      - button "User menu" [ref=f98e21] [cursor=pointer]:
+        - img "Avatar of Demo Owner" [ref=f98e22]
+  - generic [ref=f98e23]:
+    - generic [ref=f98e24]:
+      - navigation "Sidebar navigation" [ref=f98e25]:
+        - list [ref=f98e26]:
+          - listitem [ref=f98e27]:
+            - list [ref=f98e28]:
+              - listitem [ref=f98e29]:
+                - link "Welcome" [ref=f98e30] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/intro
+              - listitem [ref=f98e34]:
+                - link "CBV biz steps" [ref=f98e35] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/cbv-biz-steps
+              - listitem [ref=f98e39]:
+                - link "Operator workflows" [ref=f98e40] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/workflows
+              - listitem [ref=f98e44]:
+                - link "Operations extras" [ref=f98e45] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/operations
+              - listitem [ref=f98e49]:
+                - link "Exceptions and EPCIS" [ref=f98e50] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/exceptions
+              - listitem [ref=f98e54]:
+                - link "Compliance" [ref=f98e55] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/compliance
+              - listitem [ref=f98e59]:
+                - link "Integrations" [ref=f98e60] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/integrations
+                - list [ref=f98e64]:
+                  - listitem [ref=f98e65]:
+                    - link "Api Tokens" [ref=f98e66] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/api-tokens
+                  - listitem [ref=f98e71]:
+                    - link "Connections" [ref=f98e72] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/connections
+                  - listitem [ref=f98e78]:
+                    - link "Epcis Subscriptions" [ref=f98e79] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/epcis-subscriptions
+                  - listitem [ref=f98e85]:
+                    - link "Integration Health" [ref=f98e86] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/integration-health
+                  - listitem [ref=f98e92]:
+                    - link "Partner Onboarding" [ref=f98e93] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/partner-onboarding
+                  - listitem [ref=f98e99]:
+                    - link "Pms And Wholesaler Packs" [ref=f98e100] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/integrations/pms-and-wholesaler-packs
+              - listitem [ref=f98e105]:
+                - link "Master data" [ref=f98e106] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/master-data
+              - listitem [ref=f98e110]:
+                - link "Settings" [ref=f98e111] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/settings
+              - listitem [ref=f98e116]:
+                - link "Capture findings" [ref=f98e117] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/findings
+      - listitem [ref=f98e121]:
+        - list [ref=f98e122]:
+          - listitem [ref=f98e123]:
+            - link "Back" [ref=f98e124] [cursor=pointer]:
+              - /url: https://demo2.internal.vatengi.com
+    - main [ref=f98e129]:
+      - generic [ref=f98e131]:
+        - generic [ref=f98e133]:
+          - navigation "Breadcrumb" [ref=f98e134]:
+            - list [ref=f98e135]:
+              - listitem [ref=f98e136]:
+                - link "Documentation" [ref=f98e137] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help
+              - listitem [ref=f98e138]:
+                - link "Integrations" [ref=f98e141] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/integrations
+              - listitem [ref=f98e142]:
+                - link "Integration Health" [ref=f98e145] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/integrations/integration-health
+          - heading "Integration Health" [level=1] [ref=f98e146]
+        - generic [ref=f98e147]:
+          - article [ref=f98e149]:
+            - heading "Integration Health" [level=1] [ref=f98e150]:
+              - link [ref=f98e151] [cursor=pointer]:
+                - /url: "#integration-health"
+                - text: "#"
+              - text: Integration Health
+            - paragraph [ref=f98e152]: "Filament classes:"
+            - list [ref=f98e153]:
+              - listitem [ref=f98e154]:
+                - code [ref=f98e155]: App\Filament\App\Pages\IntegrationHealth
+            - heading "When to use" [level=2] [ref=f98e156]:
+              - link [ref=f98e157] [cursor=pointer]:
+                - /url: "#when-to-use"
+                - text: "#"
+              - text: When to use
+            - paragraph [ref=f98e158]: See at-a-glance health of inbound/outbound connections, subscriptions, recent failures, and backlog.
+            - heading "Prerequisites" [level=2] [ref=f98e159]:
+              - link [ref=f98e160] [cursor=pointer]:
+                - /url: "#prerequisites"
+                - text: "#"
+              - text: Prerequisites
+            - list [ref=f98e161]:
+              - listitem [ref=f98e162]: At least one connection, subscription, or API token configured.
+              - listitem [ref=f98e163]: Integrations viewer permissions.
+            - heading "Steps" [level=2] [ref=f98e164]:
+              - link [ref=f98e165] [cursor=pointer]:
+                - /url: "#steps"
+                - text: "#"
+              - text: Steps
+            - list [ref=f98e166]:
+              - listitem [ref=f98e167]:
+                - text: Open
+                - strong [ref=f98e168]: Integration health
+                - text: . Open the page and use Help for live UI.
+              - listitem [ref=f98e169]: Scan status cards for degraded connections or rising error rates.
+              - listitem [ref=f98e170]: Drill into a failing connection, subscription, or document.
+              - listitem [ref=f98e171]: After remediation, confirm green status on the next refresh.
+            - heading "Related pages" [level=2] [ref=f98e172]:
+              - link [ref=f98e173] [cursor=pointer]:
+                - /url: "#related-pages"
+                - text: "#"
+              - text: Related pages
+            - list [ref=f98e174]:
+              - listitem [ref=f98e175]:
+                - link "connections.md" [ref=f98e176] [cursor=pointer]:
+                  - /url: ../integrations/connections
+                - text: — configure inbound/outbound endpoints
+              - listitem [ref=f98e177]:
+                - link "epcis-subscriptions.md" [ref=f98e178] [cursor=pointer]:
+                  - /url: ../integrations/epcis-subscriptions
+                - text: — subscription management
+              - listitem [ref=f98e179]:
+                - link "../compliance/partner-ingest-quality.md" [ref=f98e180] [cursor=pointer]:
+                  - /url: ../compliance/partner-ingest-quality
+                - text: — partner quality metrics
+              - listitem [ref=f98e181]:
+                - link "../compliance/l3-forward-log.md" [ref=f98e182] [cursor=pointer]:
+                  - /url: ../compliance/l3-forward-log
+                - text: — L3 forward attempts
+            - heading "Notes" [level=2] [ref=f98e183]:
+              - link [ref=f98e184] [cursor=pointer]:
+                - /url: "#notes"
+                - text: "#"
+              - text: Notes
+            - list [ref=f98e185]:
+              - listitem [ref=f98e186]: Health is a dashboard, not a queue worker — stuck jobs may also need EPCIS Jobs review.
+              - listitem [ref=f98e187]: Transient partner outages can look like local failures; check partner status before rotating secrets.
+          - list [ref=f98e189]:
+            - listitem [ref=f98e190]:
+              - list [ref=f98e191]:
+                - listitem [ref=f98e192]:
+                  - link "Integration Health" [ref=f98e193] [cursor=pointer]:
+                    - /url: "#integration-health"
+                - listitem [ref=f98e195]:
+                  - link "When to use" [ref=f98e196] [cursor=pointer]:
+                    - /url: "#when-to-use"
+                - listitem [ref=f98e198]:
+                  - link "Prerequisites" [ref=f98e199] [cursor=pointer]:
+                    - /url: "#prerequisites"
+                - listitem [ref=f98e201]:
+                  - link "Steps" [ref=f98e202] [cursor=pointer]:
+                    - /url: "#steps"
+                - listitem [ref=f98e204]:
+                  - link "Related pages" [ref=f98e205] [cursor=pointer]:
+                    - /url: "#related-pages"
+                - listitem [ref=f98e207]:
+                  - link "Notes" [ref=f98e208] [cursor=pointer]:
+                    - /url: "#notes"
+  - generic:
+    - status

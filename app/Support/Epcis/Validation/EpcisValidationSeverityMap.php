@@ -67,6 +67,7 @@ final class EpcisValidationSeverityMap
         'TIMING_INVERSION' => 'error',
         'COMMISSION_AFTER_SHIP' => 'critical',
         'EVENTS_OUT_OF_ORDER' => 'warning',
+        'PACK_HIERARCHY_TIME_INVERSION' => 'error',
         'SHIP_BEFORE_COMMISSION' => 'critical',
         'DECOMMISSION_AFTER_SHIP' => 'error',
 
@@ -79,6 +80,11 @@ final class EpcisValidationSeverityMap
         'ENCODING_ERROR' => 'warning',
         'MISSING_SOURCE_DESTINATION' => 'error',
         'MISSING_BIZ_TRANSACTION' => 'warning',
+        'ASN_SHIPMENT_FILE_ADDED' => 'warning',
+        'ASN_SHIPMENT_PO_MISMATCH' => 'warning',
+        'DESTINATION_OWNING_PARTY_MISMATCH' => 'warning',
+        'DESTINATION_LOCATION_MISMATCH' => 'warning',
+        'SCHEDULED_PRODUCT_MISSING_DEA' => 'warning',
 
         // Process & DSCSA Compliance
         'MISSING_COMMISSIONING' => 'critical',

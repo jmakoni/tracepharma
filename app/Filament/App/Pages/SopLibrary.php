@@ -1,15 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filament\App\Pages;
 
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Compliance\SopLibraryCatalog;
+use App\Support\Compliance\SopLibraryPdf;
 use App\Support\TenantFeatures;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use UnitEnum;
 
 class SopLibrary extends Page
@@ -53,5 +58,30 @@ class SopLibrary extends Page
     public function sops(): array
     {
         return SopLibraryCatalog::all();
+    }
+
+    public function downloadStarterPackPdfAction(): Action
+    {
+        return Action::make('downloadStarterPackPdf')
+            ->label('Download starter pack PDF')
+            ->icon(Heroicon::OutlinedArrowDownTray)
+            ->color('gray')
+            ->action(fn (): StreamedResponse => response()->streamDownload(
+                function (): void {
+                    echo app(SopLibraryPdf::class)->render();
+                },
+                'tracepharma-sop-starter-pack.pdf',
+                ['Content-Type' => 'application/pdf'],
+            ));
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->downloadStarterPackPdfAction(),
+        ];
     }
 }

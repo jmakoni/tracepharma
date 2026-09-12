@@ -33,11 +33,11 @@ enum TenantProfile: string
         return match ($this) {
             self::Pharmacy => TenantType::Pharmacy,
             self::Logistics3pl => TenantType::ThreePl,
+            self::BuyingGroup => TenantType::BuyingGroup,
             self::Manufacturer,
             self::DrugWholesaler,
             self::Prepackager,
-            self::DentalMedicalSupply,
-            self::BuyingGroup => TenantType::Distributor,
+            self::DentalMedicalSupply => TenantType::Distributor,
         };
     }
 }

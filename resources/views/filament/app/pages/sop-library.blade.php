@@ -1,5 +1,11 @@
 <x-filament-panels::page>
     <div class="flex flex-col gap-4">
+        <div class="alert alert-info">
+            <span>
+                Download the full SOP starter pack as a printable PDF from the page header.
+            </span>
+        </div>
+
         @foreach ($this->sops() as $sop)
             <div class="card bg-base-100 shadow-xl">
                 <div class="card-body gap-3">

@@ -41,6 +41,21 @@ final class Permissions
     public const NavUsers = 'nav.users';
 
     /**
+     * Second approver for mass decommission (N > threshold).
+     */
+    public const DecommissionMassApprove = 'decommission.mass_approve';
+
+    /**
+     * Skip outbound conformance ladder and force Live (audit-logged).
+     */
+    public const IntegrationsBreakGlass = 'integrations.break_glass';
+
+    /**
+     * Send on a live-ladder connection without expected_count (audit-logged override).
+     */
+    public const ShipQuantityGateOverride = 'shipping.quantity_gate_override';
+
+    /**
      * @return list<string>
      */
     public static function navCapabilities(): array
@@ -65,13 +80,33 @@ final class Permissions
         return [
             self::UsersManage,
             self::SitesAccessAll,
+            self::DecommissionMassApprove,
+            self::IntegrationsBreakGlass,
+            self::ShipQuantityGateOverride,
             ...self::navCapabilities(),
         ];
     }
 
-    public static function navLabel(string $permission): string
+    /**
+     * @return list<string>
+     */
+    public static function adminPanelPermissions(): array
+    {
+        return [
+            self::AdminsManage,
+            self::CatalogManage,
+            self::TenantsManage,
+        ];
+    }
+
+    public static function label(string $permission): string
     {
         return match ($permission) {
+            self::UsersManage => 'Manage users',
+            self::SitesAccessAll => 'All sites',
+            self::AdminsManage => 'Manage admins',
+            self::CatalogManage => 'Manage catalog',
+            self::TenantsManage => 'Manage tenants',
             self::NavReceive => 'Receive',
             self::NavShip => 'Ship',
             self::NavExceptions => 'Exceptions',
@@ -80,7 +115,15 @@ final class Permissions
             self::NavIntegrations => 'Integrations',
             self::NavCompliance => 'Compliance',
             self::NavUsers => 'Users',
+            self::DecommissionMassApprove => 'Mass decommission approve',
+            self::IntegrationsBreakGlass => 'Integrations break-glass',
+            self::ShipQuantityGateOverride => 'Ship quantity gate override',
             default => $permission,
         };
+    }
+
+    public static function navLabel(string $permission): string
+    {
+        return self::label($permission);
     }
 }

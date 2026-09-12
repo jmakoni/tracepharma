@@ -96,6 +96,32 @@ class TenantSettingsTest extends TestCase
     }
 
     #[Test]
+    public function integration_api_keys_reject_short_values(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('short-key');
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
+    public function vrs_responder_api_key_rejects_short_values(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            TenantSettings::forTenant($tenant)->setVrsResponderApiKey('tooshort');
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
     public function vrs_responder_api_key_is_encrypted_at_rest_and_round_trips(): void
     {
         $tenant = $this->createCentralTenant();
@@ -198,9 +224,14 @@ class TenantSettingsTest extends TestCase
     {
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.0.0.1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('127.1.2.3'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0.0.0.0'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0.1.2.3'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::ffff:0.0.0.0'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.169.254'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('169.254.1.1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::1'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::'));
+        $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('0:0:0:0:0:0:0:0'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('fe80::1'));
         $this->assertTrue(TenantSettings::isDeniedWmsResolvedAddress('::ffff:127.0.0.1'));
         $this->assertFalse(TenantSettings::isDeniedWmsResolvedAddress('10.1.2.3'));
@@ -371,6 +402,56 @@ class TenantSettingsTest extends TestCase
         $this->assertNotContains('default_ship_from_site', $ids);
         $this->assertNotContains('downstream_partner', $ids);
         $this->assertNotContains('outbound_configured', $ids);
+    }
+
+    #[Test]
+    public function save_sso_config_requires_allowed_email_domains_when_enabled(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('SSO allowed email domains are required');
+
+            TenantSettings::forTenant($tenant)->saveSsoConfig([
+                'enabled' => true,
+                'sso_only' => false,
+                'provider' => 'entra',
+                'issuer' => 'https://login.microsoftonline.com/example/v2.0',
+                'client_id' => 'client-id',
+                'client_secret' => 'client-secret',
+                'entra_tenant_id' => 'example',
+                'jit_default_role' => null,
+                'allowed_email_domains' => [],
+            ]);
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
+    public function affiliation_code_defaults_null_and_persists_via_save_organization(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $settings = TenantSettings::forTenant($tenant);
+            $this->assertNull($settings->affiliationCode());
+
+            $settings->saveOrganization(['affiliation_code' => '  GPO-NORTH-01  ']);
+
+            $fresh = TenantSettings::forTenant($tenant->fresh());
+            $this->assertSame('GPO-NORTH-01', $fresh->affiliationCode());
+            $this->assertSame(
+                'GPO-NORTH-01',
+                data_get($tenant->fresh()->getAttribute('settings'), 'buying_group.affiliation_code'),
+            );
+
+            $fresh->saveOrganization(['affiliation_code' => '']);
+            $this->assertNull(TenantSettings::forTenant($tenant->fresh())->affiliationCode());
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
     }
 
     private function createCentralTenant(): Tenant

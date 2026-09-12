@@ -18,6 +18,10 @@ class MailTemplateCatalog
 
     public const TenantProvisionedReceived = 'tenant.provisioned.received';
 
+    public const TenantUserAccountCreated = 'tenant.user.account_created';
+
+    public const TenantUserSupportEngineerAccountCreated = 'tenant.user.support_engineer_account_created';
+
     /**
      * @return list<string>
      */
@@ -223,6 +227,66 @@ class MailTemplateCatalog
                     'owner_email' => 'pat@example-pharmacy.test',
                     'prod_host' => 'example.prod.tracepharma.io',
                     'stage_host' => 'example.stage.tracepharma.io',
+                ],
+            ),
+            self::TenantUserAccountCreated => new MailTemplateDefinition(
+                key: self::TenantUserAccountCreated,
+                label: 'Tenant user — account created',
+                variables: [
+                    'first_name',
+                    'tenant_name',
+                    'user_email',
+                    'login_host',
+                    'login_url',
+                ],
+                recipients: ['user'],
+                defaultSubject: 'Your TracePharma account is ready',
+                defaultGreeting: 'Hi {{ first_name }},',
+                defaultBody: implode("\n", [
+                    'An account was created for you on **{{ tenant_name }}**.',
+                    'Sign in with **{{ user_email }}** and the password your administrator set.',
+                    '**Sign in:** {{ login_url }}',
+                    'If you did not expect this email, contact your TracePharma administrator.',
+                ]),
+                defaultSalutation: '— The TracePharma team',
+                defaultActionLabel: 'Sign in',
+                defaultActionUrl: '{{ login_url }}',
+                fixtures: [
+                    'first_name' => 'Alex',
+                    'tenant_name' => 'Example Pharmacy',
+                    'user_email' => 'alex@example-pharmacy.test',
+                    'login_host' => 'example.prod.tracepharma.io',
+                    'login_url' => 'https://example.prod.tracepharma.io',
+                ],
+            ),
+            self::TenantUserSupportEngineerAccountCreated => new MailTemplateDefinition(
+                key: self::TenantUserSupportEngineerAccountCreated,
+                label: 'Tenant user — Support Engineer account created',
+                variables: [
+                    'first_name',
+                    'tenant_name',
+                    'user_email',
+                    'login_host',
+                    'login_url',
+                ],
+                recipients: ['user'],
+                defaultSubject: 'Your TracePharma account is ready',
+                defaultGreeting: 'Hi {{ first_name }},',
+                defaultBody: implode("\n", [
+                    'An account was created for you on **{{ tenant_name }}**.',
+                    'Sign in with **{{ user_email }}**. Use Forgot password on the sign-in page to set your own password — your administrator did not set a usable password.',
+                    '**Sign in:** {{ login_url }}',
+                    'If you did not expect this email, contact your TracePharma administrator.',
+                ]),
+                defaultSalutation: '— The TracePharma team',
+                defaultActionLabel: 'Sign in',
+                defaultActionUrl: '{{ login_url }}',
+                fixtures: [
+                    'first_name' => 'Alex',
+                    'tenant_name' => 'Example Pharmacy',
+                    'user_email' => 'alex@tracepharma.io',
+                    'login_host' => 'example.prod.tracepharma.io',
+                    'login_url' => 'https://example.prod.tracepharma.io',
                 ],
             ),
         ];

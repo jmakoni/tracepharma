@@ -14,6 +14,7 @@ enum TenantType: string
     case Pharmacy = 'pharmacy';
     case Distributor = 'distributor';
     case ThreePl = 'three_pl';
+    case BuyingGroup = 'buying_group';
 
     public function label(): string
     {
@@ -21,6 +22,7 @@ enum TenantType: string
             self::Pharmacy => 'Pharmacy',
             self::Distributor => 'Distributor',
             self::ThreePl => '3PL / Logistics',
+            self::BuyingGroup => 'Buying group',
         };
     }
 }

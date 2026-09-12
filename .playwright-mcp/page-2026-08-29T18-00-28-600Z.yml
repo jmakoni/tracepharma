@@ -1,0 +1,87 @@
+- generic [active] [ref=f95e1]:
+  - link "Skip to content" [ref=f95e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f95e4]:
+    - link [ref=f95e6] [cursor=pointer]:
+      - /url: https://admin2.internal.vatengi.com/help
+      - img "TracePharma Admin Help logo" [ref=f95e7]
+    - generic [ref=f95e8]:
+      - generic [ref=f95e11]:
+        - generic [ref=f95e12]: Global search
+        - searchbox "Global search" [ref=f95e18]
+      - button "User menu" [ref=f95e21] [cursor=pointer]:
+        - img "Avatar of Platform Admin" [ref=f95e22]
+  - generic [ref=f95e23]:
+    - generic [ref=f95e24]:
+      - navigation "Sidebar navigation" [ref=f95e25]:
+        - list [ref=f95e26]:
+          - listitem [ref=f95e27]:
+            - list [ref=f95e28]:
+              - listitem [ref=f95e29]:
+                - link "Admin help" [ref=f95e30] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/intro
+              - listitem [ref=f95e34]:
+                - link "Demo and support" [ref=f95e35] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/demo-and-support
+      - listitem [ref=f95e39]:
+        - list [ref=f95e40]:
+          - listitem [ref=f95e41]:
+            - link "Back" [ref=f95e42] [cursor=pointer]:
+              - /url: https://admin2.internal.vatengi.com
+    - main [ref=f95e47]:
+      - generic [ref=f95e49]:
+        - generic [ref=f95e51]:
+          - navigation "Breadcrumb" [ref=f95e52]:
+            - list [ref=f95e53]:
+              - listitem [ref=f95e54]:
+                - link "Documentation" [ref=f95e55] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help
+              - listitem [ref=f95e56]:
+                - link "Demo and support" [ref=f95e59] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/demo-and-support
+          - heading "Demo and support" [level=1] [ref=f95e60]
+        - generic [ref=f95e61]:
+          - article [ref=f95e63]:
+            - heading "Demo and support" [level=1] [ref=f95e64]:
+              - link [ref=f95e65] [cursor=pointer]:
+                - /url: "#demo-and-support"
+                - text: "#"
+              - text: Demo and support
+            - heading "Demo hosts" [level=2] [ref=f95e66]:
+              - link [ref=f95e67] [cursor=pointer]:
+                - /url: "#demo-hosts"
+                - text: "#"
+              - text: Demo hosts
+            - paragraph [ref=f95e68]: See the repo README for current demo URLs and passwords.
+            - heading "Tenant operator help" [level=2] [ref=f95e69]:
+              - link [ref=f95e70] [cursor=pointer]:
+                - /url: "#tenant-operator-help"
+                - text: "#"
+              - text: Tenant operator help
+            - paragraph [ref=f95e71]:
+              - text: After logging into a tenant domain, open Operator help from the user menu or visit
+              - code [ref=f95e72]: /help
+              - text: for screenshot-backed workflow articles and the CBV biz_step oracle.
+            - heading "Marketing" [level=2] [ref=f95e73]:
+              - link [ref=f95e74] [cursor=pointer]:
+                - /url: "#marketing"
+                - text: "#"
+              - text: Marketing
+            - paragraph [ref=f95e75]: Public marketing/guides remain on the marketing Blade site — not in this Filament knowledge base.
+          - list [ref=f95e77]:
+            - listitem [ref=f95e78]:
+              - list [ref=f95e79]:
+                - listitem [ref=f95e80]:
+                  - link "Demo and support" [ref=f95e81] [cursor=pointer]:
+                    - /url: "#demo-and-support"
+                - listitem [ref=f95e83]:
+                  - link "Demo hosts" [ref=f95e84] [cursor=pointer]:
+                    - /url: "#demo-hosts"
+                - listitem [ref=f95e86]:
+                  - link "Tenant operator help" [ref=f95e87] [cursor=pointer]:
+                    - /url: "#tenant-operator-help"
+                - listitem [ref=f95e89]:
+                  - link "Marketing" [ref=f95e90] [cursor=pointer]:
+                    - /url: "#marketing"
+  - generic:
+    - status

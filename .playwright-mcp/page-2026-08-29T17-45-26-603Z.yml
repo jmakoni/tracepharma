@@ -1,0 +1,315 @@
+- generic [active] [ref=f86e1]:
+  - link "Skip to content" [ref=f86e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f86e4]:
+    - link [ref=f86e6] [cursor=pointer]:
+      - /url: https://demo2.internal.vatengi.com
+      - img "TracePharma logo" [ref=f86e7]
+    - list [ref=f86e8]:
+      - listitem "Dashboard" [ref=f86e9]:
+        - link [ref=f86e10] [cursor=pointer]:
+          - /url: https://demo2.internal.vatengi.com
+      - listitem [ref=f86e15] [cursor=pointer]:
+        - button "Operations" [ref=f86e16]
+      - listitem [ref=f86e22] [cursor=pointer]:
+        - button "Receiving" [ref=f86e23]
+      - listitem [ref=f86e29] [cursor=pointer]:
+        - button "Ship" [ref=f86e30]
+      - listitem [ref=f86e36] [cursor=pointer]:
+        - button "Compliance" [ref=f86e37]
+      - listitem [ref=f86e43] [cursor=pointer]:
+        - button "Master Data" [ref=f86e44]
+      - listitem [ref=f86e50] [cursor=pointer]:
+        - button "Integrations" [ref=f86e51]
+      - listitem [ref=f86e57] [cursor=pointer]:
+        - button "Settings" [ref=f86e58]
+      - listitem [ref=f86e64] [cursor=pointer]:
+        - button "Audit" [ref=f86e65]
+    - generic [ref=f86e69]:
+      - generic [ref=f86e72]:
+        - generic [ref=f86e73]: Global search
+        - searchbox "Global search" [ref=f86e79]
+      - button "User menu" [ref=f86e82] [cursor=pointer]:
+        - img "Avatar of Demo Owner" [ref=f86e83]
+  - generic [ref=f86e84]:
+    - generic [ref=f86e85]:
+      - navigation "Sidebar navigation" [ref=f86e86]:
+        - list [ref=f86e87]:
+          - listitem [ref=f86e88]:
+            - list [ref=f86e89]:
+              - listitem "Dashboard" [ref=f86e90]:
+                - link [ref=f86e91] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com
+          - listitem [ref=f86e95]:
+            - generic [ref=f86e96] [cursor=pointer]:
+              - generic [ref=f86e97]: Operations
+              - button "Operations" [expanded] [ref=f86e98]
+            - list [ref=f86e101]:
+              - listitem [ref=f86e102]:
+                - link "Operations Hub" [ref=f86e103] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/operations-hub
+              - listitem [ref=f86e107]:
+                - link "Asset Tracking" [ref=f86e108] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/asset-tracking
+              - listitem [ref=f86e113]:
+                - link "Unpack" [ref=f86e114] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/unpack-workstation
+              - listitem [ref=f86e118]:
+                - link "Unpacked items" [ref=f86e119] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/unpacked-items
+              - listitem [ref=f86e123]:
+                - link "On-hand list" [ref=f86e124] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/on-hand
+              - listitem [ref=f86e128]:
+                - link "Pack" [ref=f86e129] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/pack-workstation
+              - listitem [ref=f86e133]:
+                - link "Break & pack" [ref=f86e134] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/break-pack-workstation
+              - listitem [ref=f86e138]:
+                - link "Transfer" [ref=f86e139] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/transferring-sessions
+              - listitem [ref=f86e143]:
+                - link "Commission-all" [ref=f86e144] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/commission-all-workstation
+              - listitem [ref=f86e148]:
+                - link "Decommission" [ref=f86e149] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/decommission-workstation
+              - listitem [ref=f86e153]:
+                - link "Return" [ref=f86e154] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/return-workstation
+              - listitem [ref=f86e158]:
+                - link "Saleable return" [ref=f86e159] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/saleable-return
+              - listitem [ref=f86e163]:
+                - link "SSCC Labels" [ref=f86e164] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sscc-labels
+              - listitem [ref=f86e169]:
+                - link "EPCIS Jobs" [ref=f86e170] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/epcis-jobs
+          - listitem [ref=f86e174]:
+            - generic [ref=f86e175] [cursor=pointer]:
+              - generic [ref=f86e176]: Receiving
+              - button "Receiving" [expanded] [ref=f86e177]
+            - list [ref=f86e180]:
+              - listitem [ref=f86e181]:
+                - link "Receive" [ref=f86e182] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/receiving-sessions
+              - listitem [ref=f86e186]:
+                - link "Scan In" [ref=f86e187] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/scan-in
+              - listitem [ref=f86e191]:
+                - link "Receiving issues" [ref=f86e192] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/receiving-issues
+              - listitem [ref=f86e196]:
+                - link "Exceptions" [ref=f86e197] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/exceptions
+              - listitem [ref=f86e201]:
+                - link "Investigator SLA" [ref=f86e202] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/investigator-sla
+              - listitem [ref=f86e206]:
+                - link "Inbound EPCIS" [ref=f86e207] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inbound-epcis
+              - listitem [ref=f86e211]:
+                - link "Dispense / verify" [ref=f86e212] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/verify-product
+              - listitem [ref=f86e216]:
+                - link "VRS directory" [ref=f86e217] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/vrs-directory
+              - listitem [ref=f86e221]:
+                - link "Verification history" [ref=f86e222] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/verifications
+          - listitem [ref=f86e226]:
+            - generic [ref=f86e227] [cursor=pointer]:
+              - generic [ref=f86e228]: Ship
+              - button "Ship" [expanded] [ref=f86e229]
+            - list [ref=f86e232]:
+              - listitem [ref=f86e233]:
+                - link "Ship Order" [ref=f86e234] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-shipping-sessions
+              - listitem [ref=f86e238]:
+                - link "Scan Out" [ref=f86e239] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/scan-out
+              - listitem [ref=f86e243]:
+                - link "Outbound EPCIS" [ref=f86e244] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-epcis
+          - listitem [ref=f86e248]:
+            - generic [ref=f86e249] [cursor=pointer]:
+              - generic [ref=f86e250]: Compliance
+              - button "Compliance" [expanded] [ref=f86e251]
+            - list [ref=f86e254]:
+              - listitem [ref=f86e255]:
+                - link "Alert center" [ref=f86e256] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/compliance-alert-center
+              - listitem [ref=f86e260]:
+                - link "Analytics" [ref=f86e261] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/analytics
+              - listitem [ref=f86e265]:
+                - link "HQ rollup" [ref=f86e266] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/hq-rollup
+              - listitem [ref=f86e270]:
+                - link "Leadership DSCSA pack" [ref=f86e271] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/leadership-dscsa-pack
+              - listitem [ref=f86e275]:
+                - link "Quarantine" [ref=f86e276] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/quarantine
+              - listitem [ref=f86e280]:
+                - link "Expiry worklist" [ref=f86e281] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/expiry-worklist
+              - listitem [ref=f86e285]:
+                - link "Recall closure" [ref=f86e286] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/recall-closure-dashboard
+              - listitem [ref=f86e290]:
+                - link "Compliance reports" [ref=f86e291] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/compliance-reports
+              - listitem [ref=f86e295]:
+                - link "Inspection day" [ref=f86e296] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inspection-day-readiness-page
+              - listitem [ref=f86e300]:
+                - link "Inspection pack" [ref=f86e301] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inspection-pack
+              - listitem [ref=f86e305]:
+                - link "SOP library" [ref=f86e306] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sop-library
+              - listitem [ref=f86e310]:
+                - link "ATP readiness" [ref=f86e311] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/atp-partner-readiness
+              - listitem [ref=f86e315]:
+                - link "FDA 3911 reports" [ref=f86e316] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/fda-3911-reports
+              - listitem [ref=f86e320]:
+                - link "Partner data quality" [ref=f86e321] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/partner-ingest-quality
+              - listitem [ref=f86e325]:
+                - link "Site recall" [ref=f86e326] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/site-recall
+              - listitem [ref=f86e330]:
+                - link "Tracing requests" [ref=f86e331] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/tracing-requests
+          - listitem [ref=f86e335]:
+            - generic [ref=f86e336] [cursor=pointer]:
+              - generic [ref=f86e337]: Master Data
+              - button "Master Data" [expanded] [ref=f86e338]
+            - list [ref=f86e341]:
+              - listitem [ref=f86e342]:
+                - link "Trading Partners" [ref=f86e343] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/trading-partners
+              - listitem [ref=f86e347]:
+                - link "Invite partner" [ref=f86e348] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/invite-partner
+              - listitem [ref=f86e352]:
+                - link "Customer portal" [ref=f86e353] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/customer-portal
+              - listitem [ref=f86e357]:
+                - link "FDA Products" [ref=f86e358] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/fda-products
+              - listitem [ref=f86e362]:
+                - link "Products" [ref=f86e363] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/products
+              - listitem [ref=f86e367]:
+                - link "Read Points" [ref=f86e368] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/read-points
+              - listitem [ref=f86e373]:
+                - link "Devices" [ref=f86e374] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/devices
+          - listitem [ref=f86e378]:
+            - generic [ref=f86e379] [cursor=pointer]:
+              - generic [ref=f86e380]: Integrations
+              - button "Integrations" [expanded] [ref=f86e381]
+            - list [ref=f86e384]:
+              - listitem [ref=f86e385]:
+                - link "Partner onboarding" [ref=f86e386] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/partner-onboarding-kit-page
+              - listitem [ref=f86e390]:
+                - link "Integration health" [ref=f86e391] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/integration-health
+              - listitem [ref=f86e395]:
+                - link "Inbound Connections" [ref=f86e396] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inbound-connections
+              - listitem [ref=f86e400]:
+                - link "Outbound Connections" [ref=f86e401] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-connections
+              - listitem [ref=f86e405]:
+                - link "EPCIS Subscriptions" [ref=f86e406] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/epcis-subscriptions
+              - listitem [ref=f86e410]:
+                - link "API Tokens" [ref=f86e411] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/api-tokens
+              - listitem [ref=f86e415]:
+                - link "PMS integration" [ref=f86e416] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/pms-integration-checklist-page
+              - listitem [ref=f86e420]:
+                - link "Wholesaler / WMS pack" [ref=f86e421] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/wholesaler-integration-pack-page
+          - listitem [ref=f86e425]:
+            - generic [ref=f86e426] [cursor=pointer]:
+              - generic [ref=f86e427]: Settings
+              - button "Settings" [expanded] [ref=f86e428]
+            - list [ref=f86e431]:
+              - listitem [ref=f86e432]:
+                - link "Settings" [ref=f86e433] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/settings-hub
+              - listitem [ref=f86e438]:
+                - link "Organization" [ref=f86e439] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/organization-settings
+              - listitem [ref=f86e443]:
+                - link "My dashboard" [ref=f86e444] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/dashboard-preferences
+              - listitem [ref=f86e448]:
+                - link "Users" [ref=f86e449] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/users
+              - listitem [ref=f86e453]:
+                - link "Label Printers" [ref=f86e454] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/label-printers
+              - listitem [ref=f86e458]:
+                - link "SSCC Number Ranges" [ref=f86e459] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sscc-number-ranges
+          - listitem [ref=f86e463]:
+            - generic [ref=f86e464] [cursor=pointer]:
+              - generic [ref=f86e465]: Audit
+              - button "Audit" [expanded] [ref=f86e466]
+            - list [ref=f86e469]:
+              - listitem [ref=f86e470]:
+                - link "Activity Log" [ref=f86e471] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/activity-log
+      - listitem [ref=f86e475]:
+        - list [ref=f86e476]:
+          - listitem [ref=f86e477]:
+            - link "Back" [ref=f86e478] [cursor=pointer]:
+              - /url: https://demo2.internal.vatengi.com
+    - main [ref=f86e483]:
+      - generic [ref=f86e485]:
+        - generic [ref=f86e487]:
+          - navigation "Breadcrumb" [ref=f86e488]:
+            - list [ref=f86e489]:
+              - listitem [ref=f86e490]:
+                - link "Documentation" [ref=f86e491] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help
+              - listitem [ref=f86e492]:
+                - link "Welcome" [ref=f86e495] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/intro
+          - heading "Welcome" [level=1] [ref=f86e496]
+        - generic [ref=f86e497]:
+          - article [ref=f86e499]:
+            - heading "TracePharma operator help" [level=1] [ref=f86e500]:
+              - link [ref=f86e501] [cursor=pointer]:
+                - /url: "#tracepharma-operator-help"
+                - text: "#"
+              - text: TracePharma operator help
+            - paragraph [ref=f86e502]: In-app knowledge base for tenant App panel workflows.
+            - list [ref=f86e503]:
+              - listitem [ref=f86e504]: Use the Help / book icon in the top bar on workstation pages that are linked to an article.
+              - listitem [ref=f86e505]:
+                - text: Open the full panel from the user menu → Operator help, or visit
+                - code [ref=f86e506]: /help
+                - text: .
+              - listitem [ref=f86e507]: "CBV biz_step oracle: see CBV biz steps in the sidebar."
+            - paragraph [ref=f86e508]: Marketing site guides stay on the public marketing domain (not this panel).
+          - list [ref=f86e510]:
+            - listitem [ref=f86e511]:
+              - list [ref=f86e512]:
+                - listitem [ref=f86e513]:
+                  - link "TracePharma operator help" [ref=f86e514] [cursor=pointer]:
+                    - /url: "#tracepharma-operator-help"
+  - generic:
+    - status

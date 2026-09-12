@@ -87,7 +87,7 @@ final class ResolveOutboundShipToSgln
         return SglnResolution::resolve(
             $party['gln'],
             $this->candidates($session),
-            TenantSettings::forTenant(tenant())->companyPrefix(),
+            TenantSettings::forTenant(tenant())->companyPrefixForPartnerEncoding(),
         );
     }
 

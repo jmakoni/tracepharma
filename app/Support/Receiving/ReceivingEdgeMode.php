@@ -26,10 +26,10 @@ enum ReceivingEdgeMode: string
     public function chipLabel(): string
     {
         return match ($this) {
-            self::SealedParent => 'Sealed parent — Edge-style',
-            self::ToteLpn => 'Sealed tote — Edge-style',
-            self::OpenCount => 'Open count — Edge-style',
-            self::OpenTote => 'Open tote — Edge-style',
+            self::SealedParent => 'Sealed parent — receive policy',
+            self::ToteLpn => 'Sealed tote — receive policy',
+            self::OpenCount => 'Open count — receive policy',
+            self::OpenTote => 'Open tote — receive policy',
         };
     }
 

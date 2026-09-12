@@ -23,10 +23,9 @@ final class EpcisShipmentReportContext
 {
     public const DEFAULT_LEGAL = 'Seller has complied with each applicable subsection of FDCA Sec. 581(27)(A)-(G).';
 
-    public const DIRECT_PURCHASE_TEMPLATE = '%s purchased this product directly from the manufacturer, exclusive distributor of the manufacturer, or a repackager that purchased directly from the manufacturer.';
-
     public function __construct(
         private readonly ResolveGlnToMasterData $resolveGln,
+        private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
     ) {}
 
     public function shipmentId(EpcisDocument $document): string
@@ -85,15 +84,48 @@ final class EpcisShipmentReportContext
             : self::DEFAULT_LEGAL;
     }
 
-    public function directPurchaseStatement(EpcisDocument $document, string $sellerName): ?string
+    public function directPurchaseStatement(EpcisDocument $document, string $sellerName, ?string $sellerGln = null): ?string
     {
         if (! (bool) $document->dscsa_affirm) {
             return null;
         }
 
-        $name = $sellerName !== '—' && $sellerName !== '' ? $sellerName : 'The seller';
+        if (filled($document->direct_purchase_statement)) {
+            return (string) $document->direct_purchase_statement;
+        }
 
-        return sprintf(self::DIRECT_PURCHASE_TEMPLATE, $name);
+        if ($this->directPurchaseStatements->shouldOmitGeneratedDirectPurchase($document->direct_purchase_qualifier)) {
+            return null;
+        }
+
+        $partnerType = $this->directPurchaseStatements->resolveSellerPartnerType(
+            $document,
+            $sellerGln,
+            $sellerName,
+        );
+
+        return $this->directPurchaseStatements->generatedStatement(
+            $document,
+            $partnerType,
+            $sellerName,
+        );
+    }
+
+    public function receivedPrevWholesalerStatement(EpcisDocument $document): ?string
+    {
+        if (! (bool) $document->dscsa_affirm) {
+            return null;
+        }
+
+        if (filled($document->received_prev_wholesaler_statement)) {
+            return (string) $document->received_prev_wholesaler_statement;
+        }
+
+        if (filled($document->received_prev_wholesaler_qualifier)) {
+            return DscsaDirectPurchaseStatements::RECEIVED_PREV_WHOLESALER_DEFAULT;
+        }
+
+        return null;
     }
 
     /**

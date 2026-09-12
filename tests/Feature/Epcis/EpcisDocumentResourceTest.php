@@ -3,16 +3,24 @@
 namespace Tests\Feature\Epcis;
 
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Filament\App\Pages\OperationsHub;
+use App\Filament\App\Pages\ScanInWorkstation;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\EpcisDocuments\Pages\ListEpcisDocuments;
 use App\Filament\App\Resources\EpcisDocuments\Tables\EpcisDocumentsTable;
+use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Tenant;
+use App\Models\User;
+use App\Support\Auth\Permissions;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class EpcisDocumentResourceTest extends TestCase
@@ -34,6 +42,75 @@ class EpcisDocumentResourceTest extends TestCase
             $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsInboundIntegrations());
             $this->assertTrue(EpcisDocumentResource::canAccess());
             $this->assertFalse(EpcisDocumentResource::canCreate());
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function manufacturer_plant_can_open_inbound_epcis_and_receive(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $tenant = tenant();
+        $priorJobRoles = TenantSettings::forTenant($tenant)->jobRolesEnabled();
+        $userId = null;
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::Manufacturer])->save();
+
+            $features = TenantFeatures::forTenant($tenant->fresh());
+            $this->assertTrue($features->supportsInboundIntegrations());
+            $this->assertTrue($features->supportsReceiving());
+            $this->assertFalse($features->supportsVrs());
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
+            $tenant->save();
+            $tenant->refresh();
+
+            $user = User::factory()->create([
+                'email' => 'mfr-inbound-'.uniqid().'@example.test',
+            ]);
+            $userId = (int) $user->getKey();
+            $user->assignRole(TenantRole::PackagingLineOperator->value);
+            $this->actingAs($user);
+
+            $this->assertTrue($user->can(Permissions::NavReceive));
+            $this->assertTrue(EpcisDocumentResource::canAccess());
+            $this->assertTrue(ScanInWorkstation::canAccess());
+            $this->assertTrue(ReceivingSessionResource::canAccess());
+        } finally {
+            if (tenancy()->initialized) {
+                if ($userId !== null) {
+                    User::query()->whereKey($userId)->delete();
+                }
+                TenantSettings::forTenant($tenant)->setJobRolesEnabled($priorJobRoles);
+                $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+                app(PermissionRegistrar::class)->forgetCachedPermissions();
+                tenancy()->end();
+            }
+        }
+    }
+
+    #[Test]
+    public function drug_wholesaler_can_access_inbound_epcis_resource(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $tenant = tenant();
+            $original = $tenant->profile;
+            $tenant->setAttribute('profile', TenantProfile::DrugWholesaler);
+
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsInboundIntegrations());
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsReceiving());
+            $this->assertTrue(EpcisDocumentResource::canAccess());
+
+            $tenant->setAttribute('profile', $original);
         } finally {
             tenancy()->end();
         }
@@ -125,8 +202,85 @@ class EpcisDocumentResourceTest extends TestCase
             $findRecall = collect($hub->directories())->firstWhere('label', 'Find / Recall');
             $this->assertNotNull($findRecall);
             $this->assertStringContainsString('inbound-epcis', (string) $findRecall['url']);
-            $this->assertStringContainsString('findRecall=1', (string) $findRecall['url']);
+            $this->assertStringContainsString('action=findRecall', (string) $findRecall['url']);
         } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function find_recall_query_param_sets_default_action_for_wire_init(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $owner = User::query()->where('email', 'owner@demo.test')->first()
+                ?? User::factory()->create(['email' => 'owner@demo.test']);
+
+            $this->actingAs($owner, 'web');
+
+            \Livewire\Livewire::withQueryParams(['findRecall' => '1'])
+                ->test(ListEpcisDocuments::class)
+                ->assertSet('defaultAction', 'findRecall');
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function refresh_action_requires_exceptions_or_integrations_job_role(): void
+    {
+        $tenant = Tenant::query()->findOrFail(self::DEMO2_TENANT_ID);
+        $originalProfile = $tenant->profile;
+        if ($tenant->profile !== TenantProfile::DrugWholesaler) {
+            $tenant->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+        }
+        tenancy()->initialize($tenant);
+
+        app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+        TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
+        $tenant->save();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $receiveOnly = null;
+        $exceptionsUser = null;
+
+        try {
+            $table = EpcisDocumentsTable::configure(Table::make(new ListEpcisDocuments));
+            $actions = collect($table->getRecordActions())
+                ->flatMap(fn ($action) => method_exists($action, 'getActions') ? $action->getActions() : [$action]);
+
+            $refresh = $actions->first(fn ($action): bool => $action->getName() === 'refresh');
+            $reprocess = $actions->first(fn ($action): bool => $action->getName() === 'reprocess');
+            $this->assertNotNull($refresh);
+            $this->assertNotNull($reprocess);
+
+            $visibleProp = new \ReflectionProperty($refresh, 'isVisible');
+            $visibleProp->setAccessible(true);
+            $refreshVisible = $visibleProp->getValue($refresh);
+            $this->assertInstanceOf(\Closure::class, $refreshVisible);
+
+            $receiveOnly = User::factory()->create([
+                'email' => 'refresh-receive-'.uniqid().'@example.test',
+            ]);
+            $receiveOnly->assignRole(TenantRole::ReceivingTechnician->value);
+            $this->actingAs($receiveOnly);
+            $this->assertFalse((bool) $refreshVisible());
+
+            $exceptionsUser = User::factory()->create([
+                'email' => 'refresh-exc-'.uniqid().'@example.test',
+            ]);
+            $exceptionsUser->assignRole(TenantRole::InboundExceptionCoordinator->value);
+            $this->actingAs($exceptionsUser);
+            $this->assertTrue((bool) $refreshVisible());
+        } finally {
+            TenantSettings::forTenant($tenant)->setJobRolesEnabled(false);
+            $tenant->forceFill(['profile' => $originalProfile])->save();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $receiveOnly?->delete();
+            $exceptionsUser?->delete();
             tenancy()->end();
         }
     }

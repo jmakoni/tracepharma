@@ -9,28 +9,30 @@ use App\Support\Tenancy\TenantAccess;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
 use Stancl\Tenancy\Database\Models\ImpersonationToken;
 use Stancl\Tenancy\Features\UserImpersonation;
 
 final class ImpersonateController
 {
-    public function __invoke(string $token): RedirectResponse
+    private const REDEEM_TTL_SECONDS = 60;
+
+    public function show(string $publicId): View
     {
         TenantAccess::assertActive();
 
-        $record = ImpersonationToken::query()->whereKey($token)->first();
+        $this->findValidToken($publicId);
 
-        if ($record === null) {
-            abort(404);
-        }
+        return view('tenant.impersonate-redeem', ['publicId' => $publicId]);
+    }
 
-        if (((string) $record->tenant_id) !== ((string) tenant()->getTenantKey())) {
-            abort(403);
-        }
+    public function redeem(string $publicId): RedirectResponse
+    {
+        TenantAccess::assertActive();
 
-        $ttl = UserImpersonation::$ttl;
+        $record = $this->findValidToken($publicId);
 
-        if ($record->created_at->diffInSeconds(Carbon::now()) > $ttl) {
+        if (filled($record->admin_ip) && $record->admin_ip !== request()->ip()) {
             abort(403);
         }
 
@@ -44,7 +46,7 @@ final class ImpersonateController
             'redirect_url' => $record->redirect_url,
         ];
 
-        $consumed = ImpersonationToken::query()->whereKey($token)->delete();
+        $consumed = ImpersonationToken::query()->whereKey($record->token)->delete();
 
         if ($consumed !== 1) {
             abort(404);
@@ -62,5 +64,26 @@ final class ImpersonateController
         Auth::guard($payload['auth_guard'])->loginUsingId($payload['target_user_id']);
 
         return redirect($payload['redirect_url']);
+    }
+
+    private function findValidToken(string $publicId): ImpersonationToken
+    {
+        $record = ImpersonationToken::query()->where('public_id', $publicId)->first();
+
+        if ($record === null) {
+            abort(404);
+        }
+
+        if (((string) $record->tenant_id) !== ((string) tenant()->getTenantKey())) {
+            abort(403);
+        }
+
+        $ttl = min(UserImpersonation::$ttl, self::REDEEM_TTL_SECONDS);
+
+        if ($record->created_at->diffInSeconds(Carbon::now()) > $ttl) {
+            abort(403);
+        }
+
+        return $record;
     }
 }

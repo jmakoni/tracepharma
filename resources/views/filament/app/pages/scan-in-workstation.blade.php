@@ -1,5 +1,65 @@
 <x-filament-panels::page>
-    <div class="flex flex-col gap-4">
+    <x-scanner-desk>
+        <x-slot:header>
+            @if ($this->sessionId !== null)
+                @php($session = $this->session())
+                <x-scanner-desk-header>
+                    <x-slot:context>
+                        <span class="badge badge-lg badge-outline font-semibold">
+                            Site: {{ $this->contextSiteLabel() }}
+                        </span>
+                        <span class="badge badge-outline">{{ $this->kindBadgeLabel() }}</span>
+                        <span class="badge badge-outline">{{ $this->edgeModeChipLabel() }}</span>
+                        <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
+                    </x-slot:context>
+
+                    <x-slot:qty>
+                        <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
+                            Confirmed {{ $this->confirmedLineCount() }}
+                        </span>
+                    </x-slot:qty>
+
+                    <x-slot:alert>
+                        @if ($this->lastScanMessage)
+                            <div
+                                role="status"
+                                aria-live="{{ $this->lastScanTone === 'error' ? 'assertive' : 'polite' }}"
+                                @class([
+                                    'alert',
+                                    'alert-success' => $this->lastScanTone === 'ok',
+                                    'alert-warning' => $this->lastScanTone === 'warn',
+                                    'alert-error' => $this->lastScanTone === 'error',
+                                ])
+                            >
+                                <span class="font-semibold">{{ $this->lastScanMessage }}</span>
+                            </div>
+                        @endif
+                    </x-slot:alert>
+
+                    <x-slot:scan>
+                        <p class="text-sm opacity-70">{{ $this->promptCopy()['kindHelper'] }}</p>
+
+                        @if ($session?->status === 'completed')
+                            <div class="rounded-lg border border-success/30 bg-success/10 p-4">
+                                <div class="text-lg font-semibold">{{ $this->promptCopy()['completeTitle'] }}</div>
+                                <p class="text-sm">{{ $this->promptCopy()['completeBody'] }}</p>
+                            </div>
+                        @else
+                            <x-scan-field
+                                variant="desktop"
+                                :show-camera="false"
+                                input-id="scan-in-input"
+                                label="Scan barcode"
+                                :placeholder="$this->promptCopy()['scanHelper']"
+                                :confirm-label="$this->promptCopy()['confirmButton']"
+                                submit-action="confirmScan"
+                            />
+                        @endif
+                    </x-slot:scan>
+                </x-scanner-desk-header>
+            @endif
+        </x-slot:header>
+
         @if ($this->sessionId === null)
             <div class="card bg-base-100 shadow-xl">
                 <div class="card-body gap-4">
@@ -25,117 +85,38 @@
             </div>
         @else
             @php($session = $this->session())
-            <div
-                x-data="{ flashTone: null }"
-                x-on:scan-result.window="
-                    flashTone = $event.detail.tone;
-                    setTimeout(() => { flashTone = null }, 700)
-                "
-                :class="{
-                    'ring-4 ring-success/40': flashTone === 'ok',
-                    'ring-4 ring-warning/40': flashTone === 'warn',
-                    'ring-4 ring-error/40': flashTone === 'error',
-                }"
-                class="card bg-base-100 shadow-xl transition-shadow"
+            @php($confirmedRows = $this->confirmedScanRows())
+            @php($caseRows = $this->caseRows())
+
+            <x-scanner-confirmed-table
+                :rows="$confirmedRows"
+                :title="'Confirmed ('.$confirmedRows->count().')'"
+                empty="Scan barcodes to build the receive list."
+                :can-remove="$session?->status !== 'completed'"
+                remove-method="removeConfirmed"
+                id-key="line_id"
+            />
+
+            @if ($caseRows->isNotEmpty())
+                <x-scanner-confirmed-table
+                    :rows="$caseRows"
+                    :title="'Cases in this SSCC ('.$caseRows->count().')'"
+                    empty="No cases under this SSCC."
+                    :can-remove="$session?->status !== 'completed'"
+                    remove-method="removeCase"
+                    id-key="line_id"
+                />
+            @endif
+
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm self-start"
+                wire:click="selectSession(0)"
             >
-                <div class="card-body gap-4">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="badge badge-outline">{{ $this->kindBadgeLabel() }}</span>
-                            <span class="badge badge-outline">{{ $this->edgeModeChipLabel() }}</span>
-                            <span>{{ $session?->tradingPartner?->name ?? $session?->site?->name ?? 'Receive site' }}</span>
-                        </div>
-                        <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
-                    </div>
-
-                    <p class="text-sm opacity-70">{{ $this->promptCopy()['kindHelper'] }}</p>
-
-                    <div class="stats bg-base-200 shadow">
-                        <div class="stat">
-                            <div class="stat-title">Confirmed</div>
-                            <div class="stat-value text-2xl">{{ $this->confirmedLineCount() }}</div>
-                        </div>
-                    </div>
-
-                    @if ($this->caseRows()->isNotEmpty())
-                        <div class="overflow-x-auto">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Cases in this SSCC</th>
-                                        <th></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($this->caseRows() as $case)
-                                        <tr>
-                                            <td class="font-mono text-sm">
-                                                @if ($case['confirmed'])
-                                                    <span class="text-success font-bold" aria-label="Confirmed">✓</span>
-                                                @endif
-                                                {{ $case['label'] }}
-                                            </td>
-                                            <td class="text-right">
-                                                @if ($case['confirmed'] && $session?->status !== 'completed')
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-ghost btn-sm min-h-12"
-                                                        wire:click="removeCase({{ $case['line_id'] }})"
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                @endif
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
-
-                    @if ($this->lastScanMessage)
-                        <div
-                            role="status"
-                            aria-live="{{ $this->lastScanTone === 'error' ? 'assertive' : 'polite' }}"
-                            @class([
-                                'alert',
-                                'alert-success' => $this->lastScanTone === 'ok',
-                                'alert-warning' => $this->lastScanTone === 'warn',
-                                'alert-error' => $this->lastScanTone === 'error',
-                            ])
-                        >
-                            <span class="font-semibold">{{ $this->lastScanMessage }}</span>
-                        </div>
-                    @endif
-
-                    @if ($session?->status === 'completed')
-                        <div class="rounded-lg border border-success/30 bg-success/10 p-4">
-                            <div class="text-lg font-semibold">{{ $this->promptCopy()['completeTitle'] }}</div>
-                            <p class="text-sm">{{ $this->promptCopy()['completeBody'] }}</p>
-                        </div>
-                    @else
-                        <x-scan-field
-                            variant="desktop"
-                            :show-camera="false"
-                            input-id="scan-in-input"
-                            label="Scan barcode"
-                            :placeholder="$this->promptCopy()['scanHelper']"
-                            :confirm-label="$this->promptCopy()['confirmButton']"
-                            submit-action="confirmScan"
-                        />
-                    @endif
-
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm self-start"
-                        wire:click="selectSession(0)"
-                    >
-                        Change session
-                    </button>
-                </div>
-            </div>
+                Change session
+            </button>
         @endif
-    </div>
+    </x-scanner-desk>
 
     <x-filament-actions::modals />
 </x-filament-panels::page>

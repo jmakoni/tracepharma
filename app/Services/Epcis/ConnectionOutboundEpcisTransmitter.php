@@ -2,21 +2,37 @@
 
 namespace App\Services\Epcis;
 
+use App\Actions\Epcis\DispatchEpcisSubscriptions;
+use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
+use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Enums\OutboundTransport;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\TransmissionMdn;
 use App\Models\OutboundConnection;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Services\Epcis\Outbound\As2OutboundSender;
 use App\Services\Epcis\Outbound\As2SendResult;
+use App\Services\Epcis\Outbound\EmailOutboundSender;
 use App\Services\Epcis\Outbound\HttpsOutboundSender;
+use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
+use App\Services\Epcis\Outbound\PortalOutboundSender;
 use App\Services\Epcis\Outbound\SftpOutboundSender;
+use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\LiveAcceptedEpcisEventId;
+use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Integrations\As2MdnDispositionParser;
+use App\Support\Integrations\ConnectionHealthTracker;
 use App\Support\Integrations\OutboundTransportAvailability;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use League\Flysystem\UnableToCheckExistence;
+use League\Flysystem\UnableToReadFile;
 use RuntimeException;
 use Throwable;
 
@@ -24,12 +40,20 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
 {
     private const TRANSMIT_HEARTBEAT_SECONDS = 120;
 
+    private ?string $connectionSkipReason = null;
+
     public function __construct(
         private readonly OutboundConnectionResolver $resolver,
         private readonly HttpsOutboundSender $httpsSender,
         private readonly SftpOutboundSender $sftpSender,
         private readonly As2OutboundSender $as2Sender,
+        private readonly EmailOutboundSender $emailSender,
+        private readonly PortalOutboundSender $portalSender,
         private readonly As2MdnDispositionParser $dispositionParser,
+        private readonly RecordOperationalEpcisCatalogSignal $catalogSignal,
+        private readonly ValidateEpcis12Document $validateEpcis12Document,
+        private readonly OutboundEpcisWriterResolver $writerResolver,
+        private readonly ConnectionHealthTracker $healthTracker,
     ) {}
 
     public function hasRecentTransmitHeartbeat(EpcisDocument $document): bool
@@ -116,10 +140,73 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             throw new RuntimeException('EPCIS payload file is missing.');
         }
 
+        $skipPreTransmitValidation = false;
+        if ($document->outbound_connection_id !== null) {
+            $pinned = OutboundConnection::query()->find($document->outbound_connection_id);
+            $skipPreTransmitValidation = $pinned?->transport === OutboundTransport::Portal;
+        }
+
+        // Portal transport publishes in-app; core EPCIS 1.2 XSD does not model GS1 US HC
+        // directPurchase inside ObjectEvent extension (buyer still downloads the authored file).
+        if (! $skipPreTransmitValidation && ! $this->passesPreTransmitValidation($document, $hasExplicitConnection)) {
+            return;
+        }
+
+        $document = $document->fresh() ?? $document;
+
+        $replayed = 0;
+        $liveAccepted = app(LiveAcceptedEpcisEventId::class);
+        $eventIdsQuery = EpcisEvent::query()
+            ->where('document_id', $document->getKey())
+            ->whereNotNull('event_id')
+            ->where('event_id', '!=', '');
+
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $eventIdsQuery->whereNull('superseded_at');
+        }
+
+        if (
+            Schema::hasColumn('epcis_events', 'ingest_generation')
+            && $document->ingest_generation !== null
+        ) {
+            $eventIdsQuery->where('ingest_generation', (int) $document->ingest_generation);
+        }
+
+        foreach ($eventIdsQuery->pluck('event_id') as $eventId) {
+            if ($liveAccepted->existsOnOtherDocument((string) $eventId, (int) $document->getKey())) {
+                $replayed++;
+            }
+        }
+
+        if ($replayed > 0) {
+            $this->markSkipped(
+                $document,
+                $hasExplicitConnection,
+                'Enterprise event-id already accepted; transmit skipped. accepted_event_ids='.$replayed,
+            );
+
+            return;
+        }
+
         $connection = $this->resolveConnection($document);
 
         if ($connection === null) {
-            $this->markSkipped($document, $hasExplicitConnection, 'No active outbound connection.');
+            $this->markSkipped(
+                $document,
+                $hasExplicitConnection,
+                $this->connectionSkipReason ?? 'No active outbound connection.',
+            );
+
+            return;
+        }
+
+        if ($this->isJsonLdDocument($document)
+            && $this->writerResolver->versionForConnection($connection) === EpcisSchemaVersion::V12) {
+            $this->markFailed(
+                $document,
+                $hasExplicitConnection,
+                'Outbound connection is EPCIS 1.2; JSON-LD payloads cannot be transmitted.',
+            );
 
             return;
         }
@@ -132,13 +219,22 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 $document->original_filename,
                 (string) $document->payload_path,
             );
+            $contentType = $this->contentTypeForDocument($document);
 
             $document->touch();
 
             $sendResult = match ($connection->transport) {
-                OutboundTransport::As2 => $this->as2Sender->send($connection, $content, $filename),
-                OutboundTransport::Https => $this->httpsSender->send($connection, $content, $filename),
+                OutboundTransport::As2 => $this->as2Sender->send($connection, $content, $filename, $contentType),
+                OutboundTransport::Https => $this->httpsSender->send($connection, $content, $filename, $contentType),
                 OutboundTransport::Sftp => $this->sftpSender->send($connection, $content, $filename),
+                OutboundTransport::Email => $this->emailSender->send(
+                    $connection,
+                    $content,
+                    $filename,
+                    $contentType,
+                    $document,
+                ),
+                OutboundTransport::Portal => $this->portalSender->send($connection, $document),
             };
 
             $now = now();
@@ -160,8 +256,17 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                         'last_error' => $errorMessage,
                     ])->save();
 
+                    $this->healthTracker->recordFailure($connection);
+
+                    $this->catalogSignal->partnerRejected($document, $errorMessage);
+
                     return;
                 }
+            } elseif ($connection->transport === OutboundTransport::Https) {
+                // Persist HTTPS partner-ack evidence before marking sent so a crash
+                // between POST success and the document update can recover without
+                // a second POST (same role as AS2 TransmissionMdn rows).
+                $this->persistHttpsAckEvidence($document, $connection, $now);
             }
 
             $document->forceFill([
@@ -175,6 +280,10 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 'last_sent_at' => $now,
                 'last_error' => null,
             ])->save();
+
+            $this->healthTracker->recordSuccess($connection);
+
+            app(DispatchEpcisSubscriptions::class)->handle($document, 'sent');
         } catch (Throwable $e) {
             $message = $e->getMessage();
 
@@ -194,6 +303,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
                 'last_error' => $message,
             ])->save();
 
+            $this->healthTracker->recordFailure($connection);
+
             // A transient failure (timeout, dropped connection, upstream 502/503/504)
             // is not a verdict on this document — TransmitEpcisJob's backoff exists to
             // retry exactly this case, but only fires if the exception reaches it.
@@ -209,8 +320,8 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             return true;
         }
 
-        if ($e instanceof \League\Flysystem\UnableToCheckExistence
-            || $e instanceof \League\Flysystem\UnableToReadFile) {
+        if ($e instanceof UnableToCheckExistence
+            || $e instanceof UnableToReadFile) {
             return true;
         }
 
@@ -234,16 +345,61 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
     }
 
     /**
-     * When outbound_connection_id is pinned, honor it fail-closed: missing, inactive, or
-     * partner-mismatched pins skip transmission without falling back to the resolver.
-     * Unpinned documents use the trading-partner/default resolver.
+     * Run XSD/JSON Schema + catalog validation on the persisted outbound payload.
+     * On blocking findings: mark transmission failed and return false (do not throw —
+     * validation failures are not transient retries).
+     */
+    private function passesPreTransmitValidation(EpcisDocument $document, bool $hasExplicitConnection): bool
+    {
+        $findings = $this->validateEpcis12Document->handle($document, null, 'outbound');
+
+        $blocking = array_values(array_filter(
+            $findings,
+            static fn (EpcisValidationFinding $finding): bool => $finding->isBlocking(),
+        ));
+
+        if ($blocking === []) {
+            return true;
+        }
+
+        $summaries = array_map(
+            static fn (EpcisValidationFinding $finding): string => $finding->exceptionType.': '.$finding->description,
+            array_slice($blocking, 0, 5),
+        );
+
+        $message = 'Pre-transmit EPCIS validation failed: '.Str::limit(implode('; ', $summaries), 1800);
+
+        Log::warning('Outbound EPCIS pre-transmit validation blocked send.', [
+            'document_id' => $document->getKey(),
+            'blocking_count' => count($blocking),
+        ]);
+
+        $this->markFailed($document->fresh() ?? $document, $hasExplicitConnection, $message);
+
+        return false;
+    }
+
+    /**
+     * When outbound_connection_id is pinned, honor it fail-closed: missing, inactive,
+     * unapproved, or partner-mismatched pins skip transmission without falling back to
+     * the resolver. Unpinned documents use the trading-partner/default resolver.
      */
     private function resolveConnection(EpcisDocument $document): ?OutboundConnection
     {
+        $this->connectionSkipReason = null;
+
         if ($document->outbound_connection_id !== null) {
             $explicit = OutboundConnection::query()->find($document->outbound_connection_id);
 
             if ($explicit === null || ! $explicit->is_active) {
+                return null;
+            }
+
+            if (! $explicit->isApproved()) {
+                $this->connectionSkipReason = $explicit->isPendingApproval()
+                    ? 'Pinned outbound connection is awaiting platform approval.'
+                    : 'Pinned outbound connection was rejected by platform review.';
+
                 return null;
             }
 
@@ -257,7 +413,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
             return $explicit;
         }
 
-        return $this->resolver->resolve(
+        return $this->resolver->resolveWithLadder(
             $document->trading_partner_id !== null ? (int) $document->trading_partner_id : null,
         );
     }
@@ -267,7 +423,7 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         $content = Storage::disk($document->payloadFilesystemDisk())->get((string) $document->payload_path);
 
         if (! is_string($content) || $content === '') {
-            throw new \RuntimeException('EPCIS payload is empty or unreadable.');
+            throw new RuntimeException('EPCIS payload is empty or unreadable.');
         }
 
         return $content;
@@ -318,6 +474,28 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         ]);
     }
 
+    /**
+     * HTTPS has no MDN MIME body; record a durable ack so recoverSentFromPersistedEvidence
+     * can mark the document sent without re-POSTing after a crash between HTTP success
+     * and the transmission_status update.
+     */
+    private function persistHttpsAckEvidence(
+        EpcisDocument $document,
+        OutboundConnection $connection,
+        Carbon $receivedAt,
+    ): void {
+        TransmissionMdn::query()->create([
+            'document_id' => $document->getKey(),
+            'trading_partner_id' => $connection->trading_partner_id,
+            'mdn_status' => 'https_ack',
+            'mdn_received_at' => $receivedAt,
+            'mdn_payload' => [
+                'transport' => 'https',
+                'outbound_connection_id' => $connection->getKey(),
+            ],
+        ]);
+    }
+
     private function markSkipped(EpcisDocument $document, bool $preserveExplicitConnection, string $reason): void
     {
         $attributes = [
@@ -345,5 +523,18 @@ final class ConnectionOutboundEpcisTransmitter implements OutboundEpcisTransmitt
         }
 
         $document->forceFill($attributes)->save();
+    }
+
+    private function isJsonLdDocument(EpcisDocument $document): bool
+    {
+        return $document->format === EpcisSchemaVersion::FORMAT_JSON
+            || $document->schema_version === EpcisSchemaVersion::V20;
+    }
+
+    private function contentTypeForDocument(EpcisDocument $document): string
+    {
+        return $document->format === EpcisSchemaVersion::FORMAT_JSON
+            ? 'application/ld+json'
+            : 'application/xml';
     }
 }

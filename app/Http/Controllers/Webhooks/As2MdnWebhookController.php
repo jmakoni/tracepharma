@@ -8,8 +8,10 @@ use App\Actions\Integrations\ProcessAs2AsyncMdn;
 use App\Models\OutboundConnection;
 use App\Models\Tenant;
 use App\Support\Integrations\As2MdnWebhookAuthenticator;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,13 +24,15 @@ final class As2MdnWebhookController
 
     public function handle(Request $request, string $tenantId, int $connectionId): JsonResponse
     {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         TenantAccess::assertActive($tenant);
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::OUTBOUND_EPCIS);
 
-        return $tenant->run(function () use ($request, $connectionId): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request, $connectionId): JsonResponse {
             $connection = OutboundConnection::query()->findOrFail($connectionId);
 
             $this->authenticator->authorize($request, $connection);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Labeling;
 
+use App\Actions\Epcis\RecordOperationalEpcisCatalogSignal;
 use App\Actions\Labeling\PersistAuthoredSsccEpcis;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\TenantProfile;
@@ -30,9 +31,9 @@ class ForwardCommissioningToL3Test extends TestCase
 
     private const DEMO2_DATABASE = 'tenant_demo2_internal_vatengi_com';
 
-    private const L3_ENDPOINT = 'https://l3.example.test/commission';
+    private const L3_ENDPOINT = 'https://8.8.8.8/commission';
 
-    private const L3_ENDPOINT_WITH_SECRETS = 'https://l3.example.test/commission/submit?token=abc123&tenant=xyz';
+    private const L3_ENDPOINT_WITH_SECRETS = 'https://8.8.8.8/commission/submit?token=abc123&tenant=xyz';
 
     private static bool $demo2TenantReady = false;
 
@@ -141,7 +142,7 @@ class ForwardCommissioningToL3Test extends TestCase
 
             try {
                 (new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId))
-                    ->handle(app(\App\Actions\Epcis\RecordOperationalEpcisCatalogSignal::class));
+                    ->handle(app(RecordOperationalEpcisCatalogSignal::class));
                 $this->fail('Expected L3 forward to throw on HTTP 502.');
             } catch (\RuntimeException) {
                 // expected
@@ -168,22 +169,22 @@ class ForwardCommissioningToL3Test extends TestCase
 
         try {
             Storage::fake('local');
-            TenantSettings::forTenant(tenant())->saveOrganization([
-                'l3_enabled' => true,
-                'l3_endpoint_url' => self::L3_ENDPOINT_WITH_SECRETS,
-            ]);
+            TenantSettings::forTenant(tenant())
+                ->setL3Enabled(true)
+                ->setL3EndpointUrl(self::L3_ENDPOINT_WITH_SECRETS);
+            tenant()->save();
 
             Log::shouldReceive('warning')
                 ->once()
                 ->withArgs(function (string $message, array $context): bool {
                     return $message === 'External L3 commissioning forward failed.'
-                        && ($context['endpoint'] ?? null) === 'https://l3.example.test/commission/submit'
+                        && ($context['endpoint'] ?? null) === 'https://8.8.8.8/commission/submit'
                         && ! str_contains((string) ($context['endpoint'] ?? ''), 'supersecret')
                         && ! str_contains((string) ($context['endpoint'] ?? ''), 'token=');
                 });
 
             Http::fake([
-                'l3.example.test/*' => Http::response('rejected', 502),
+                '8.8.8.8/*' => Http::response('rejected', 502),
             ]);
 
             $xml = '<?xml version="1.0" encoding="UTF-8"?><EPCISDocument l3="'.Str::uuid().'"/>';
@@ -212,7 +213,7 @@ class ForwardCommissioningToL3Test extends TestCase
 
             try {
                 (new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId))
-                    ->handle(app(\App\Actions\Epcis\RecordOperationalEpcisCatalogSignal::class));
+                    ->handle(app(RecordOperationalEpcisCatalogSignal::class));
             } catch (\RuntimeException) {
                 // expected
             }
@@ -229,11 +230,10 @@ class ForwardCommissioningToL3Test extends TestCase
         try {
             Storage::fake('local');
             $settings = TenantSettings::forTenant(tenant());
-            $settings->saveOrganization([
-                'l3_enabled' => true,
-                'l3_endpoint_url' => self::L3_ENDPOINT,
-            ]);
-            $settings->setL3ApiKey('tenant-l3-secret-key');
+            $settings
+                ->setL3Enabled(true)
+                ->setL3EndpointUrl(self::L3_ENDPOINT)
+                ->setL3ApiKey('tenant-l3-secret-key');
             tenant()->save();
 
             Http::fake([
@@ -265,7 +265,7 @@ class ForwardCommissioningToL3Test extends TestCase
             $this->documentId = (int) $document->getKey();
 
             (new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId))
-                ->handle(app(\App\Actions\Epcis\RecordOperationalEpcisCatalogSignal::class));
+                ->handle(app(RecordOperationalEpcisCatalogSignal::class));
 
             Http::assertSent(function ($request): bool {
                 return $request->url() === self::L3_ENDPOINT
@@ -315,7 +315,7 @@ class ForwardCommissioningToL3Test extends TestCase
             $this->documentId = (int) $document->getKey();
 
             (new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId))
-                ->handle(app(\App\Actions\Epcis\RecordOperationalEpcisCatalogSignal::class));
+                ->handle(app(RecordOperationalEpcisCatalogSignal::class));
 
             Http::assertSentCount(1);
 
@@ -325,6 +325,80 @@ class ForwardCommissioningToL3Test extends TestCase
                     ->where('exception_type', 'L3_TRANSMISSION_FAILURE')
                     ->exists(),
             );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function set_l3_endpoint_rejects_private_url_like_runtime_guard(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessage('private or metadata host');
+
+            TenantSettings::forTenant(tenant())
+                ->setL3Enabled(true)
+                ->setL3EndpointUrl('https://10.0.0.1/commission');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function job_rejects_private_l3_endpoint_before_post(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Storage::fake('local');
+            TenantSettings::forTenant(tenant())->setL3Enabled(true);
+            // Bypass setter to simulate a legacy stored private URL still present in settings.
+            $settings = tenant()->settings ?? [];
+            if (! is_array($settings)) {
+                $settings = [];
+            }
+            data_set($settings, 'l3.endpoint_url', 'https://10.0.0.1/commission');
+            tenant()->setAttribute('settings', $settings);
+            tenant()->save();
+
+            Http::fake();
+
+            $xml = '<?xml version="1.0" encoding="UTF-8"?><EPCISDocument ssrf="'.Str::uuid().'"/>';
+            $path = 'epcis/outbound/l3-ssrf-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($path, $xml);
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::SsccCommissioning,
+                'format' => 'xml',
+                'original_filename' => 'l3-ssrf.xml',
+                'file_sha256' => hash('sha256', $xml),
+                'payload_disk' => 'local',
+                'payload_path' => $path,
+                'dscsa_affirm' => false,
+                'status' => 'received',
+                'reprocess_count' => 0,
+                'event_count' => 0,
+                'epc_count' => 0,
+                'received_at' => now(),
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            try {
+                (new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId))
+                    ->handle(app(RecordOperationalEpcisCatalogSignal::class));
+                $this->fail('Expected private L3 endpoint to be rejected.');
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('private or metadata host', $e->getMessage());
+            }
+
+            Http::assertNothingSent();
         } finally {
             $this->cleanup();
         }
@@ -383,7 +457,7 @@ class ForwardCommissioningToL3Test extends TestCase
             $this->documentId = (int) $document->getKey();
 
             $job = new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId);
-            $recordSignal = app(\App\Actions\Epcis\RecordOperationalEpcisCatalogSignal::class);
+            $recordSignal = app(RecordOperationalEpcisCatalogSignal::class);
 
             $job->handle($recordSignal);
             $job->handle($recordSignal);
@@ -403,16 +477,77 @@ class ForwardCommissioningToL3Test extends TestCase
         }
     }
 
+    #[Test]
+    public function job_releases_l3_forwarded_claim_on_http_failure_so_retry_can_repost(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Storage::fake('local');
+            $this->enableL3();
+
+            Http::fake([
+                self::L3_ENDPOINT => Http::sequence()
+                    ->push('rejected', 502)
+                    ->push('<mdn/>', 200),
+            ]);
+
+            $xml = '<?xml version="1.0" encoding="UTF-8"?><EPCISDocument claim="'.Str::uuid().'"/>';
+            $path = 'epcis/outbound/l3-claim-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($path, $xml);
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::SsccCommissioning,
+                'format' => 'xml',
+                'original_filename' => 'l3-claim.xml',
+                'file_sha256' => hash('sha256', $xml),
+                'payload_disk' => 'local',
+                'payload_path' => $path,
+                'dscsa_affirm' => false,
+                'status' => 'received',
+                'reprocess_count' => 0,
+                'event_count' => 0,
+                'epc_count' => 0,
+                'received_at' => now(),
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            $job = new ForwardCommissioningToL3(self::DEMO2_TENANT_ID, $this->documentId);
+            $recordSignal = app(RecordOperationalEpcisCatalogSignal::class);
+
+            try {
+                $job->handle($recordSignal);
+                $this->fail('Expected first attempt to throw.');
+            } catch (\RuntimeException) {
+                // expected
+            }
+
+            $this->assertNull($document->fresh()?->l3_forwarded_at);
+
+            $job->handle($recordSignal);
+
+            Http::assertSentCount(2);
+            $this->assertNotNull($document->fresh()?->l3_forwarded_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function enableL3(): void
     {
         $settings = TenantSettings::forTenant(tenant());
         $this->priorL3Enabled = $settings->l3Enabled();
         $this->priorL3Endpoint = $settings->l3EndpointUrl();
 
-        $settings->saveOrganization([
-            'l3_enabled' => true,
-            'l3_endpoint_url' => self::L3_ENDPOINT,
-        ]);
+        // Setters + save avoid saveOrganization's GLN/prefix assert (demo2 test DB can drift).
+        $settings
+            ->setL3Enabled(true)
+            ->setL3EndpointUrl(self::L3_ENDPOINT);
+        tenant()->save();
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -456,10 +591,10 @@ class ForwardCommissioningToL3Test extends TestCase
                 $this->documentId = null;
             }
 
-            TenantSettings::forTenant(tenant())->saveOrganization([
-                'l3_enabled' => $this->priorL3Enabled ?? false,
-                'l3_endpoint_url' => $this->priorL3Endpoint,
-            ]);
+            TenantSettings::forTenant(tenant())
+                ->setL3Enabled($this->priorL3Enabled ?? false)
+                ->setL3EndpointUrl($this->priorL3Endpoint);
+            tenant()->save();
             $this->priorL3Enabled = null;
             $this->priorL3Endpoint = null;
 

@@ -1,0 +1,69 @@
+{
+  "info": {
+    "name": "TracePharma PMS dispense-check",
+    "description": "DSCSA dispense-check API for pharmacy PMS integrations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://your-tenant.example.com"
+    },
+    {
+      "key": "api_token",
+      "value": "your-sanctum-token"
+    }
+  ],
+  "item": [
+    {
+      "name": "Dispense check (GTIN + serial)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"gtin\": \"00301123456789\",\n  \"serial\": \"SERIAL123\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/dispense-check"
+      }
+    },
+    {
+      "name": "Dispense check (barcode element string)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"barcode\": \"010030116200116221SERIAL1234567890\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/dispense-check"
+      }
+    }
+  ]
+}

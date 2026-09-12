@@ -1,13 +1,13 @@
 @extends('marketing.layout')
 
 @section('title', 'Features — TracePharma')
-@section('meta_description', 'L4 DSCSA features: EPCIS receiving and shipping, L3 serial provisioning, exceptions, partner connectivity, VRS verification, and compliance reporting.')
+@section('meta_description', 'L4 DSCSA features: EPCIS receiving and shipping, L3 commissioning forward, exceptions, partner connectivity, VRS verification, and compliance reporting.')
 
 @section('content')
     <x-marketing.page-hero
         eyebrow="Platform features"
         title="One L4 workspace — seven operating profiles"
-        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL principals, and dispenser verification."
+        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL soft principal filters (optional custody enforcement default off), and dispenser verification."
     >
         <x-slot:actions>
             <a href="{{ route('marketing.demo') }}">Request a demo →</a>
@@ -18,7 +18,7 @@
         <div class="max-w-2xl">
             <h2 class="text-xl font-semibold text-tp-ink">Follow the DSCSA workflow</h2>
             <p class="mt-2 text-sm leading-relaxed text-tp-muted">
-                Deep-dive guides map to how product moves through your network—from inbound EPCIS and L3 serial handoff through ship, verify (where applicable), exceptions, and compliance reporting.
+                Deep-dive guides map to how product moves through your network—from inbound EPCIS and L3 commissioning forward through ship, verify (where applicable), exceptions, and compliance reporting.
             </p>
         </div>
 
@@ -45,14 +45,14 @@
                 ],
                 [
                     'phase' => 'Serialize',
-                    'title' => 'L3 ↔ L4 provisioning',
-                    'description' => 'SGTIN pools, line handoff, commissioning reconcile—so L3 line output stays tied to L4 serial authority.',
+                    'title' => 'L3 ↔ L4 handoff',
+                    'description' => 'Organization L3 forward URL plus idempotent commissioning POST—so plant systems stay in place without a vapor allocation API.',
                     'href' => route('marketing.features.show', 'serialization'),
                 ],
                 [
                     'phase' => 'Verify',
                     'title' => 'VRS & dispense',
-                    'description' => 'Dispenser profiles: workstation, API, eligibility—so verify outcomes land in an audit log auditors can review.',
+                    'description' => 'Dispenser profiles: workstation and POST /api/v1/dispense-check (named PMS adapters not GA). Optional manufacturer verification portal is settings-gated.',
                     'href' => route('marketing.features.show', 'verification'),
                 ],
                 [
@@ -100,10 +100,10 @@
                 <x-marketing.feature-list
                     :items="[
                         ['title' => 'EPCIS receiving & shipping', 'description' => 'Inbound via upload, SFTP, AS2, or webhooks. Outbound EPCIS with SSCC labeling and partner routing—so receive and ship stay in one L4 workspace.'],
-                        ['title' => 'L3 serial provisioning', 'description' => 'SGTIN allocation to plant-floor systems with commissioning reconcile—so manufacturer and prepackager lines stay tied to corporate serial authority.'],
+                        ['title' => 'L3 commissioning forward', 'description' => 'Organization settings L3 URL plus ForwardCommissioningToL3—so manufacturer and prepackager lines stay connected without a public allocation API.'],
                         ['title' => 'Exception management', 'description' => 'Structured reason codes, assignment, resolution notes, and playbook guidance—so operators know the next step on every failure.'],
                         ['title' => 'Supplier correction loop', 'description' => 'Send correction requests to trading partners and optionally auto-send on new exceptions—so supplier accountability is tracked in-system, not in email.'],
-                        ['title' => 'VRS verification', 'description' => 'Workstation and API checks with full audit log—so pharmacy, wholesaler, and dental/medical profiles prove verify outcomes at inspection.'],
+                        ['title' => 'VRS verification', 'description' => 'Workstation and API checks with full audit log—so pharmacy, wholesaler, and dental/medical profiles prove verify outcomes at inspection. Optional manufacturer verification portal is settings-gated (≠ VRS alone).'],
                         ['title' => 'Partner risk scoring', 'description' => 'Failure-rate trends per trading partner—so compliance leads prioritize wholesaler conversations before exceptions spike.'],
                         ['title' => 'Operations Hub', 'description' => 'Scan a barcode and route to receive, verify, ship, or trace—so floor staff start from one entry point instead of hunting menus.'],
                         ['title' => 'Strict EPCIS profile enforcement', 'description' => 'Reject non-conforming inbound files and hold shipments for compliance review—so bad partner data never silently lands in inventory.'],
@@ -111,6 +111,7 @@
                         ['title' => 'Receiving acceptance metrics', 'description' => 'Dashboard for receipt pass rates, validation failures, and SLA trends—so receiving managers see dock health before exceptions spike.'],
                         ['title' => 'Saleable return outbound', 'description' => 'Reverse logistics scorecard and outbound return EPCIS—so manufacturer and wholesaler profiles document saleable return custody (profile-gated).'],
                         ['title' => 'Compliance case management', 'description' => 'Tracing requests, recall management, and investigation cases—so compliance leads close regulatory workflows with linked event evidence.'],
+                        ['title' => 'Hub connectivity', 'description' => 'Connection approval, hub GLN routes, and optional platform AS2/SFTP edges—tenant L4 routing today; NABP Pulse certification remains roadmap.'],
                     ]"
                 />
             </div>
@@ -174,7 +175,7 @@
                     [
                         'label' => 'Manufacturer',
                         'title' => 'Drug manufacturers',
-                        'description' => 'Outbound EPCIS, L3 serial provisioning, ACK monitoring, and receive saleable returns—so brand owners ship with traceable transaction data and close the return loop.',
+                        'description' => 'Outbound EPCIS, L3 commissioning forward, ACK monitoring, and receive saleable returns—so brand owners ship with traceable transaction data and close the return loop.',
                         'href' => route('marketing.solutions.manufacturers'),
                         'highlight' => true,
                     ],
@@ -188,7 +189,7 @@
                     [
                         'label' => '3PL',
                         'title' => 'Logistics & 3PL',
-                        'description' => 'Principal-scoped receiving, cross-dock, and lot-level ship—so 3PL staff keep each brand owner\'s inventory isolated.',
+                        'description' => 'Soft principal filters on sites, ship orders, and scorecards (GA). Optional EPC custody enforcement (ops setting; default off) gates serials per principal when enabled—not claimed as default isolation. Cross-dock and lot-level ship on a wholesaler-class floor.',
                         'href' => route('marketing.solutions.3pl'),
                         'highlight' => true,
                     ],
@@ -207,7 +208,7 @@
                     [
                         'label' => 'Network',
                         'title' => 'Buying groups',
-                        'description' => 'Member health, exception trends, and partner authorization—so group admins see network compliance without per-store exports.',
+                        'description' => 'Member roster (CRUD), member health, exception trends, and partner authorization—plus ATP readiness, alerts, and member APIs—so group admins manage the network without floor ops.',
                         'href' => route('marketing.solutions.buying-groups'),
                     ],
                     [

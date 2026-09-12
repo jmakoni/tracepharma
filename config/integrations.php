@@ -17,5 +17,7 @@ return [
     */
     'wms' => [
         'api_key' => env('WMS_BRIDGE_API_KEY'),
+        // Max confirmed scan URIs per receive-confirm POST; larger sessions chunk.
+        'receive_confirm_max_scans' => max(1, (int) env('WMS_RECEIVE_CONFIRM_MAX_SCANS', 5000)),
     ],
 ];

@@ -13,9 +13,11 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Site;
+use App\Rules\ValidGln;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -26,12 +28,12 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
-use InvalidArgumentException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -73,6 +75,7 @@ final class UnpackReceivingHierarchy
         ?int $actorId = null,
         ?array $childEpcKeys = null,
         bool $eventTimeFromSessionCompletion = false,
+        ?int $principalId = null,
     ): array {
         $session = $session->fresh() ?? $session;
 
@@ -91,6 +94,9 @@ final class UnpackReceivingHierarchy
 
         $session->loadMissing('site', 'tradingPartner', 'document');
 
+        $siteId = $session->site_id !== null ? (int) $session->site_id : null;
+        $principalId ??= PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
         $childFilter = $this->resolveChildEpcIdFilter($childEpcKeys);
 
         $openParentIds = $this->confirmedParentEpcIdsWithOpenLinks($session, $childFilter);
@@ -103,7 +109,7 @@ final class UnpackReceivingHierarchy
             ];
         }
 
-        $built = DB::transaction(function () use ($session, $childFilter, $eventTimeFromSessionCompletion): array {
+        $built = DB::transaction(function () use ($session, $childFilter, $eventTimeFromSessionCompletion, $principalId): array {
             $recordTime = now();
             $eventTime = ($eventTimeFromSessionCompletion && $session->completed_at !== null)
                 ? Carbon::parse($session->completed_at)
@@ -123,6 +129,7 @@ final class UnpackReceivingHierarchy
                 $timezoneOffset,
                 $gln,
                 $childFilter,
+                principalId: $principalId,
             );
 
             if ($unpacked['blocks'] === []) {
@@ -192,8 +199,13 @@ final class UnpackReceivingHierarchy
      *     closed_links: int
      * }
      */
-    public function handleParent(Epc $parent, array $childEpcKeys, ?Site $site = null, ?int $actorId = null): array
-    {
+    public function handleParent(
+        Epc $parent,
+        array $childEpcKeys,
+        ?Site $site = null,
+        ?int $actorId = null,
+        ?int $principalId = null,
+    ): array {
         if ($childEpcKeys === []) {
             throw new DomainException('Partial unpack requires at least one child EPC.');
         }
@@ -210,8 +222,10 @@ final class UnpackReceivingHierarchy
         }
 
         $site ??= $this->resolveWorkstationSite();
+        $siteId = $site?->getKey() !== null ? (int) $site->getKey() : null;
+        $principalId ??= PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
 
-        $built = DB::transaction(function () use ($parent, $childFilter, $site, $actorId): array {
+        $built = DB::transaction(function () use ($parent, $childFilter, $site, $actorId, $principalId): array {
             $recordTime = now();
             $eventTime = $recordTime;
             $timezoneOffset = $this->timezoneOffsetForSite($site, $eventTime);
@@ -229,6 +243,7 @@ final class UnpackReceivingHierarchy
                 $timezoneOffset,
                 $gln,
                 $childFilter,
+                $principalId,
             );
 
             if ($unpacked['blocks'] === []) {
@@ -330,6 +345,7 @@ final class UnpackReceivingHierarchy
         ?string $gln,
         ?array $childEpcIds = null,
         bool $failOnQuarantine = true,
+        ?int $principalId = null,
     ): array {
         $parentEpcIds = ReceivingScanLine::query()
             ->where('receiving_session_id', $session->getKey())
@@ -366,10 +382,18 @@ final class UnpackReceivingHierarchy
         $lockedParentIds = $openLinks->pluck('parent_epc_id')->map(fn ($id): int => (int) $id)->all();
         $lockedChildIds = $openLinks->pluck('child_epc_id')->map(fn ($id): int => (int) $id)->all();
 
+        $principalId ??= PrincipalCustody::forTenant()->activePrincipalIdForSite(
+            $session->site_id !== null ? (int) $session->site_id : null,
+        );
+
         // Custody and holds are read after the row lock so a hold raised while we queued
         // cannot slip through between the check and the link close.
         if ($failOnQuarantine) {
-            $this->custodyGate->assertOperableFor([...$lockedParentIds, ...$lockedChildIds], 'unpacking');
+            $this->custodyGate->assertOperableFor(
+                [...$lockedParentIds, ...$lockedChildIds],
+                'unpacking',
+                $principalId,
+            );
         } else {
             $heldEpcIds = $this->openHoldEpcIds([...$lockedParentIds, ...$lockedChildIds]);
 
@@ -606,6 +630,7 @@ final class UnpackReceivingHierarchy
         string $timezoneOffset,
         ?string $gln,
         array $childEpcIds,
+        ?int $principalId = null,
     ): array {
         $parentId = (int) $parent->getKey();
         $childFilter = array_values(array_unique(array_map('intval', $childEpcIds)));
@@ -624,7 +649,7 @@ final class UnpackReceivingHierarchy
         $childIds = $openLinks->map(fn ($link): int => (int) $link->child_epc_id)->values()->all();
 
         // Re-checked after the row lock: a hold raised while this unpack queued must win.
-        $this->custodyGate->assertOperableFor([$parentId, ...$childIds], 'unpacking');
+        $this->custodyGate->assertOperableFor([$parentId, ...$childIds], 'unpacking', $principalId);
 
         $this->preflightUnpackAggregationCandidate($parentId, $childIds, $eventTime);
 
@@ -792,6 +817,12 @@ final class UnpackReceivingHierarchy
         $siteGln = Sgln::normalizeGln($site?->gln);
 
         if ($siteGln !== null) {
+            if (ValidGln::normalize($siteGln) === null) {
+                throw new DomainException(
+                    'Cannot author unpack EPCIS: site GLN fails the GS1 check digit (fix the site GLN so it matches its SGLN).',
+                );
+            }
+
             $candidates = [];
             $siteSgln = $site?->getAttribute('sgln');
             if (is_string($siteSgln) && $siteSgln !== '') {
@@ -806,7 +837,7 @@ final class UnpackReceivingHierarchy
 
             if ($sglnUrn === null) {
                 throw new DomainException(
-                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required).',
+                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required, or site GLN/SGLN mismatch).',
                 );
             }
 
@@ -1036,10 +1067,16 @@ final class UnpackReceivingHierarchy
         $siteGln = Sgln::normalizeGln($session->site?->gln);
 
         if ($siteGln !== null) {
+            if (ValidGln::normalize($siteGln) === null) {
+                throw new DomainException(
+                    'Cannot author unpack EPCIS: site GLN fails the GS1 check digit (fix the site GLN so it matches its SGLN).',
+                );
+            }
+
             $sglnUrn = $this->resolveSiteSglnUrn($session, $siteGln);
             if ($sglnUrn === null) {
                 throw new DomainException(
-                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required).',
+                    'Cannot author unpack EPCIS: site GLN is set but SGLN could not be built (organization company prefix required, or site GLN/SGLN mismatch).',
                 );
             }
 

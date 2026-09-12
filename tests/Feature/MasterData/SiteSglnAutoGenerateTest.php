@@ -152,6 +152,23 @@ class SiteSglnAutoGenerateTest extends TestCase
         }
     }
 
+    #[Test]
+    public function org_site_with_invalid_gln_check_digit_does_not_store_mismatched_sgln(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->useCompanyPrefix($tenant, '0399991', '0399991000008');
+            $wrongGln = '0366159000123'; // body 036615900012 has check digit 5
+
+            $site = $this->createOrgSite($wrongGln, 'urn:epc:id:sgln:036615.900012.0');
+
+            $this->assertNull($site->fresh()->sgln);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     private function createOrgSite(string $gln, ?string $sgln = null): Site
     {
         $site = Site::query()->create(array_filter([

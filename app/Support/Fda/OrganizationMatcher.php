@@ -128,7 +128,7 @@ final class OrganizationMatcher
     {
         $digits = preg_replace('/\D/', '', (string) $duns) ?? '';
 
-        if ($digits === '') {
+        if ($digits === '' || strlen($digits) > 14) {
             return null;
         }
 

@@ -46,8 +46,10 @@ class JobRolesDashboardEmptyStateTest extends TestCase
 
             Livewire::test(Dashboard::class)
                 ->assertOk()
-                ->assertSee('Limited app for buying groups')
-                ->assertSee('Contact support');
+                ->assertSee('Buying group control plane')
+                ->assertSee('Partner ATP readiness')
+                ->assertSee('Alert center')
+                ->assertSee('Member roster');
         } finally {
             $this->cleanup($tenant);
         }

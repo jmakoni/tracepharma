@@ -4,7 +4,7 @@ namespace Tests\Feature\MasterData;
 
 use App\Actions\Epcis\EnsureCatalogPartiesFromEpcisLocations;
 use App\Actions\MasterData\EnsureManufacturerPartnerFromCatalog;
-use App\Actions\MasterData\EnsureWholesalerPartnerFromCatalog;
+use App\Actions\MasterData\EnsureOrganizationPartnerFromFda;
 use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Models\Fda\FdaOrganization;
@@ -73,7 +73,7 @@ class TradingPartnerIngestReactivationTest extends TestCase
         try {
             $partner = $this->createDeactivatedPartner($gln, PartnerType::Logistics3pl);
 
-            $resolved = app(EnsureWholesalerPartnerFromCatalog::class)->handle($org);
+            $resolved = app(EnsureOrganizationPartnerFromFda::class)->handle($org, PartnerType::Wholesaler);
 
             $this->assertSame((int) $partner->getKey(), (int) $resolved->getKey());
             $this->assertFalse((bool) $resolved->is_active);

@@ -2,7 +2,9 @@
 
 namespace App\Support\Epcis\Validation;
 
+use App\Support\Epcis\EpcisSoapDocumentNormalizer;
 use DOMDocument;
+use InvalidArgumentException;
 use LibXMLError;
 
 /**
@@ -10,6 +12,10 @@ use LibXMLError;
  */
 final class EpcisXsdValidator
 {
+    public function __construct(
+        private readonly EpcisSoapDocumentNormalizer $soapNormalizer = new EpcisSoapDocumentNormalizer,
+    ) {}
+
     public function schemaPath(): string
     {
         return resource_path('xsd/epcis-1.2/EPCglobal-epcis-1_2.xsd');
@@ -41,25 +47,49 @@ final class EpcisXsdValidator
             ];
         }
 
-        $previous = libxml_use_internal_errors(true);
-        libxml_clear_errors();
+        $normalizedPath = $absoluteXmlPath;
+        $cleanupTemp = false;
 
         try {
-            $document = new DOMDocument;
-            $loaded = @$document->load($absoluteXmlPath);
-            if ($loaded === false) {
-                return $this->findingsFromLibxml('Failed to load XML for XSD validation.');
+            try {
+                $normalized = $this->soapNormalizer->normalizeFile($absoluteXmlPath);
+            } catch (InvalidArgumentException $e) {
+                return [
+                    new EpcisValidationFinding(
+                        exceptionType: 'INGESTION_PARSE_ERROR',
+                        severity: 'error',
+                        description: $e->getMessage(),
+                    ),
+                ];
             }
 
-            $ok = @$document->schemaValidate($schema);
-            if ($ok === true) {
-                return [];
-            }
+            $normalizedPath = $normalized['path'];
+            $cleanupTemp = $normalized['temporary'];
 
-            return $this->findingsFromLibxml('EPCIS document failed GS1 EPCIS 1.2 XSD validation.');
-        } finally {
+            $previous = libxml_use_internal_errors(true);
             libxml_clear_errors();
-            libxml_use_internal_errors($previous);
+
+            try {
+                $document = new DOMDocument;
+                $loaded = @$document->load($normalizedPath);
+                if ($loaded === false) {
+                    return $this->findingsFromLibxml('Failed to load XML for XSD validation.');
+                }
+
+                $ok = @$document->schemaValidate($schema);
+                if ($ok === true) {
+                    return [];
+                }
+
+                return $this->findingsFromLibxml('EPCIS document failed GS1 EPCIS 1.2 XSD validation.');
+            } finally {
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
+            }
+        } finally {
+            if ($cleanupTemp && is_file($normalizedPath)) {
+                @unlink($normalizedPath);
+            }
         }
     }
 

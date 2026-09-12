@@ -7,6 +7,9 @@ namespace App\Actions\Outbound;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Services\Epcis\Outbound\OutboundEpcisXmlBuilder;
+use App\Support\Epcis\OutboundCorrelationGlns;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 final class GenerateSsccAggregationDocument
 {
@@ -16,7 +19,7 @@ final class GenerateSsccAggregationDocument
     ) {}
 
     /**
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function forBatch(
         SsccLabelBatch $batch,
@@ -42,11 +45,19 @@ final class GenerateSsccAggregationDocument
             throw new \InvalidArgumentException('No labels in this batch have child EPCs for aggregation.');
         }
 
-        return $this->xmlBuilder->buildDocument($this->resolveCreationDateIso($settings), $events, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xmlBuilder->buildDocument(
+            $this->resolveCreationDateIso($settings),
+            $events,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 
     /**
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function forLabel(
         SsccLabel $label,
@@ -69,7 +80,7 @@ final class GenerateSsccAggregationDocument
      * Incremental packing ADD for a specific child set (GS1 action=ADD).
      *
      * @param  list<string>  $childEpcs
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function forLabelChildren(
         SsccLabel $label,
@@ -80,7 +91,15 @@ final class GenerateSsccAggregationDocument
     ): string {
         $event = $this->aggregationEvent->execute($label, $childEpcs, settings: $settings, siteId: $siteId);
 
-        return $this->xmlBuilder->buildDocument($this->resolveCreationDateIso($settings), $event, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xmlBuilder->buildDocument(
+            $this->resolveCreationDateIso($settings),
+            $event,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 
     /**
@@ -106,7 +125,7 @@ final class GenerateSsccAggregationDocument
     }
 
     /**
-     * @param  array{event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{event_time?: CarbonInterface|string}|null  $settings
      */
     private function resolveCreationDateIso(?array $settings): string
     {
@@ -116,10 +135,10 @@ final class GenerateSsccAggregationDocument
 
         $eventTime = $settings['event_time'];
 
-        if ($eventTime instanceof \Carbon\CarbonInterface) {
+        if ($eventTime instanceof CarbonInterface) {
             return $eventTime->toIso8601String();
         }
 
-        return \Illuminate\Support\Carbon::parse($eventTime)->toIso8601String();
+        return Carbon::parse($eventTime)->toIso8601String();
     }
 }

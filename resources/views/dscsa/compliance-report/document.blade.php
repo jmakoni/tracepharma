@@ -37,6 +37,28 @@
 
         .header.compact { margin-bottom: 12px; }
 
+        .header-row {
+            display: table;
+            width: 100%;
+        }
+
+        .header-brand,
+        .header-title {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .header-brand {
+            width: 120px;
+            padding-right: 12px;
+        }
+
+        .header-logo {
+            max-width: 110px;
+            max-height: 48px;
+            height: auto;
+        }
+
         .title {
             font-family: DejaVu Serif, serif;
             font-size: 15pt;
@@ -155,7 +177,7 @@
         @if ($page->kind === 'lot_continue')
             @include('dscsa.compliance-report.lot-continue', ['page' => $page, 'footer' => $report->footer])
         @else
-            @include('dscsa.compliance-report.lot-first', ['page' => $page, 'footer' => $report->footer])
+            @include('dscsa.compliance-report.lot-first', ['page' => $page, 'footer' => $report->footer, 'report' => $report])
         @endif
     </div>
 @endforeach

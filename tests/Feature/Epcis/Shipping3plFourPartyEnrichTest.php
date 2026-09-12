@@ -55,7 +55,7 @@ class Shipping3plFourPartyEnrichTest extends TestCase
             $document->load('tradingPartner', 'shipToPartner');
 
             $this->assertSame('validated', $document->status);
-            $this->assertSame(3, $document->event_count);
+            $this->assertSame(4, $document->event_count);
 
             // Seller / trading partner = My Pharma (SBDH sender / source owning), not 3PL ship-from.
             $this->assertSame(self::MY_PHARMA_GLN, $document->sender_gln);

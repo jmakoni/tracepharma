@@ -22,6 +22,7 @@ final class EpcisValidationCatalog
         'INVALID_GTIN_CHECK_DIGIT',
         'INVALID_SSCC_CHECK_DIGIT',
         'UNKNOWN_GLN',
+        'SCHEDULED_PRODUCT_MISSING_DEA',
         'INVALID_COMPANY_PREFIX',
         'LEADING_ZERO_STRIPPED',
         'GTIN_SERIAL_MISMATCH',
@@ -64,6 +65,7 @@ final class EpcisValidationCatalog
         'TIMING_INVERSION',
         'COMMISSION_AFTER_SHIP',
         'EVENTS_OUT_OF_ORDER',
+        'PACK_HIERARCHY_TIME_INVERSION',
         'SHIP_BEFORE_COMMISSION',
         'DECOMMISSION_AFTER_SHIP',
 
@@ -76,6 +78,10 @@ final class EpcisValidationCatalog
         'ENCODING_ERROR',
         'MISSING_SOURCE_DESTINATION',
         'MISSING_BIZ_TRANSACTION',
+        'ASN_SHIPMENT_FILE_ADDED',
+        'ASN_SHIPMENT_PO_MISMATCH',
+        'DESTINATION_OWNING_PARTY_MISMATCH',
+        'DESTINATION_LOCATION_MISMATCH',
 
         // Process & DSCSA Compliance
         'MISSING_COMMISSIONING',
@@ -125,6 +131,11 @@ final class EpcisValidationCatalog
         'INVALID_EXTENSION_NAMESPACE',
         'LOT_MISMATCH',
         'QUANTITY_MISMATCH',
+        'ASN_SHIPMENT_FILE_ADDED',
+        'ASN_SHIPMENT_PO_MISMATCH',
+        'DESTINATION_OWNING_PARTY_MISMATCH',
+        'DESTINATION_LOCATION_MISMATCH',
+        'SCHEDULED_PRODUCT_MISSING_DEA',
     ];
 
     public static function isOwned(string $code): bool

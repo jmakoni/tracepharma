@@ -209,8 +209,8 @@ final class ReceivingPolicy
             ],
             ReceivingSessionKind::InboundAsn => [
                 'scanHelper' => $scanHelper,
-                'kindHelper' => 'ASN receive: confirm expected pallets and units from the inbound file.',
-                'confirmButton' => 'ADD',
+                'kindHelper' => 'ASN receive: confirm expected pallets and units from the inbound file, then Complete receive.',
+                'confirmButton' => 'RECEIVE',
                 'unexpectedTitle' => 'Not on this ASN — do not put away',
                 'unexpectedBody' => 'Logged as Unexpected below. Check the label or raise an exception.',
                 'completeTitle' => 'Receiving complete',

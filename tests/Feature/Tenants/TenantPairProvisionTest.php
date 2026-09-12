@@ -119,6 +119,7 @@ class TenantPairProvisionTest extends TestCase
                 'status' => 'active',
                 'tenant_slug' => 'ssor-no-owner',
             ])
+            ->assertSee('Pharmacy cannot commission (no plant ObjectEvents).')
             ->call('create')
             ->assertHasFormErrors(['owner_name', 'owner_email', 'owner_password']);
     }

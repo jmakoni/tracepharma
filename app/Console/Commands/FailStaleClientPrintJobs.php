@@ -9,6 +9,7 @@ use App\Enums\SsccPrintDeliveryMode;
 use App\Enums\SsccPrintJobStatus;
 use App\Models\SsccPrintJob;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class FailStaleClientPrintJobs extends Command
@@ -28,7 +29,7 @@ class FailStaleClientPrintJobs extends Command
             : Tenant::query()->where('status', 'active')->get();
 
         foreach ($tenants as $tenant) {
-            $tenant->run(function () use (&$failedJobs, &$updatedLabels): void {
+            TenantRunner::run($tenant, function () use (&$failedJobs, &$updatedLabels): void {
                 $staleBefore = now()->subMinutes(15);
                 $stalePrintingBefore = now()->subMinutes(45);
 

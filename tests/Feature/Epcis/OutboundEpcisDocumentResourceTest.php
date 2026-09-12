@@ -7,6 +7,7 @@ use App\Enums\EpcisReceivedVia;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
+use App\Actions\Epcis\PrepareOutboundEpcisForRetransmit;
 use App\Filament\App\Resources\OutboundEpcisDocuments\Actions\RetryOutboundEpcisTransmitAction;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
 use App\Models\Epcis\EpcisDocument;
@@ -87,6 +88,44 @@ class OutboundEpcisDocumentResourceTest extends TestCase
             tenancy()->initialize($tenant);
             $this->assertSame(TenantProfile::Pharmacy, tenant()->profile);
             $this->assertFalse(OutboundEpcisDocumentResource::canAccess());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function ship_user_can_view_outbound_document_when_job_roles_enabled(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            $settings = \App\Support\TenantSettings::forTenant(tenant());
+            $priorJobRoles = $settings->jobRolesEnabled();
+            $settings->setJobRolesEnabled(true);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $shipUser = User::factory()->create([
+                'email' => 'ship-outbound-'.Str::uuid().'@example.test',
+            ]);
+            $shipUser->syncRoles([TenantRole::OutboundPickAndPackLead->value]);
+            $shipUser->givePermissionTo(\App\Support\Auth\Permissions::SitesAccessAll);
+            $shipUser->refresh();
+            $this->userIds[] = (int) $shipUser->getKey();
+            $this->actingAs($shipUser);
+
+            $outbound = $this->makeDocument('outbound');
+
+            $this->assertTrue(OutboundEpcisDocumentResource::canAccess());
+            $this->assertTrue(OutboundEpcisDocumentResource::canViewAny());
+            $this->assertTrue(OutboundEpcisDocumentResource::canView($outbound));
+
+            $settings->setJobRolesEnabled($priorJobRoles);
+            tenant()?->save();
         } finally {
             $this->cleanup($tenant);
         }
@@ -194,11 +233,28 @@ class OutboundEpcisDocumentResourceTest extends TestCase
                 'error_message' => 'Connection refused',
             ]);
 
+            $this->app->instance(PrepareOutboundEpcisForRetransmit::class, new class($doc)
+            {
+                public function __construct(private EpcisDocument $doc) {}
+
+                public function handle(EpcisDocument $document): array
+                {
+                    return [
+                        'document' => $this->doc->fresh() ?? $this->doc,
+                        'mode' => 'remint',
+                        'old_uuid' => (string) $this->doc->document_uuid,
+                        'new_uuid' => (string) $this->doc->document_uuid,
+                        'old_filename' => $this->doc->original_filename,
+                        'new_filename' => (string) $this->doc->original_filename,
+                    ];
+                }
+            });
+
             $fake = new class implements OutboundEpcisTransmitter
             {
                 public int $calls = 0;
 
-                public function transmit(EpcisDocument $document): void
+                public function transmit(EpcisDocument $document, bool $forceRetransmit = false): void
                 {
                     $this->calls++;
                     $document->forceFill([

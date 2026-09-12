@@ -7,6 +7,7 @@ use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\SsccLabelBatch;
 use App\Services\Custody\EpcCustodyGate;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
 use Illuminate\Support\Arr;
@@ -55,7 +56,12 @@ class BreakPalletAndReship
             throw new \InvalidArgumentException('Source parent SSCC not found.');
         }
 
-        $this->custodyGate->assertOperableFor($parentEpc, 'break and pack');
+        $siteId = isset($input['site_id']) && $input['site_id'] !== '' && $input['site_id'] !== null
+            ? (int) $input['site_id']
+            : null;
+        $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
+        $this->custodyGate->assertOperableFor($parentEpc, 'break and pack', $principalId);
 
         $childEpcIds = [];
         $childEpcs = [];
@@ -82,7 +88,7 @@ class BreakPalletAndReship
             $childEpcs[] = $childEpc;
         }
 
-        $this->custodyGate->assertOperableFor($childEpcs, 'break and pack');
+        $this->custodyGate->assertOperableFor($childEpcs, 'break and pack', $principalId);
 
         $reshipMode = SsccReshipMode::tryFrom((string) ($input['reship_mode'] ?? SsccReshipMode::PerChild->value))
             ?? SsccReshipMode::PerChild;

@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
@@ -11,29 +12,33 @@ use App\Models\Site;
 use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\CurrentSite;
-use App\Support\Auth\SiteAccess;
-use App\Support\Gs1\ElementString;
-use App\Support\Gs1\EpcBarcodeDisplay;
-use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
+use App\Support\Gs1\ElementString;
+use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Packing\AcquirePackChildLocks;
+use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
+use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
 use Throwable;
 use UnitEnum;
 
-class UnpackWorkstation extends Page
+class UnpackWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCubeTransparent;
 
     protected static ?string $navigationLabel = 'Unpack';
@@ -55,8 +60,15 @@ class UnpackWorkstation extends Page
     /** @var array<int, string> */
     public array $openChildren = [];
 
-    /** @var list<int|string> */
+    /** @var list<int> Stable order of open children as loaded (unselected zone). */
+    public array $openChildrenOrder = [];
+
+    /** @var list<int|string> Recent-first selection (selected zone). */
     public array $selectedChildIds = [];
+
+    public int $hiddenChildrenCount = 0;
+
+    public bool $showPostUnpackHandoff = false;
 
     public ?string $lastMessage = null;
 
@@ -81,6 +93,7 @@ class UnpackWorkstation extends Page
     {
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
+        $this->showPostUnpackHandoff = false;
 
         if ($scan === '') {
             $this->flash('error', 'Scan a parent or child barcode.');
@@ -98,6 +111,8 @@ class UnpackWorkstation extends Page
 
             return;
         }
+
+        $shippable = app(ShippableEpcsAtSite::class);
 
         if ($this->parentEpcId !== null) {
             $epcId = (int) $epc->getKey();
@@ -125,37 +140,135 @@ class UnpackWorkstation extends Page
             return;
         }
 
-        $this->loadParent($epc, app(ShippableEpcsAtSite::class));
+        if ($this->tryChildFirstResolve($epc, $shippable)) {
+            $this->scan = '';
+            $this->dispatch('focus-scan');
+
+            return;
+        }
+
+        $this->loadParent($epc, $shippable);
         $this->scan = '';
         $this->dispatch('focus-scan');
     }
 
     public function toggleChild(int $childId): void
     {
-        $selected = array_map('intval', $this->selectedChildIds);
+        if (! array_key_exists($childId, $this->openChildren)) {
+            return;
+        }
+
+        $selected = array_values(array_unique(array_map('intval', $this->selectedChildIds)));
         if (in_array($childId, $selected, true)) {
             $this->selectedChildIds = array_values(array_filter(
                 $selected,
                 fn (int $id): bool => $id !== $childId,
             ));
-            $this->flash('ok', 'Removed from selection.');
+            $this->flash('ok', 'Returned to container.');
         } else {
-            $selected[] = $childId;
-            $this->selectedChildIds = array_values(array_unique($selected));
-            $this->flash('ok', 'Added to selection.');
+            $this->selectedChildIds = array_values(array_unique([
+                $childId,
+                ...array_values(array_filter($selected, fn (int $id): bool => $id !== $childId)),
+            ]));
+            $this->flash('ok', 'Selected for unpack.');
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function selectedChildren(): array
+    {
+        $out = [];
+        foreach (array_map('intval', $this->selectedChildIds) as $id) {
+            if (array_key_exists($id, $this->openChildren)) {
+                $out[$id] = $this->openChildren[$id];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array{epc_id: int, identifier: string, scanned_at: string, urn: string, present: bool}>
+     */
+    public function selectedScanRows(): array
+    {
+        $ids = array_keys($this->selectedChildren());
+        if ($ids === []) {
+            return [];
+        }
+
+        $epcs = Epc::query()
+            ->whereIn('id', $ids)
+            ->with('ilmd')
+            ->get()
+            ->keyBy(fn (Epc $epc): int => (int) $epc->getKey());
+
+        $rows = [];
+        foreach ($ids as $id) {
+            $epc = $epcs->get($id);
+            if ($epc instanceof Epc) {
+                $display = Gs1DualDisplay::forEpc($epc);
+                $rows[] = [
+                    'epc_id' => (int) $id,
+                    'identifier' => ($display['gs1_barcode'] ?? '') !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => '—',
+                    'urn' => ($display['urn'] ?? '') !== '' ? $display['urn'] : '—',
+                    'present' => true,
+                ];
+            } else {
+                $rows[] = [
+                    'epc_id' => (int) $id,
+                    'identifier' => $this->openChildren[$id] ?? '—',
+                    'scanned_at' => '—',
+                    'urn' => '—',
+                    'present' => true,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function containerChildren(): array
+    {
+        $selected = array_map('intval', $this->selectedChildIds);
+        $out = [];
+
+        foreach ($this->openChildrenOrder as $id) {
+            $id = (int) $id;
+            if (! in_array($id, $selected, true) && array_key_exists($id, $this->openChildren)) {
+                $out[$id] = $this->openChildren[$id];
+            }
+        }
+
+        foreach ($this->openChildren as $id => $label) {
+            $id = (int) $id;
+            if (! in_array($id, $selected, true) && ! array_key_exists($id, $out)) {
+                $out[$id] = $label;
+            }
+        }
+
+        return $out;
     }
 
     public function confirmUnpackAction(): Action
     {
         return RegulatoryCompliance::apply(
             Action::make('confirmUnpack')
-                ->label('Confirm unpack')
+                ->label(fn (): string => $this->selectedCount() === 0
+                    ? 'Confirm unpack'
+                    : 'Confirm unpack ('.$this->selectedCount().')')
                 ->color('primary')
+                ->disabled(fn (): bool => $this->selectedCount() === 0)
                 ->requiresConfirmation()
                 ->modalHeading('Unpack selected children?')
                 ->modalDescription(function (): string {
-                    $count = count(array_values(array_unique(array_map('intval', $this->selectedChildIds))));
+                    $count = $this->selectedCount();
                     $parent = $this->parentLabel ?? 'this parent';
                     $noun = $count === 1 ? 'child' : 'children';
                     $siteName = $this->commissionSite()?->name ?? '(select a site)';
@@ -176,7 +289,8 @@ class UnpackWorkstation extends Page
         return RegulatoryCompliance::apply(
             Action::make('unpackAll')
                 ->label('Unpack all')
-                ->color('warning')
+                ->color('danger')
+                ->disabled(fn (): bool => $this->openChildren === [])
                 ->requiresConfirmation()
                 ->modalHeading('Unpack all open children?')
                 ->modalDescription('Selects every open child under this parent and authors AggregationEvent DELETE(s).')
@@ -188,6 +302,17 @@ class UnpackWorkstation extends Page
             'unpack_workstation_unpack_all',
             requireReason: false,
         );
+    }
+
+    /**
+     * @return array<int, Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->confirmUnpackAction(),
+            $this->unpackAllAction(),
+        ];
     }
 
     public function performUnpack(UnpackReceivingHierarchy $unpack, ShippableEpcsAtSite $shippable): void
@@ -218,7 +343,7 @@ class UnpackWorkstation extends Page
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Parent is not on hand at the selected site.');
 
             return;
@@ -262,7 +387,7 @@ class UnpackWorkstation extends Page
         $selected = $stillOpenChildIds;
 
         foreach ($selected as $childId) {
-            if (! $shippable->contains($siteId, $childId)) {
+            if (! $shippable->contains($siteId, $childId, $this->floorPrincipalId($siteId))) {
                 $this->flash('error', 'A selected child is not on hand at the selected site — rescan.');
 
                 return;
@@ -272,7 +397,7 @@ class UnpackWorkstation extends Page
         $locks = app(AcquirePackChildLocks::class)->acquire($selected);
 
         if ($locks === null) {
-            $this->flash('error', 'Another pack is in progress for one of these children. Try again in a moment.');
+            $this->flash('error', 'Another pack or unpack is in progress for one of these children. Try again in a moment.');
 
             return;
         }
@@ -283,6 +408,7 @@ class UnpackWorkstation extends Page
                 $selected,
                 $site,
                 auth()->id(),
+                $this->floorPrincipalId($siteId),
             );
         } catch (DomainException|InvalidArgumentException|Throwable $exception) {
             $this->flash('error', $exception->getMessage());
@@ -303,7 +429,7 @@ class UnpackWorkstation extends Page
         $closed = (int) ($result['closed_links'] ?? 0);
         $successTone = $closed > 0 ? 'ok' : 'warn';
         $successMessage = $closed > 0
-            ? "Unpacked {$closed} child link".($closed === 1 ? '' : 's').'.'
+            ? "Unpacked {$closed} child link".($closed === 1 ? '' : 's').' (unpacking).'
             : 'No open links matched the selection.';
         $this->flash($successTone, $successMessage);
 
@@ -320,6 +446,7 @@ class UnpackWorkstation extends Page
         $notification->send();
 
         $this->loadParent($parent, app(ShippableEpcsAtSite::class));
+        $this->showPostUnpackHandoff = $closed > 0;
         $this->lastTone = $successTone;
         $this->lastMessage = $successMessage;
         $this->dispatch('focus-scan');
@@ -331,9 +458,107 @@ class UnpackWorkstation extends Page
         $this->parentEpcId = null;
         $this->parentLabel = null;
         $this->openChildren = [];
+        $this->openChildrenOrder = [];
         $this->selectedChildIds = [];
+        $this->hiddenChildrenCount = 0;
+        $this->showPostUnpackHandoff = false;
         $this->flash('ok', 'Cleared parent.');
         $this->dispatch('focus-scan');
+    }
+
+    public function selectedCount(): int
+    {
+        return count(array_values(array_unique(array_map('intval', $this->selectedChildIds))));
+    }
+
+    public function openChildrenCount(): int
+    {
+        return count($this->openChildren);
+    }
+
+    public function commissionSiteLabel(): string
+    {
+        $site = $this->commissionSite();
+
+        return $site?->name ?? 'No site selected';
+    }
+
+    public function packWorkstationUrl(): ?string
+    {
+        if (! PackWorkstation::canAccess()) {
+            return null;
+        }
+
+        return PackWorkstation::getUrl();
+    }
+
+    public function unpackedItemsUrl(): ?string
+    {
+        if (! UnpackedItems::canAccess()) {
+            return null;
+        }
+
+        return UnpackedItems::getUrl();
+    }
+
+    public function breakPackWorkstationUrl(): ?string
+    {
+        if (! BreakPackWorkstation::canAccess()) {
+            return null;
+        }
+
+        return BreakPackWorkstation::getUrl();
+    }
+
+    /**
+     * TraceLink-style child-first: scanning a child with no parent loaded
+     * resolves the open parent and selects that child (unless the scan is itself a parent with open children).
+     */
+    private function tryChildFirstResolve(Epc $epc, ShippableEpcsAtSite $shippable): bool
+    {
+        $epcId = (int) $epc->getKey();
+
+        $hasOpenChildren = AggregationLink::query()
+            ->where('parent_epc_id', $epcId)
+            ->whereNull('valid_to')
+            ->exists();
+
+        if ($hasOpenChildren) {
+            return false;
+        }
+
+        $parentId = AggregationLink::query()
+            ->where('child_epc_id', $epcId)
+            ->whereNull('valid_to')
+            ->value('parent_epc_id');
+
+        if ($parentId === null) {
+            return false;
+        }
+
+        $parent = Epc::query()->find((int) $parentId);
+        if (! $parent instanceof Epc) {
+            return false;
+        }
+
+        $this->loadParent($parent, $shippable);
+
+        if ($this->parentEpcId === null) {
+            return true;
+        }
+
+        if (array_key_exists($epcId, $this->openChildren)) {
+            $selected = array_map('intval', $this->selectedChildIds);
+            if (! in_array($epcId, $selected, true)) {
+                $this->selectedChildIds = array_values(array_unique([
+                    $epcId,
+                    ...$selected,
+                ]));
+            }
+            $this->flash('ok', 'Parent loaded — child selected for unpack.');
+        }
+
+        return true;
     }
 
     private function loadParent(Epc $parent, ShippableEpcsAtSite $shippable): void
@@ -344,7 +569,9 @@ class UnpackWorkstation extends Page
             $this->parentEpcId = null;
             $this->parentLabel = null;
             $this->openChildren = [];
+            $this->openChildrenOrder = [];
             $this->selectedChildIds = [];
+            $this->hiddenChildrenCount = 0;
 
             return;
         }
@@ -354,7 +581,7 @@ class UnpackWorkstation extends Page
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Parent is not on hand at the selected site.');
 
             return;
@@ -363,10 +590,23 @@ class UnpackWorkstation extends Page
         $this->parentEpcId = (int) $parent->getKey();
         $this->parentLabel = $this->epcLabel($parent);
         $this->openChildren = app(UnpackReceivingHierarchy::class)->openChildOptionsForParent($parent);
+        $this->openChildrenOrder = array_map('intval', array_keys($this->openChildren));
         $this->selectedChildIds = [];
 
+        $totalOpen = (int) AggregationLink::query()
+            ->where('parent_epc_id', $parent->getKey())
+            ->whereNull('valid_to')
+            ->count();
+        $this->hiddenChildrenCount = max(0, $totalOpen - count($this->openChildren));
+
         if ($this->openChildren === []) {
-            $this->flash('warn', 'Parent loaded — no open children to unpack.');
+            $message = 'Parent loaded — no open children to unpack.';
+            if ($this->hiddenChildrenCount > 0) {
+                $message .= ' '.$this->hiddenChildrenCount.' child'
+                    .($this->hiddenChildrenCount === 1 ? '' : 'ren')
+                    .' hidden (hold/custody).';
+            }
+            $this->flash('warn', $message);
         } else {
             $this->flash('ok', 'Parent loaded — select children to unpack.');
         }
@@ -421,5 +661,10 @@ class UnpackWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.unpack';
     }
 }

@@ -127,7 +127,7 @@ class ReceivingSessionResourceTest extends TestCase
             $component = Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()]);
 
             $component->assertSee('Scan barcode');
-            $component->assertSee('ADD');
+            $component->assertSee('RECEIVE');
             $component->assertDontSeeHtml('tp-floor-receive__camera-btn-label');
             $component->assertDontSee('Sealed tote/case');
             $component->assertDontSee('Receiving complete');

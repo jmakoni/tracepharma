@@ -1,11 +1,14 @@
 @php
     /** @var \App\Services\Dscsa\ComplianceReport\CompliancePageData $page */
+    /** @var \App\Services\Dscsa\ComplianceReport\ComplianceReportData $report */
     /** @var array{generated_from: string, generated_by: string, generated_at: string} $footer */
 @endphp
-<div class="header">
-        <div class="title">DSCSA Compliance Report ({{ $page->referenceNumber }})</div>
-        <div class="shipment-id">SHIPMENT ID {{ $page->shipmentId }}</div>
-    </div>
+@include('dscsa.compliance-report.partials.header', [
+        'title' => 'DSCSA Compliance Report ('.$page->referenceNumber.')',
+        'subtitle' => 'SHIPMENT ID '.$page->shipmentId,
+        'logoDataUri' => $report->logoDataUri ?? null,
+        'compact' => false,
+    ])
 
     <div class="section-title">Transaction Information</div>
     <table class="ti-table">
@@ -69,13 +72,11 @@
         </tbody>
     </table>
 
-    <div class="section-title">DSCSA Legal Statement</div>
-    <div class="legal">
-        <p>{{ $page->legalStatement }}</p>
-        @if (filled($page->directPurchaseStatement))
-            <p>{{ $page->directPurchaseStatement }}</p>
-        @endif
-    </div>
+    @include('dscsa.compliance-report.partials.legal-statements', [
+        'legalStatement' => $page->legalStatement,
+        'directPurchaseStatement' => $page->directPurchaseStatement,
+        'receivedPrevWholesalerStatement' => $page->receivedPrevWholesalerStatement,
+    ])
 
     @include('dscsa.compliance-report.partials.serials-table', [
         'serialRows' => $page->serialRows,

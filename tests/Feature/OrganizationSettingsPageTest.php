@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
@@ -95,6 +96,500 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function save_persists_require_pure_epcis_document_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->requirePureEpcisDocument();
+
+        try {
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'require_pure_epcis_document' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->requirePureEpcisDocument());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'require_pure_epcis_document' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->requirePureEpcisDocument());
+        } finally {
+            TenantSettings::forTenant($tenant)->setRequirePureEpcisDocument($prior);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_manufacturer_verification_portal_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Manufacturer Portal Toggle Site',
+                'gln' => '0366159000095',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('manufacturer_verification_portal')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'manufacturer_verification_portal' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'manufacturer_verification_portal' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+        } finally {
+            TenantSettings::forTenant($tenant)->setManufacturerVerificationPortalEnabled($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function manufacturer_save_persists_verification_portal_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $priorProfile = $tenant->profile;
+        $prior = TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+
+            $site = Site::query()->create([
+                'name' => 'Mfr Portal Save Site',
+                'gln' => '0366159000194',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsVrs());
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsVrsResponder());
+
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'gln' => '0366159000026',
+                'company_prefix' => '036615',
+                'dashboard_allowed' => [],
+            ]);
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('manufacturer_verification_portal')
+                ->fillForm([
+                    'gln' => '0366159000026',
+                    'company_prefix' => '036615',
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'dashboard_allowed' => [],
+                    'manufacturer_verification_portal' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+            $this->assertTrue(TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
+        } finally {
+            TenantSettings::forTenant($tenant)->setManufacturerVerificationPortalEnabled($prior);
+            $tenant->save();
+            $this->setProfile($tenant, $priorProfile instanceof TenantProfile ? $priorProfile : TenantProfile::Pharmacy);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_client_portal_v2_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->clientPortalV2Enabled();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Client Portal V2 Toggle Site',
+                'gln' => '0366159000096',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('client_portal_v2')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'client_portal_v2' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'client_portal_v2' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
+            $this->assertFalse(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+        } finally {
+            TenantSettings::forTenant($tenant)->setClientPortalV2Enabled($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_principal_custody_enforced_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->principalCustodyEnforced();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Principal Custody Toggle Site',
+                'gln' => '0366159000097',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+
+            $this->setProfile($tenant, TenantProfile::Logistics3pl);
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsPrincipals());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('principal_custody_enforced')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'principal_custody_enforced' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->principalCustodyEnforced());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'principal_custody_enforced' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->principalCustodyEnforced());
+        } finally {
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_block_send_on_atp_gap_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->blockSendOnAtpGap();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+        $priorGln = $settings->gln();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+                'gln' => null,
+                'block_send_on_atp_gap' => true,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'block_send_on_atp_gap' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->blockSendOnAtpGap());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'block_send_on_atp_gap' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->blockSendOnAtpGap());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'block_send_on_atp_gap' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+                'gln' => $priorGln,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_block_receive_on_destination_gln_mismatch_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->blockReceiveOnDestinationGlnMismatch();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            // demo2 may retain a stale default receive site id after facility GLN cleanup.
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'block_receive_on_destination_gln_mismatch' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->blockReceiveOnDestinationGlnMismatch());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'block_receive_on_destination_gln_mismatch' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->blockReceiveOnDestinationGlnMismatch());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'block_receive_on_destination_gln_mismatch' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_match_inbound_ship_to_site_toggle_default_off(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->matchInboundShipToSite();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+                'match_inbound_ship_to_site' => false,
+            ]);
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'match_inbound_ship_to_site' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'match_inbound_ship_to_site' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->matchInboundShipToSite());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'match_inbound_ship_to_site' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_auto_open_receive_after_transfer_ship_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->autoOpenReceiveAfterTransferShip();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+
+        try {
+            $settings->saveOrganization([
+                'default_receive_site_id' => null,
+            ]);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'auto_open_receive_after_transfer_ship' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->autoOpenReceiveAfterTransferShip());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'auto_open_receive_after_transfer_ship' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->autoOpenReceiveAfterTransferShip());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'auto_open_receive_after_transfer_ship' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function save_persists_auto_complete_asn_on_ready_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->autoCompleteAsnOnReady();
+        $priorPrefix = $settings->companyPrefix();
+
+        try {
+            $orgGln = preg_replace('/\D+/', '', (string) ($settings->gln() ?? '')) ?? '';
+            if (strlen($orgGln) === 13) {
+                // Match demo2 facility SGLN split (6-digit GCP), not 7-digit.
+                $settings->setCompanyPrefix(substr($orgGln, 0, 6));
+            }
+            $settings->setAutoCompleteAsnOnReady(true);
+            $tenant->saveQuietly();
+            tenancy()->initialize($tenant->fresh());
+
+            $user = User::factory()->create([
+                'email' => 'asn-auto-complete-'.uniqid('', true).'@example.test',
+            ]);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->autoCompleteAsnOnReady());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormSet([
+                    'auto_complete_asn_on_ready' => true,
+                ]);
+
+            TenantSettings::forTenant($tenant)
+                ->setAutoCompleteAsnOnReady(false)
+                ->saveQuietly();
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->autoCompleteAsnOnReady());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormSet([
+                    'auto_complete_asn_on_ready' => false,
+                ]);
+        } finally {
+            $restored = TenantSettings::forTenant($tenant)
+                ->setAutoCompleteAsnOnReady($prior);
+            // Prefer a GLN-aligned prefix over restoring a blank/stale value that
+            // breaks later demo2 saveOrganization() calls in the same suite.
+            $orgGln = preg_replace('/\D+/', '', (string) (TenantSettings::forTenant($tenant)->gln() ?? '')) ?? '';
+            $aligned = strlen($orgGln) === 13 ? substr($orgGln, 0, 6) : $priorPrefix;
+            $restored->setCompanyPrefix($aligned ?: $priorPrefix)->saveQuietly();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function export_glns_downloads_csv_with_company_and_site_rows(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -131,6 +626,145 @@ class OrganizationSettingsPageTest extends TestCase
                 '/site,'.$this->siteId.',"?Org Export GLN Site"?,0366159000033,/',
                 $content,
             );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_pharmacy_full_outbound(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setPharmacyFullOutboundEnabled(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-pharmacy-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::PharmacySystemAdministrator->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+            $this->assertTrue(\App\Support\Auth\JobRoleAccess::canAccessOrganizationSettings($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant(tenant()->fresh())->pharmacyFullOutboundEnabled());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setPharmacyFullOutboundEnabled(false);
+            tenant()?->save();
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_manufacturer_feature_flags(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(true);
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-mfr-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::MasterDataAdministrator->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $settings = TenantSettings::forTenant(tenant()->fresh());
+            $this->assertTrue($settings->manufacturerVrsRequestorEnabled());
+            $this->assertTrue($settings->autoReceiveFromCmo());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(false);
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(false);
+            tenant()?->save();
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_principal_custody_enforced(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Logistics3pl);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-3pl-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::WmsIntegrationSpecialist->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant(tenant()->fresh())->principalCustodyEnforced());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(false);
+            tenant()?->save();
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
         } finally {
             $this->cleanup($tenant);
         }

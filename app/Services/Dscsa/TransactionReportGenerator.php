@@ -6,6 +6,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Dscsa\TransactionReport\TransactionReportData;
 use App\Services\Dscsa\TransactionReport\TransactionReportDataBuilder;
+use App\Support\MemoryLimit;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -28,24 +29,32 @@ final class TransactionReportGenerator
      */
     public function generate(EpcisDocument $document, ?User $actor = null): array
     {
-        $report = $this->builder->build($document, $actor);
-        $html = view('dscsa.transaction-report.document', ['report' => $report])->render();
+        // Dompdf holds the full HTML frame tree in memory; large lot pages OOM at low
+        // FPM limits (Filament then shows "Error while loading page").
+        $previousMemoryLimit = MemoryLimit::raise('5G');
 
-        $options = new Options;
-        $options->set('isRemoteEnabled', false);
-        $options->set('isHtml5ParserEnabled', true);
-        $options->set('defaultFont', 'DejaVu Sans');
+        try {
+            $report = $this->builder->build($document, $actor);
+            $html = view('dscsa.transaction-report.document', ['report' => $report])->render();
 
-        $dompdf = new Dompdf($options);
-        $dompdf->loadHtml($html);
-        $dompdf->setPaper('letter', 'portrait');
-        $dompdf->render();
+            $options = new Options;
+            $options->set('isRemoteEnabled', false);
+            $options->set('isHtml5ParserEnabled', true);
+            $options->set('defaultFont', 'DejaVu Sans');
 
-        return [
-            'binary' => $dompdf->output(),
-            'filename' => $this->filenameForReference($report->referenceNumber),
-            'data' => $report,
-        ];
+            $dompdf = new Dompdf($options);
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('letter', 'portrait');
+            $dompdf->render();
+
+            return [
+                'binary' => $dompdf->output(),
+                'filename' => $this->filenameForReference($report->referenceNumber),
+                'data' => $report,
+            ];
+        } finally {
+            MemoryLimit::restore($previousMemoryLimit);
+        }
     }
 
     public function filenameForReference(string $referenceNumber): string

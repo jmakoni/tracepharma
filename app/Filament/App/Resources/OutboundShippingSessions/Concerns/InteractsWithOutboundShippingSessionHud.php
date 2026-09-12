@@ -5,8 +5,11 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Concerns;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Support\Fda\ScheduledProductPresence;
+use App\Support\Fda\ScheduledSessionChip;
 use App\Support\Gs1\ElementString;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\ShipLayout;
@@ -14,7 +17,6 @@ use App\Support\TenantFeatures;
 use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Livewire\Attributes\Locked;
 use Throwable;
 
@@ -39,11 +41,37 @@ trait InteractsWithOutboundShippingSessionHud
     #[Locked]
     public bool $confirmScanInFlight = false;
 
+    public ?string $chipDeaSchedule = null;
+
+    public ?bool $chipDeaMissingParty = null;
+
+    public ?string $chipDeaLabel = null;
+
+    public ?string $chipDeaColor = null;
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
 
-        $this->getRecord()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+        $this->loadOutboundShippingSessionRelations();
+        $this->hydrateDeaScheduleChip();
+    }
+
+    protected function outboundShippingSession(): OutboundShippingSession
+    {
+        /** @var OutboundShippingSession */
+        return $this->getRecord();
+    }
+
+    protected function loadOutboundShippingSessionRelations(): void
+    {
+        $this->outboundShippingSession()->loadMissing([
+            'site',
+            'tradingPartner',
+            'shipToSite',
+            'outboundConnection',
+            'epcisDocument.outboundConnection',
+        ]);
 
         if ($scan = request()->query('scan')) {
             $this->scan = (string) $scan;
@@ -52,22 +80,22 @@ trait InteractsWithOutboundShippingSessionHud
 
     public function canScan(): bool
     {
-        return $this->getRecord()->canScan();
+        return $this->outboundShippingSession()->canScan();
     }
 
     public function isActive(): bool
     {
-        return $this->getRecord()->isActive();
+        return $this->outboundShippingSession()->isActive();
     }
 
     public function isCompleted(): bool
     {
-        return $this->getRecord()->status === 'completed';
+        return $this->outboundShippingSession()->status === 'completed';
     }
 
     public function isCancelled(): bool
     {
-        return $this->getRecord()->status === 'cancelled';
+        return $this->outboundShippingSession()->status === 'cancelled';
     }
 
     /**
@@ -78,8 +106,7 @@ trait InteractsWithOutboundShippingSessionHud
      */
     public function shipCompleteCopy(): array
     {
-        /** @var OutboundShippingSession $session */
-        $session = $this->getRecord();
+        $session = $this->outboundShippingSession();
         $document = $session->epcisDocument;
         $status = $document?->transmission_status;
 
@@ -149,7 +176,7 @@ trait InteractsWithOutboundShippingSessionHud
 
     public function transmissionStatusLabel(): string
     {
-        return match ($this->getRecord()->epcisDocument?->transmission_status) {
+        return match ($this->outboundShippingSession()->epcisDocument?->transmission_status) {
             'sent' => 'Sent',
             'failed' => 'Failed',
             'queued' => 'Queued',
@@ -161,7 +188,7 @@ trait InteractsWithOutboundShippingSessionHud
 
     public function transmissionStatusBadgeColor(): string
     {
-        return match ($this->getRecord()->epcisDocument?->transmission_status) {
+        return match ($this->outboundShippingSession()->epcisDocument?->transmission_status) {
             'sent' => 'success',
             'failed' => 'danger',
             'queued', 'sending' => 'warning',
@@ -171,7 +198,7 @@ trait InteractsWithOutboundShippingSessionHud
 
     public function confirmedCount(): int
     {
-        return (int) $this->getRecord()->confirmed_count;
+        return (int) $this->outboundShippingSession()->confirmed_count;
     }
 
     public function desktopShipUrl(array $parameters = []): string
@@ -180,7 +207,7 @@ trait InteractsWithOutboundShippingSessionHud
             $parameters['scan'] = (string) $scan;
         }
 
-        return ShipLayout::desktopUrl($this->getRecord(), $parameters);
+        return ShipLayout::desktopUrl($this->outboundShippingSession(), $parameters);
     }
 
     public function floorShipUrl(array $parameters = []): string
@@ -189,7 +216,62 @@ trait InteractsWithOutboundShippingSessionHud
             $parameters['scan'] = (string) $scan;
         }
 
-        return ShipLayout::floorUrl($this->getRecord(), $parameters);
+        return ShipLayout::floorUrl($this->outboundShippingSession(), $parameters);
+    }
+
+    protected function refreshOutboundShippingSessionHud(): void
+    {
+        $this->outboundShippingSession()->refresh()->loadMissing([
+            'site',
+            'tradingPartner',
+            'shipToSite',
+            'outboundConnection',
+            'epcisDocument.outboundConnection',
+        ]);
+        $this->hydrateDeaScheduleChip();
+    }
+
+    private function hydrateDeaScheduleChip(): void
+    {
+        $session = $this->outboundShippingSession();
+        $gtins = $session->scanLines()
+            ->with('epc:id,gtin14')
+            ->get()
+            ->pluck('epc.gtin14')
+            ->filter(fn ($gtin): bool => filled($gtin))
+            ->map(fn ($gtin): string => (string) $gtin)
+            ->unique()
+            ->values()
+            ->all();
+
+        $presence = ScheduledProductPresence::forGtins($gtins);
+        $highest = $presence['highest'];
+
+        $missingSuffix = '';
+        $missing = false;
+        if ($presence['has_scheduled']) {
+            $shipFromMissing = ! ScheduledSessionChip::siteHasDea($session->site);
+            $shipToPartnerId = $session->trading_partner_id !== null ? (int) $session->trading_partner_id : null;
+            $shipToMissing = ! (
+                ScheduledSessionChip::partyHasDea($shipToPartnerId)
+                || ScheduledSessionChip::siteHasDea($session->shipToSite)
+            );
+
+            $parts = [];
+            if ($shipFromMissing) {
+                $parts[] = 'No DEA on ship-from';
+            }
+            if ($shipToMissing) {
+                $parts[] = 'No DEA on ship-to';
+            }
+            $missing = $parts !== [];
+            $missingSuffix = implode(' · ', $parts);
+        }
+
+        $this->chipDeaSchedule = $highest;
+        $this->chipDeaMissingParty = $presence['has_scheduled'] ? $missing : null;
+        $this->chipDeaLabel = ScheduledSessionChip::label($highest, $missing, $missingSuffix);
+        $this->chipDeaColor = ScheduledSessionChip::badgeColor($highest);
     }
 
     public function confirmScanAction(): Action
@@ -204,8 +286,7 @@ trait InteractsWithOutboundShippingSessionHud
                 $this->confirmScanInFlight = true;
 
                 try {
-                    /** @var OutboundShippingSession $session */
-                    $session = $this->getRecord();
+                    $session = $this->outboundShippingSession();
 
                     if (! $session->canScan()) {
                         $this->setLastScan('error', 'This ship order is no longer open.');
@@ -213,7 +294,7 @@ trait InteractsWithOutboundShippingSessionHud
                         Notification::make()
                             ->title('Session closed')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('scan-result', tone: 'error');
 
@@ -229,7 +310,7 @@ trait InteractsWithOutboundShippingSessionHud
                         Notification::make()
                             ->title('Scan required')
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->dispatch('focus-scan');
                         $this->dispatch('scan-result', tone: 'error');
@@ -250,7 +331,7 @@ trait InteractsWithOutboundShippingSessionHud
                     };
 
                     $this->scan = '';
-                    $this->getRecord()->refresh()->loadMissing(['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection']);
+                    $this->refreshOutboundShippingSessionHud();
 
                     $this->setLastScan(
                         $tone,
@@ -268,10 +349,11 @@ trait InteractsWithOutboundShippingSessionHud
                         default => $notification->danger(),
                     };
 
-                    $notification->send();
+                    $notification->ephemeral()->send();
 
                     if ($result['effect'] === 'confirmed') {
-                        $this->notifyOpenParentHierarchyIfNeeded($this->getRecord());
+                        $this->notifyOpenParentHierarchyIfNeeded($this->outboundShippingSession());
+                        $this->afterOutboundScanConfirmed();
                     }
 
                     $this->dispatch('focus-scan');
@@ -282,6 +364,11 @@ trait InteractsWithOutboundShippingSessionHud
                     $this->confirmScanInFlight = false;
                 }
             });
+    }
+
+    protected function afterOutboundScanConfirmed(): void
+    {
+        // Optional hook for wizard nudges after a successful scan.
     }
 
     public function stageScan(?string $raw = null): void
@@ -322,7 +409,7 @@ trait InteractsWithOutboundShippingSessionHud
             ]);
         }
 
-        $notification->send();
+        $notification->ephemeral()->send();
     }
 
     private function setLastScan(

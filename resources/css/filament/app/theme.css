@@ -1,11 +1,20 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
 @import '../../../../vendor/zeeshantariq/filament-sticky-columns/resources/css/filament-sticky-columns.css';
+@import '../../../../vendor/watheqalshowaiter/filament-sticky-table-header/resources/css/sticky-table-header.css';
+@import '../../../../packages/filament-ui-extras/resources/css/filament-ui-extras.css';
+
+@plugin "@tailwindcss/typography";
 
 @source '../../../../app/Filament/App/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/components/**/*';
 @source '../../../../resources/views/livewire/**/*';
 @source '../../../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../../../vendor/guava/filament-knowledge-base/src/**/*';
+@source '../../../../vendor/guava/filament-knowledge-base/resources/views/**/*';
+@source '../../../../vendor/bokshorn-it/filament-activity-timeline/resources/**/*.blade.php';
+@source '../../../../vendor/zvizvi/filament-notifications-tabs/resources/views/**/*.blade.php';
+@source '../../../../packages/filament-ui-extras/resources/views/**/*.blade.php';
 
 /*
  * Topbar menus (profile + site) must paint above page content and floor sticky
@@ -629,12 +638,22 @@ a.tp-trace-link:hover {
 
 .tp-floor-receive__recent-row {
     display: flex;
-    flex-direction: column;
-    gap: var(--tp-space-1);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tp-space-3);
     padding: 0.7rem 0.8rem;
     border-radius: 0.75rem;
     border: 1px solid var(--tp-floor-border);
     background: var(--tp-floor-bg);
+}
+
+.tp-floor-receive__recent-main {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--tp-space-1);
 }
 
 .tp-floor-receive__recent-row--unexpected {
@@ -651,6 +670,23 @@ a.tp-trace-link:hover {
 .tp-floor-receive__recent-meta {
     font-size: 0.875rem;
     color: var(--tp-floor-muted);
+}
+
+.tp-floor-receive__recent-remove {
+    flex-shrink: 0;
+    min-height: 2.75rem;
+    min-width: 4.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid #fca5a5;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.tp-floor-receive__recent-remove:active {
+    background: #fee2e2;
 }
 
 .tp-floor-receive__recent-empty {
@@ -826,40 +862,4 @@ a.tp-trace-link:hover {
     color: #334155;
     cursor: not-allowed;
     box-shadow: none;
-}
-
-/* Inbound EPCIS: keep Actions pinned while scrolling horizontally (no F5 sticky-actions plugin) */
-.tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-.tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-    position: sticky;
-    right: 0;
-    z-index: 12;
-    background-color: rgb(249 250 251);
-}
-
-.tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell {
-    background-color: rgb(249 250 251);
-}
-
-.tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-    background-color: rgb(255 255 255);
-}
-
-.dark .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-html.dark .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell {
-    background-color: rgb(17 24 39);
-}
-
-.dark .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions),
-html.dark .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-    background-color: rgb(24 24 27);
-}
-
-@media (max-width: 639px) {
-    .tp-inbound-epcis-table .fi-ta-table > thead > tr > .fi-ta-actions-header-cell,
-    .tp-inbound-epcis-table .fi-ta-table > tbody > tr > td:has(> .fi-ta-actions) {
-        position: static;
-        right: auto;
-        z-index: auto;
-    }
 }

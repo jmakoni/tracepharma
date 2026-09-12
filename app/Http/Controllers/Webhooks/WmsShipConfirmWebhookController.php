@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Webhooks;
 use App\Actions\Shipping\ProcessWmsShipConfirm;
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Tenant;
-use App\Support\TenantFeatures;
-use App\Support\TenantSettings;
+use App\Support\Tenancy\AssertWebhookTenantMatchesHost;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
+use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +23,8 @@ final class WmsShipConfirmWebhookController
 
     public function handle(Request $request, string $tenantId): JsonResponse
     {
+        AssertWebhookTenantMatchesHost::assert($tenantId);
+
         $tenant = Tenant::query()->findOrFail($tenantId);
 
         $this->authorizeBridge($request, $tenant);
@@ -29,7 +33,7 @@ final class WmsShipConfirmWebhookController
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::WMS_WEBHOOKS);
 
-        return $tenant->run(function () use ($request): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request): JsonResponse {
             if (! TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()) {
                 return response()->json(['message' => 'Outbound shipping is not available for this tenant profile.'], 403);
             }
@@ -39,6 +43,11 @@ final class WmsShipConfirmWebhookController
                 'scans' => ['required', 'array', 'min:1'],
                 'scans.*' => ['required', 'string', 'max:512'],
                 'complete' => ['nullable', 'boolean'],
+                'expected_count' => ['nullable', 'integer', 'min:0'],
+                'quantity' => ['nullable', 'integer', 'min:0'],
+                'principal_id' => ['nullable', 'integer'],
+                'principal_external_ref' => ['nullable', 'string', 'max:128'],
+                'principal_gln' => ['nullable', 'string', 'max:13'],
                 'trading_partner_id' => ['nullable', 'integer'],
                 'customer_id' => ['nullable', 'integer'],
                 'ship_to_site_id' => ['nullable', 'integer'],

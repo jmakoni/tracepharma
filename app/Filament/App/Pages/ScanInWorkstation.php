@@ -5,8 +5,11 @@ namespace App\Filament\App\Pages;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\DeleteReceivingSession;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
+use App\Filament\Notifications\Notification;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
@@ -15,6 +18,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Floor\UnsubmittedSessionDelete;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Receiving\ReceivingPolicy;
@@ -24,10 +28,10 @@ use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +40,7 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class ScanInWorkstation extends Page
+class ScanInWorkstation extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedInboxArrowDown;
 
@@ -160,6 +164,15 @@ class ScanInWorkstation extends Page
             ->count();
     }
 
+    public function contextSiteLabel(): string
+    {
+        $session = $this->session();
+
+        return $session?->site?->name
+            ?? $session?->tradingPartner?->name
+            ?? 'No site selected';
+    }
+
     public function promptCopy(): array
     {
         return ReceivingPolicy::forTenant(tenant())->promptCopy($this->session());
@@ -245,7 +258,7 @@ class ScanInWorkstation extends Page
 
     protected function getHeaderActions(): array
     {
-        return [
+        $actions = [
             Action::make('startScanFirst')
                 ->label('Start scan-first')
                 ->icon(Heroicon::OutlinedPlus)
@@ -261,7 +274,7 @@ class ScanInWorkstation extends Page
                             ->title('Could not open scan-first')
                             ->body($e->getMessage())
                             ->danger()
-                            ->send();
+                            ->ephemeral()->send();
 
                         return;
                     }
@@ -275,7 +288,7 @@ class ScanInWorkstation extends Page
                 Action::make('completeReceiving')
                     ->label('Complete receive')
                     ->icon(Heroicon::OutlinedCheckCircle)
-                    ->color('success')
+                    ->color('primary')
                     ->visible(fn (): bool => $this->canCompleteManually())
                     ->requiresConfirmation()
                     ->modalHeading('Complete scan-first receive?')
@@ -303,7 +316,7 @@ class ScanInWorkstation extends Page
                                 ->title('Complete blocked')
                                 ->body($e->getMessage())
                                 ->danger()
-                                ->send();
+                                ->ephemeral()->send();
 
                             return;
                         }
@@ -312,14 +325,40 @@ class ScanInWorkstation extends Page
                         Notification::make()
                             ->title('Receiving complete')
                             ->success()
-                            ->send();
+                            ->ephemeral()->send();
 
                         $this->openNextInboundIfAvailable($session);
                     }),
                 'receiving_complete_scan_first',
                 requireReason: false,
             ),
+            UnsubmittedSessionDeleteAction::forReceivingHud(
+                fn (): bool => $this->session()?->canHardDelete() ?? false,
+                function (): int {
+                    $session = $this->session();
+
+                    return $session !== null
+                        ? UnsubmittedSessionDelete::confirmedScanCountReceiving($session)
+                        : 0;
+                },
+                function (): void {
+                    $session = $this->session();
+                    if ($session === null) {
+                        return;
+                    }
+
+                    if (! $this->assertSessionSiteAccess($session)) {
+                        return;
+                    }
+
+                    app(DeleteReceivingSession::class)->handle($session, auth()->id());
+                    $this->clearSession();
+                },
+                static::getUrl(panel: 'app'),
+            ),
         ];
+
+        return $actions;
     }
 
     private function openNextInboundIfAvailable(ReceivingSession $completed): void
@@ -342,7 +381,7 @@ class ScanInWorkstation extends Page
         Notification::make()
             ->title('Opened next inbound')
             ->success()
-            ->send();
+            ->ephemeral()->send();
     }
 
     private function canCompleteManually(): bool
@@ -357,7 +396,42 @@ class ScanInWorkstation extends Page
     }
 
     /**
-     * @return Collection<int, array{line_id: int, serial: string, label: string, confirmed: bool}>
+     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool}>
+     */
+    public function confirmedScanRows(): Collection
+    {
+        if ($this->sessionId === null) {
+            return collect();
+        }
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->sessionId)
+            ->where('status', 'confirmed')
+            ->with([
+                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
+                'epc.ilmd',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->map(function (ReceivingScanLine $line): array {
+                $epc = $line->epc;
+                $display = $epc instanceof Epc
+                    ? Gs1DualDisplay::forEpc($epc)
+                    : ['gs1_barcode' => (string) ($line->scan_raw ?? '—'), 'urn' => ''];
+
+                return [
+                    'line_id' => (int) $line->getKey(),
+                    'identifier' => $display['gs1_barcode'] !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s') ?? '—',
+                    'urn' => $display['urn'] !== '' ? $display['urn'] : '—',
+                    'present' => true,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool, serial: string, label: string, confirmed: bool}>
      */
     public function caseRows(): Collection
     {
@@ -381,21 +455,71 @@ class ScanInWorkstation extends Page
             ->where('receiving_session_id', $this->sessionId)
             ->where('line_role', 'child')
             ->whereIn('parent_epc_id', $parentIds)
-            ->with('epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21')
+            ->with([
+                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
+                'epc.ilmd',
+            ])
             ->orderBy('id')
             ->get()
             ->map(function (ReceivingScanLine $line): array {
                 $epc = $line->epc;
                 $serial = $epc?->serial_number ?? '';
+                $display = $epc instanceof Epc
+                    ? Gs1DualDisplay::forEpc($epc)
+                    : ['gs1_barcode' => $serial, 'urn' => '', 'primary' => $serial];
+                $confirmed = $line->status === 'confirmed';
 
                 return [
                     'line_id' => (int) $line->getKey(),
                     'serial' => $serial,
-                    'label' => $epc instanceof Epc ? Gs1DualDisplay::forEpc($epc)['primary'] : $serial,
-                    'confirmed' => $line->status === 'confirmed',
+                    'label' => $display['primary'] ?? $serial,
+                    'identifier' => ($display['gs1_barcode'] ?? '') !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => $confirmed
+                        ? ($line->confirmed_at?->format('Y-m-d H:i:s') ?? '—')
+                        : '—',
+                    'urn' => ($display['urn'] ?? '') !== '' ? $display['urn'] : '—',
+                    'present' => $confirmed,
+                    'confirmed' => $confirmed,
                 ];
             })
             ->values();
+    }
+
+    public function removeConfirmed(int $lineId): void
+    {
+        $session = $this->session();
+        if ($session === null || $session->status === 'completed') {
+            return;
+        }
+
+        $line = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null) {
+            $this->flashScan('error', 'Scan not found on this session.');
+
+            return;
+        }
+
+        if ($line->status !== 'confirmed') {
+            return;
+        }
+
+        try {
+            app(UnconfirmReceivingScanLine::class)->handle(
+                $line,
+                auth()->id(),
+                allowChildUnderConfirmedParent: $line->line_role === 'child',
+            );
+        } catch (DomainException $e) {
+            $this->flashScan('error', $e->getMessage());
+
+            return;
+        }
+
+        $this->flashScan('ok', 'Removed from this receive.');
     }
 
     public function removeCase(int $lineId): void
@@ -417,23 +541,10 @@ class ScanInWorkstation extends Page
             return;
         }
 
-        if ($line->status !== 'confirmed') {
-            return;
+        $this->removeConfirmed($lineId);
+        if ($this->lastScanTone === 'ok') {
+            $this->flashScan('ok', 'Case removed from this receive.');
         }
-
-        try {
-            app(UnconfirmReceivingScanLine::class)->handle(
-                $line,
-                auth()->id(),
-                allowChildUnderConfirmedParent: true,
-            );
-        } catch (DomainException $e) {
-            $this->flashScan('error', $e->getMessage());
-
-            return;
-        }
-
-        $this->flashScan('ok', 'Case removed from this receive.');
     }
 
     private function loadSession(int $sessionId): void
@@ -446,7 +557,7 @@ class ScanInWorkstation extends Page
             Notification::make()
                 ->title('Session not found')
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             $this->clearSession();
 
@@ -515,5 +626,10 @@ class ScanInWorkstation extends Page
         $this->lastScanMessage = $message;
         $this->dispatch('focus-scan');
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.receiving';
     }
 }

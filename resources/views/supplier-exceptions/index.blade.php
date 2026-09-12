@@ -14,6 +14,7 @@
             --card: #ffffff;
             --danger: #9b1c1c;
             --accent: #0f4c5c;
+            --warn: #8a5a00;
         }
         * { box-sizing: border-box; }
         body {
@@ -44,8 +45,16 @@
             font-size: 0.8rem;
             font-weight: 600;
         }
+        .badge-aging {
+            background: #fff3d6;
+            color: var(--warn);
+        }
+        .badge-waiting {
+            background: #e8f1f3;
+            color: var(--accent);
+        }
         .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 720px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 820px; }
         th, td { text-align: left; padding: 0.6rem 0.45rem; border-bottom: 1px solid var(--line); vertical-align: top; }
         th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -72,7 +81,7 @@
     </header>
     <p class="badge">{{ $cases->count() }} open exception(s)</p>
     <h1>{{ $partner->name }}</h1>
-    <p class="meta">Open DSCSA / receiving exceptions awaiting supplier collaboration. Cases leave this list when resolved.</p>
+    <p class="meta">Open DSCSA / receiving exceptions awaiting supplier collaboration. Cases leave this list when resolved. Status below is shared by the receiving organization — reply by email is not processed automatically.</p>
 
     <div class="card">
         @if ($cases->isEmpty())
@@ -87,20 +96,41 @@
                         <th>Title</th>
                         <th>Status</th>
                         <th>Severity</th>
-                        <th>Created</th>
+                        <th>Open for</th>
+                        <th>Last notified</th>
                         <th class="num">Open holds</th>
                         <th></th>
                     </tr>
                     </thead>
                     <tbody>
                     @foreach ($cases as $case)
+                        @php
+                            $daysOpen = $case->created_at
+                                ? (int) $case->created_at->startOfDay()->diffInDays(now()->startOfDay())
+                                : 0;
+                            $isAging = $daysOpen >= (int) $agingDays;
+                            $notifiedAt = $lastNotified[$case->id] ?? null;
+                            $statusValue = $case->status?->value ?? '';
+                        @endphp
                         <tr>
                             <td class="num">{{ $case->id }}</td>
                             <td>{{ $case->type?->name ?? '—' }}</td>
                             <td>{{ $case->title }}</td>
-                            <td>{{ $case->status?->label() ?? '—' }}</td>
+                            <td>
+                                @if ($statusValue === 'waiting_partner')
+                                    <span class="badge badge-waiting">{{ $case->status?->label() ?? '—' }}</span>
+                                @else
+                                    {{ $case->status?->label() ?? '—' }}
+                                @endif
+                            </td>
                             <td>{{ $case->severity?->label() ?? '—' }}</td>
-                            <td>{{ $case->created_at?->toDayDateTimeString() ?? '—' }}</td>
+                            <td>
+                                {{ $daysOpen }}d
+                                @if ($isAging)
+                                    <span class="badge badge-aging">Aging</span>
+                                @endif
+                            </td>
+                            <td>{{ $notifiedAt?->toDayDateTimeString() ?? '—' }}</td>
                             <td class="num">{{ $case->open_holds_count }}</td>
                             <td>
                                 <a class="view" href="{{ $caseLinks[$case->id] ?? '#' }}">View</a>

@@ -2,13 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Services\Integrations\SftpInboundReceiver;
+use App\Support\Tenancy\TenantAccess;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Log;
 
 class PollSftpInboundConnection implements ShouldQueue
 {
@@ -39,15 +43,35 @@ class PollSftpInboundConnection implements ShouldQueue
     {
         $tenant = Tenant::query()->findOrFail($this->tenantId);
 
-        $tenant->run(function () use ($receiver): void {
+        // Quiet return: queue jobs should not abort(403) like HTTP handlers.
+        // Matches epcis:poll-sftp / ConvertAndAcceptGuardianLotJob posture.
+        if (! TenantAccess::isActive($tenant)) {
+            return;
+        }
+
+        TenantRunner::run($tenant, function () use ($receiver): void {
             $connection = InboundConnection::query()
                 ->whereKey($this->connectionId)
                 ->where('is_active', true)
+                ->where('approval_status', ConnectionApprovalStatus::Approved->value)
                 ->where('transport', InboundTransport::Sftp)
-                ->firstOrFail();
+                ->first();
+
+            if ($connection === null) {
+                return;
+            }
 
             $receiver->poll($connection);
         });
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('PollSftpInboundConnection failed.', [
+            'tenant_id' => $this->tenantId,
+            'connection_id' => $this->connectionId,
+            'message' => $exception->getMessage(),
+        ]);
     }
 
     /**

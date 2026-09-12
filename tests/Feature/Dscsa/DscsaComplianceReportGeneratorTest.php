@@ -195,6 +195,45 @@ class DscsaComplianceReportGeneratorTest extends TestCase
     }
 
     #[Test]
+    public function it_includes_persisted_direct_purchase_and_prev_wholesaler_statements(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $document = $this->ingestFixture('shipping_mixed_direct_indirect.xml');
+            $this->documentId = (int) $document->getKey();
+
+            $data = app(DscsaComplianceReportGenerator::class)->buildData($document);
+            $page = $data->pages[0];
+
+            $this->assertStringContainsString('direct purchase', strtolower((string) $page->directPurchaseStatement));
+            $this->assertStringContainsString(
+                'previous wholesaler distributor',
+                (string) $page->receivedPrevWholesalerStatement,
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function it_embeds_tracepharma_logo_data_uri_in_report_data(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $document = $this->ingestFixture('minimal_with_shipping_refs.xml');
+            $this->documentId = (int) $document->getKey();
+
+            $data = app(DscsaComplianceReportGenerator::class)->buildData($document);
+
+            $this->assertStringStartsWith('data:image/svg+xml;base64,', (string) $data->logoDataUri);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function transaction_report_still_works_after_shared_context_extract(): void
     {
         $this->initializeDemo2Tenant();
@@ -223,6 +262,7 @@ class DscsaComplianceReportGeneratorTest extends TestCase
         $uuid = (string) str()->uuid();
         $xml = str_replace('11111111-2222-3333-4444-555555555555', $uuid, $xml);
         $xml = str_replace('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', $uuid, $xml);
+        $xml = str_replace('22222222-3333-4444-5555-666666666666', $uuid, $xml);
         file_put_contents($tmp, $xml);
 
         try {

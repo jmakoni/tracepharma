@@ -170,9 +170,10 @@
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-tp-teal-400">What to expect</h2>
                     <ul class="mt-4 space-y-4 text-sm leading-relaxed text-tp-muted">
                         <li>30–45 minute product walkthrough on a profile-tuned tenant workspace</li>
-                        <li>Manufacturers: L3 serial allocation, outbound EPCIS, ACK monitoring</li>
-                        <li>Wholesalers &amp; 3PL: receive-to-ship, principals, cross-dock</li>
-                        <li>Dispensers: receiving, VRS verification, exceptions, FDA 3911</li>
+                        <li>Manufacturers: L3 commissioning forward, outbound EPCIS, ACK monitoring, optional verification portal</li>
+                        <li>Wholesalers &amp; 3PL: receive-to-ship (no plant commission), soft principals, WMS principal map, optional custody</li>
+                        <li>Buying groups: roster invite/consent, member health, partner matrix, affiliation, member APIs (not an ATP warehouse)</li>
+                        <li>Dispensers: receiving, VRS verification, POST /api/v1/dispense-check (named PMS adapters not GA), FDA 3911</li>
                         <li>Pricing conversation after we understand your volume and integrations</li>
                     </ul>
                     <a href="{{ route('marketing.solutions.manufacturers') }}" class="mt-6 inline-flex text-sm font-semibold text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">

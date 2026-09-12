@@ -3,8 +3,10 @@
 namespace App\Jobs\Vrs;
 
 use App\Actions\Vrs\RunProductVerification;
+use App\Exceptions\VrsConfigurationException;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Vrs\VrsLogCorrelation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +17,8 @@ class RunProductVerificationJob implements ShouldQueue
     use Queueable;
 
     public int $tries = 3;
+
+    public int $timeout = 120;
 
     public function __construct(
         public string $tenantId,
@@ -42,7 +46,13 @@ class RunProductVerificationJob implements ShouldQueue
             } catch (InvalidArgumentException $e) {
                 Log::info('VRS verify skipped for invalid scan', [
                     'tenant_id' => $this->tenantId,
-                    'scan' => $this->scan,
+                    'scan_hash' => VrsLogCorrelation::scanHash($this->scan),
+                    'message' => $e->getMessage(),
+                ]);
+            } catch (VrsConfigurationException $e) {
+                Log::warning('VRS verify skipped — driver not configured', [
+                    'tenant_id' => $this->tenantId,
+                    'scan_hash' => VrsLogCorrelation::scanHash($this->scan),
                     'message' => $e->getMessage(),
                 ]);
             }

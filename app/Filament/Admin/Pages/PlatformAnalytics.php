@@ -19,10 +19,11 @@ use App\Support\Dashboard\ResolveAdminDashboardWidgets;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use UnitEnum;
 
-class PlatformAnalytics extends Page
+class PlatformAnalytics extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
@@ -32,7 +33,7 @@ class PlatformAnalytics extends Page
 
     protected static ?int $navigationSort = 1;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Operations';
+    protected static string|UnitEnum|null $navigationGroup = 'Platform';
 
     protected string $view = 'filament.admin.pages.platform-analytics';
 
@@ -112,7 +113,7 @@ class PlatformAnalytics extends Page
             'import_trends' => $this->resourceIndexUrl(FdaImportRunResource::class),
             'unmatched_aging' => $this->resourceIndexUrl(FdaWdd3plUnmatchedResource::class),
             'match_review_aging' => $this->resourceIndexUrl(FdaOrganizationMatchReviewResource::class),
-            'hub_coverage' => AdminDashboardLinks::pageUrl(EpcisHubSettings::class),
+            'hub_coverage' => AdminDashboardLinks::pageUrl(PlatformConnections::class),
             'activity_volume' => $this->resourceIndexUrl(ActivityLogResource::class),
             default => null,
         };
@@ -134,10 +135,15 @@ class PlatformAnalytics extends Page
     }
 
     /**
-     * @param  class-string<Resource>  $resource
+     * @param  class-string<resource>  $resource
      */
     private function resourceIndexUrl(string $resource): ?string
     {
         return AdminDashboardLinks::resourceIndexUrl($resource);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'platform.analytics';
     }
 }

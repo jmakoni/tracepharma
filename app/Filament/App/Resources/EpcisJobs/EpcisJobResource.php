@@ -17,11 +17,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class EpcisJobResource extends Resource
+class EpcisJobResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = EpcisJob::class;
 
@@ -129,5 +130,10 @@ class EpcisJobResource extends Resource
             'index' => ListEpcisJobs::route('/'),
             'view' => ViewEpcisJob::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.epcis-jobs';
     }
 }

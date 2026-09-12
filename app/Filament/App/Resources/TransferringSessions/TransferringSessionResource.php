@@ -11,6 +11,7 @@ use App\Filament\App\Resources\TransferringSessions\Schemas\TransferringSessionF
 use App\Filament\App\Resources\TransferringSessions\Schemas\TransferringSessionInfolist;
 use App\Filament\App\Resources\TransferringSessions\Tables\TransferringSessionsTable;
 use App\Models\Transferring\TransferringSession;
+use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
@@ -20,12 +21,15 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class TransferringSessionResource extends Resource
+class TransferringSessionResource extends Resource implements HasKnowledgeBase
 {
+    use HidesForPharmacySimplifiedNav;
+
     protected static ?string $model = TransferringSession::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;
@@ -44,13 +48,25 @@ class TransferringSessionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsTransferring())
-            && JobRoleAccess::allows(Permissions::NavShip);
+        return TenantFeatures::forTenant(tenant())->supportsTransferring()
+            && JobRoleAccess::allowsAny(Permissions::NavShip, Permissions::NavReceive);
     }
 
     public static function canCreate(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->supportsTransferring()
+            && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    public static function canView(Model $record): bool
+    {
+        if (! parent::canView($record)) {
+            return false;
+        }
+
+        return static::getEloquentQuery()
+            ->whereKey($record->getKey())
+            ->exists();
     }
 
     public static function canEdit(Model $record): bool
@@ -69,17 +85,6 @@ class TransferringSessionResource extends Resource
         return $record->canHardDelete()
             && $user !== null
             && $user->can('delete', $record);
-    }
-
-    public static function canView(Model $record): bool
-    {
-        if (! parent::canView($record)) {
-            return false;
-        }
-
-        return static::getEloquentQuery()
-            ->whereKey($record->getKey())
-            ->exists();
     }
 
     /**
@@ -137,5 +142,10 @@ class TransferringSessionResource extends Resource
             'view' => ViewTransferringSession::route('/{record}'),
             'floor' => MobileViewTransferringSession::route('/{record}/floor'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.transferring';
     }
 }

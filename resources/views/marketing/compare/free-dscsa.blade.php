@@ -74,7 +74,7 @@
                         <tr>
                             <td class="px-4 py-3 font-medium text-tp-ink">L3 serial handoff</td>
                             <td class="px-4 py-3 text-tp-muted">Enterprise add-on</td>
-                            <td class="px-4 py-3 text-tp-accent-300">SGTIN allocation + commissioning reconcile</td>
+                            <td class="px-4 py-3 text-tp-accent-300">L3 forward URL + commissioning POST</td>
                         </tr>
                         <tr>
                             <td class="px-4 py-3 font-medium text-tp-ink">Integration webhooks</td>

@@ -2,11 +2,16 @@
 
 namespace App\Filament\App\Resources\TransferringSessions\Pages;
 
+use App\Actions\Transferring\DeleteTransferringSession;
+use App\Actions\Transferring\UnconfirmTransferringScanLine;
 use App\Filament\App\Resources\TransferringSessions\Concerns\InteractsWithTransferringSessionHud;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
+use App\Filament\Notifications\Notification;
+use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Support\Auth\SiteAccess;
+use DomainException;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
@@ -53,7 +58,7 @@ class MobileViewTransferringSession extends ViewRecord
      */
     protected function getHeaderActions(): array
     {
-        return array_values(array_filter(
+        $actions = array_values(array_filter(
             $this->getTransferringSessionHudHeaderActions(),
             function (Action $action): bool {
                 if ($action->getName() !== 'completeTransfer') {
@@ -67,6 +72,13 @@ class MobileViewTransferringSession extends ViewRecord
                     && SiteAccess::canAccessSite($user, (int) $this->getRecord()->from_site_id);
             },
         ));
+
+        $actions[] = UnsubmittedSessionDeleteAction::forTransfer(
+            fn (TransferringSession $record) => app(DeleteTransferringSession::class)->handle($record, auth()->id()),
+            TransferringSessionResource::getUrl(name: 'index', panel: 'app'),
+        );
+
+        return $actions;
     }
 
     public function routeDisplayLabel(): string
@@ -167,5 +179,57 @@ class MobileViewTransferringSession extends ViewRecord
         }
 
         return filled($line->scan_raw) ? (string) $line->scan_raw : 'Scan #'.$line->getKey();
+    }
+
+    public function canRemoveRecentScanLine(TransferringScanLine $line): bool
+    {
+        /** @var TransferringSession $session */
+        $session = $this->getRecord();
+
+        if (! $session->canUnconfirmScanLines()) {
+            return false;
+        }
+
+        return $line->status === 'confirmed';
+    }
+
+    public function removeRecentScanLine(int $lineId): void
+    {
+        /** @var TransferringSession $session */
+        $session = $this->getRecord();
+
+        $line = TransferringScanLine::query()
+            ->where('transferring_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null || ! $this->canRemoveRecentScanLine($line)) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body('This scan cannot be removed.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(UnconfirmTransferringScanLine::class)->handle($line, auth()->id());
+        } catch (DomainException $e) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $this->getRecord()->refresh()->loadMissing(['fromSite', 'toSite']);
+
+        Notification::make()
+            ->title('Scan removed')
+            ->success()
+            ->send();
     }
 }

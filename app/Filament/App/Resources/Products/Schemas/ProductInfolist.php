@@ -3,7 +3,9 @@
 namespace App\Filament\App\Resources\Products\Schemas;
 
 use App\Enums\AuthorizationStatus;
+use App\Models\Fda\FdaProduct;
 use App\Support\Catalog\DisplayName;
+use App\Support\Fda\FdaRegistryStatus;
 use App\Support\Gs1\Ndc;
 use App\Support\MasterData\ProductComplianceStatus;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -47,6 +49,23 @@ class ProductInfolist
                         ->badge()
                         ->state(fn ($record): string => ProductComplianceStatus::label($record))
                         ->color(fn (string $state): string => ProductComplianceStatus::color($state)),
+                    TextEntry::make('dea_schedule')
+                        ->label('DEA')
+                        ->badge()
+                        ->state(function ($record): ?string {
+                            $fda = $record->fdaProduct;
+                            if ($fda === null && filled($record->fda_product_id)) {
+                                $fda = FdaProduct::query()->find($record->fda_product_id);
+                            }
+
+                            return FdaRegistryStatus::deaScheduleLabel($fda?->dea_schedule);
+                        })
+                        ->color(fn (?string $state): string => match ($state) {
+                            'CII' => 'danger',
+                            'CIII', 'CIV', 'CV' => 'warning',
+                            default => 'gray',
+                        })
+                        ->placeholder('—'),
                     TextEntry::make('is_active')
                         ->label('Status')
                         ->badge()

@@ -6,6 +6,9 @@ namespace App\Actions\Outbound;
 
 use App\Models\SsccLabelBatch;
 use App\Services\Epcis\Outbound\OutboundEpcisXmlBuilder;
+use App\Support\Epcis\OutboundCorrelationGlns;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 final class GenerateSsccDisaggregationDocument
 {
@@ -16,7 +19,7 @@ final class GenerateSsccDisaggregationDocument
 
     /**
      * @param  list<string>  $childEpcs
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function forSourcePallet(
         string $parentEpcUrn,
@@ -31,11 +34,19 @@ final class GenerateSsccDisaggregationDocument
 
         $event = $this->disaggregationEvent->execute($parentEpcUrn, $childEpcs, $settings, $siteId);
 
-        return $this->xmlBuilder->buildDocument($this->resolveCreationDateIso($settings), $event, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xmlBuilder->buildDocument(
+            $this->resolveCreationDateIso($settings),
+            $event,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 
     /**
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function forBatch(
         SsccLabelBatch $batch,
@@ -89,7 +100,7 @@ final class GenerateSsccDisaggregationDocument
     }
 
     /**
-     * @param  array{event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{event_time?: CarbonInterface|string}|null  $settings
      */
     private function resolveCreationDateIso(?array $settings): string
     {
@@ -99,10 +110,10 @@ final class GenerateSsccDisaggregationDocument
 
         $eventTime = $settings['event_time'];
 
-        if ($eventTime instanceof \Carbon\CarbonInterface) {
+        if ($eventTime instanceof CarbonInterface) {
             return $eventTime->toIso8601String();
         }
 
-        return \Illuminate\Support\Carbon::parse($eventTime)->toIso8601String();
+        return Carbon::parse($eventTime)->toIso8601String();
     }
 }

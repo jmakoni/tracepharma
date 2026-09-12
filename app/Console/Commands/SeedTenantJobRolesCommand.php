@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\TenantProfile;
 use App\Models\Tenant;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class SeedTenantJobRolesCommand extends Command
@@ -29,7 +30,7 @@ class SeedTenantJobRolesCommand extends Command
                 ? $tenant->profile
                 : TenantProfile::tryFrom((string) $tenant->profile) ?? TenantProfile::Pharmacy;
 
-            $tenant->run(function () use ($seeder, $profile): void {
+            TenantRunner::run($tenant, function () use ($seeder, $profile): void {
                 $seeder->seedForProfile($profile);
             });
 

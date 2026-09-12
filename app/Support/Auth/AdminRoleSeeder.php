@@ -13,16 +13,29 @@ final class AdminRoleSeeder
     {
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $manageAdmins = Permission::findOrCreate(Permissions::AdminsManage, $guard);
-        $manageCatalog = Permission::findOrCreate(Permissions::CatalogManage, $guard);
-        $manageTenants = Permission::findOrCreate(Permissions::TenantsManage, $guard);
+        $permissions = [];
+        foreach (Permissions::adminPanelPermissions() as $name) {
+            $permissions[$name] = Permission::findOrCreate($name, $guard);
+        }
 
         foreach (AdminRole::cases() as $adminRole) {
             $role = Role::findOrCreate($adminRole->value, $guard);
-
-            if ($adminRole === AdminRole::PlatformAdmin) {
-                $role->givePermissionTo($manageAdmins, $manageCatalog, $manageTenants);
-            }
+            $names = self::permissionNamesFor($adminRole);
+            $role->syncPermissions(array_map(
+                static fn (string $name): Permission => $permissions[$name],
+                $names,
+            ));
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function permissionNamesFor(AdminRole $role): array
+    {
+        return match ($role) {
+            AdminRole::PlatformAdmin => Permissions::adminPanelPermissions(),
+            AdminRole::Support => [],
+        };
     }
 }

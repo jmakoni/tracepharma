@@ -15,13 +15,19 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
-class TenantResource extends Resource
+class TenantResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = Tenant::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Tenants / Hub';
+
+    protected static ?int $navigationSort = 1;
 
     public static function canAccess(): bool
     {
@@ -63,7 +69,9 @@ class TenantResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\HubReceiverGlnClaimsRelationManager::class,
+            RelationManagers\HubReceiverGlnClaimRequestsRelationManager::class,
+            RelationManagers\PlatformAuditEventsRelationManager::class,
         ];
     }
 
@@ -74,5 +82,10 @@ class TenantResource extends Resource
             'create' => CreateTenant::route('/create'),
             'edit' => EditTenant::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'tenants.tenants';
     }
 }

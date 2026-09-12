@@ -9,6 +9,7 @@ use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Integrations\EpcisHubAuthenticator;
 use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -57,7 +58,7 @@ class EpcisHubInboundWebhookController
 
         TenantKillSwitches::forTenant($tenant)->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
 
-        return $tenant->run(function () use ($request, $connection, $rawBody, $originalName, $contentType): JsonResponse {
+        return TenantRunner::run($tenant, function () use ($request, $connection, $rawBody, $originalName, $contentType): JsonResponse {
             return $this->handler->process(
                 request: $request,
                 connection: $connection,

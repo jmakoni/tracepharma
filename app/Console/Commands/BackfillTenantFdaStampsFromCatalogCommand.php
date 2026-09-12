@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\MasterData\BackfillTenantFdaStampsFromCatalog;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -26,7 +27,7 @@ class BackfillTenantFdaStampsFromCatalogCommand extends Command
 
         foreach ($tenants as $tenant) {
             /** @var array{partners: int, sites: int, products: int, licenses: int} $counts */
-            $counts = $tenant->run(fn (): array => $backfill->handle());
+            $counts = TenantRunner::run($tenant, fn (): array => $backfill->handle());
 
             $this->line(
                 "[{$tenant->id}] {$tenant->name}: partners={$counts['partners']}"

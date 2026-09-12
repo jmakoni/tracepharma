@@ -25,6 +25,13 @@ final class AdminActivityLogger
         $activity->properties = collect($properties);
         $activity->save();
 
+        PlatformAudit::record(
+            $description,
+            tenantId: isset($properties['tenant_id']) ? (string) $properties['tenant_id'] : null,
+            payload: $properties,
+            actor: $causer,
+        );
+
         return $activity;
     }
 

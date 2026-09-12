@@ -2,6 +2,7 @@
 
 namespace App\Services\Vrs;
 
+use App\Exceptions\VrsConfigurationException;
 use App\Services\Vrs\Contracts\VrsClient;
 
 final class NullVrsClient implements VrsClient
@@ -12,13 +13,8 @@ final class NullVrsClient implements VrsClient
         ?string $lot = null,
         ?string $expiryYymmdd = null,
     ): array {
-        return [
-            'status' => 'deferred',
-            'gtin14' => $gtin14,
-            'serial' => $serial,
-            'lot' => $lot,
-            'expiry_yymmdd' => $expiryYymmdd,
-            'message' => 'VRS verification is deferred.',
-        ];
+        throw new VrsConfigurationException(
+            'VRS is not configured (VRS_DRIVER); verification cannot complete.',
+        );
     }
 }

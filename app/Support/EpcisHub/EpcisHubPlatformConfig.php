@@ -6,13 +6,20 @@ namespace App\Support\EpcisHub;
 
 use App\Support\PlatformSettings;
 use App\Support\TenantHostname;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 use Stancl\Tenancy\Database\Models\Domain;
+use Throwable;
 
 class EpcisHubPlatformConfig
 {
     /** @var list<string> */
     public const ENVIRONMENTS = ['demo', 'stage', 'prod'];
+
+    public const TOKEN_ROTATION_GRACE_HOURS = 24;
 
     public function environments(): array
     {
@@ -146,6 +153,125 @@ class EpcisHubPlatformConfig
     }
 
     /**
+     * Rotate the hub token: the current effective token (settings or config
+     * fallback) stays accepted for a grace period so partners can cut over
+     * without downtime. Returns the new token.
+     *
+     * Rotation is serialized per environment so concurrent rotates cannot
+     * clobber previous-token / grace-window metadata.
+     */
+    public function rotateHubToken(string $environment): string
+    {
+        $environment = $this->normalizeEnvironment($environment);
+
+        return Cache::lock("epcis_hub.token_rotate.{$environment}", 10)->block(5, function () use ($environment): string {
+            $current = $this->hubToken($environment);
+            $previousKey = "epcis_hub.{$environment}.hub_token_previous";
+            $expiresKey = "epcis_hub.{$environment}.hub_token_previous_expires_at";
+
+            if (is_string($current) && $current !== '') {
+                PlatformSettings::put($previousKey, $current);
+                PlatformSettings::put(
+                    $expiresKey,
+                    now()->addHours(self::TOKEN_ROTATION_GRACE_HOURS)->toIso8601String(),
+                );
+            } else {
+                PlatformSettings::forget($previousKey);
+                PlatformSettings::forget($expiresKey);
+            }
+
+            $token = Str::random(64);
+            PlatformSettings::put("epcis_hub.{$environment}.hub_token", $token);
+
+            return $token;
+        });
+    }
+
+    /**
+     * The previous hub token while it is still inside the rotation grace window.
+     */
+    public function previousHubToken(string $environment): ?string
+    {
+        $expiresAt = $this->previousHubTokenExpiresAt($environment);
+
+        if ($expiresAt === null || $expiresAt->isPast()) {
+            return null;
+        }
+
+        $environment = $this->normalizeEnvironment($environment);
+        $previous = PlatformSettings::get("epcis_hub.{$environment}.hub_token_previous");
+
+        return is_string($previous) && $previous !== '' ? $previous : null;
+    }
+
+    public function previousHubTokenExpiresAt(string $environment): ?CarbonImmutable
+    {
+        $environment = $this->normalizeEnvironment($environment);
+        $raw = PlatformSettings::get("epcis_hub.{$environment}.hub_token_previous_expires_at");
+
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($raw);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * The hub environment this deployment serves, derived from the app's own host.
+     *
+     * Unmapped hosts fail closed on production-like deploys. Demo fallback is
+     * allowed only for clearly local/demo contexts (app.env local/testing, or
+     * localhost / *.test / *.local hosts).
+     */
+    public function currentEnvironment(): string
+    {
+        $host = parse_url((string) config('app.url'), PHP_URL_HOST);
+        $normalizedHost = is_string($host) ? strtolower(trim($host)) : null;
+        $environment = is_string($normalizedHost) && $normalizedHost !== ''
+            ? $this->environmentForHost($normalizedHost)
+            : null;
+
+        if ($environment !== null) {
+            return $environment;
+        }
+
+        if ($this->allowsUnmappedHostDemoFallback($normalizedHost)) {
+            return 'demo';
+        }
+
+        $displayHost = is_string($normalizedHost) && $normalizedHost !== ''
+            ? $normalizedHost
+            : '(empty)';
+
+        throw new RuntimeException(
+            "Unable to resolve EPCIS hub environment for APP_URL host [{$displayHost}]. Map the host via hub settings or testing_hosts.",
+        );
+    }
+
+    private function allowsUnmappedHostDemoFallback(?string $host): bool
+    {
+        $appEnv = strtolower((string) config('app.env'));
+
+        if (in_array($appEnv, ['local', 'testing'], true)) {
+            return true;
+        }
+
+        if ($host === null || $host === '') {
+            return false;
+        }
+
+        if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+            return true;
+        }
+
+        return str_ends_with($host, '.test') || str_ends_with($host, '.local');
+    }
+
+    /**
      * @param  list<string>|null  $providers
      */
     public function setProviders(string $environment, ?array $providers): void
@@ -183,6 +309,89 @@ class EpcisHubPlatformConfig
         PlatformSettings::put($key, strtolower(trim($host)));
     }
 
+    /**
+     * Outbound collaboration edge URL for UniTrace/Systech (tenant transmitter egress).
+     */
+    public function outboundUrl(string $environment, string $provider): ?string
+    {
+        $environment = $this->normalizeEnvironment($environment);
+        $provider = $this->normalizeHubProvider($provider);
+        $fromSettings = PlatformSettings::get("epcis_hub.{$environment}.outbound_url_{$provider}");
+
+        if (is_string($fromSettings) && trim($fromSettings) !== '') {
+            return trim($fromSettings);
+        }
+
+        return null;
+    }
+
+    public function outboundToken(string $environment, string $provider): ?string
+    {
+        $environment = $this->normalizeEnvironment($environment);
+        $provider = $this->normalizeHubProvider($provider);
+        $fromSettings = PlatformSettings::get("epcis_hub.{$environment}.outbound_token_{$provider}");
+
+        if (is_string($fromSettings) && $fromSettings !== '') {
+            return $fromSettings;
+        }
+
+        return null;
+    }
+
+    public function hasOutboundEdge(string $environment, string $provider): bool
+    {
+        $url = $this->outboundUrl($environment, $provider);
+
+        return is_string($url) && $url !== '';
+    }
+
+    public function setOutboundUrl(string $environment, string $provider, ?string $url): void
+    {
+        $environment = $this->normalizeEnvironment($environment);
+        $provider = $this->normalizeHubProvider($provider);
+        $key = "epcis_hub.{$environment}.outbound_url_{$provider}";
+
+        if ($url === null || trim($url) === '') {
+            PlatformSettings::forget($key);
+
+            return;
+        }
+
+        $url = trim($url);
+
+        if (! filter_var($url, FILTER_VALIDATE_URL) || ! str_starts_with(strtolower($url), 'https://')) {
+            throw new InvalidArgumentException('Outbound hub URL must be an https:// URL.');
+        }
+
+        PlatformSettings::put($key, $url);
+    }
+
+    public function setOutboundToken(string $environment, string $provider, ?string $token): void
+    {
+        $environment = $this->normalizeEnvironment($environment);
+        $provider = $this->normalizeHubProvider($provider);
+        $key = "epcis_hub.{$environment}.outbound_token_{$provider}";
+
+        if ($token === null || $token === '') {
+            PlatformSettings::forget($key);
+
+            return;
+        }
+
+        PlatformSettings::put($key, $token);
+    }
+
+    private function normalizeHubProvider(string $provider): string
+    {
+        $provider = strtolower(trim($provider));
+
+        if (! in_array($provider, ['systech', 'unitrace'], true)) {
+            throw new InvalidArgumentException("Unsupported hub provider [{$provider}].");
+        }
+
+        return $provider;
+    }
+
     public static function assertHubHostAllowed(?string $host): void
     {
         if ($host === null || trim($host) === '') {
@@ -215,7 +424,7 @@ class EpcisHubPlatformConfig
         $environment = strtolower(trim($environment));
 
         if (! in_array($environment, self::ENVIRONMENTS, true)) {
-            throw new \InvalidArgumentException("Unsupported EPCIS hub environment [{$environment}].");
+            throw new InvalidArgumentException("Unsupported EPCIS hub environment [{$environment}].");
         }
 
         return $environment;

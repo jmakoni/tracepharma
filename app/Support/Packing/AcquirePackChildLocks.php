@@ -2,8 +2,8 @@
 
 namespace App\Support\Packing;
 
+use App\Support\Epcis\EpcisCacheLock;
 use Illuminate\Contracts\Cache\Lock;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * One tenant-scoped lock per child EPC so concurrent pack / unpack / break-pack
@@ -33,7 +33,7 @@ final class AcquirePackChildLocks
         $acquired = [];
 
         foreach ($sortedIds as $epcId) {
-            $lock = Cache::lock('pack-child:'.$tenantId.':'.$epcId, 600);
+            $lock = EpcisCacheLock::lock('pack-child:'.$tenantId.':'.$epcId, 600);
 
             if (! $lock->get()) {
                 foreach ($acquired as $held) {
@@ -73,7 +73,7 @@ final class AcquirePackChildLocks
 
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
 
-        return Cache::lock('pack-child-soft:'.$tenantId.':'.$childId, self::SOFT_TTL_SECONDS)->get();
+        return EpcisCacheLock::lock('pack-child-soft:'.$tenantId.':'.$childId, self::SOFT_TTL_SECONDS)->get();
     }
 
     public function releaseSoftReserve(int $childId): void
@@ -83,7 +83,7 @@ final class AcquirePackChildLocks
         }
 
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
-        Cache::lock('pack-child-soft:'.$tenantId.':'.$childId)->forceRelease();
+        EpcisCacheLock::lock('pack-child-soft:'.$tenantId.':'.$childId, self::SOFT_TTL_SECONDS)->forceRelease();
     }
 
     /**

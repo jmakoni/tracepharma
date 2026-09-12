@@ -3,22 +3,21 @@
 namespace App\Filament\App\Resources\OutboundShippingSessions\RelationManagers;
 
 use App\Actions\Shipping\UnconfirmOutboundShippingScanLine;
-use App\Models\Epcis\Epc;
+use App\Filament\Notifications\Notification;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
-use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
+use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\PaginationMode;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Livewire\Attributes\On;
 
 class ScanLinesRelationManager extends RelationManager
@@ -49,57 +48,49 @@ class ScanLinesRelationManager extends RelationManager
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query->with([
                 'epc:id,epc_type,sscc18,gtin14,serial_number,epc_uri,ai_00,ai_01_21',
+                'epc.ilmd',
             ]))
             ->columns([
-                AssetTrackingUrl::linkEpcColumn(
-                    TextColumn::make('epc.sscc18')
-                        ->label('SSCC')
-                        ->fontFamily(FontFamily::Mono)
-                        ->placeholder('—')
-                        ->searchable(),
-                    fn (mixed $record): ?Epc => $record instanceof Model ? $record->epc : null,
-                    copyable: true,
-                ),
-                AssetTrackingUrl::linkEpcColumn(
-                    TextColumn::make('epc.gtin14')
-                        ->label('GTIN')
-                        ->fontFamily(FontFamily::Mono)
-                        ->placeholder('—')
-                        ->toggleable(),
-                    fn (mixed $record): ?Epc => $record instanceof Model ? $record->epc : null,
-                    copyable: true,
-                ),
-                AssetTrackingUrl::linkEpcColumn(
-                    TextColumn::make('epc.serial_number')
-                        ->label('Serial')
-                        ->limit(20)
-                        ->tooltip(fn (?string $state): ?string => $state)
-                        ->fontFamily(FontFamily::Mono)
-                        ->placeholder('—')
-                        ->toggleable(),
-                    fn (mixed $record): ?Epc => $record instanceof Model ? $record->epc : null,
-                    copyable: true,
-                ),
-                TextColumn::make('line_role')
-                    ->label('Role')
-                    ->badge()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('status')
-                    ->label('Status')
-                    ->badge()
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'confirmed' => 'Confirmed',
-                        default => filled($state) ? ucfirst($state) : '—',
-                    })
-                    ->color(fn (?string $state): string => match ($state) {
-                        'confirmed' => 'warning',
-                        default => 'gray',
+                TextColumn::make('identifier')
+                    ->label('Identifier')
+                    ->state(fn (OutboundShippingScanLine $record): string => $record->epc !== null
+                        ? (Gs1DualDisplay::forEpc($record->epc)['gs1_barcode'] ?: '—')
+                        : '—')
+                    ->fontFamily(FontFamily::Mono)
+                    ->placeholder('—')
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        $like = '%'.$search.'%';
+
+                        return $query->whereHas('epc', function (Builder $epc) use ($like, $search): void {
+                            $epc->where(function (Builder $inner) use ($like, $search): void {
+                                $inner->where('epc_uri', 'like', $like)
+                                    ->orWhere('sscc18', 'like', $like)
+                                    ->orWhere('serial_number', 'like', $like)
+                                    ->orWhere('ai_00', 'like', $like)
+                                    ->orWhere('ai_01_21', 'like', $like)
+                                    ->orWhere('epc_uri', $search)
+                                    ->orWhere('sscc18', $search)
+                                    ->orWhere('ai_01_21', $search);
+                            });
+                        });
                     }),
                 TextColumn::make('confirmed_at')
-                    ->label('Confirmed at')
+                    ->label('Scan time')
                     ->dateTime()
                     ->placeholder('—')
                     ->sortable(),
+                TextColumn::make('epc.epc_uri')
+                    ->label('Transcoded Value')
+                    ->fontFamily(FontFamily::Mono)
+                    ->placeholder('—'),
+                IconColumn::make('present')
+                    ->label('Present')
+                    ->boolean()
+                    ->state(fn (OutboundShippingScanLine $record): bool => $record->status === 'confirmed')
+                    ->trueIcon(Heroicon::OutlinedCheckCircle)
+                    ->falseIcon(Heroicon::OutlinedXCircle)
+                    ->trueColor('success')
+                    ->falseColor('danger'),
                 EpcContextLinks::actionsColumn(),
             ])
             ->defaultSort('confirmed_at', 'desc')
@@ -113,9 +104,10 @@ class ScanLinesRelationManager extends RelationManager
             ->headerActions([])
             ->recordActions([
                 Action::make('removeScan')
-                    ->label('Remove')
+                    ->label('Delete')
                     ->icon(Heroicon::OutlinedTrash)
-                    ->color('danger')
+                    ->iconButton()
+                    ->color('gray')
                     ->visible(fn (OutboundShippingScanLine $record): bool => $this->canRemoveScanLine($record))
                     ->requiresConfirmation()
                     ->modalHeading('Remove this scan?')

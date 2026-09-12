@@ -182,18 +182,16 @@ class FdaImportRunQueueTest extends TestCase
     }
 
     #[Test]
-    public function import_job_chains_tenant_atp_sync_after_successful_wdd_promote(): void
+    public function import_job_chains_tenant_atp_sync_after_successful_wdd_import(): void
     {
         Queue::fake();
 
         Artisan::shouldReceive('call')
             ->once()
-            ->with(ImportFdaDatasetJob::WDD_COMMAND, ['--promote' => true])
+            ->with(ImportFdaDatasetJob::WDD_COMMAND, [])
             ->andReturn(0);
 
-        (new ImportFdaDatasetJob(ImportFdaDatasetJob::WDD_COMMAND, [
-            '--promote' => true,
-        ]))->handle();
+        (new ImportFdaDatasetJob(ImportFdaDatasetJob::WDD_COMMAND))->handle();
 
         Queue::assertPushed(SyncTenantAtpLicensesFromFda::class);
     }

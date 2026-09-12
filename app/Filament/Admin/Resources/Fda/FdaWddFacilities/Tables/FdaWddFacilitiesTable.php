@@ -26,8 +26,14 @@ class FdaWddFacilitiesTable
                 TextColumn::make('organization.name')->label('Organization')->searchable()->sortable(),
                 TextColumn::make('name')->searchable()->placeholder(fn ($record) => $record->facility_name),
                 FdaRegistryBadges::facilityTypeColumn(),
+                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('city')->searchable(),
                 TextColumn::make('state_province')->label('State'),
+                FdaRegistryBadges::identifierColumn('gln', 'GLN')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('duns_number', 'DUNS')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('dea_number', 'DEA')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('hin_number', 'HIN')->toggleable(isToggledHiddenByDefault: true),
+                FdaRegistryBadges::identifierColumn('chemical_reg_number', 'Chemical Reg')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('country_code')->label('Country'),
                 TextColumn::make('active_licenses_count')->label('Active licenses')->sortable(),
                 TextColumn::make('soonest_expiration_date')
@@ -38,7 +44,7 @@ class FdaWddFacilitiesTable
                 FdaRegistryBadges::activeColumn(),
             ])
             ->defaultSort('name')
-            ->searchPlaceholder('Name, GLN, or organization')
+            ->searchPlaceholder('Name, GLN, organization, or street')
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)
             ->extremePaginationLinks()

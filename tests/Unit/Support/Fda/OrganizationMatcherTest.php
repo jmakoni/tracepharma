@@ -367,4 +367,25 @@ class OrganizationMatcherTest extends TestCase
         $this->assertSame(1, $match->fdaOrganizationId);
         $this->assertSame('canonical_name', $match->reason);
     }
+
+    #[Test]
+    public function normalize_duns_pads_short_values_to_nine(): void
+    {
+        $this->assertSame('000123456', OrganizationMatcher::normalizeDuns('123456'));
+        $this->assertSame('123456789', OrganizationMatcher::normalizeDuns('123-456-789'));
+    }
+
+    #[Test]
+    public function normalize_duns_keeps_fourteen_digit_values(): void
+    {
+        $this->assertSame('80373640412345', OrganizationMatcher::normalizeDuns('80373640412345'));
+    }
+
+    #[Test]
+    public function normalize_duns_rejects_more_than_fourteen_digits(): void
+    {
+        $this->assertNull(OrganizationMatcher::normalizeDuns('803736404123456'));
+        $this->assertNull(OrganizationMatcher::normalizeDuns(null));
+        $this->assertNull(OrganizationMatcher::normalizeDuns('abc'));
+    }
 }

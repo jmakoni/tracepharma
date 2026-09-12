@@ -6,7 +6,7 @@ use App\Actions\Epcis\EnsureCatalogPartiesFromEpcisLocations;
 use App\Actions\MasterData\CreateHqSiteForTradingPartner;
 use App\Actions\MasterData\DeactivateSelfTradingPartners;
 use App\Actions\MasterData\EnsureManufacturerPartnerFromCatalog;
-use App\Actions\MasterData\EnsureWholesalerPartnerFromCatalog;
+use App\Actions\MasterData\EnsureOrganizationPartnerFromFda;
 use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
@@ -135,7 +135,7 @@ class SelfPartnerGlnExclusionTest extends TestCase
             $this->orgIds[] = (int) $org->getKey();
 
             $this->assertNull(app(EnsureManufacturerPartnerFromCatalog::class)->handle($org));
-            $this->assertNull(app(EnsureWholesalerPartnerFromCatalog::class)->handle($org));
+            $this->assertNull(app(EnsureOrganizationPartnerFromFda::class)->handle($org, PartnerType::Wholesaler));
             $this->assertNull(TradingPartner::query()->where('gln', $organizationGln)->first());
         } finally {
             $this->cleanup($tenant);

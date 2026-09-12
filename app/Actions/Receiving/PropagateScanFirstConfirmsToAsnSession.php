@@ -4,6 +4,7 @@ namespace App\Actions\Receiving;
 
 use App\Enums\ReceivingSessionKind;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Receiving\ScanFirstSessionsForPropagate;
 use DomainException;
 
 final class PropagateScanFirstConfirmsToAsnSession
@@ -42,16 +43,14 @@ final class PropagateScanFirstConfirmsToAsnSession
                 ->orderByRaw('CASE WHEN site_id IS NULL THEN 1 ELSE 0 END');
         }
 
-        $scanFirstSessions = $scanFirstQuery
-            ->orderBy('id')
-            ->get();
+        ScanFirstSessionsForPropagate::constrainToOverlappingTargetEpcs($scanFirstQuery, $asnSession);
 
         $copied = 0;
         $alreadyConfirmed = 0;
         $skipped = 0;
         $notes = [];
 
-        foreach ($scanFirstSessions as $from) {
+        foreach ($scanFirstQuery->orderBy('id')->lazyById(100) as $from) {
             $result = $this->copyConfirmedReceivingScansToSession->handle(
                 $from,
                 $asnSession,

@@ -2,8 +2,11 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
+use App\Models\Principal;
 use App\Models\User;
+use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -12,14 +15,16 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class ExpiryWorklist extends Page
+class ExpiryWorklist extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
 
@@ -34,6 +39,8 @@ class ExpiryWorklist extends Page
     protected string $view = 'filament.app.pages.expiry-worklist';
 
     public ?int $siteId = null;
+
+    public ?int $principalId = null;
 
     public int $windowDays = 90;
 
@@ -61,7 +68,44 @@ class ExpiryWorklist extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'On-hand serials with ILMD expiry in the next 30/60/90 days. Asset Tracking is unchanged.';
+        return 'On-hand serials with ILMD expiry in the next 30/60/90 days. Quarantine uses the same path as Site recall.';
+    }
+
+    public function canQuarantine(): bool
+    {
+        return JobRoleAccess::allows(Permissions::NavExceptions);
+    }
+
+    public function quarantineHitAction(): Action
+    {
+        return Action::make('quarantineHit')
+            ->label('Quarantine')
+            ->color('danger')
+            ->visible(fn (): bool => $this->canQuarantine())
+            ->action(function (array $arguments): void {
+                $epcId = (int) ($arguments['epc'] ?? 0);
+                $siteId = $this->resolvedSiteId();
+                if ($epcId < 1 || $siteId === null || ! $this->canQuarantine()) {
+                    return;
+                }
+
+                $epc = Epc::query()->with('ilmd')->find($epcId);
+                if (! $epc instanceof Epc || ! $this->rows()->contains(fn (Epc $row): bool => (int) $row->getKey() === $epcId)) {
+                    Notification::make()->title('Not on this expiry worklist')->danger()->send();
+
+                    return;
+                }
+
+                $expiry = $epc->ilmd?->expiry_date?->toDateString() ?? 'unknown';
+                $case = app(QuarantineService::class)->quarantineFromFindRecall(
+                    [$epcId],
+                    'Expiry worklist · expires '.$expiry,
+                    $this->authUser(),
+                );
+                $case->forceFill(['site_id' => $siteId])->save();
+
+                Notification::make()->title('Quarantined')->success()->send();
+            });
     }
 
     /**
@@ -70,6 +114,24 @@ class ExpiryWorklist extends Page
     public function siteOptions(): array
     {
         return EligibleReceiveSites::options($this->authUser());
+    }
+
+    public function supportsPrincipalFilter(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsPrincipals();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function principalOptions(): array
+    {
+        return Principal::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id): array => [(int) $id => (string) $name])
+            ->all();
     }
 
     /**
@@ -86,15 +148,22 @@ class ExpiryWorklist extends Page
 
         $today = now()->toDateString();
         $until = now()->addDays($window)->toDateString();
+        $principalId = $this->resolvedPrincipalId();
 
-        return Epc::query()
+        $query = Epc::query()
             ->where('epcs.epc_type', 'sgtin')
             ->whereHas('ilmd', function ($query) use ($today, $until): void {
                 $query->whereNotNull('expiry_date')
                     ->whereDate('expiry_date', '>=', $today)
                     ->whereDate('expiry_date', '<=', $until);
             })
-            ->whereIn('epcs.id', app(ShippableEpcsAtSite::class)->query($siteId)->select('epcs.id'))
+            ->whereIn('epcs.id', app(ShippableEpcsAtSite::class)->query($siteId)->select('epcs.id'));
+
+        if ($principalId !== null) {
+            $query->where('epcs.principal_id', $principalId);
+        }
+
+        return $query
             ->with('ilmd')
             ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'epcs.id')
             ->orderBy('epc_ilmd.expiry_date')
@@ -133,10 +202,28 @@ class ExpiryWorklist extends Page
         return $this->siteId;
     }
 
+    private function resolvedPrincipalId(): ?int
+    {
+        if (! $this->supportsPrincipalFilter()) {
+            return null;
+        }
+
+        if ($this->principalId === null || $this->principalId <= 0) {
+            return null;
+        }
+
+        return $this->principalId;
+    }
+
     private function authUser(): ?User
     {
         $user = auth()->user();
 
         return $user instanceof User ? $user : null;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.expiry-worklist';
     }
 }

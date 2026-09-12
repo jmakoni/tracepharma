@@ -48,10 +48,10 @@
                 :rows="[
                     ['capability' => 'Global regulation', 'them' => 'DSCSA, EU FMD, global hubs', 'us' => 'US DSCSA only — deliberate scope'],
                     ['capability' => 'Pricing model', 'them' => 'Fixed-cost unlimited serials (published)', 'us' => 'Demo-scoped SaaS packaging'],
-                    ['capability' => 'L1–L5 stack', 'them' => 'Optional full hardware + cloud', 'us' => 'L4 hub + L3 serial provisioning handoff'],
+                    ['capability' => 'L1–L5 stack', 'them' => 'Optional full hardware + cloud', 'us' => 'L4 hub + L3 commissioning forward'],
                     ['capability' => 'EPCIS outbound & ACK', 'them' => 'Strong — enterprise programs', 'us' => 'Strong — mid-market operator UX'],
                     ['capability' => 'TraceLink migration', 'them' => 'Published switch guides + Jennason PS', 'us' => 'Direct partner re-connection via presets'],
-                    ['capability' => 'Dispenser / pharmacy UX', 'them' => 'Not primary ICP', 'us' => 'Pharmacy profile + PMS APIs available'],
+                    ['capability' => 'Dispenser / pharmacy UX', 'them' => 'Not primary ICP', 'us' => 'Pharmacy profile + POST /api/v1/dispense-check'],
                     ['capability' => 'Typical buyer', 'them' => 'Global MAH, TraceLink refugees', 'us' => 'US SMB–mid-market manufacturers & distributors'],
                 ]"
             />

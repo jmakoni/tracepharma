@@ -1,13 +1,13 @@
 @extends('marketing.layout')
 
 @section('title', '3PL & logistics — TracePharma')
-@section('meta_description', 'Level 4 DSCSA for 3PL and contract logistics: principal-scoped receiving and shipping, cross-dock transfers, lot-level outbound, and multi-facility operations.')
+@section('meta_description', 'Level 4 DSCSA for 3PL and contract logistics: wholesaler-class receive/ship, soft principal registry and filters (GA), scorecard principal filters, and optional EPC custody enforcement (tenant ops setting; default off). Not an LSPedia Edge clone.')
 
 @section('content')
     <x-marketing.page-hero
         eyebrow="Solutions · 3PL & logistics"
-        title="Operate on behalf of principals — one L4 hub per warehouse network"
-        description="Before TracePharma, contract warehouses often commingle principal inventory in generic WMS views—leaving brand owners asking for serial proof the 3PL cannot produce quickly. TracePharma is the corporate traceability workspace for contract logistics: receive manufacturer EPCIS per principal, ship lot-level and serialized outbound, cross-dock between facilities, and report principal-scoped ACK health without a global exchange middleman."
+        title="Wholesaler-class L4 floor for contract logistics — soft principal filters GA"
+        description="TracePharma gives 3PL tenants the same receive → transfer → ship → VRS → exceptions spine as regional wholesalers, plus multi-facility sites, WMS ship-confirm, and a soft principal registry (labels/filters on sites, ship orders, scorecards, expiry, and HQ). Optional EPC custody enforcement is available as a tenant ops setting (default off); when enabled, serials are gated per principal. The default product promise stays soft filters—not serial isolation—unless enforcement is on for that tenant."
     >
         <x-slot:breadcrumb>
             <a href="{{ route('marketing.home') }}">Home</a> / Industries / 3PL &amp; logistics
@@ -21,11 +21,11 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <x-marketing.pipeline-steps
             :steps="[
-                ['phase' => 'Onboard', 'title' => 'Principal registry', 'description' => 'Register brand owners whose inventory you warehouse and ship on behalf of.'],
-                ['phase' => 'Receive', 'title' => 'Inbound EPCIS', 'description' => 'Principal-scoped receiving with scan-confirm and expected-shipment matching.'],
+                ['phase' => 'Receive', 'title' => 'Inbound EPCIS', 'description' => 'Wholesaler-class receiving with scan-confirm and expected-shipment matching.'],
                 ['phase' => 'Transfer', 'title' => 'Cross-dock', 'description' => 'Facility-to-facility transfers with immutable audit trail.'],
                 ['phase' => 'Ship', 'title' => 'Lot & serial outbound', 'description' => 'Mixed lot-level and serialized ship orders with 3T documents.'],
-                ['phase' => 'Monitor', 'title' => 'Principal scorecard', 'description' => 'Supplier, customer, and principal partner health in one operations view.'],
+                ['phase' => 'Bridge', 'title' => 'WMS ship-confirm', 'description' => 'Tenant webhook or Sanctum ship-confirm → outbound EPCIS drafts.'],
+                ['phase' => 'Label', 'title' => 'Principals (soft + optional custody)', 'description' => 'Registry + list filters GA; optional EPC custody walls when tenant ops enables enforcement (default off).'],
             ]"
         />
     </section>
@@ -34,13 +34,14 @@
         <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <x-marketing.module-grid
                 :modules="[
-                    ['title' => 'Principal operations', 'description' => 'Filter dashboards, scorecards, and outbound by principal—so each brand owner sees only their inventory and messages.'],
-                    ['title' => 'Cross-dock transfer', 'description' => 'Move inventory between GLNs with staged scan verification—so facility transfers stay auditable without commingled serial history.'],
-                    ['title' => 'Lot-level shipping', 'description' => 'Ship non-serialized lines by GTIN + lot + quantity alongside serialized units—so mixed orders ship on one outbound EPCIS drop.'],
-                    ['title' => 'SSCC labeling', 'description' => 'Generate pallet labels with pool low-water alerts—so warehouse staff label outbound pallets before serial pools run dry.'],
-                    ['title' => 'Cross-dock audit trail', 'description' => 'Immutable activity log for queued transfers—so principal account managers answer who moved what between which facilities.'],
-                    ['title' => 'WMS ship-confirm bridge', 'description' => 'Manhattan/Körber callbacks → outbound EPCIS with operations scorecard trends—so WMS confirmations become trace events without manual file builds.', 'href' => route('marketing.features.show', 'integrations')],
-                    ['title' => 'EPCIS receiving', 'description' => 'SFTP, AS2, HTTPS webhooks, and manual upload from manufacturer principals—so inbound files route to the right principal scope on arrival.', 'href' => route('marketing.features.show', 'receiving')],
+                    ['title' => 'Wholesaler-class floor', 'description' => '3PL profile inherits receive, transfer, pack, return, and outbound ship — same distribution floor as drug wholesaler (no plant commission).'],
+                    ['title' => 'Cross-dock transfer', 'description' => 'Move inventory between GLNs with staged scan verification—so facility transfers stay auditable.'],
+                    ['title' => 'Lot-level shipping', 'description' => 'Ship non-serialized lines by GTIN + lot + quantity alongside serialized units on one outbound EPCIS drop.'],
+                    ['title' => 'SSCC labeling', 'description' => 'Generate pallet labels with pool low-water alerts before serial pools run dry.'],
+                    ['title' => 'WMS ship-confirm bridge', 'description' => 'POST /api/webhooks/wms/{tenantId} or Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic, not a per-vendor URL path. Ship-confirm can tag principal via principal_id, principal_external_ref, or principal_gln (or site default).', 'href' => route('marketing.features.show', 'integrations')],
+                    ['title' => 'Principal registry & filters', 'description' => 'Name/GLN principals with soft filters on sites, ship orders, scorecards, expiry, and HQ (GA). Optional EPC custody enforcement (ops setting; default off) gates serials per principal when enabled—not claimed as the default product promise.'],
+                    ['title' => 'Agent TI when custody is on', 'description' => 'With EPC custody enforcement enabled, outbound seller / source owning party uses the principal GLN and ship-from uses the 3PL site GLN—agent TI, not a TraceLink-style full T2 drop-ship network (deferred).'],
+                    ['title' => 'Logistics3pl role pack', 'description' => 'Seeded least-privilege roles for multi-client 3PL ops alongside Owner—floor and principal surfaces without inventing a separate ATP DB product.'],
                 ]"
             />
         </div>
@@ -49,15 +50,15 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <x-marketing.compliance-pillars
             :pillars="[
-                ['title' => 'Principal isolation', 'description' => 'Each principal\'s inventory, outbound messages, and exceptions stay scoped — no commingled reporting.', 'items' => ['Principal onboarding wizard step', 'Principal filter on operations scorecard', '3PL principal field on ship orders']],
-                ['title' => 'Multi-facility operations', 'description' => 'Ship-from facility selection, cross-dock between DCs, and read-point gate enforcement.', 'items' => ['Facility-scoped outbound staging', 'Cross-dock scan verification', 'Integration health per connection']],
-                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 and 2.0 repository', 'Transaction search at scale', 'Compliance export API']],
+                ['title' => 'What ships today', 'description' => '3PL = Logistics3pl profile with wholesaler-class floor flags.', 'items' => ['Receive / transfer / ship / VRS / exceptions (no plant commission)', 'Soft principal registry + site/ship/scorecard filters (GA)', 'Optional EPC custody enforcement (ops setting; default off)', 'WMS ship-confirm with principal map fields', 'Agent TI + Logistics3pl role pack when custody / roles apply']],
+                ['title' => 'Honest product promise', 'description' => 'Default remains soft filters; isolation only when enforcement is on.', 'items' => ['Default: soft filters without claiming serial isolation', 'When enforced: pick/ship/receive walls + agent TI per principal', 'Not an LSPedia Edge / enterprise Edge suite / ATP DB product', 'Not a separate DB or MariaDB partition per principal', 'Full T2 drop-ship / TraceLink-style principal network stays deferred']],
+                ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 GA + 2.0 capture/query/subscriptions', 'Transaction search at scale', 'In-app operations scorecards (compliance Sanctum APIs not GA)']],
             ]"
         />
     </section>
 
     <x-marketing.cta-banner
-        title="See 3PL workflows live"
-        description="Request a 3PL demo—we'll walk through principal onboarding, inbound manufacturer EPCIS, cross-dock transfer, lot-level ship to customer, and principal-scoped scorecard on a demo tenant."
+        title="See 3PL floor workflows live"
+        description="Request a 3PL demo—we'll walk through inbound manufacturer EPCIS, cross-dock transfer, lot-level ship, WMS ship-confirm, soft principal filters, and optional custody enforcement honestly."
     />
 @endsection

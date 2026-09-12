@@ -1,115 +1,159 @@
 <x-filament-panels::page>
-    <div class="flex flex-col gap-4">
+    <x-scanner-desk>
         @if ($this->sessionId === null)
-            <div class="card bg-base-100 shadow-xl">
-                <div class="card-body gap-4">
-                    <h2 class="card-title text-base">Open a ship order</h2>
-                    <p class="text-sm opacity-70">
-                        Pick an open order or start a new one. The existing Ship Order screen is unchanged.
-                    </p>
+            @if ($this->showSitePicker)
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body gap-4">
+                        <h2 class="card-title text-base">Ship from site</h2>
+                        <p class="text-sm opacity-70">
+                            Choose where inventory is shipping from. Scans must match on-hand stock at this site.
+                        </p>
 
-                    @forelse ($this->openSessions() as $openSession)
+                        @foreach ($this->shipFromSiteOptions() as $siteId => $siteName)
+                            <button
+                                type="button"
+                                class="btn btn-outline justify-start min-h-14"
+                                wire:click="openNewSession({{ (int) $siteId }})"
+                            >
+                                {{ $siteName }}
+                            </button>
+                        @endforeach
+
                         <button
                             type="button"
-                            class="btn btn-outline justify-start min-h-14"
-                            wire:click="selectSession({{ (int) $openSession->getKey() }})"
+                            class="btn btn-ghost btn-sm self-start"
+                            wire:click="cancelNewShipOrder"
                         >
-                            #{{ $openSession->getKey() }}
-                            · {{ $openSession->tradingPartner?->name ?? $openSession->site?->name ?? 'No customer' }}
+                            Cancel
                         </button>
-                    @empty
-                        <p class="text-sm opacity-70">No open ship orders. Start one from the header.</p>
-                    @endforelse
+                    </div>
                 </div>
-            </div>
+            @else
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body gap-4">
+                        <h2 class="card-title text-base">Open a ship order</h2>
+                        <p class="text-sm opacity-70">
+                            Pick an open order or start a new one. Set customer, ASN, and send from the wizard steps.
+                        </p>
+
+                        @forelse ($this->openSessions() as $openSession)
+                            <button
+                                type="button"
+                                class="btn btn-outline justify-start min-h-14"
+                                wire:click="selectSession({{ (int) $openSession->getKey() }})"
+                            >
+                                #{{ $openSession->getKey() }}
+                                · {{ $openSession->site?->name ?? 'Ship-from site' }}
+                                @if ($openSession->tradingPartner?->name)
+                                    → {{ $openSession->tradingPartner->name }}
+                                @endif
+                            </button>
+                        @empty
+                            <p class="text-sm opacity-70">No open ship orders. Use <strong>New ship order</strong> in the header.</p>
+                        @endforelse
+                    </div>
+                </div>
+            @endif
         @else
             @php($session = $this->session())
-            <div
-                x-data="{ flashTone: null }"
-                x-on:scan-result.window="
-                    flashTone = $event.detail.tone;
-                    setTimeout(() => { flashTone = null }, 700)
-                "
-                :class="{
-                    'ring-4 ring-success/40': flashTone === 'ok',
-                    'ring-4 ring-warning/40': flashTone === 'warn',
-                    'ring-4 ring-error/40': flashTone === 'error',
-                }"
-                class="card bg-base-100 shadow-xl transition-shadow"
-            >
-                <div class="card-body gap-4">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="badge badge-outline">Ship order</span>
-                            <span>{{ $session?->tradingPartner?->name ?? $session?->site?->name ?? 'Ship-from site' }}</span>
-                        </div>
-                        <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
+
+            @if ($this->atpOutboundGateDisabled())
+                <div role="alert" class="alert alert-warning" data-testid="atp-outbound-gate-disabled">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5 shrink-0" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                    </svg>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="font-semibold">ATP outbound gate is disabled</span>
+                        <span class="text-sm">
+                            Shipments are not being checked against the destination's ATP license. Confirm the
+                            customer is authorized before sending.
+                        </span>
                     </div>
-
-                    <div class="grid gap-3 sm:grid-cols-2 text-sm">
-                        <div>
-                            <span class="opacity-70">ASN</span>
-                            <div class="font-mono">{{ $session?->asn_number ?: '—' }}</div>
-                        </div>
-                        <div>
-                            <span class="opacity-70">Customer PO</span>
-                            <div class="font-mono">{{ $session?->customer_po ?: '—' }}</div>
-                        </div>
-                        <div>
-                            <span class="opacity-70">Invoice</span>
-                            <div class="font-mono">{{ $session?->invoice_number ?: '—' }}</div>
-                        </div>
-                        <div>
-                            <span class="opacity-70">TI/TS affirmation</span>
-                            <div>{{ $session?->dscsa_affirm ? 'Yes' : 'No' }}</div>
-                        </div>
-                    </div>
-
-                    <div class="stats bg-base-200 shadow">
-                        <div class="stat">
-                            <div class="stat-title">Confirmed</div>
-                            <div class="stat-value text-2xl">{{ $this->confirmedLineCount() }}</div>
-                        </div>
-                    </div>
-
-                    @if ($this->lastScanMessage)
-                        <div
-                            role="status"
-                            aria-live="{{ $this->lastScanTone === 'error' ? 'assertive' : 'polite' }}"
-                            @class([
-                                'alert',
-                                'alert-success' => $this->lastScanTone === 'ok',
-                                'alert-warning' => $this->lastScanTone === 'warn',
-                                'alert-error' => $this->lastScanTone === 'error',
-                            ])
-                        >
-                            <span class="font-semibold">{{ $this->lastScanMessage }}</span>
-                        </div>
-                    @endif
-
-                    @if ($session?->canScan())
-                        <x-scan-field
-                            variant="desktop"
-                            :show-camera="false"
-                            input-id="scan-out-input"
-                            label="Scan barcode"
-                            placeholder="Scan SSCC or SGTIN"
-                            confirm-label="ADD"
-                            submit-action="confirmScan"
-                        />
-                    @endif
-
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm self-start"
-                        wire:click="selectSession(0)"
-                    >
-                        Change session
-                    </button>
                 </div>
-            </div>
+            @endif
+
+            @if ($this->readinessBadges() !== [])
+                @include('filament.app.partials.outbound-ship-readiness', ['badges' => $this->readinessBadges()])
+            @endif
+
+            @if ($session && ! $this->isCompleted() && $session->status !== 'cancelled')
+                @include('filament.app.partials.outbound-ship-wizard-nav')
+            @endif
+
+            <x-scanner-desk-header>
+                <x-slot:context>
+                    <span class="badge badge-lg badge-outline font-semibold">
+                        Site: {{ $session?->site?->name ?? 'No site selected' }}
+                    </span>
+                    <span class="badge badge-outline">Ship order #{{ $session?->getKey() }}</span>
+                    @if ($session?->tradingPartner)
+                        <span class="badge badge-outline">→ {{ $session->tradingPartner->name }}</span>
+                    @endif
+                    <span @class([
+                        'badge badge-lg',
+                        'badge-success' => $this->statusBadgeColor() === 'success',
+                        'badge-info' => $this->statusBadgeColor() === 'info',
+                        'badge-warning' => $this->statusBadgeColor() === 'warning',
+                        'badge-outline' => $this->statusBadgeColor() === 'outline',
+                        'badge-ghost' => $this->statusBadgeColor() === 'gray',
+                    ])>
+                        {{ $this->statusLabel() }}
+                    </span>
+                </x-slot:context>
+
+                <x-slot:qty>
+                    <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
+                        Confirmed {{ $this->confirmedCount() }}
+                        @if ($session && (int) $session->expected_count > 0)
+                            / {{ (int) $session->expected_count }}
+                        @endif
+                    </span>
+                </x-slot:qty>
+
+                <x-slot:scan>
+                    @if ($session && $this->isCompleted())
+                        <div class="{{ $this->shipCompletePanelClass() }}">
+                            <div class="text-lg font-semibold">{{ $this->shipCompleteCopy()['title'] }}</div>
+                            <p class="text-sm">{{ $this->shipCompleteCopy()['body'] }}</p>
+                        </div>
+                    @elseif ($session && $session->status === 'cancelled')
+                        <div class="alert alert-warning">
+                            <span>This ship order was cancelled.</span>
+                        </div>
+                    @elseif ($this->wizardStep === 1)
+                        @include('filament.app.partials.outbound-ship-wizard-step-scan', [
+                            'scanInputId' => 'scan-out-input',
+                            'useScanFieldComponent' => true,
+                        ])
+                    @elseif ($this->wizardStep === 2)
+                        @include('filament.app.partials.outbound-ship-wizard-step-customer')
+                    @elseif ($this->wizardStep === 3)
+                        @include('filament.app.partials.outbound-ship-wizard-step-send', [
+                            'showAtpGateNote' => true,
+                        ])
+                    @endif
+                </x-slot:scan>
+            </x-scanner-desk-header>
+
+            @php($confirmedRows = $this->confirmedScanRows())
+            <x-scanner-confirmed-table
+                :rows="$confirmedRows"
+                :title="'Confirmed ('.$confirmedRows->count().')'"
+                empty="Scan barcodes to build the ship list."
+                :can-remove="$session && ! $this->isCompleted() && $session->status !== 'cancelled'"
+                remove-method="removeConfirmed"
+                id-key="line_id"
+            />
+
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm self-start"
+                wire:click="selectSession(0)"
+            >
+                Change session
+            </button>
         @endif
-    </div>
+    </x-scanner-desk>
 
     <x-filament-actions::modals />
 </x-filament-panels::page>

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Pages;
 use App\Filament\Support\RegulatoryCompliance;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\CreateRecord as FilamentCreateRecord;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
 /**
@@ -63,8 +64,12 @@ abstract class CreateRecord extends FilamentCreateRecord
             ->requiresConfirmation()
             ->modalHeading('Confirm create')
             ->schema(RegulatoryCompliance::fields(requireReason: false))
-            ->action(function (array $data) use ($actionName, $submit): void {
-                RegulatoryCompliance::assert($data, $actionName);
+            ->mountUsing(function (?Schema $schema = null): void {
+                $this->form->validate();
+                $schema?->fill();
+            })
+            ->action(function (array $data, Action $action) use ($actionName, $submit): void {
+                RegulatoryCompliance::assert($data, $actionName, $action);
                 RegulatoryCompliance::audit($actionName);
                 RegulatoryCompliance::markVerified($actionName);
                 $submit();

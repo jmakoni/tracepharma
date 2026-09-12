@@ -4,8 +4,11 @@ namespace App\Services\Epcis\Outbound;
 
 use App\Enums\As2MdnAckMode;
 use App\Models\OutboundConnection;
+use App\Support\Epcis\EpcisSubscriptionUrl;
+use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use App\Support\EpcisHub\PlatformOutboundEgress;
 use App\Support\Integrations\As2MdnDispositionParser;
-use Illuminate\Support\Facades\Http;
+use App\Support\Integrations\PlatformAs2Station;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -19,42 +22,76 @@ final class As2OutboundSender
     public function __construct(
         private readonly As2SmimeEnvelope $smimeEnvelope,
         private readonly As2MdnDispositionParser $dispositionParser,
+        private readonly PlatformOutboundEgress $egress,
+        private readonly PlatformAs2Station $station,
+        private readonly EpcisHubPlatformConfig $platformConfig,
     ) {}
 
-    public function send(OutboundConnection $connection, string $content, string $filename): As2SendResult
-    {
+    public function send(
+        OutboundConnection $connection,
+        string $content,
+        string $filename,
+        ?string $contentType = null,
+    ): As2SendResult {
         $settings = $connection->settings ?? [];
-        $endpoint = $settings['as2_url'] ?? null;
+        $endpoint = $connection->effectiveAs2Url();
         $as2From = $settings['as2_from'] ?? null;
-        $as2To = $settings['as2_to'] ?? null;
+        $as2To = $connection->effectiveAs2To();
 
         if (! is_string($endpoint) || $endpoint === '') {
             throw new RuntimeException('AS2 outbound connection is missing settings.as2_url.');
         }
 
-        if (! is_string($as2From) || $as2From === '' || ! is_string($as2To) || $as2To === '') {
-            throw new RuntimeException('AS2 outbound connection is missing settings.as2_from or settings.as2_to.');
-        }
+        EpcisSubscriptionUrl::assertSafeTargetUrl($endpoint);
 
         $ackMode = As2MdnAckMode::tryFrom((string) ($settings['as2_mdn_ack_mode'] ?? As2MdnAckMode::Sync->value))
             ?? As2MdnAckMode::Sync;
 
         $credentials = $connection->credentials ?? [];
         $certificatesConfigured = $connection->as2CertificatesConfigured();
-        $canSign = filled($credentials['signing_cert_pem'] ?? null) && filled($credentials['signing_key_pem'] ?? null);
+        $signingCertPem = $credentials['signing_cert_pem'] ?? null;
+        $signingKeyPem = $credentials['signing_key_pem'] ?? null;
+        $canSign = filled($signingCertPem) && filled($signingKeyPem);
         $canEncrypt = filled($credentials['partner_encrypt_cert_pem'] ?? null);
 
+        // Hub-linked connections without their own signing pair sign with the
+        // platform station certificate; AS2-From then must be the station ID so
+        // receivers verify the signature against the station identity.
+        if ($this->egress->usesPlatformAs2Signing($connection)) {
+            $environment = $this->platformConfig->currentEnvironment();
+            $stationCert = $this->station->signingCertPem($environment);
+            $stationKey = $this->station->signingKeyPem($environment);
+
+            if (filled($stationCert) && filled($stationKey)) {
+                $signingCertPem = $stationCert;
+                $signingKeyPem = $stationKey;
+                $canSign = true;
+                $certificatesConfigured = true;
+
+                $stationId = $this->station->stationId($environment);
+                if (is_string($stationId) && $stationId !== '') {
+                    $as2From = $stationId;
+                }
+            }
+        }
+
+        if (! is_string($as2From) || $as2From === '' || ! is_string($as2To) || $as2To === '') {
+            throw new RuntimeException('AS2 outbound connection is missing settings.as2_from or settings.as2_to.');
+        }
+
+        $payloadContentType = $contentType ?? 'application/xml';
         $body = $content;
-        $contentType = 'application/xml';
+        $contentType = $payloadContentType;
         $smimeApplied = false;
 
         if ($canSign || $canEncrypt) {
             try {
                 $envelope = $this->smimeEnvelope->envelope(
                     payload: $content,
-                    signingCertPem: $canSign ? (string) $credentials['signing_cert_pem'] : null,
-                    signingKeyPem: $canSign ? (string) $credentials['signing_key_pem'] : null,
+                    signingCertPem: $canSign ? (string) $signingCertPem : null,
+                    signingKeyPem: $canSign ? (string) $signingKeyPem : null,
                     partnerEncryptCertPem: $canEncrypt ? (string) $credentials['partner_encrypt_cert_pem'] : null,
+                    contentType: $payloadContentType,
                 );
 
                 $body = $envelope->body;
@@ -75,20 +112,26 @@ final class As2OutboundSender
             'Accept' => 'multipart/report, message/disposition-notification, */*',
         ];
 
+        $as2Subject = $connection->effectiveAs2Subject();
+
+        if (is_string($as2Subject) && $as2Subject !== '') {
+            $headers['Subject'] = $as2Subject;
+        }
+
         $dispositionNotificationTo = $settings['disposition_notification_to'] ?? null;
 
         if ($ackMode !== As2MdnAckMode::None && is_string($dispositionNotificationTo) && $dispositionNotificationTo !== '') {
             $headers['Disposition-Notification-To'] = $dispositionNotificationTo;
         }
 
-        $response = Http::timeout(60)
+        $response = EpcisSubscriptionUrl::httpClient($endpoint, 60)
             ->withHeaders($headers)
             ->withBody($body, $contentType)
             ->post($endpoint);
 
         if (! $response->successful()) {
             throw new RuntimeException(
-                "AS2 outbound POST failed (HTTP {$response->status()}): ".substr($response->body(), 0, 500),
+                "AS2 outbound POST failed (HTTP {$response->status()}).",
             );
         }
 

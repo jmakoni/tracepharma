@@ -10,7 +10,7 @@ use App\Notifications\MailTemplateTestSend;
 use App\Support\Mail\ComposeDatabaseMail;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Notification as NotificationFacade;
 
 class EditMailTemplate extends EditRecord

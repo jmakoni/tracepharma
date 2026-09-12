@@ -12,12 +12,14 @@ class TransferringSessionPolicy
 {
     public function viewAny(User $user): bool
     {
-        return JobRoleAccess::allows(Permissions::NavShip, $user);
+        return JobRoleAccess::allows(Permissions::NavShip, $user)
+            || JobRoleAccess::allows(Permissions::NavReceive, $user);
     }
 
     public function view(User $user, TransferringSession $session): bool
     {
-        return JobRoleAccess::allows(Permissions::NavShip, $user)
+        return (JobRoleAccess::allows(Permissions::NavShip, $user)
+                || JobRoleAccess::allows(Permissions::NavReceive, $user))
             && $this->canAccessEitherSite($user, $session);
     }
 

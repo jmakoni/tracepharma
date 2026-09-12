@@ -9,6 +9,7 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\ComplianceAlertNotification;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Exceptions\RoleDoesNotExist;
@@ -38,7 +39,7 @@ class CheckExceptionSlaCommand extends Command
 
         $query->cursor()->each(function (Tenant $tenant) use ($dryRun, &$notified, &$failed): void {
             try {
-                $tenant->run(function () use ($tenant, $dryRun, &$notified): void {
+                TenantRunner::run($tenant, function () use ($tenant, $dryRun, &$notified): void {
                     $overdue = ExceptionCase::query()->overdue()->orderBy('due_at')->get();
 
                     if ($overdue->isEmpty()) {

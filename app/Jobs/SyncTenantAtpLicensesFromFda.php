@@ -25,11 +25,11 @@ class SyncTenantAtpLicensesFromFda implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
+    public int $timeout = 600;
+
     public int $uniqueFor = 3600;
 
-    public function __construct(
-        public readonly Tenant $tenant,
-    ) {}
+    public function __construct(public Tenant $tenant) {}
 
     public function uniqueId(): string
     {

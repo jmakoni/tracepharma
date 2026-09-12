@@ -2,9 +2,12 @@
 
 namespace App\Filament\App\Resources\InboundConnections\Pages;
 
+use App\Actions\Integrations\RegisterConnectionApprovalRequest;
+use App\Enums\ConnectionApprovalStatus;
 use App\Filament\App\Concerns\SyncsEpcisHubRouting;
 use App\Filament\App\Concerns\TransformsConnectionCredentials;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
+use App\Models\InboundConnection;
 use App\Support\InboundConnectionPartnerRoutingSync;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
@@ -20,6 +23,8 @@ class EditInboundConnection extends EditRecord
     protected array $partnerRoutingMappings = [];
 
     protected bool $registerHubRouting = false;
+
+    private ?string $securityFingerprintBeforeSave = null;
 
     protected function getHeaderActions(): array
     {
@@ -45,6 +50,13 @@ class EditInboundConnection extends EditRecord
         $this->registerHubRouting = (bool) ($data['register_hub_routing'] ?? false);
         unset($data['register_hub_routing']);
 
+        /** @var InboundConnection $record */
+        $record = $this->record;
+        // Form getState() may already have written scalar attributes onto $record;
+        // fingerprint the persisted row so Approved re-pend compares pre-edit values.
+        $this->securityFingerprintBeforeSave = app(RegisterConnectionApprovalRequest::class)
+            ->securityFingerprint($record->fresh() ?? $record);
+
         $existingSettings = $this->record->settings ?? [];
         $incomingSettings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
         $data['settings'] = array_merge($existingSettings, $incomingSettings);
@@ -62,5 +74,26 @@ class EditInboundConnection extends EditRecord
 
         $this->syncHubRouting($this->record, $this->registerHubRouting);
         $this->registerHubRouting = false;
+
+        $this->syncApprovalRequest($this->record->fresh());
+    }
+
+    private function syncApprovalRequest(InboundConnection $record): void
+    {
+        $registrar = app(RegisterConnectionApprovalRequest::class);
+        $fingerprintChanged = $this->securityFingerprintBeforeSave !== null
+            && $this->securityFingerprintBeforeSave !== $registrar->securityFingerprint($record);
+
+        // Rejected/suspended always resubmit; Approved only when security-sensitive fields change.
+        if ($record->isRejected() || $record->isSuspended() || ($record->isApproved() && $fingerprintChanged)) {
+            $record->approval_status = ConnectionApprovalStatus::Pending;
+            $record->approval_note = null;
+            $record->save();
+            $record->refresh();
+        }
+
+        if ($record->isPendingApproval()) {
+            $registrar->register($record);
+        }
     }
 }

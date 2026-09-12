@@ -11,6 +11,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
+use App\Models\Principal;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Site;
 use App\Models\TradingPartner;
@@ -35,6 +36,7 @@ class ExceptionCase extends Model
         'event_id',
         'trading_partner_id',
         'site_id',
+        'principal_id',
         'compensating_document_id',
         'title',
         'description',
@@ -102,6 +104,11 @@ class ExceptionCase extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class, 'site_id');
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class, 'principal_id');
     }
 
     public function compensatingDocument(): BelongsTo

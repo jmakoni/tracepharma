@@ -38,6 +38,7 @@ final readonly class CompliancePageData
         public ?string $ownershipNote,
         public string $legalStatement,
         public ?string $directPurchaseStatement,
+        public ?string $receivedPrevWholesalerStatement,
         public string $sellerName,
         public array $serialRows,
         public int $pageNumber,

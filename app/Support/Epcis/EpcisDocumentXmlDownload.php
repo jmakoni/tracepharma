@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Epcis;
 
 use App\Models\Epcis\EpcisDocument;
@@ -8,7 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Stream an EPCIS document's stored XML payload for download.
+ * Stream an EPCIS document's stored payload (XML 1.2/1.3 or JSON-LD 2.0) for download.
  */
 final class EpcisDocumentXmlDownload
 {
@@ -31,6 +33,15 @@ final class EpcisDocumentXmlDownload
         );
     }
 
+    public static function contentType(EpcisDocument $document): string
+    {
+        $format = (string) ($document->format ?? EpcisSchemaVersion::FORMAT_XML);
+
+        return $format === EpcisSchemaVersion::FORMAT_JSON
+            ? 'application/ld+json; charset=UTF-8'
+            : 'application/xml; charset=UTF-8';
+    }
+
     public static function response(EpcisDocument $document): StreamedResponse
     {
         $path = (string) $document->payload_path;
@@ -38,7 +49,7 @@ final class EpcisDocumentXmlDownload
         return Storage::disk($document->payloadFilesystemDisk())->download(
             $path,
             self::filename($document),
-            ['Content-Type' => 'application/xml; charset=UTF-8'],
+            ['Content-Type' => self::contentType($document)],
         );
     }
 }

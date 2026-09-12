@@ -13,8 +13,8 @@ use App\Filament\Admin\Resources\Tenants\Pages\EditTenant;
 use App\Models\Admin;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Support\Auth\AdminRoleSeeder;
 use App\Support\Admin\TenantImpersonation;
+use App\Support\Auth\AdminRoleSeeder;
 use App\Support\TenantHostname;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
@@ -110,6 +110,7 @@ class TenantUserImpersonationTest extends TestCase
         );
 
         $this->assertStringContainsString('/impersonate/', $url);
+        $this->assertStringContainsString('/redeem', $url);
 
         $token = ImpersonationToken::query()
             ->where('tenant_id', $tenant->getKey())
@@ -118,6 +119,9 @@ class TenantUserImpersonationTest extends TestCase
             ->first();
 
         $this->assertNotNull($token);
+        $this->assertNotNull($token->public_id);
+        $this->assertStringContainsString((string) $token->public_id, $url);
+        $this->assertStringNotContainsString((string) $token->token, $url);
         $this->assertSame((string) $admin->id, (string) $token->admin_id);
         $this->assertSame('Customer support ticket #12345', $token->reason);
     }
@@ -207,15 +211,17 @@ class TenantUserImpersonationTest extends TestCase
             'Route redemption test',
         );
 
-        $token = ImpersonationToken::query()
+        $publicId = ImpersonationToken::query()
             ->where('tenant_id', $tenant->getKey())
             ->where('user_id', (string) $owner->id)
             ->latest('created_at')
-            ->value('token');
+            ->value('public_id');
 
-        $this->assertNotNull($token);
+        $this->assertNotNull($publicId);
 
-        $response = $this->get('https://'.$domain.'/impersonate/'.$token, [
+        $response = $this->post('https://'.$domain.'/impersonate/'.$publicId.'/redeem', [
+            '_token' => csrf_token(),
+        ], [
             'HTTP_HOST' => $domain,
         ]);
 
@@ -224,7 +230,7 @@ class TenantUserImpersonationTest extends TestCase
         $this->assertTrue(TenantImpersonation::isActive());
         $this->assertSame((string) $admin->id, (string) TenantImpersonation::adminId());
         $this->assertSame('Route redemption test', TenantImpersonation::reason());
-        $this->assertNull(ImpersonationToken::query()->find($token));
+        $this->assertNull(ImpersonationToken::query()->where('public_id', $publicId)->first());
     }
 
     #[Test]
@@ -240,15 +246,17 @@ class TenantUserImpersonationTest extends TestCase
             'Single-use token test',
         );
 
-        $token = ImpersonationToken::query()
+        $publicId = ImpersonationToken::query()
             ->where('tenant_id', $tenant->getKey())
             ->where('user_id', (string) $owner->id)
             ->latest('created_at')
-            ->value('token');
+            ->value('public_id');
 
-        $this->assertNotNull($token);
+        $this->assertNotNull($publicId);
 
-        $first = $this->get('https://'.$domain.'/impersonate/'.$token, [
+        $first = $this->post('https://'.$domain.'/impersonate/'.$publicId.'/redeem', [
+            '_token' => csrf_token(),
+        ], [
             'HTTP_HOST' => $domain,
         ]);
 
@@ -257,7 +265,9 @@ class TenantUserImpersonationTest extends TestCase
 
         auth('web')->logout();
 
-        $this->get('https://'.$domain.'/impersonate/'.$token, [
+        $this->post('https://'.$domain.'/impersonate/'.$publicId.'/redeem', [
+            '_token' => csrf_token(),
+        ], [
             'HTTP_HOST' => $domain,
         ])->assertNotFound();
     }
@@ -275,12 +285,14 @@ class TenantUserImpersonationTest extends TestCase
             'Logout audit test',
         );
 
-        $token = ImpersonationToken::query()
+        $publicId = ImpersonationToken::query()
             ->where('tenant_id', $tenant->getKey())
             ->latest('created_at')
-            ->value('token');
+            ->value('public_id');
 
-        $this->get('https://'.$domain.'/impersonate/'.$token, ['HTTP_HOST' => $domain]);
+        $this->post('https://'.$domain.'/impersonate/'.$publicId.'/redeem', [
+            '_token' => csrf_token(),
+        ], ['HTTP_HOST' => $domain]);
 
         auth('web')->logout();
         event(new Logout('web', $owner));

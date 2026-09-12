@@ -1,0 +1,84 @@
+- generic [active] [ref=f94e1]:
+  - link "Skip to content" [ref=f94e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f94e4]:
+    - link [ref=f94e6] [cursor=pointer]:
+      - /url: https://admin2.internal.vatengi.com/help
+      - img "TracePharma Admin Help logo" [ref=f94e7]
+    - generic [ref=f94e8]:
+      - generic [ref=f94e11]:
+        - generic [ref=f94e12]: Global search
+        - searchbox "Global search" [ref=f94e18]
+      - button "User menu" [ref=f94e21] [cursor=pointer]:
+        - img "Avatar of Platform Admin" [ref=f94e22]
+  - generic [ref=f94e23]:
+    - generic [ref=f94e24]:
+      - navigation "Sidebar navigation" [ref=f94e25]:
+        - list [ref=f94e26]:
+          - listitem [ref=f94e27]:
+            - list [ref=f94e28]:
+              - listitem [ref=f94e29]:
+                - link "Admin help" [ref=f94e30] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/intro
+              - listitem [ref=f94e34]:
+                - link "Demo and support" [ref=f94e35] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/demo-and-support
+      - listitem [ref=f94e39]:
+        - list [ref=f94e40]:
+          - listitem [ref=f94e41]:
+            - link "Back" [ref=f94e42] [cursor=pointer]:
+              - /url: https://admin2.internal.vatengi.com
+    - main [ref=f94e47]:
+      - generic [ref=f94e49]:
+        - generic [ref=f94e51]:
+          - navigation "Breadcrumb" [ref=f94e52]:
+            - list [ref=f94e53]:
+              - listitem [ref=f94e54]:
+                - link "Documentation" [ref=f94e55] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help
+              - listitem [ref=f94e56]:
+                - link "Admin help" [ref=f94e59] [cursor=pointer]:
+                  - /url: https://admin2.internal.vatengi.com/help/intro
+          - heading "Admin help" [level=1] [ref=f94e60]
+        - generic [ref=f94e61]:
+          - article [ref=f94e63]:
+            - heading "TracePharma admin help" [level=1] [ref=f94e64]:
+              - link [ref=f94e65] [cursor=pointer]:
+                - /url: "#tracepharma-admin-help"
+                - text: "#"
+              - text: TracePharma admin help
+            - paragraph [ref=f94e66]:
+              - text: Internal documentation for the Admin panel (
+              - code [ref=f94e67]: admin2
+              - text: host).
+            - paragraph [ref=f94e68]:
+              - text: Tenant floor SOPs (receive, ship, decommission, CBV biz steps) live in the tenant help panel on each customer domain (
+              - code [ref=f94e69]: /help
+              - text: ), not here.
+            - heading "Quick links" [level=2] [ref=f94e70]:
+              - link [ref=f94e71] [cursor=pointer]:
+                - /url: "#quick-links"
+                - text: "#"
+              - text: Quick links
+            - list [ref=f94e72]:
+              - listitem [ref=f94e73]:
+                - text: "Demo setup:"
+                - code [ref=f94e74]: php artisan tracepharma:setup-demo
+                - text: (see repo README)
+              - listitem [ref=f94e75]:
+                - text: "Operator workflow markdown source:"
+                - code [ref=f94e76]: docs/workflows/
+              - listitem [ref=f94e77]:
+                - text: "Architecture:"
+                - code [ref=f94e78]: docs/architecture.md
+          - list [ref=f94e80]:
+            - listitem [ref=f94e81]:
+              - list [ref=f94e82]:
+                - listitem [ref=f94e83]:
+                  - link "TracePharma admin help" [ref=f94e84] [cursor=pointer]:
+                    - /url: "#tracepharma-admin-help"
+                - listitem [ref=f94e86]:
+                  - link "Quick links" [ref=f94e87] [cursor=pointer]:
+                    - /url: "#quick-links"
+  - generic:
+    - status

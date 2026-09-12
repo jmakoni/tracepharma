@@ -9,20 +9,21 @@ use App\Filament\App\Resources\TracingRequests\Schemas\TracingRequestForm;
 use App\Filament\App\Resources\TracingRequests\Schemas\TracingRequestInfolist;
 use App\Filament\App\Resources\TracingRequests\Tables\TracingRequestsTable;
 use App\Models\TracingRequest;
-use App\Support\Auth\SiteAccess;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class TracingRequestResource extends Resource
+class TracingRequestResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = TracingRequest::class;
 
@@ -44,7 +45,7 @@ class TracingRequestResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsTracingRequests())
+        return TenantFeatures::forTenant(tenant())->supportsTracingRequests()
             && JobRoleAccess::allows(Permissions::NavCompliance);
     }
 
@@ -99,5 +100,10 @@ class TracingRequestResource extends Resource
             'create' => CreateTracingRequest::route('/create'),
             'view' => ViewTracingRequest::route('/{record}'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'compliance.tracing-and-fda3911';
     }
 }

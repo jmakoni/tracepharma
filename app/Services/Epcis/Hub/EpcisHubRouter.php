@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Epcis\Hub;
 
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Enums\SerializationProvider;
 use App\Models\EpcisHubRoute;
@@ -13,6 +14,8 @@ use App\Models\TradingPartner;
 use App\Support\Epcis\SbdhHeaderExtractor;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Integrations\InboundConnectivityProbe;
+use App\Support\Tenancy\TenantRunner;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use RuntimeException;
 
@@ -56,44 +59,144 @@ class EpcisHubRouter
 
         $preferredConnectionId = $route?->default_inbound_connection_id;
 
-        $connection = $tenant->run(function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
-            // Sender must be resolved before any preferred-connection shortcut.
-            // default_inbound_connection_id is only a tie-break among matched senders
-            // (or a fallback for truly senderless payloads) — never an unknown-sender bypass.
+        $connection = TenantRunner::run($tenant, function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
+            // Sender is mandatory for hub routing. Prefer default_inbound_connection_id
+            // only as a tie-break among matched senders — never a senderless bypass.
+            if ($senderGln === null) {
+                throw new RuntimeException(
+                    'SBDH sender GLN is required for hub routing; senderless payloads are rejected.',
+                );
+            }
+
             $matched = $this->connectionsMatchingSender($provider, $senderGln);
 
-            if ($senderGln !== null) {
-                if ($matched->isEmpty()) {
-                    throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
-                }
-
-                if ($preferredConnectionId !== null) {
-                    $preferred = $matched->firstWhere('id', (int) $preferredConnectionId);
-                    if ($preferred !== null) {
-                        return $preferred;
-                    }
-                }
-
-                return $matched->first();
+            if ($matched->isEmpty()) {
+                throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
             }
 
             if ($preferredConnectionId !== null) {
-                $preferred = $this->findConnection((int) $preferredConnectionId, $provider);
+                $preferred = $matched->firstWhere('id', (int) $preferredConnectionId);
                 if ($preferred !== null) {
                     return $preferred;
                 }
             }
 
-            $connection = $this->defaultConnectionForProvider($provider);
-
-            if ($connection === null) {
-                throw new RuntimeException('No active inbound connection is registered for hub routing on this tenant.');
-            }
-
-            return $connection;
+            return $matched->first();
         });
 
+        if ($route !== null) {
+            EpcisHubRoute::query()
+                ->whereKey($route->getKey())
+                ->update(['last_routed_at' => now()]);
+        }
+
         return HubRouteResolution::routed($tenant, $connection, $receiverGln, $senderGln);
+    }
+
+    /**
+     * Dry-run the routing decision for a sender/receiver GLN pair without a
+     * payload. Returns the ordered resolution chain with the first failing
+     * step, so admins can diagnose "no route" cases in one click.
+     *
+     * @return list<array{step: string, ok: bool, detail: string}>
+     */
+    public function describeResolution(string $provider, string $receiverGln, ?string $senderGln, string $environment): array
+    {
+        $provider = strtolower(trim($provider));
+        $environment = strtolower(trim($environment));
+        $steps = [];
+
+        $providerEnabled = in_array($provider, $this->platformConfig->enabledProviders($environment), true);
+        $steps[] = [
+            'step' => 'Provider enabled',
+            'ok' => $providerEnabled,
+            'detail' => $providerEnabled
+                ? "Provider [{$provider}] is enabled for [{$environment}]."
+                : "Provider [{$provider}] is not enabled for hub environment [{$environment}].",
+        ];
+
+        if (! $providerEnabled) {
+            return $steps;
+        }
+
+        try {
+            $tenant = $this->resolveTenant($provider, $receiverGln, $environment);
+            $steps[] = [
+                'step' => 'Receiver GLN → tenant',
+                'ok' => true,
+                'detail' => "Receiver GLN [{$receiverGln}] routes to tenant [{$tenant->name}] ({$tenant->getKey()}).",
+            ];
+        } catch (RuntimeException $exception) {
+            $steps[] = [
+                'step' => 'Receiver GLN → tenant',
+                'ok' => false,
+                'detail' => $exception->getMessage(),
+            ];
+
+            return $steps;
+        }
+
+        try {
+            $this->assertTenantMayReceive($tenant, $provider, $environment);
+            $steps[] = [
+                'step' => 'Tenant entitlement',
+                'ok' => true,
+                'detail' => "Tenant inbound environment and hub providers allow [{$provider}].",
+            ];
+        } catch (RuntimeException $exception) {
+            $steps[] = [
+                'step' => 'Tenant entitlement',
+                'ok' => false,
+                'detail' => $exception->getMessage(),
+            ];
+
+            return $steps;
+        }
+
+        $route = EpcisHubRoute::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('provider', $provider)
+            ->where('gln', $receiverGln)
+            ->where('is_active', true)
+            ->first();
+
+        $preferredConnectionId = $route?->default_inbound_connection_id;
+
+        try {
+            $connection = TenantRunner::run($tenant, function () use ($provider, $senderGln, $preferredConnectionId): InboundConnection {
+                if ($senderGln === null) {
+                    throw new RuntimeException(
+                        'SBDH sender GLN is required for hub routing; senderless payloads are rejected.',
+                    );
+                }
+
+                $matched = $this->connectionsMatchingSender($provider, $senderGln);
+
+                if ($matched->isEmpty()) {
+                    throw new RuntimeException("Sender GLN [{$senderGln}] is not registered to a trading partner for hub routing on this tenant.");
+                }
+
+                $preferred = $preferredConnectionId !== null
+                    ? $matched->firstWhere('id', (int) $preferredConnectionId)
+                    : null;
+
+                return $preferred ?? $matched->first();
+            });
+
+            $steps[] = [
+                'step' => 'Sender GLN → connection',
+                'ok' => true,
+                'detail' => "Resolves to inbound connection [{$connection->name}] (#{$connection->getKey()}).",
+            ];
+        } catch (RuntimeException $exception) {
+            $steps[] = [
+                'step' => 'Sender GLN → connection',
+                'ok' => false,
+                'detail' => $exception->getMessage(),
+            ];
+        }
+
+        return $steps;
     }
 
     private function assertTenantMayReceive(Tenant $tenant, string $provider, string $environment): void
@@ -162,20 +265,9 @@ class EpcisHubRouter
         throw new RuntimeException("No tenant is registered for receiver GLN [{$receiverGln}].");
     }
 
-    private function findConnection(int $connectionId, string $provider): ?InboundConnection
-    {
-        $serializationProvider = $this->serializationProviderForHub($provider);
-
-        return InboundConnection::query()
-            ->whereKey($connectionId)
-            ->where('is_active', true)
-            ->where('transport', InboundTransport::Https)
-            ->where('serialization_provider', $serializationProvider)
-            ->first();
-    }
-
     /**
-     * Active HTTPS connections that claim this SBDH sender GLN (pivot sender_gln or legacy trading_partner_id).
+     * Active, platform-approved HTTPS connections that claim this SBDH sender GLN
+     * (pivot sender_gln or legacy trading_partner_id).
      *
      * @return Collection<int, InboundConnection>
      */
@@ -185,12 +277,7 @@ class EpcisHubRouter
             return collect();
         }
 
-        $serializationProvider = $this->serializationProviderForHub($provider);
-
-        $pivotMatches = InboundConnection::query()
-            ->where('is_active', true)
-            ->where('transport', InboundTransport::Https)
-            ->where('serialization_provider', $serializationProvider)
+        $pivotMatches = $this->approvedHubBase($provider)
             ->whereHas('tradingPartners', fn ($query) => $query->where('inbound_connection_trading_partner.sender_gln', $senderGln))
             ->orderBy('name')
             ->get();
@@ -207,25 +294,25 @@ class EpcisHubRouter
             return collect();
         }
 
-        return InboundConnection::query()
-            ->where('is_active', true)
-            ->where('transport', InboundTransport::Https)
-            ->where('serialization_provider', $serializationProvider)
+        return $this->approvedHubBase($provider)
             ->whereIn('trading_partner_id', $partnerIds)
             ->orderBy('name')
             ->get();
     }
 
-    private function defaultConnectionForProvider(string $provider): ?InboundConnection
+    /**
+     * Active + platform-approved HTTPS connections for the hub's serialization provider;
+     * pending/rejected connections never receive hub-routed traffic.
+     *
+     * @return Builder<InboundConnection>
+     */
+    private function approvedHubBase(string $provider): Builder
     {
-        $serializationProvider = $this->serializationProviderForHub($provider);
-
         return InboundConnection::query()
             ->where('is_active', true)
+            ->where('approval_status', ConnectionApprovalStatus::Approved->value)
             ->where('transport', InboundTransport::Https)
-            ->where('serialization_provider', $serializationProvider)
-            ->orderBy('name')
-            ->first();
+            ->where('serialization_provider', $this->serializationProviderForHub($provider));
     }
 
     private function serializationProviderForHub(string $provider): SerializationProvider
@@ -233,6 +320,7 @@ class EpcisHubRouter
         return match ($provider) {
             'systech' => SerializationProvider::Systech,
             'unitrace' => SerializationProvider::UniTrace,
+            'tracepharma' => SerializationProvider::TracePharma,
             default => throw new RuntimeException("Unsupported EPCIS hub provider [{$provider}]."),
         };
     }

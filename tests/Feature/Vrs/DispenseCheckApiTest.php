@@ -12,10 +12,13 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Verification;
 use App\Services\Quarantine\QuarantineService;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\SanctumAbilities;
 use App\Support\TenantSettings;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class DispenseCheckApiTest extends TestCase
@@ -90,6 +93,11 @@ class DispenseCheckApiTest extends TestCase
                 ->assertJsonMissing(['exception_id' => $case->getKey()]);
 
             $this->assertArrayNotHasKey('exception_id', $response->json());
+
+            $message = (string) $response->json('message');
+            $this->assertStringContainsString('quarantine', strtolower($message));
+            $this->assertStringNotContainsString('exception #'.$case->getKey(), $message);
+            $this->assertStringNotContainsString((string) $case->getKey(), $message);
         } finally {
             $this->cleanup();
         }
@@ -123,8 +131,9 @@ class DispenseCheckApiTest extends TestCase
                     'status',
                     'message',
                     'verification_id',
-                    'exception_id',
                 ]);
+
+            $this->assertArrayNotHasKey('exception_id', $response->json());
 
             tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
             $verification = Verification::query()->find($response->json('verification_id'));
@@ -155,6 +164,9 @@ class DispenseCheckApiTest extends TestCase
             $this->exceptionIds[] = (int) $case->getKey();
 
             $user = User::factory()->create();
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $user->givePermissionTo(Permissions::SitesAccessAll);
             $token = $user->createToken('dispense-test', [SanctumAbilities::VRS_DISPENSE_CHECK])->plainTextToken;
 
             tenancy()->end();
@@ -195,6 +207,9 @@ class DispenseCheckApiTest extends TestCase
             config(['vrs.driver' => 'fake']);
 
             $user = User::factory()->create();
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $user->givePermissionTo(Permissions::SitesAccessAll);
             $token = $user->createToken('dispense-test', [SanctumAbilities::VRS_DISPENSE_CHECK])->plainTextToken;
 
             tenancy()->end();
@@ -265,7 +280,7 @@ class DispenseCheckApiTest extends TestCase
 
         try {
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
             TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
             $tenant->save();
 
@@ -354,7 +369,7 @@ class DispenseCheckApiTest extends TestCase
     /**
      * @param  array<string, mixed>  $data
      */
-    private function tenantApiPost(string $uri, ?string $token, array $data = []): \Illuminate\Testing\TestResponse
+    private function tenantApiPost(string $uri, ?string $token, array $data = []): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;

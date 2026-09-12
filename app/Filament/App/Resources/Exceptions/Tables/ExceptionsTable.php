@@ -8,6 +8,7 @@ use App\Enums\ExceptionStatus;
 use App\Enums\ExceptionTypeCategory;
 use App\Models\Exceptions\ExceptionCase;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\TenantFeatures;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Support\Enums\FontWeight;
@@ -28,6 +29,7 @@ class ExceptionsTable
                 'type' => fn ($q) => $q->select(['id', 'name', 'category', 'receive_impact']),
                 'tradingPartner' => fn ($q) => $q->select(['id', 'name']),
                 'assignee' => fn ($q) => $q->select(['id', 'name']),
+                'principal' => fn ($q) => $q->select(['id', 'name']),
             ]))
             ->columns([
                 TextColumn::make('id')
@@ -37,6 +39,11 @@ class ExceptionsTable
                     ->searchable()
                     ->limit(40)
                     ->tooltip(fn (?string $state): ?string => $state),
+                TextColumn::make('principal.name')
+                    ->label('Principal')
+                    ->placeholder('—')
+                    ->toggleable()
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
                 TextColumn::make('type.name')
                     ->label('Type')
                     ->placeholder('—')
@@ -85,6 +92,12 @@ class ExceptionsTable
                     ->options(collect(ExceptionStatus::cases())
                         ->mapWithKeys(fn (ExceptionStatus $status): array => [$status->value => $status->label()])
                         ->all()),
+                SelectFilter::make('principal_id')
+                    ->label('Principal')
+                    ->relationship('principal', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
                 SelectFilter::make('severity')
                     ->options(collect(ExceptionSeverity::cases())
                         ->mapWithKeys(fn (ExceptionSeverity $severity): array => [$severity->value => $severity->label()])

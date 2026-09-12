@@ -28,6 +28,14 @@ return Application::configure(basePath: dirname(__DIR__))
             App\Http\Middleware\InitializeTenancyForTenantHosts::class,
         ]);
 
+        $middleware->redirectGuestsTo(function (Request $request): ?string {
+            if ($request->is('client-portal') || $request->is('client-portal/*')) {
+                return route('tenant.client-portal.login');
+            }
+
+            return null;
+        });
+
         $middleware->alias([
             'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,

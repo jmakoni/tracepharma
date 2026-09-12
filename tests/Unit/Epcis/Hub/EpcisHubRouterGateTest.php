@@ -348,6 +348,71 @@ class EpcisHubRouterGateTest extends TestCase
     }
 
     #[Test]
+    public function senderless_payload_is_rejected_even_with_preferred_default_connection(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $original = [
+            'gln' => $tenant->gln,
+            'inbound_environment' => $tenant->inbound_environment,
+            'hub_providers' => $tenant->hub_providers,
+        ];
+
+        $tenant->forceFill([
+            'gln' => self::DEMO2_GLN,
+            'inbound_environment' => 'stage',
+            'hub_providers' => ['systech'],
+        ])->save();
+
+        $connection = $tenant->run(function (): InboundConnection {
+            $partner = TradingPartner::query()->firstOrCreate(
+                ['gln' => self::FIXTURE_SENDER_GLN],
+                [
+                    'name' => 'Hub router senderless gate',
+                    'partner_type' => \App\Enums\PartnerType::Wholesaler,
+                    'country_code' => 'US',
+                    'is_active' => true,
+                ],
+            );
+
+            return InboundConnection::query()->create([
+                'name' => 'Preferred senderless gate',
+                'serialization_provider' => SerializationProvider::Systech,
+                'transport' => InboundTransport::Https,
+                'trading_partner_id' => $partner->id,
+                'is_active' => true,
+            ]);
+        });
+
+        try {
+            $tenant->run(fn () => app(RegisterEpcisHubRoute::class)->register($connection));
+            tenancy()->end();
+
+            $xml = $this->xmlForReceiver(self::DEMO2_GLN);
+            $xml = preg_replace(
+                '#<sbdh:Sender>.*?</sbdh:Sender>#s',
+                '',
+                $xml,
+            );
+            $this->assertIsString($xml);
+            $this->assertStringNotContainsString('<sbdh:Sender>', $xml);
+
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('SBDH sender GLN is required for hub routing');
+
+            app(EpcisHubRouter::class)->resolve('systech', $xml, 'stage');
+        } finally {
+            EpcisHubRoute::query()
+                ->where('tenant_id', $tenant->id)
+                ->where('provider', 'systech')
+                ->delete();
+
+            $tenant->run(fn () => $connection->delete());
+            $tenant->forceFill($original)->save();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function preferred_connection_does_not_bypass_unknown_sender_fail_closed(): void
     {
         $tenant = $this->initializeDemo2Tenant();

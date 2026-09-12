@@ -9,15 +9,16 @@ use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use UnitEnum;
 
-class FdaWdd3plStagingResource extends Resource
+class FdaWdd3plStagingResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = FdaWdd3plStaging::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Operations';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 20;
 
@@ -42,5 +43,10 @@ class FdaWdd3plStagingResource extends Resource
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.wdd-3pl-staging';
     }
 }

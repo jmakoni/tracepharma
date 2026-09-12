@@ -37,6 +37,13 @@
         <header class="tp-floor-receive__sticky-header">
             <div class="flex min-w-0 flex-col gap-1">
                 <span class="badge badge-outline tp-floor-receive__mode-chip">{{ $this->edgeModeChipLabel() }}</span>
+                @if ($this->chipDeaLabel)
+                    <span @class([
+                        'badge badge-outline tp-floor-receive__mode-chip',
+                        'badge-error' => $this->chipDeaColor === 'danger',
+                        'badge-warning' => $this->chipDeaColor === 'warning',
+                    ])>{{ $this->chipDeaLabel }}</span>
+                @endif
                 @if ($this->isScanFirst() && $this->attachedInvoiceFilename())
                     <span class="text-xs opacity-70">Invoice: {{ $this->attachedInvoiceFilename() }}</span>
                 @endif
@@ -368,12 +375,24 @@
                             'tp-floor-receive__recent-row',
                             'tp-floor-receive__recent-row--unexpected' => $line->status === 'unexpected',
                         ])>
-                            <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                            <span class="tp-floor-receive__recent-meta">
-                                {{ ucfirst((string) $line->line_role) }}
-                                ·
-                                {{ ucfirst((string) $line->status) }}
-                            </span>
+                            <div class="tp-floor-receive__recent-main">
+                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
+                                <span class="tp-floor-receive__recent-meta">
+                                    {{ ucfirst((string) $line->line_role) }}
+                                    ·
+                                    {{ ucfirst((string) $line->status) }}
+                                </span>
+                            </div>
+                            @if ($this->canRemoveRecentScanLine($line))
+                                <button
+                                    type="button"
+                                    class="tp-floor-receive__recent-remove"
+                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
+                                    wire:confirm="Remove this scan from the session?"
+                                >
+                                    Remove
+                                </button>
+                            @endif
                         </div>
                     @empty
                         <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>

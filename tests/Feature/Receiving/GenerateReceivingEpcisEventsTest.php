@@ -28,10 +28,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class GenerateReceivingEpcisEventsTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -67,6 +69,9 @@ class GenerateReceivingEpcisEventsTest extends TestCase
             app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, userId: null, autoConfirmChildren: true);
 
             $session->refresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
             $this->assertSame('completed', $session->status);
             $this->assertNotNull($session->receiving_events_generated_at);
             $this->assertNotNull($session->receiving_epcis_document_id);
@@ -165,6 +170,9 @@ class GenerateReceivingEpcisEventsTest extends TestCase
 
             app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, userId: null, autoConfirmChildren: true);
             $session->refresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
             $this->assertNotNull($session->receiving_epcis_document_id);
             $this->receivingDocumentId = (int) $session->receiving_epcis_document_id;
 
@@ -1399,6 +1407,8 @@ class GenerateReceivingEpcisEventsTest extends TestCase
      */
     private function prepareFixtureReceivingState(array $epcUris = [self::SSCC_URI, self::SGTIN_URI]): void
     {
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+
         $epcIds = Epc::query()
             ->whereIn('epc_uri', $epcUris)
             ->pluck('id')

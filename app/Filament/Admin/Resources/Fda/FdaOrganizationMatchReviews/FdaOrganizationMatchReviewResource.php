@@ -13,9 +13,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class FdaOrganizationMatchReviewResource extends Resource
+class FdaOrganizationMatchReviewResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -23,7 +25,7 @@ class FdaOrganizationMatchReviewResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedQueueList;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Registry';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 60;
 
@@ -32,6 +34,11 @@ class FdaOrganizationMatchReviewResource extends Resource
     protected static ?string $modelLabel = 'Match Review';
 
     protected static ?string $recordTitleAttribute = 'original_name';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function infolist(Schema $schema): Schema
     {
@@ -69,5 +76,10 @@ class FdaOrganizationMatchReviewResource extends Resource
     public static function getNavigationBadgeColor(): string|array|null
     {
         return 'warning';
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.match-review';
     }
 }

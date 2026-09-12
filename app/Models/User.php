@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccountSecurity;
+use App\Models\Concerns\HasForcedPasswordChange;
+use App\Support\Tenancy\TenantAccess;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
@@ -11,17 +14,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
-use App\Support\Tenancy\TenantAccess;
 use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements FilamentUser, HasAvatar
 {
+    use HasAccountSecurity;
+
     /** @use HasFactory<UserFactory> */
     use HasApiTokens;
-
     use HasFactory;
+    use HasForcedPasswordChange;
     use HasRoles;
     use Notifiable;
     use TwoFactorAuthenticatable;
@@ -30,6 +34,22 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         'name',
         'email',
         'password',
+        'disabled_reason',
+        'oidc_issuer',
+        'oidc_subject',
+        'directory_object_id',
+        'user_principal_name',
+        'employee_id',
+        'given_name',
+        'surname',
+        'job_title',
+        'department',
+        'company_name',
+        'office_location',
+        'mobile_phone',
+        'business_phone',
+        'directory_groups',
+        'directory_synced_at',
         'avatar_url',
         'preferences',
         'terms_accepted_at',
@@ -50,6 +70,8 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'preferences' => 'array',
+            'directory_groups' => 'array',
+            'directory_synced_at' => 'datetime',
             'terms_accepted_at' => 'datetime',
             'privacy_accepted_at' => 'datetime',
             'legal_notice_started_at' => 'datetime',
@@ -106,7 +128,11 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
 
     public function canAccessPanel(Panel $panel): bool
     {
-        if ($panel->getId() !== 'app') {
+        if (! in_array($panel->getId(), ['app', 'knowledge-base'], true)) {
+            return false;
+        }
+
+        if (! $this->isUsable()) {
             return false;
         }
 

@@ -8,6 +8,7 @@ use App\Actions\Transferring\DeleteTransferringSession;
 use App\Actions\Transferring\OpenTransferringSession;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\TransferringSessions\Pages\MobileViewTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\Pages\ViewTransferringSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -284,6 +285,39 @@ class DeleteTransferringSessionTest extends TestCase
             $sessionId = (int) $session->getKey();
 
             Livewire::test(ViewTransferringSession::class, ['record' => $sessionId])
+                ->assertActionVisible('deleteTransfer')
+                ->callAction('deleteTransfer')
+                ->assertHasNoActionErrors()
+                ->assertRedirect();
+
+            $this->assertNull(TransferringSession::query()->find($sessionId));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function mobile_delete_transfer_action_is_visible_and_deletes(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+
+            [$fromSite, $toSite] = $this->createTransferSites($tenant);
+            $user = $this->createShipUser([(int) $fromSite->getKey()]);
+            $this->actingAs($user);
+
+            $session = app(OpenTransferringSession::class)->handle(
+                fromSiteId: (int) $fromSite->getKey(),
+                toSiteId: (int) $toSite->getKey(),
+            );
+            $this->sessionIds[] = (int) $session->getKey();
+            $sessionId = (int) $session->getKey();
+
+            Livewire::test(MobileViewTransferringSession::class, ['record' => $sessionId])
                 ->assertActionVisible('deleteTransfer')
                 ->callAction('deleteTransfer')
                 ->assertHasNoActionErrors()

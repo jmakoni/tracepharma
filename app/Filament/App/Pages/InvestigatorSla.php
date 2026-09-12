@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Actions\Exceptions\StartInvestigatorSla;
 use App\Enums\ExceptionReceiveImpact;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Exceptions\ExceptionActivity;
 use App\Models\Exceptions\ExceptionCase;
 use App\Support\Auth\JobRoleAccess;
@@ -13,16 +14,16 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Exceptions\InvestigatorSlaClock;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class InvestigatorSla extends Page
+class InvestigatorSla extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
@@ -30,9 +31,9 @@ class InvestigatorSla extends Page
 
     protected static ?string $title = 'Investigator SLA';
 
-    protected static ?int $navigationSort = 16;
+    protected static ?int $navigationSort = 2;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Receiving';
+    protected static string|UnitEnum|null $navigationGroup = 'Exceptions';
 
     protected string $view = 'filament.app.pages.investigator-sla';
 
@@ -63,7 +64,12 @@ class InvestigatorSla extends Page
     public function blockingCases(): Collection
     {
         return $this->casesQuery()
-            ->with(['type', 'tradingPartner'])
+            ->with([
+                'type',
+                'tradingPartner',
+                'activities' => fn ($query) => app(InvestigatorSlaClock::class)
+                    ->constrainSupplierEmailActivities($query),
+            ])
             ->orderBy('due_at')
             ->orderBy('id')
             ->limit(100)
@@ -82,11 +88,13 @@ class InvestigatorSla extends Page
 
     public function lastEmailLabel(ExceptionCase $case): string
     {
-        $activity = ExceptionActivity::query()
-            ->where('exception_id', $case->getKey())
-            ->where('body', 'like', 'DSCSA exception email sent%')
-            ->latest('id')
-            ->first();
+        $clock = app(InvestigatorSlaClock::class);
+
+        $activity = $case->relationLoaded('activities')
+            ? $case->activities->first(fn (mixed $activity): bool => $clock->isSupplierEmailActivity($activity))
+            : $clock->constrainSupplierEmailActivities(
+                ExceptionActivity::query()->where('exception_id', $case->getKey()),
+            )->latest('id')->first();
 
         if ($activity === null) {
             return 'Not emailed';
@@ -161,5 +169,10 @@ class InvestigatorSla extends Page
                     ]);
                 }),
         );
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'exceptions.investigator-sla';
     }
 }

@@ -10,6 +10,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
@@ -21,8 +22,12 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class OpenScanFirstReceivingSession
 {
-    public function handle(?int $siteId = null, ?int $openedBy = null, ?string $notes = null): ReceivingSession
-    {
+    public function handle(
+        ?int $siteId = null,
+        ?int $openedBy = null,
+        ?string $notes = null,
+        ?int $principalId = null,
+    ): ReceivingSession {
         if (! TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             throw new DomainException('Receiving is not available for this tenant profile.');
         }
@@ -32,8 +37,13 @@ final class OpenScanFirstReceivingSession
         }
 
         $resolvedSiteId = $this->resolveSiteId($siteId);
+        $features = TenantFeatures::forTenant(tenant());
+        $resolvedPrincipalId = PrincipalCustody::forTenant()->resolveSessionPrincipalId(
+            $resolvedSiteId,
+            $principalId,
+        );
 
-        return ReceivingSession::query()->create([
+        $attributes = [
             'session_kind' => ReceivingSessionKind::ScanFirst,
             'epcis_document_id' => null,
             'transferring_session_id' => null,
@@ -47,7 +57,13 @@ final class OpenScanFirstReceivingSession
             'confirmed_child_count' => 0,
             'opened_by' => $openedBy,
             'opened_at' => now(),
-        ]);
+        ];
+
+        if ($resolvedPrincipalId !== null && $features->supportsPrincipals()) {
+            $attributes['principal_id'] = $resolvedPrincipalId;
+        }
+
+        return ReceivingSession::query()->create($attributes);
     }
 
     private function resolveSiteId(?int $explicitSiteId): int

@@ -2,10 +2,13 @@
 
 namespace App\Filament\App\Resources\ReceivingSessions\Pages;
 
+use App\Actions\Receiving\UnconfirmReceivingScanLine;
 use App\Filament\App\Resources\ReceivingSessions\Concerns\InteractsWithReceivingSessionHud;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use DomainException;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
@@ -128,8 +131,12 @@ class MobileViewReceivingSession extends ViewRecord
             return null;
         }
 
+        if ($this->isInboundAsn()) {
+            return 'Confirm all expected lines, then tap Complete Receive.';
+        }
+
         if (! $this->isScanFirst()) {
-            return 'This receive finishes automatically — keep scanning.';
+            return 'Keep scanning expected transfer lines.';
         }
 
         return 'Scan at least one item to complete.';
@@ -187,5 +194,69 @@ class MobileViewReceivingSession extends ViewRecord
         }
 
         return filled($line->scan_raw) ? (string) $line->scan_raw : 'Scan #'.$line->getKey();
+    }
+
+    public function canRemoveRecentScanLine(ReceivingScanLine $line): bool
+    {
+        /** @var ReceivingSession $session */
+        $session = $this->getRecord();
+
+        if ($session->status === 'completed' || $session->receiving_events_generated_at !== null) {
+            return false;
+        }
+
+        if (! in_array($session->status, ['open', 'in_progress'], true)) {
+            return false;
+        }
+
+        return in_array($line->status, ['confirmed', 'unexpected'], true);
+    }
+
+    public function removeRecentScanLine(int $lineId): void
+    {
+        /** @var ReceivingSession $session */
+        $session = $this->getRecord();
+
+        $line = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null || ! $this->canRemoveRecentScanLine($line)) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body('This scan cannot be removed.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(UnconfirmReceivingScanLine::class)->handle($line, auth()->id());
+        } catch (DomainException $e) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $this->getRecord()->refresh()->loadMissing([
+            'document',
+            'tradingPartner',
+            'site',
+            'matchedDocument',
+            'transferringSession',
+            'activeParentEpc',
+        ]);
+        $this->dispatch('receiving-session-hud-refresh');
+
+        Notification::make()
+            ->title('Scan removed')
+            ->success()
+            ->send();
     }
 }

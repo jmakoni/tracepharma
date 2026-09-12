@@ -13,10 +13,10 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\LabelPrinter;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantSettings;
 use App\Support\TenantSsccSettings;
-use Illuminate\Support\Facades\Cache;
 
 class QueueReceivingLpnLabelPrint
 {
@@ -42,7 +42,7 @@ class QueueReceivingLpnLabelPrint
 
         // Concurrent requests for the same shipment must not both pass the idempotency
         // check and generate duplicate LPN batches — serialize per source document.
-        return Cache::lock('receiving-lpn:'.$document->getKey(), 30)
+        return EpcisCacheLock::lock('receiving-lpn:'.$document->getKey(), 30)
             ->block(10, fn (): SsccLabel => $this->generateOrReuse($document));
     }
 

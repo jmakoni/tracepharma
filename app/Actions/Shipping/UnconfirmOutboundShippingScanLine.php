@@ -14,8 +14,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Undo a single confirmed ship scan. Allowed while the order is still scannable
- * or stuck completed without authored shipping EPCIS (needsShippingEpcis).
+ * Undo a single confirmed ship scan.
+ *
+ * Allowed while the order is still scannable, stuck completed without authored
+ * shipping EPCIS (needsShippingEpcis), or when shipping EPCIS was authored but
+ * transmission is still Retry-eligible (failed / skipped) so operators can drop
+ * a pallet and retransmit a rebuilt TI.
  */
 final class UnconfirmOutboundShippingScanLine
 {
@@ -50,11 +54,15 @@ final class UnconfirmOutboundShippingScanLine
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($session->shipping_events_generated_at !== null || $session->epcis_document_id !== null) {
-                throw new DomainException('Cannot remove scan: shipping EPCIS was already generated for this order.');
+            $authored = $session->shipping_events_generated_at !== null || $session->epcis_document_id !== null;
+            if ($authored && ! $this->allowsPostAuthorRemoval($session)) {
+                throw new DomainException(
+                    'Cannot remove scan: shipping EPCIS was already generated and transmission is not failed/skipped. '
+                    .'Use Retry Transmit after a failed send, or remove the pallet only while transmit is Retry-eligible.',
+                );
             }
 
-            if (! $session->canScan() && ! $session->needsShippingEpcis()) {
+            if (! $authored && ! $session->canScan() && ! $session->needsShippingEpcis()) {
                 throw new DomainException("Cannot remove scan: ship order status [{$session->status}] is not editable.");
             }
 
@@ -73,11 +81,13 @@ final class UnconfirmOutboundShippingScanLine
                 'confirmed_count' => max(0, (int) $session->confirmed_count - 1),
             ];
 
-            if ($session->needsShippingEpcis()) {
-                $updates['status'] = $remainingConfirmed > 0 ? 'in_progress' : 'open';
-                $updates['completed_at'] = null;
-            } elseif ($session->isActive()) {
-                $updates['status'] = $remainingConfirmed > 0 ? 'in_progress' : 'open';
+            if (! $authored) {
+                if ($session->needsShippingEpcis()) {
+                    $updates['status'] = $remainingConfirmed > 0 ? 'in_progress' : 'open';
+                    $updates['completed_at'] = null;
+                } elseif ($session->isActive()) {
+                    $updates['status'] = $remainingConfirmed > 0 ? 'in_progress' : 'open';
+                }
             }
 
             $session->forceFill($updates)->save();
@@ -92,5 +102,20 @@ final class UnconfirmOutboundShippingScanLine
         ]);
 
         return $result;
+    }
+
+    private function allowsPostAuthorRemoval(OutboundShippingSession $session): bool
+    {
+        $document = $session->epcisDocument;
+        if ($document === null && $session->epcis_document_id !== null) {
+            $session->load('epcisDocument');
+            $document = $session->epcisDocument;
+        }
+
+        if ($document === null) {
+            return false;
+        }
+
+        return in_array((string) $document->transmission_status, ['failed', 'skipped'], true);
     }
 }

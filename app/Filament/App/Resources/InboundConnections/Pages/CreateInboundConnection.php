@@ -2,6 +2,8 @@
 
 namespace App\Filament\App\Resources\InboundConnections\Pages;
 
+use App\Actions\Integrations\RegisterConnectionApprovalRequest;
+use App\Enums\ConnectionApprovalStatus;
 use App\Filament\App\Concerns\SyncsEpcisHubRouting;
 use App\Filament\App\Concerns\TransformsConnectionCredentials;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
@@ -28,6 +30,8 @@ class CreateInboundConnection extends CreateRecord
         $this->registerHubRouting = (bool) ($data['register_hub_routing'] ?? false);
         unset($data['register_hub_routing']);
 
+        $data['approval_status'] = ConnectionApprovalStatus::Pending->value;
+
         return $this->transformInboundCredentialPairs($data);
     }
 
@@ -41,5 +45,7 @@ class CreateInboundConnection extends CreateRecord
 
         $this->syncHubRouting($this->record, $this->registerHubRouting);
         $this->registerHubRouting = false;
+
+        app(RegisterConnectionApprovalRequest::class)->register($this->record->fresh());
     }
 }

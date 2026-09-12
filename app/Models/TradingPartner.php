@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\AtpLicenseExpirationStatus;
 use App\Enums\AtpVerificationSource;
+use App\Enums\CmoOwnership;
 use App\Enums\PartnerType;
 use App\Enums\SsccNumberRangeStatus;
 use App\Models\Concerns\DerivesSgln;
@@ -91,6 +93,10 @@ class TradingPartner extends Model
         'description',
         'gln',
         'sgln',
+        'duns_number',
+        'dea_number',
+        'hin_number',
+        'chemical_reg_number',
         'partner_type',
         'street_address',
         'street_address_2',
@@ -109,6 +115,9 @@ class TradingPartner extends Model
         'vrs_notify_email',
         'fax',
         'is_active',
+        'is_cmo',
+        'auto_receive_inbound',
+        'cmo_ownership',
         'atp_verified_at',
         'atp_verified_by',
         'atp_verification_source',
@@ -123,6 +132,9 @@ class TradingPartner extends Model
             'atp_verification_source' => AtpVerificationSource::class,
             'atp_verified_at' => 'datetime',
             'is_active' => 'boolean',
+            'is_cmo' => 'boolean',
+            'auto_receive_inbound' => 'boolean',
+            'cmo_ownership' => CmoOwnership::class,
             'altitude' => 'decimal:2',
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
@@ -132,6 +144,57 @@ class TradingPartner extends Model
     public function sites(): HasMany
     {
         return $this->hasMany(Site::class);
+    }
+
+    /**
+     * Licenses attached directly to the partner (company-level), as opposed to
+     * the site-scoped licenses reached through sites().
+     */
+    public function atpLicenses(): HasMany
+    {
+        return $this->hasMany(AtpLicense::class);
+    }
+
+    /**
+     * Worst-of roll-up across partner-level and site-level licenses:
+     * expired > expiring > pending > verified > unknown (no licenses on record).
+     */
+    public function atpStatus(): string
+    {
+        $licenses = AtpLicense::query()
+            ->where('trading_partner_id', $this->getKey())
+            ->orWhereIn('site_id', $this->sites()->pluck('id'))
+            ->where('is_active', true)
+            ->get();
+
+        if ($licenses->isEmpty()) {
+            return 'unknown';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Expired)) {
+            return 'expired';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Expiring)) {
+            return 'expiring';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->isPendingVerification())) {
+            return 'pending';
+        }
+
+        if ($licenses->contains(fn (AtpLicense $l): bool => $l->expirationStatus() === AtpLicenseExpirationStatus::Active)) {
+            return 'verified';
+        }
+
+        return 'unknown';
+    }
+
+    public function outboundConnections(): BelongsToMany
+    {
+        return $this->belongsToMany(OutboundConnection::class, 'outbound_connection_trading_partner')
+            ->using(OutboundConnectionTradingPartner::class)
+            ->withTimestamps();
     }
 
     public function ssccNumberRanges(): HasMany
@@ -201,7 +264,7 @@ class TradingPartner extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'gln', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
+            ->logOnly(['name', 'gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number', 'partner_type', 'is_active', 'atp_verified_at', 'atp_verification_source'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }

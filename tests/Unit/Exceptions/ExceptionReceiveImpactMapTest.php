@@ -30,4 +30,13 @@ class ExceptionReceiveImpactMapTest extends TestCase
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('MISSING_COMMISSIONING'));
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('NOT_A_REAL_CODE'));
     }
+
+    #[Test]
+    public function for_code_on_document_without_own_product_context_matches_for_code(): void
+    {
+        $this->assertSame(
+            ExceptionReceiveImpactMap::forCode('MISSING_DSCSA_STATEMENT'),
+            ExceptionReceiveImpactMap::forCodeOnDocument('MISSING_DSCSA_STATEMENT', null),
+        );
+    }
 }

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Epcis;
 
-use App\Actions\Epcis\EnsureEpcFromUri;
+use App\Actions\Epcis\MaterializeEpcKeys;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
@@ -37,7 +37,7 @@ class ResolveEpcFromScanTest extends TestCase
         try {
             $this->assertTrue(Schema::hasTable('epcs'));
 
-            $epc = app(EnsureEpcFromUri::class)->handle(self::SGTIN_URN);
+            $epc = $this->createEpcFromUri(self::SGTIN_URN);
             $this->epcIds[] = (int) $epc->id;
 
             $this->assertSame('sgtin', $epc->epc_type);
@@ -69,7 +69,7 @@ class ResolveEpcFromScanTest extends TestCase
         try {
             $this->assertTrue(Schema::hasTable('epcs'));
 
-            $epc = app(EnsureEpcFromUri::class)->handle(self::SSCC_URN);
+            $epc = $this->createEpcFromUri(self::SSCC_URN);
             $this->epcIds[] = (int) $epc->id;
 
             $this->assertSame('sscc', $epc->epc_type);
@@ -97,7 +97,7 @@ class ResolveEpcFromScanTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            $epc = app(EnsureEpcFromUri::class)->handle(self::SSCC_URN);
+            $epc = $this->createEpcFromUri(self::SSCC_URN);
             $this->epcIds[] = (int) $epc->id;
 
             $ai00 = (string) $epc->ai_00;
@@ -122,7 +122,7 @@ class ResolveEpcFromScanTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            $epc = app(EnsureEpcFromUri::class)->handle(self::SGTIN_URN);
+            $epc = $this->createEpcFromUri(self::SGTIN_URN);
             $this->epcIds[] = (int) $epc->id;
 
             EpcIlmd::query()->create([
@@ -145,6 +145,17 @@ class ResolveEpcFromScanTest extends TestCase
         } finally {
             $this->cleanupIntegrationFixtures();
         }
+    }
+
+    private function createEpcFromUri(string $uri): Epc
+    {
+        $attrs = app(MaterializeEpcKeys::class)->handle($uri);
+        $this->assertNotNull($attrs);
+
+        return Epc::query()->updateOrCreate(
+            ['epc_uri' => $attrs['epc_uri']],
+            $attrs,
+        );
     }
 
     private function initializeDemo2Tenant(): Tenant

@@ -28,6 +28,10 @@
                         <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
                     </div>
 
+                    @if ($this->readinessBadges() !== [])
+                        @include('filament.app.partials.outbound-ship-readiness', ['badges' => $this->readinessBadges()])
+                    @endif
+
                     @if ($session === null)
                     <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
                         <div class="text-lg font-semibold">Outbound not found</div>

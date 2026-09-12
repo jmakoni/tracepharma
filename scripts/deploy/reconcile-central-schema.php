@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 $connection = Schema::getConnection();
 $schema = $connection->getDatabaseName();
@@ -62,6 +61,9 @@ if ($hasTable('tenant_user_impersonation_tokens')) {
         }
         if (! $hasColumn('tenant_user_impersonation_tokens', 'admin_ip')) {
             $table->string('admin_ip', 45)->nullable();
+        }
+        if (! $hasColumn('tenant_user_impersonation_tokens', 'public_id')) {
+            $table->uuid('public_id')->nullable()->unique();
         }
     });
     echo "ensured impersonation audit columns\n";

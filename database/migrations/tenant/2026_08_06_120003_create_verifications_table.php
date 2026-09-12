@@ -20,8 +20,8 @@ return new class extends Migration
             $table->string('status', 32);
             $table->string('scanned_barcode', 512)->nullable();
             $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
-            if (Schema::hasTable('exception_cases')) {
-                $table->foreignId('exception_id')->nullable()->constrained('exception_cases')->nullOnDelete();
+            if (Schema::hasTable('exceptions')) {
+                $table->foreignId('exception_id')->nullable()->constrained('exceptions')->nullOnDelete();
             } elseif (Schema::hasTable('exceptions')) {
                 $table->foreignId('exception_id')->nullable()->constrained('exceptions')->nullOnDelete();
             } else {

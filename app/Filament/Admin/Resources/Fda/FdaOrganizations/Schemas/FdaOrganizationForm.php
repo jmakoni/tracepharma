@@ -29,7 +29,7 @@ class FdaOrganizationForm
                         ->native(false),
                     Toggle::make('is_active')->inline(false),
                     GlnRules::input()->unique(ignoreRecord: true),
-                    TextInput::make('duns_number')->label('DUNS')->maxLength(9),
+                    TextInput::make('duns_number')->label('DUNS')->maxLength(14),
                 ]),
             Section::make('Contact')
                 ->columns(2)

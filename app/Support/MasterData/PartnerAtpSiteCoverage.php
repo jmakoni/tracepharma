@@ -11,8 +11,9 @@ use Illuminate\Support\Collection;
 /**
  * Per-site ATP coverage for a trading partner.
  *
- * Manufacturer plants are authorized by DECRS. Every other site must be on the
- * WDD/3PL list and hold a license for the tenant receiving state.
+ * Manufacturer plants are authorized by DECRS. Manufacturer HQ is not monitored
+ * for WDD expiry. Every other site must be on the WDD/3PL list and hold a license
+ * matching the tenant organization jurisdictions (footprint or preferred receiving state).
  */
 final class PartnerAtpSiteCoverage
 {
@@ -103,14 +104,23 @@ final class PartnerAtpSiteCoverage
             return 'Manufacturer plant · all states';
         }
 
+        if ($status === SiteAtpReadinessStatus::NotMonitored) {
+            return 'Manufacturer HQ · ATP expiry not monitored';
+        }
+
         if ($source === null) {
-            return 'Must be on the WDD/3PL list for the receiving state';
+            return 'Must be on the WDD/3PL list for organization jurisdictions';
         }
 
         $tenantState = TenantReceivingState::resolve();
+        $label = AtpLicenseRelevance::evaluationJurisdictionsLabel();
 
-        if ($status === SiteAtpReadinessStatus::NoLicenses && $tenantState !== null) {
-            return 'Needs '.$tenantState.' WDD/3PL license';
+        if ($status === SiteAtpReadinessStatus::NoLicenses && $label !== 'organization jurisdictions') {
+            return 'Needs '.$label.' WDD/3PL license';
+        }
+
+        if ($status === SiteAtpReadinessStatus::NeedsReceivingState) {
+            return 'No organization jurisdictions configured';
         }
 
         return SiteAtpReadiness::badgeDescription($site);

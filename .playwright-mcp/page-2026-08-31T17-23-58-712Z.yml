@@ -1,0 +1,37 @@
+- generic [active] [ref=e1]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - img "TracePharma logo" [ref=e8]
+          - heading "Sign in" [level=1] [ref=e9]
+        - generic [ref=e10]:
+          - generic [ref=e13]:
+            - generic [ref=e17]:
+              - generic [ref=e20]:
+                - generic [ref=e24]:
+                  - text: Email address
+                  - superscript [ref=e25]: "*"
+                - generic [ref=e26]:
+                  - textbox "Email address*" [ref=e29]: owner@demo.test
+                  - paragraph [ref=e69]: These credentials do not match our records.
+              - generic [ref=e32]:
+                - generic [ref=e36]:
+                  - text: Password
+                  - superscript [ref=e37]: "*"
+                - generic [ref=e39]:
+                  - textbox "Password*" [ref=e41]: BellCheck2026
+                  - button "Show Password" [ref=e44] [cursor=pointer]
+              - generic [ref=e53]:
+                - checkbox "Remember me" [ref=e54]
+                - generic [ref=e55]: Remember me
+            - button "Sign In" [ref=e61] [cursor=pointer]
+          - button "Authenticate using Passkey" [ref=e65] [cursor=pointer]
+      - navigation "Legal documents" [ref=e66]:
+        - link "Terms of Service" [ref=e67] [cursor=pointer]:
+          - /url: https://tracepharma.io/tos
+        - text: ·
+        - link "Privacy Policy" [ref=e68] [cursor=pointer]:
+          - /url: https://tracepharma.io/privacy
+  - generic:
+    - status

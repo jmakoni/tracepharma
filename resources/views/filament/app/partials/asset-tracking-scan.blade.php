@@ -62,6 +62,9 @@
         @if ($this->trace && $this->trace['found'])
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="badge badge-outline">Traced {{ $this->trace['primary_identifier'] }}</span>
+                @if (! empty($this->trace['as_of']))
+                    <span class="badge badge-ghost">As of {{ $this->trace['as_of'] }}</span>
+                @endif
                 @if ($url = $this->findRecallUrl())
                     <a href="{{ $url }}" class="link link-hover">Find / Recall</a>
                 @endif

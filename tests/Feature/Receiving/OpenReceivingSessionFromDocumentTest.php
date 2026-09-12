@@ -25,10 +25,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class OpenReceivingSessionFromDocumentTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -99,9 +101,51 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
 
             $session->refresh();
             $this->assertSame(1, $session->confirmed_child_count);
+            $this->assertSame('in_progress', $session->status);
+            $this->assertNull($session->completed_at);
+
+            $completed = app(CompleteReceivingSession::class)->handle($session->fresh());
+            $this->assertSame('completed', $completed->status);
+            $this->assertNotNull($completed->completed_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function it_auto_completes_asn_when_tenant_setting_enabled(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->autoCompleteAsnOnReady();
+
+        try {
+            $this->prepareFixtureReceivingState();
+
+            // Set after prepare/ensure so a stale tenant save cannot wipe the flag.
+            TenantSettings::forTenant(tenant())
+                ->setAutoCompleteAsnOnReady(true)
+                ->saveQuietly();
+            $this->assertTrue(TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady());
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+
+            app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI);
+            $session->refresh();
+            $this->assertSame('in_progress', $session->status);
+
+            $childResult = app(ConfirmReceivingScan::class)->handle($session, self::SGTIN_URI);
+            $this->assertTrue($childResult['ok']);
+
+            $session->refresh();
             $this->assertSame('completed', $session->status);
             $this->assertNotNull($session->completed_at);
         } finally {
+            TenantSettings::forTenant(tenant() ?? $tenant)
+                ->setAutoCompleteAsnOnReady($prior)
+                ->saveQuietly();
             $this->cleanup();
         }
     }
@@ -134,12 +178,15 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
             $this->assertSame(1, $session->confirmed_parent_count);
             $this->assertSame(1, $session->expected_child_count);
             $this->assertSame(1, $session->confirmed_child_count);
-            $this->assertSame('completed', $session->status);
+            $this->assertSame('in_progress', $session->status);
             $this->assertSame(0, ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->id)
                 ->where('line_role', 'child')
                 ->where('status', 'expected')
                 ->count());
+
+            $completed = app(CompleteReceivingSession::class)->handle($session->fresh());
+            $this->assertSame('completed', $completed->status);
         } finally {
             $this->cleanup();
         }
@@ -409,6 +456,8 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
      */
     private function prepareFixtureReceivingState(array $epcUris = [self::SSCC_URI, self::SGTIN_URI]): void
     {
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+
         $epcIds = Epc::query()
             ->whereIn('epc_uri', $epcUris)
             ->pluck('id')
@@ -500,6 +549,8 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
     }

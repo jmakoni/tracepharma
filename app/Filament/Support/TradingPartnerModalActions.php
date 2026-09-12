@@ -8,7 +8,7 @@ use App\Models\TradingPartner;
 use App\Support\PartnerSlug;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\Width;
 use Illuminate\Database\Eloquent\Model;

@@ -56,10 +56,15 @@ final class AssertOrganizationSsccIdentity
                 );
             }
 
-            if ($prefix !== null && str_starts_with(substr($partnerGln, 0, 12), $prefix)) {
+            if (
+                $prefix !== null
+                && str_starts_with(substr($partnerGln, 0, 12), $prefix)
+                && ! TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
+            ) {
                 throw new OrganizationIdentityConflictException(
                     "Organization company prefix {$prefix} matches trading partner \"{$name}\" (GLN {$partnerGln}). "
-                    .'Set your own GS1 Company Prefix in Organization Settings before commissioning SSCCs.',
+                    .'Set your own GS1 Company Prefix in Organization Settings before commissioning SSCCs, '
+                    .'or enable "Allow assign partner GLNs from our prefix" when you allocate partner GLNs under your GCP.',
                     field: 'company_prefix',
                 );
             }

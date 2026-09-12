@@ -114,7 +114,6 @@ class CatalogMaintenanceScheduleTest extends TestCase
 
         Bus::assertDispatched(ImportFdaDatasetJob::class, fn (ImportFdaDatasetJob $job): bool => $job->command === 'tracepharma:import-fda-wdd-3pl'
             && ($job->parameters['--fresh-download'] ?? false) === true
-            && ($job->parameters['--promote'] ?? false) === true
             && $job->queue === 'fda');
     }
 
@@ -124,7 +123,6 @@ class CatalogMaintenanceScheduleTest extends TestCase
         Bus::fake();
         $job = new ImportFdaDatasetJob('tracepharma:import-fda-wdd-3pl', [
             '--fresh-download' => true,
-            '--promote' => true,
         ]);
         $this->assertTrue(app(UniqueLock::class)->acquire($job));
 

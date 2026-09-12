@@ -37,6 +37,8 @@ final class TenantRoleSeeder
         return match ($role) {
             TenantRole::Owner => Permissions::tenantAppPermissions(),
 
+            TenantRole::SupportEngineer => Permissions::tenantAppPermissions(),
+
             TenantRole::ReceivingTechnician => [
                 Permissions::NavReceive,
             ],
@@ -93,15 +95,20 @@ final class TenantRoleSeeder
             TenantRole::QuarantineAndReturnsSpecialist => [
                 Permissions::NavExceptions,
                 Permissions::NavShip,
+                Permissions::DecommissionMassApprove,
             ],
 
             TenantRole::PackagingLineOperator => [
                 Permissions::NavShip,
+                // Inbound EPCIS browse (Manufacturer / Prepackager). Floor Scan In still needs supportsReceiving().
+                Permissions::NavReceive,
             ],
             TenantRole::SerializationSystemsEngineer => [
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
                 Permissions::NavCompliance,
+                Permissions::DecommissionMassApprove,
+                Permissions::NavReceive,
             ],
             TenantRole::MasterDataAdministrator => [
                 Permissions::NavMasterData,
@@ -109,7 +116,20 @@ final class TenantRoleSeeder
             TenantRole::CmoIntegrationManager => [
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
+                Permissions::NavReceive,
             ],
+
+            // Roster + compliance control-plane (ATP readiness, health, matrix, alerts, affiliation settings).
+            TenantRole::BuyingGroupNetworkAdmin => [
+                Permissions::NavCompliance,
+                Permissions::UsersManage,
+            ],
+            // Read-only network visibility — same NavCompliance gate as AtpPartnerReadiness / health / matrix.
+            TenantRole::BuyingGroupAnalyst => [
+                Permissions::NavCompliance,
+            ],
+            // Dashboard-only: buying-group tenants have no floor ops; Owners assign access later.
+            TenantRole::BuyingGroupMember => [],
         };
     }
 
@@ -129,6 +149,12 @@ final class TenantRoleSeeder
                 $labels[] = 'Manage users';
             } elseif ($name === Permissions::SitesAccessAll) {
                 $labels[] = 'All sites';
+            } elseif ($name === Permissions::DecommissionMassApprove) {
+                $labels[] = Permissions::navLabel($name);
+            } elseif ($name === Permissions::IntegrationsBreakGlass) {
+                $labels[] = 'Integrations break-glass';
+            } elseif ($name === Permissions::ShipQuantityGateOverride) {
+                $labels[] = Permissions::navLabel($name);
             }
         }
 

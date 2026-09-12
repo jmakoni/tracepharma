@@ -32,7 +32,7 @@
             <a href="{{ route('marketing.compare.infinitrak') }}" class="tp-card group p-8 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pharmacy competitor</p>
                 <h2 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">InfiniTrak alternative</h2>
-                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Turnkey dispenser onboarding vs wholesaler-grade EPCIS depth, EPCIS 2.0 investigation, and buying-group scale.</p>
+                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Turnkey dispenser onboarding vs wholesaler-grade EPCIS depth, event-store investigation (1.2 GA; 2.0 capture + query-as-2.0), and buying-group scale.</p>
                 <span class="mt-4 inline-flex text-sm font-semibold text-tp-link">Read comparison →</span>
             </a>
             <a href="{{ route('marketing.compare.advasur') }}" class="tp-card group p-8 transition hover:border-tp-teal-500/40">
@@ -50,7 +50,7 @@
             <a href="{{ route('marketing.compare.tracktracerx') }}" class="tp-card group p-8 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pharmacy network</p>
                 <h2 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">TrackTraceRx alternative</h2>
-                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Network onboarding scale vs EPCIS 2.0 depth and buying-group infrastructure.</p>
+                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Network onboarding scale vs EPCIS 1.2 GA / 2.0 capture, query-as-2.0, and HTTPS subscriptions and buying-group infrastructure.</p>
                 <span class="mt-4 inline-flex text-sm font-semibold text-tp-link">Read comparison →</span>
             </a>
             <a href="{{ route('marketing.compare.optel') }}" class="tp-card group p-8 transition hover:border-tp-teal-500/40">

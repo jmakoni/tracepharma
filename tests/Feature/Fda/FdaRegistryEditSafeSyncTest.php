@@ -7,6 +7,8 @@ use App\Actions\OpenFda\ImportOpenFdaNdcProducts;
 use App\Enums\AdminRole;
 use App\Enums\FacilityType;
 use App\Enums\PartnerType;
+use App\Filament\Admin\Resources\Fda\FdaEstablishments\FdaEstablishmentResource;
+use App\Filament\Admin\Resources\Fda\FdaWddFacilities\FdaWddFacilityResource;
 use App\Filament\Admin\Support\ViewOnlyFdaRegistryResource;
 use App\Models\Admin;
 use App\Models\Fda\FdaEstablishment;
@@ -16,10 +18,10 @@ use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\Fda\FdaWddLicense;
+use App\Support\Auth\AdminRoleSeeder;
 use App\Support\Fda\AddressFingerprint;
 use App\Support\Fda\CompanyNameNormalizer;
 use App\Support\Fda\FdaDecrsDataset;
-use App\Support\Auth\AdminRoleSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -276,6 +278,70 @@ class FdaRegistryEditSafeSyncTest extends TestCase
         $this->assertTrue($resource::canEdit(new FdaOrganization));
         $this->assertFalse($resource::canCreate());
         $this->assertFalse($resource::canDelete(new FdaOrganization));
+    }
+
+    #[Test]
+    public function establishment_and_wdd_can_create_only_with_catalog_manage(): void
+    {
+        app(AdminRoleSeeder::class)->seed();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $platform = Admin::factory()->create();
+        $platform->assignRole(AdminRole::PlatformAdmin->value);
+
+        $support = Admin::factory()->create();
+        $support->assignRole(AdminRole::Support->value);
+
+        $this->actingAs($platform, 'admin');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $this->assertTrue(FdaEstablishmentResource::canCreate());
+        $this->assertTrue(FdaWddFacilityResource::canCreate());
+
+        $this->actingAs($support, 'admin');
+
+        $this->assertFalse(FdaEstablishmentResource::canCreate());
+        $this->assertFalse(FdaWddFacilityResource::canCreate());
+    }
+
+    #[Test]
+    public function fill_from_fda_does_not_overwrite_frozen_dea_or_hin(): void
+    {
+        $org = $this->organization();
+        $establishment = FdaEstablishment::query()->create([
+            'fda_organization_id' => $org->id,
+            'firm_name' => 'DEA Freeze Plant '.$this->suffix(),
+            'name' => 'DEA Freeze Plant '.$this->suffix(),
+            'dea_number' => 'RA1234567',
+            'hin_number' => 'HIN123456',
+            'street_address' => '9 Freeze St',
+            'city' => 'Austin',
+            'state_province' => 'TX',
+            'postal_code' => '78701',
+            'country_code' => 'US',
+            'address_fingerprint' => AddressFingerprint::make('9 Freeze St', 'Austin', 'TX', '78701', 'US'),
+            'is_active' => true,
+        ]);
+        $this->establishmentIds[] = (int) $establishment->id;
+
+        $establishment->dea_number = 'RB7654321';
+        $establishment->hin_number = 'HIN654321';
+        $establishment->save();
+
+        $this->assertContains('dea_number', $establishment->fresh()->manuallyEditedFields());
+        $this->assertContains('hin_number', $establishment->fresh()->manuallyEditedFields());
+
+        $establishment->fillFromFda([
+            'dea_number' => 'RC0000000',
+            'hin_number' => 'HIN000000',
+            'city' => 'Feed City',
+        ]);
+
+        $establishment->refresh();
+
+        $this->assertSame('RB7654321', $establishment->dea_number);
+        $this->assertSame('HIN654321', $establishment->hin_number);
+        $this->assertSame('Feed City', $establishment->city);
     }
 
     private function organization(): FdaOrganization

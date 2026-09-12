@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Enums\PartnerType;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Enums\TenantProfile;
+use App\Filament\App\Pages\ApiTokens;
 use App\Filament\App\Pages\OrganizationSettings;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
 use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
@@ -20,11 +21,15 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Models\User;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
+use App\Support\SanctumAbilities;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\PersonalAccessToken;
 use Throwable;
 
 /**
@@ -36,7 +41,7 @@ use Throwable;
 class TenantOnboarding
 {
     /**
-     * Readiness states that evidence a licence in force for the receiving state.
+     * Readiness states that evidence a licence in force for organization jurisdictions.
      *
      * @var list<SiteAtpReadinessStatus>
      */
@@ -119,7 +124,7 @@ class TenantOnboarding
      * Whether go-live may proceed on the ATP evidence for inbound product.
      *
      * Profiles that take possession of product from someone else have to show at least
-     * one upstream partner facility licensed for the receiving state before they mark
+     * one upstream partner facility licensed for organization jurisdictions before they mark
      * setup complete; a manufacturer shipping its own product, and a buying group that
      * never takes possession, have no upstream to evidence.
      */
@@ -164,7 +169,12 @@ class TenantOnboarding
     {
         $items = [
             $this->item('org_gln', 'Company GLN', filled($this->settings->gln()), $this->organizationHref()),
-            $this->item('receiving_state', 'Receiving / ATP evaluation state', filled($this->settings->receivingState()), $this->organizationHref()),
+            $this->item(
+                'receiving_state',
+                'ATP evaluation jurisdictions',
+                AtpLicenseRelevance::evaluationJurisdictionKeys() !== [],
+                $this->organizationHref(),
+            ),
             $this->item(
                 'default_receive_site',
                 'Default receive site with GLN',
@@ -179,7 +189,7 @@ class TenantOnboarding
             ),
             $this->item(
                 'atp_ready',
-                'Upstream partner ATP ready for receiving state',
+                'Upstream partner ATP ready for org jurisdictions',
                 $this->hasUpstreamPartnerAtpReady(),
                 $this->partnersHref(),
             ),
@@ -236,7 +246,12 @@ class TenantOnboarding
     {
         $items = [
             $this->item('org_gln', 'Company GLN', filled($this->settings->gln()), $this->organizationHref()),
-            $this->item('receiving_state', 'Receiving / ATP evaluation state', filled($this->settings->receivingState()), $this->organizationHref()),
+            $this->item(
+                'receiving_state',
+                'ATP evaluation jurisdictions',
+                AtpLicenseRelevance::evaluationJurisdictionKeys() !== [],
+                $this->organizationHref(),
+            ),
             $this->item(
                 'default_receive_site',
                 'Default receive site with GLN',
@@ -250,13 +265,13 @@ class TenantOnboarding
         if ($this->requiresUpstreamAtp()) {
             $items[] = $this->item(
                 'atp_ready',
-                'Upstream partner ATP ready for receiving state',
+                'Upstream partner ATP ready for org jurisdictions',
                 $this->hasUpstreamPartnerAtpReady(),
                 $this->partnersHref(),
             );
         }
 
-        return [
+        $items = [
             ...$items,
             $this->item(
                 'upstream_partner',
@@ -277,6 +292,17 @@ class TenantOnboarding
                 $this->receivingSessionsHref(),
             ),
         ];
+
+        if ($this->features->supportsVrs()) {
+            $items[] = $this->item(
+                'pms_dispense_check',
+                'PMS dispense-check API token',
+                $this->hasDispenseCheckToken(),
+                $this->apiTokensHref(),
+            );
+        }
+
+        return $items;
     }
 
     /**
@@ -316,7 +342,7 @@ class TenantOnboarding
 
     /**
      * Whether any upstream partner facility we could receive from is licensed for the
-     * receiving state.
+     * organization jurisdictions.
      *
      * Our own dock is deliberately not scored: DSCSA asks us to establish that the party
      * shipping to us is authorized, and our own licence says nothing about theirs. Only
@@ -488,6 +514,33 @@ class TenantOnboarding
     private function outboundShippingSessionsHref(): ?string
     {
         return $this->resourceIndexUrl(OutboundShippingSessionResource::class);
+    }
+
+    private function hasDispenseCheckToken(): bool
+    {
+        if (! $this->tenantDatabaseAvailable()) {
+            return false;
+        }
+
+        return PersonalAccessToken::query()
+            ->where('tokenable_type', User::class)
+            ->whereJsonContains('abilities', SanctumAbilities::VRS_DISPENSE_CHECK)
+            ->exists();
+    }
+
+    private function apiTokensHref(): ?string
+    {
+        try {
+            $page = ApiTokens::class;
+
+            if (! $page::canAccess()) {
+                return null;
+            }
+
+            return $page::getUrl(panel: 'app');
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**

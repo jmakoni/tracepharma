@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Epcis\PurgeTestEpcisDocuments;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -44,7 +45,7 @@ class PurgeTestEpcisCommand extends Command
         ];
 
         foreach ($tenants as $tenant) {
-            $result = $tenant->run(fn (): array => $purge->handle($dryRun));
+            $result = TenantRunner::run($tenant, fn (): array => $purge->handle($dryRun));
 
             $totals['tenants']++;
             $totals['documents_deleted'] += $result['documents_deleted'];

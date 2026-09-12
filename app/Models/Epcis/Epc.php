@@ -2,6 +2,7 @@
 
 namespace App\Models\Epcis;
 
+use App\Models\Principal;
 use App\Models\Product;
 use App\Support\Gs1\Sgtin;
 use App\Support\Gs1\Sscc;
@@ -31,6 +32,7 @@ class Epc extends Model
         'packaging_level',
         'packaging_type',
         'product_id',
+        'principal_id',
         'first_seen_at',
         'last_event_id',
     ];
@@ -94,6 +96,11 @@ class Epc extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function ilmd(): HasOne

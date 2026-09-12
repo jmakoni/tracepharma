@@ -112,46 +112,11 @@
             </div>
         </div>
 
-        @if ($verifications = $this->todaysVerifications())
-            <div class="card bg-base-100 shadow-xl">
-                <div class="card-body gap-3">
-                    <h2 class="card-title text-base">Today's verifications</h2>
-                    <ul class="divide-y divide-base-200">
-                        @foreach ($verifications as $verification)
-                            <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                                <div class="font-mono inline-flex flex-wrap items-center gap-1">
-                                    @php
-                                        $verifyScan = filled($verification->scanned_barcode)
-                                            ? (string) $verification->scanned_barcode
-                                            : ((filled($verification->gtin14) && filled($verification->serial))
-                                                ? '(01)'.$verification->gtin14.'(21)'.$verification->serial
-                                                : null);
-                                    @endphp
-                                    <x-copyable-identifier :value="$verification->gtin14" title="Copy GTIN">
-                                        @if ($verifyScan)
-                                            <a
-                                                href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $verifyScan]) }}"
-                                                class="tp-trace-link"
-                                            >{{ $verification->gtin14 }}</a>
-                                        @else
-                                            <span>{{ $verification->gtin14 }}</span>
-                                        @endif
-                                    </x-copyable-identifier>
-                                    <span>·</span>
-                                    <x-copyable-identifier :value="$verification->serial" title="Copy serial" />
-                                    @if ($verification->lot)
-                                        <span>·</span>
-                                        <x-copyable-identifier :value="$verification->lot" title="Copy lot" />
-                                    @endif
-                                </div>
-                                <span @class(['badge badge-outline', $this->statusBadgeClass($verification->status)])>
-                                    {{ $this->statusLabel($verification->status) }}
-                                </span>
-                            </li>
-                        @endforeach
-                    </ul>
-                </div>
-            </div>
-        @endif
+        <x-scanner-confirmed-table
+            :rows="$this->verificationTableRows()"
+            title="Today's verifications"
+            empty="No verifications yet today."
+            actions-variant="status"
+        />
     </div>
 </x-filament-panels::page>

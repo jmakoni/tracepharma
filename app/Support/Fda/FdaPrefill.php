@@ -8,6 +8,7 @@ use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\TradingPartner;
+use App\Support\Places\UsState;
 use BackedEnum;
 use Carbon\CarbonInterface;
 
@@ -27,11 +28,12 @@ final class FdaPrefill
             'doing_business_as' => $organization->doing_business_as,
             'description' => $organization->description,
             'gln' => $organization->gln,
+            'duns_number' => $organization->duns_number,
             'partner_type' => $organization->partner_type,
             'street_address' => $organization->street_address,
             'street_address_2' => $organization->street_address_2,
             'city' => $organization->city,
-            'state' => $organization->state_province,
+            'state' => UsState::normalize($organization->state_province) ?? $organization->state_province,
             'zipcode' => $organization->postal_code,
             'country_code' => $organization->country_code ?: 'US',
             'timezone' => $organization->timezone,
@@ -58,11 +60,15 @@ final class FdaPrefill
             'name' => $establishment->name ?: $establishment->firm_name,
             'code' => $establishment->code,
             'gln' => $establishment->gln,
+            'duns_number' => $establishment->duns_number,
+            'dea_number' => $establishment->dea_number,
+            'hin_number' => $establishment->hin_number,
+            'chemical_reg_number' => $establishment->chemical_reg_number,
             'is_headquarters' => $establishment->is_headquarters,
             'street_address' => $establishment->street_address,
             'street_address_2' => $establishment->street_address_2,
             'city' => $establishment->city,
-            'state' => $establishment->state_province,
+            'state' => UsState::normalize($establishment->state_province) ?? $establishment->state_province,
             'zipcode' => $establishment->postal_code,
             'country_code' => $establishment->country_code,
             'timezone' => $establishment->timezone,
@@ -85,11 +91,15 @@ final class FdaPrefill
             'name' => $facility->name ?: $facility->facility_name,
             'code' => $facility->code,
             'gln' => $facility->gln,
+            'duns_number' => $facility->duns_number,
+            'dea_number' => $facility->dea_number,
+            'hin_number' => $facility->hin_number,
+            'chemical_reg_number' => $facility->chemical_reg_number,
             'is_headquarters' => $facility->is_headquarters,
             'street_address' => $facility->street_address,
             'street_address_2' => $facility->street_address_2,
             'city' => $facility->city,
-            'state' => $facility->state_province,
+            'state' => UsState::normalize($facility->state_province) ?? $facility->state_province,
             'zipcode' => $facility->postal_code,
             'country_code' => $facility->country_code,
             'timezone' => $facility->timezone,
@@ -162,7 +172,7 @@ final class FdaPrefill
     {
         $merged = array_merge($data, $prefill);
 
-        foreach (['gln', 'sgln'] as $key) {
+        foreach (['gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number'] as $key) {
             if (blank($merged[$key] ?? null) && filled($data[$key] ?? null)) {
                 $merged[$key] = $data[$key];
             }
@@ -176,7 +186,7 @@ final class FdaPrefill
      */
     public static function isBlankIdentityValue(string $key, mixed $value): bool
     {
-        return in_array($key, ['gln', 'sgln'], true) && blank($value);
+        return in_array($key, ['gln', 'sgln', 'duns_number', 'dea_number', 'hin_number', 'chemical_reg_number'], true) && blank($value);
     }
 
     /**

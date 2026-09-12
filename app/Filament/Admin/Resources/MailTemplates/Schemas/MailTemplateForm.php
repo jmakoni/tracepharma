@@ -3,8 +3,8 @@
 namespace App\Filament\Admin\Resources\MailTemplates\Schemas;
 
 use App\Models\MailTemplate;
+use App\Support\Filament\ProseEditor;
 use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -46,11 +46,10 @@ class MailTemplateForm
                         ->helperText('Use {{ variable_name }} merge tags only. Blade is not rendered.'),
                     TextInput::make('greeting')
                         ->maxLength(255),
-                    Textarea::make('body')
-                        ->required()
-                        ->rows(12)
-                        ->columnSpanFull()
-                        ->helperText('One paragraph per line. Markdown **bold** is allowed. Merge tags are HTML-escaped.'),
+                    ProseEditor::mailBody(
+                        'body',
+                        fn (?MailTemplate $record): array => $record?->definition()->variables ?? [],
+                    )->required(),
                     TextInput::make('salutation')
                         ->maxLength(255),
                     TextInput::make('action_label')

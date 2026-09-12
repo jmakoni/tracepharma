@@ -14,6 +14,7 @@ use App\Services\Integrations\InboundPayloadResolver;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Epcis\EpcisApiSiteAccess;
+use App\Support\Epcis\EpcisTempFile;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantFeatures;
@@ -45,7 +46,7 @@ final class EpcisInboundController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
-        $path = $this->writeTempFile($resolved['content']);
+        $path = EpcisTempFile::write($resolved['content'], $resolved['originalName'] ?? $originalName, 'epcis_api_');
 
         try {
             $user = $request->user();
@@ -76,6 +77,7 @@ final class EpcisInboundController extends Controller
                     'received_via' => EpcisReceivedVia::Api,
                     'original_filename' => $this->normalizeFilename(
                         $resolved['originalName'] ?? $originalName,
+                        $resolved['content'],
                     ),
                     'dispatch' => true,
                 ]);
@@ -117,25 +119,13 @@ final class EpcisInboundController extends Controller
         ];
     }
 
-    private function writeTempFile(string $content): string
+    private function normalizeFilename(?string $originalFilename, string $content): string
     {
-        $tmp = tempnam(sys_get_temp_dir(), 'epcis_api_');
-        if ($tmp === false) {
-            throw new \RuntimeException('Unable to create temporary EPCIS file.');
-        }
+        $fallbackExt = EpcisTempFile::guessExtension($content, $originalFilename);
 
-        $path = $tmp.'.xml';
-        rename($tmp, $path);
-        file_put_contents($path, $content);
-
-        return $path;
-    }
-
-    private function normalizeFilename(?string $originalFilename): string
-    {
         return SafeFilename::forUpload(
             $originalFilename,
-            'inbound-api-'.now()->format('YmdHis').'.xml',
+            'inbound-api-'.now()->format('YmdHis').'.'.$fallbackExt,
         );
     }
 }

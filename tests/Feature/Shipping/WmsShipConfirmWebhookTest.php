@@ -93,10 +93,10 @@ class WmsShipConfirmWebhookTest extends TestCase
         try {
             config(['integrations.wms.api_key' => null]);
 
-            TenantSettings::forTenant($tenantA)->setWmsBridgeApiKey('tenant-a-key');
+            TenantSettings::forTenant($tenantA)->setWmsBridgeApiKey('tenant-a-wms-key');
             $tenantA->save();
 
-            TenantSettings::forTenant($tenantB)->setWmsBridgeApiKey('tenant-b-key');
+            TenantSettings::forTenant($tenantB)->setWmsBridgeApiKey('tenant-b-wms-key');
             $tenantB->save();
 
             tenancy()->end();
@@ -104,7 +104,7 @@ class WmsShipConfirmWebhookTest extends TestCase
             $this->postJson(
                 '/api/webhooks/wms/'.$tenantBId,
                 ['scans' => ['(01)30301164005162(21)ABC123']],
-                ['X-Wms-Api-Key' => 'tenant-a-key'],
+                ['X-Wms-Api-Key' => 'tenant-a-wms-key'],
             )->assertUnauthorized();
         } finally {
             $this->cleanup();
@@ -117,7 +117,7 @@ class WmsShipConfirmWebhookTest extends TestCase
         $tenant = $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
 
         try {
-            TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('tenant-only-key');
+            TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('tenant-only-wms-key');
             $tenant->save();
             $this->clearedTenantBridgeKey = true;
 
@@ -133,7 +133,7 @@ class WmsShipConfirmWebhookTest extends TestCase
             $authorized = $this->postJson(
                 '/api/webhooks/wms/'.self::DEMO2_TENANT_ID,
                 ['scans' => ['(01)30301164005162(21)ABC123']],
-                ['X-Wms-Api-Key' => 'tenant-only-key'],
+                ['X-Wms-Api-Key' => 'tenant-only-wms-key'],
             );
 
             $this->assertNotSame(401, $authorized->status());

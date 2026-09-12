@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\MasterData\DemoteLeakedTestOrganizationSites;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -31,7 +32,7 @@ class DemoteLeakedTestOrganizationSitesCommand extends Command
         ];
 
         foreach ($tenants as $tenant) {
-            $result = $tenant->run(fn (): array => $demote->handle());
+            $result = TenantRunner::run($tenant, fn (): array => $demote->handle());
 
             $totals['tenants']++;
             $totals['demoted'] += $result['demoted'];

@@ -335,8 +335,15 @@ final class SiteAccess
             return false;
         }
 
+        // Mirror canAccessShipFromSite: AccessAll may view/act on inbound files whose
+        // ship-to resolved to a partner facility (common on partner ASNs), not only
+        // organization-owned sites. Restricted users still require an assigned org site.
+        if ($user->can(Permissions::SitesAccessAll)) {
+            return true;
+        }
+
         if ($shipToSiteId === null) {
-            return $user->can(Permissions::SitesAccessAll);
+            return false;
         }
 
         return self::canAccessSite($user, $shipToSiteId);

@@ -1,0 +1,712 @@
+- generic [active] [ref=f100e1]:
+  - link "Skip to content" [ref=f100e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f100e4]:
+    - link [ref=f100e6] [cursor=pointer]:
+      - /url: https://demo2.internal.vatengi.com
+      - img "TracePharma logo" [ref=f100e7]
+    - list [ref=f100e8]:
+      - listitem "Dashboard" [ref=f100e9]:
+        - link [ref=f100e10] [cursor=pointer]:
+          - /url: https://demo2.internal.vatengi.com
+      - listitem [ref=f100e15] [cursor=pointer]:
+        - button "Operations" [ref=f100e16]
+      - listitem [ref=f100e22] [cursor=pointer]:
+        - button "Receiving" [ref=f100e23]
+      - listitem [ref=f100e29] [cursor=pointer]:
+        - button "Ship" [ref=f100e30]
+      - listitem [ref=f100e36] [cursor=pointer]:
+        - button "Compliance" [ref=f100e37]
+      - listitem [ref=f100e43] [cursor=pointer]:
+        - button "Master Data" [ref=f100e44]
+      - listitem [ref=f100e50] [cursor=pointer]:
+        - button "Integrations" [ref=f100e51]
+      - listitem [ref=f100e57] [cursor=pointer]:
+        - button "Settings" [ref=f100e58]
+      - listitem [ref=f100e64] [cursor=pointer]:
+        - button "Audit" [ref=f100e65]
+    - generic [ref=f100e69]:
+      - generic [ref=f100e72]:
+        - generic [ref=f100e73]: Global search
+        - searchbox "Global search" [ref=f100e79]
+      - 'button "Current site: Compliance Site A PbHiv" [ref=f100e83] [cursor=pointer]'
+      - button "User menu" [ref=f100e88] [cursor=pointer]:
+        - img "Avatar of Demo Owner" [ref=f100e89]
+    - button "Help" [ref=f100e91] [cursor=pointer]
+  - generic [ref=f100e94]:
+    - generic [ref=f100e95]:
+      - navigation "Sidebar navigation" [ref=f100e96]:
+        - list [ref=f100e97]:
+          - listitem [ref=f100e98]:
+            - list [ref=f100e99]:
+              - listitem "Dashboard" [ref=f100e100]:
+                - link [ref=f100e101] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com
+          - listitem [ref=f100e105]:
+            - generic [ref=f100e106] [cursor=pointer]:
+              - generic [ref=f100e107]: Operations
+              - button "Operations" [expanded] [ref=f100e108]
+            - list [ref=f100e111]:
+              - listitem [ref=f100e112]:
+                - link "Operations Hub" [ref=f100e113] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/operations-hub
+              - listitem [ref=f100e117]:
+                - link "Asset Tracking" [ref=f100e118] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/asset-tracking
+              - listitem [ref=f100e123]:
+                - link "Unpack" [ref=f100e124] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/unpack-workstation
+              - listitem [ref=f100e128]:
+                - link "Unpacked items" [ref=f100e129] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/unpacked-items
+              - listitem [ref=f100e133]:
+                - link "On-hand list" [ref=f100e134] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/on-hand
+              - listitem [ref=f100e138]:
+                - link "Pack" [ref=f100e139] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/pack-workstation
+              - listitem [ref=f100e143]:
+                - link "Break & pack" [ref=f100e144] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/break-pack-workstation
+              - listitem [ref=f100e148]:
+                - link "Transfer" [ref=f100e149] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/transferring-sessions
+              - listitem [ref=f100e153]:
+                - link "Commission-all" [ref=f100e154] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/commission-all-workstation
+              - listitem [ref=f100e158]:
+                - link "Decommission" [ref=f100e159] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/decommission-workstation
+              - listitem [ref=f100e163]:
+                - link "Return" [ref=f100e164] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/return-workstation
+              - listitem [ref=f100e168]:
+                - link "Saleable return" [ref=f100e169] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/saleable-return
+              - listitem [ref=f100e173]:
+                - link "SSCC Labels" [ref=f100e174] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sscc-labels
+              - listitem [ref=f100e179]:
+                - link "EPCIS Jobs" [ref=f100e180] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/epcis-jobs
+          - listitem [ref=f100e184]:
+            - generic [ref=f100e185] [cursor=pointer]:
+              - generic [ref=f100e186]: Receiving
+              - button "Receiving" [expanded] [ref=f100e187]
+            - list [ref=f100e190]:
+              - listitem [ref=f100e191]:
+                - link "Receive" [ref=f100e192] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/receiving-sessions
+              - listitem [ref=f100e196]:
+                - link "Scan In" [ref=f100e197] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/scan-in
+              - listitem [ref=f100e201]:
+                - link "Receiving issues" [ref=f100e202] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/receiving-issues
+              - listitem [ref=f100e206]:
+                - link "Exceptions" [ref=f100e207] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/exceptions
+              - listitem [ref=f100e211]:
+                - link "Investigator SLA" [ref=f100e212] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/investigator-sla
+              - listitem [ref=f100e216]:
+                - link "Inbound EPCIS" [ref=f100e217] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inbound-epcis
+              - listitem [ref=f100e221]:
+                - link "Dispense / verify" [ref=f100e222] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/verify-product
+              - listitem [ref=f100e226]:
+                - link "VRS directory" [ref=f100e227] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/vrs-directory
+              - listitem [ref=f100e231]:
+                - link "Verification history" [ref=f100e232] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/verifications
+          - listitem [ref=f100e236]:
+            - generic [ref=f100e237] [cursor=pointer]:
+              - generic [ref=f100e238]: Ship
+              - button "Ship" [expanded] [ref=f100e239]
+            - list [ref=f100e242]:
+              - listitem [ref=f100e243]:
+                - link "Ship Order" [ref=f100e244] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-shipping-sessions
+              - listitem [ref=f100e248]:
+                - link "Scan Out" [ref=f100e249] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/scan-out
+              - listitem [ref=f100e253]:
+                - link "Outbound EPCIS" [ref=f100e254] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-epcis
+          - listitem [ref=f100e258]:
+            - generic [ref=f100e259] [cursor=pointer]:
+              - generic [ref=f100e260]: Compliance
+              - button "Compliance" [expanded] [ref=f100e261]
+            - list [ref=f100e264]:
+              - listitem [ref=f100e265]:
+                - link "Alert center" [ref=f100e266] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/compliance-alert-center
+              - listitem [ref=f100e270]:
+                - link "Analytics" [ref=f100e271] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/analytics
+              - listitem [ref=f100e275]:
+                - link "HQ rollup" [ref=f100e276] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/hq-rollup
+              - listitem [ref=f100e280]:
+                - link "Leadership DSCSA pack" [ref=f100e281] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/leadership-dscsa-pack
+              - listitem [ref=f100e285]:
+                - link "Quarantine" [ref=f100e286] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/quarantine
+              - listitem [ref=f100e290]:
+                - link "Expiry worklist" [ref=f100e291] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/expiry-worklist
+              - listitem [ref=f100e295]:
+                - link "Recall closure" [ref=f100e296] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/recall-closure-dashboard
+              - listitem [ref=f100e300]:
+                - link "Compliance reports" [ref=f100e301] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/compliance-reports
+              - listitem [ref=f100e305]:
+                - link "Inspection day" [ref=f100e306] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inspection-day-readiness-page
+              - listitem [ref=f100e310]:
+                - link "Inspection pack" [ref=f100e311] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inspection-pack
+              - listitem [ref=f100e315]:
+                - link "SOP library" [ref=f100e316] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sop-library
+              - listitem [ref=f100e320]:
+                - link "ATP readiness" [ref=f100e321] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/atp-partner-readiness
+              - listitem [ref=f100e325]:
+                - link "FDA 3911 reports" [ref=f100e326] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/fda-3911-reports
+              - listitem [ref=f100e330]:
+                - link "Partner data quality" [ref=f100e331] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/partner-ingest-quality
+              - listitem [ref=f100e335]:
+                - link "Site recall" [ref=f100e336] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/site-recall
+              - listitem [ref=f100e340]:
+                - link "Tracing requests" [ref=f100e341] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/tracing-requests
+          - listitem [ref=f100e345]:
+            - generic [ref=f100e346] [cursor=pointer]:
+              - generic [ref=f100e347]: Master Data
+              - button "Master Data" [expanded] [ref=f100e348]
+            - list [ref=f100e351]:
+              - listitem [ref=f100e352]:
+                - link "Trading Partners" [ref=f100e353] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/trading-partners
+              - listitem [ref=f100e357]:
+                - link "Invite partner" [ref=f100e358] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/invite-partner
+              - listitem [ref=f100e362]:
+                - link "Customer portal" [ref=f100e363] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/customer-portal
+              - listitem [ref=f100e367]:
+                - link "FDA Products" [ref=f100e368] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/fda-products
+              - listitem [ref=f100e372]:
+                - link "Products" [ref=f100e373] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/products
+              - listitem [ref=f100e377]:
+                - link "Read Points" [ref=f100e378] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/read-points
+              - listitem [ref=f100e383]:
+                - link "Devices" [ref=f100e384] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/devices
+          - listitem [ref=f100e388]:
+            - generic [ref=f100e389] [cursor=pointer]:
+              - generic [ref=f100e390]: Integrations
+              - button "Integrations" [expanded] [ref=f100e391]
+            - list [ref=f100e394]:
+              - listitem [ref=f100e395]:
+                - link "Partner onboarding" [ref=f100e396] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/partner-onboarding-kit-page
+              - listitem [ref=f100e400]:
+                - link "Integration health" [ref=f100e401] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/integration-health
+              - listitem [ref=f100e405]:
+                - link "Inbound Connections" [ref=f100e406] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/inbound-connections
+              - listitem [ref=f100e410]:
+                - link "Outbound Connections" [ref=f100e411] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/outbound-connections
+              - listitem [ref=f100e415]:
+                - link "EPCIS Subscriptions" [ref=f100e416] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/epcis-subscriptions
+              - listitem [ref=f100e420]:
+                - link "API Tokens" [ref=f100e421] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/api-tokens
+              - listitem [ref=f100e425]:
+                - link "PMS integration" [ref=f100e426] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/pms-integration-checklist-page
+              - listitem [ref=f100e430]:
+                - link "Wholesaler / WMS pack" [ref=f100e431] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/wholesaler-integration-pack-page
+          - listitem [ref=f100e435]:
+            - generic [ref=f100e436] [cursor=pointer]:
+              - generic [ref=f100e437]: Settings
+              - button "Settings" [expanded] [ref=f100e438]
+            - list [ref=f100e441]:
+              - listitem [ref=f100e442]:
+                - link "Settings" [ref=f100e443] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/settings-hub
+              - listitem [ref=f100e448]:
+                - link "Organization" [ref=f100e449] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/organization-settings
+              - listitem [ref=f100e453]:
+                - link "My dashboard" [ref=f100e454] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/dashboard-preferences
+              - listitem [ref=f100e458]:
+                - link "Users" [ref=f100e459] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/users
+              - listitem [ref=f100e463]:
+                - link "Label Printers" [ref=f100e464] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/label-printers
+              - listitem [ref=f100e468]:
+                - link "SSCC Number Ranges" [ref=f100e469] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/sscc-number-ranges
+          - listitem [ref=f100e473]:
+            - generic [ref=f100e474] [cursor=pointer]:
+              - generic [ref=f100e475]: Audit
+              - button "Audit" [expanded] [ref=f100e476]
+            - list [ref=f100e479]:
+              - listitem [ref=f100e480]:
+                - link "Activity Log" [ref=f100e481] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/activity-log
+      - listitem [ref=f100e485]:
+        - list [ref=f100e486]:
+          - listitem [ref=f100e487]:
+            - link "Documentation" [ref=f100e488] [cursor=pointer]:
+              - /url: https://demo2.internal.vatengi.com/help
+    - main [ref=f100e493]:
+      - generic [ref=f100e495]:
+        - heading "Quarantine workstation" [level=1] [ref=f100e498]
+        - generic [ref=f100e500]:
+          - generic [ref=f100e502]:
+            - heading "Suspect product SOP" [level=2] [ref=f100e503]
+            - list [ref=f100e504]:
+              - listitem [ref=f100e505]: Isolate the physical product from sellable inventory immediately.
+              - listitem [ref=f100e506]: Do not dispense or ship until the investigation is resolved or cleared.
+              - listitem [ref=f100e507]: Document the serial / lot on the linked exception.
+              - listitem [ref=f100e508]: Contact the manufacturer or wholesaler when verification failed or a recall is active.
+          - generic [ref=f100e509]:
+            - generic [ref=f100e510]:
+              - generic [ref=f100e511]:
+                - heading "Open holds" [level=2] [ref=f100e512]
+                - paragraph [ref=f100e513]: QuarantineHold records still open. Release only after QA clears the hold.
+              - generic [ref=f100e514]:
+                - generic [ref=f100e515]:
+                  - generic [ref=f100e516]: Site
+                  - combobox "Site" [ref=f100e518]:
+                    - option "All accessible sites" [selected]
+                    - option "Collect Gln Ship 7kBeVO (0366152491326)"
+                    - option "Collect Gln Ship FN6vBg (0366158259913)"
+                    - option "Collect Gln Ship hCOFxU (0366152640861)"
+                    - option "Collect Gln Ship pXgkIv (0366156338184)"
+                    - option "Collect Gln Ship snUbXr (0366154493465)"
+                    - option "Collect Gln Ship yaWtMq (0366154877098)"
+                    - option "Commission Site yt2FQD (0399991459226)"
+                    - option "Context Links From oJqhbC (0321848300221)"
+                    - option "Context Links To W6hkqG (0321466672038)"
+                    - option "Debug Ship Site (0301162980571)"
+                    - option "Debug Site (0366159000123)"
+                    - option "Delete Transfer From o1Lxuu (0366159677600)"
+                    - option "Delete Transfer From sGPivl (0366159068048)"
+                    - option "Delete Transfer To kn5ayR (0366159525178)"
+                    - option "Delete Transfer To yYBSFH (0366159441308)"
+                    - option "Demo Organization HQ (0366159000869)"
+                    - option "Hub Transfer From fZQbtc (0366158834356)"
+                    - option "Hub Transfer To K3ZiVU (0366157689353)"
+                    - option "Pack Workstation Commission Site (0399991021775)"
+                    - option "Pack Workstation Commission Site (0399991270159)"
+                    - option "Pack Workstation Commission Site (0399991953748)"
+                    - option "Pack Workstation Commission Site (0399991659800)"
+                    - option "Repack Site iKMjxM (0399991801216)"
+                    - option "Repack Site N5SVuV (0399991276700)"
+                    - option "Scan Out Site tvMIey (0366151001205)"
+                    - option "Scan-first Receive Site 8Lrlkl (0366152151138)"
+                    - option "ScanFirst Receive A 64fL5R (0931174172487)"
+                    - option "ScanFirst Receive A v0tUfW (0931174621862)"
+                    - option "ScanFirst Receive B 6WZhLY (0931175569156)"
+                    - option "ScanFirst Receive B IOvYo9 (0931172853449)"
+                    - option "ScanFirst Transfer From s8pNn3 (0366157186593)"
+                    - option "ScanFirst Transfer From Y9DyYp (0366157717377)"
+                    - option "ScanFirst Transfer To EQGWYq (0366150475168)"
+                    - option "ScanFirst Transfer To ySVA1A (0366150548565)"
+                    - option "Secondary Ship Gate Site (0366157900687)"
+                    - option "Ship Site 0pb1TS (0931174365148)"
+                    - option "Ship Site 0PMmkA (0931174017948)"
+                    - option "Ship Site 4dnfGp (0931171407032)"
+                    - option "Ship Site 7Nsynp (0931179808541)"
+                    - option "Ship Site 8AmUJ8 (0931172917301)"
+                    - option "Ship Site ChBF4N (0931171341350)"
+                    - option "Ship Site fDkGBe (0931173199966)"
+                    - option "Ship Site gAnAmB (0931177338415)"
+                    - option "Ship Site gWio76 (0931174269514)"
+                    - option "Ship Site MVwuOr (0931179763253)"
+                    - option "Ship Site nwYfBY (0931171023553)"
+                    - option "Ship Site oKjA8q (0931177847566)"
+                    - option "Ship Site oNrvMu (0931170386307)"
+                    - option "Ship Site pkLpVQ (0931179017547)"
+                    - option "Ship Site yxZQHJ (0931174215825)"
+                    - option "Transfer From AbYImd (0399991230023)"
+                    - option "Transfer From uxACOO (0366153941417)"
+                    - option "Transfer From xVEAd2 (0399991190020)"
+                    - option "Transfer Receive Reopen From ljYRTu (0366159267677)"
+                    - option "Transfer Receive Reopen To 8bK2AR (0366159714197)"
+                    - option "Transfer To 3aCx3L (0399991637235)"
+                    - option "Transfer To 671ahF (0399991399768)"
+                    - option "Transfer To MIkZNV (0366157792268)"
+                    - option "Unconfirm Transfer From jJRDzc (0366153503943)"
+                    - option "Unconfirm Transfer From NVrkSs (0366155056508)"
+                    - option "Unconfirm Transfer To EmIpip (0366156922932)"
+                    - option "Unconfirm Transfer To u7ocOH (0366158505034)"
+                    - option "WMS Bridge Ship Site (0366159000303)"
+                - generic [ref=f100e519]:
+                  - generic [ref=f100e520]: Filter
+                  - searchbox "Filter" [ref=f100e522]
+            - generic [ref=f100e523]:
+              - article [ref=f100e524]:
+                - generic [ref=f100e525]:
+                  - generic [ref=f100e526]:
+                    - generic [ref=f100e527]: GTIN 30301169572362
+                    - generic [ref=f100e528]: SERIAL OFF95723658
+                    - generic [ref=f100e529]: warning
+                  - paragraph [ref=f100e530]: Block off-manifest copy
+                  - paragraph [ref=f100e531]: Opened 2026-08-22 19:26:19
+                  - button "Release hold" [ref=f100e533] [cursor=pointer]
+              - article [ref=f100e536]:
+                - generic [ref=f100e537]:
+                  - generic [ref=f100e538]:
+                    - generic [ref=f100e539]: GTIN 30301162084299
+                    - generic [ref=f100e540]: SERIAL OFF20842988
+                    - generic [ref=f100e541]: warning
+                  - paragraph [ref=f100e542]: Block off-manifest copy
+                  - paragraph [ref=f100e543]: Opened 2026-08-16 23:28:36
+                  - button "Release hold" [ref=f100e545] [cursor=pointer]
+              - article [ref=f100e548]:
+                - generic [ref=f100e549]:
+                  - generic [ref=f100e550]:
+                    - generic [ref=f100e551]: GTIN 30301164484479
+                    - generic [ref=f100e552]: SERIAL OFF44844798
+                    - generic [ref=f100e553]: warning
+                  - paragraph [ref=f100e554]: Block off-manifest copy
+                  - paragraph [ref=f100e555]: Opened 2026-08-16 22:34:32
+                  - button "Release hold" [ref=f100e557] [cursor=pointer]
+              - article [ref=f100e560]:
+                - generic [ref=f100e561]:
+                  - generic [ref=f100e562]:
+                    - generic [ref=f100e563]: GTIN 30301162872216
+                    - generic [ref=f100e564]: SERIAL TR28722100
+                    - generic [ref=f100e565]: error
+                  - paragraph [ref=f100e566]: Block transfer receive complete during propagate
+                  - paragraph [ref=f100e567]: "Opened 2026-08-16 22:08:15 · Exception: Quarantine · Block transfer receive complete during propagate"
+                  - generic [ref=f100e568]:
+                    - button "Release hold" [ref=f100e569] [cursor=pointer]
+                    - link "View exception" [ref=f100e572] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/825
+              - article [ref=f100e576]:
+                - generic [ref=f100e577]:
+                  - generic [ref=f100e578]:
+                    - generic [ref=f100e579]: GTIN 30301167440335
+                    - generic [ref=f100e580]: SERIAL TR74403349
+                    - generic [ref=f100e581]: error
+                  - paragraph [ref=f100e582]: Block transfer receive under lock
+                  - paragraph [ref=f100e583]: "Opened 2026-08-16 15:03:42 · Exception: Quarantine · Block transfer receive under lock"
+                  - generic [ref=f100e584]:
+                    - button "Release hold" [ref=f100e585] [cursor=pointer]
+                    - link "View exception" [ref=f100e588] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/415
+              - article [ref=f100e592]:
+                - generic [ref=f100e593]:
+                  - generic [ref=f100e594]:
+                    - generic [ref=f100e595]: GTIN 00301162001162
+                    - generic [ref=f100e596]: SERIAL w2qsitebe0bp
+                    - generic [ref=f100e597]: warning
+                  - paragraph [ref=f100e598]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e599]: "Opened 2026-08-16 06:19:52 · Exception: Wave2 case zsic"
+                  - generic [ref=f100e600]:
+                    - button "Release hold" [ref=f100e601] [cursor=pointer]
+                    - link "View exception" [ref=f100e604] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/373
+              - article [ref=f100e608]:
+                - generic [ref=f100e609]:
+                  - generic [ref=f100e610]:
+                    - generic [ref=f100e611]: GTIN 00301162001162
+                    - generic [ref=f100e612]: SERIAL w2qsiteablmx
+                    - generic [ref=f100e613]: warning
+                  - paragraph [ref=f100e614]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e615]: "Opened 2026-08-16 06:19:52 · Exception: Wave2 case SyLi"
+                  - generic [ref=f100e616]:
+                    - button "Release hold" [ref=f100e617] [cursor=pointer]
+                    - link "View exception" [ref=f100e620] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/372
+              - article [ref=f100e624]:
+                - generic [ref=f100e625]:
+                  - generic [ref=f100e626]:
+                    - generic [ref=f100e627]: GTIN 00301162001162
+                    - generic [ref=f100e628]: SERIAL w2qsitebkd2h
+                    - generic [ref=f100e629]: warning
+                  - paragraph [ref=f100e630]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e631]: "Opened 2026-08-16 06:07:19 · Exception: Wave2 case oYjI"
+                  - generic [ref=f100e632]:
+                    - button "Release hold" [ref=f100e633] [cursor=pointer]
+                    - link "View exception" [ref=f100e636] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/369
+              - article [ref=f100e640]:
+                - generic [ref=f100e641]:
+                  - generic [ref=f100e642]:
+                    - generic [ref=f100e643]: GTIN 00301162001162
+                    - generic [ref=f100e644]: SERIAL w2qsiteagsr9
+                    - generic [ref=f100e645]: warning
+                  - paragraph [ref=f100e646]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e647]: "Opened 2026-08-16 06:07:19 · Exception: Wave2 case ulf7"
+                  - generic [ref=f100e648]:
+                    - button "Release hold" [ref=f100e649] [cursor=pointer]
+                    - link "View exception" [ref=f100e652] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/368
+              - article [ref=f100e656]:
+                - generic [ref=f100e657]:
+                  - generic [ref=f100e658]:
+                    - generic [ref=f100e659]: GTIN 00301162001162
+                    - generic [ref=f100e660]: SERIAL w2qsitebymni
+                    - generic [ref=f100e661]: warning
+                  - paragraph [ref=f100e662]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e663]: "Opened 2026-08-16 06:01:05 · Exception: Wave2 case UXLH"
+                  - generic [ref=f100e664]:
+                    - button "Release hold" [ref=f100e665] [cursor=pointer]
+                    - link "View exception" [ref=f100e668] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/347
+              - article [ref=f100e672]:
+                - generic [ref=f100e673]:
+                  - generic [ref=f100e674]:
+                    - generic [ref=f100e675]: GTIN 00301162001162
+                    - generic [ref=f100e676]: SERIAL w2qsiteaeabm
+                    - generic [ref=f100e677]: warning
+                  - paragraph [ref=f100e678]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e679]: "Opened 2026-08-16 06:01:05 · Exception: Wave2 case i894"
+                  - generic [ref=f100e680]:
+                    - button "Release hold" [ref=f100e681] [cursor=pointer]
+                    - link "View exception" [ref=f100e684] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/346
+              - article [ref=f100e688]:
+                - generic [ref=f100e689]:
+                  - generic [ref=f100e690]:
+                    - generic [ref=f100e691]: GTIN 00301162001162
+                    - generic [ref=f100e692]: SERIAL w2qsiteboboz
+                    - generic [ref=f100e693]: warning
+                  - paragraph [ref=f100e694]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e695]: "Opened 2026-08-16 06:00:24 · Exception: Wave2 case vdYS"
+                  - generic [ref=f100e696]:
+                    - button "Release hold" [ref=f100e697] [cursor=pointer]
+                    - link "View exception" [ref=f100e700] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/335
+              - article [ref=f100e704]:
+                - generic [ref=f100e705]:
+                  - generic [ref=f100e706]:
+                    - generic [ref=f100e707]: GTIN 00301162001162
+                    - generic [ref=f100e708]: SERIAL w2qsiteajwzj
+                    - generic [ref=f100e709]: warning
+                  - paragraph [ref=f100e710]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e711]: "Opened 2026-08-16 06:00:24 · Exception: Wave2 case rnYH"
+                  - generic [ref=f100e712]:
+                    - button "Release hold" [ref=f100e713] [cursor=pointer]
+                    - link "View exception" [ref=f100e716] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/334
+              - article [ref=f100e720]:
+                - generic [ref=f100e721]:
+                  - generic [ref=f100e722]:
+                    - generic [ref=f100e723]: GTIN 00301162001162
+                    - generic [ref=f100e724]: SERIAL w2qsiteb7mgv
+                    - generic [ref=f100e725]: warning
+                  - paragraph [ref=f100e726]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e727]: "Opened 2026-08-16 05:57:55 · Exception: Wave2 case n3z9"
+                  - generic [ref=f100e728]:
+                    - button "Release hold" [ref=f100e729] [cursor=pointer]
+                    - link "View exception" [ref=f100e732] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/320
+              - article [ref=f100e736]:
+                - generic [ref=f100e737]:
+                  - generic [ref=f100e738]:
+                    - generic [ref=f100e739]: GTIN 00301162001162
+                    - generic [ref=f100e740]: SERIAL w2qsitea2bky
+                    - generic [ref=f100e741]: warning
+                  - paragraph [ref=f100e742]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e743]: "Opened 2026-08-16 05:57:55 · Exception: Wave2 case WY8y"
+                  - generic [ref=f100e744]:
+                    - button "Release hold" [ref=f100e745] [cursor=pointer]
+                    - link "View exception" [ref=f100e748] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/319
+              - article [ref=f100e752]:
+                - generic [ref=f100e753]:
+                  - generic [ref=f100e754]:
+                    - generic [ref=f100e755]: GTIN 00301162001162
+                    - generic [ref=f100e756]: SERIAL w2qsitebrve7
+                    - generic [ref=f100e757]: warning
+                  - paragraph [ref=f100e758]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e759]: "Opened 2026-08-16 05:57:24 · Exception: Wave2 case rTwx"
+                  - generic [ref=f100e760]:
+                    - button "Release hold" [ref=f100e761] [cursor=pointer]
+                    - link "View exception" [ref=f100e764] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/308
+              - article [ref=f100e768]:
+                - generic [ref=f100e769]:
+                  - generic [ref=f100e770]:
+                    - generic [ref=f100e771]: GTIN 00301162001162
+                    - generic [ref=f100e772]: SERIAL w2qsitean8y9
+                    - generic [ref=f100e773]: warning
+                  - paragraph [ref=f100e774]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e775]: "Opened 2026-08-16 05:57:24 · Exception: Wave2 case fNMo"
+                  - generic [ref=f100e776]:
+                    - button "Release hold" [ref=f100e777] [cursor=pointer]
+                    - link "View exception" [ref=f100e780] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/307
+              - article [ref=f100e784]:
+                - generic [ref=f100e785]:
+                  - generic [ref=f100e786]:
+                    - generic [ref=f100e787]: GTIN 00301162001162
+                    - generic [ref=f100e788]: SERIAL w2qsitebc44q
+                    - generic [ref=f100e789]: warning
+                  - paragraph [ref=f100e790]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e791]: "Opened 2026-08-16 05:56:36 · Exception: Wave2 case Ij7Y"
+                  - generic [ref=f100e792]:
+                    - button "Release hold" [ref=f100e793] [cursor=pointer]
+                    - link "View exception" [ref=f100e796] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/296
+              - article [ref=f100e800]:
+                - generic [ref=f100e801]:
+                  - generic [ref=f100e802]:
+                    - generic [ref=f100e803]: GTIN 00301162001162
+                    - generic [ref=f100e804]: SERIAL w2qsiteaiwsw
+                    - generic [ref=f100e805]: warning
+                  - paragraph [ref=f100e806]: Wave2 site_id-only hold
+                  - paragraph [ref=f100e807]: "Opened 2026-08-16 05:56:36 · Exception: Wave2 case OPyA"
+                  - generic [ref=f100e808]:
+                    - button "Release hold" [ref=f100e809] [cursor=pointer]
+                    - link "View exception" [ref=f100e812] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/exceptions/295
+            - paragraph [ref=f100e817]: Showing 19 of 19
+          - generic [ref=f100e818]:
+            - generic [ref=f100e819]:
+              - generic [ref=f100e820]:
+                - heading "Open investigations" [level=2] [ref=f100e821]
+                - paragraph [ref=f100e822]: Exception cases with open quarantine holds — resolve via the exception workflow.
+              - link "All exceptions" [ref=f100e823] [cursor=pointer]:
+                - /url: https://demo2.internal.vatengi.com/exceptions
+            - generic [ref=f100e826]:
+              - article [ref=f100e827]:
+                - generic [ref=f100e828]:
+                  - paragraph [ref=f100e829]: Quarantine · Block transfer receive complete during propagate
+                  - paragraph [ref=f100e830]: Block transfer receive complete during propagate
+                  - paragraph [ref=f100e831]: New · Suspect Product Indicator
+                  - link "Investigate exception" [ref=f100e833] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/825
+              - article [ref=f100e836]:
+                - generic [ref=f100e837]:
+                  - paragraph [ref=f100e838]: Quarantine · Block transfer receive under lock
+                  - paragraph [ref=f100e839]: Block transfer receive under lock
+                  - paragraph [ref=f100e840]: New · Suspect Product Indicator
+                  - link "Investigate exception" [ref=f100e842] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/415
+              - article [ref=f100e845]:
+                - generic [ref=f100e846]:
+                  - paragraph [ref=f100e847]: Wave2 case zsic
+                  - paragraph [ref=f100e848]: Wave2
+                  - paragraph [ref=f100e849]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e851] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/373
+              - article [ref=f100e854]:
+                - generic [ref=f100e855]:
+                  - paragraph [ref=f100e856]: Wave2 case SyLi
+                  - paragraph [ref=f100e857]: Wave2
+                  - paragraph [ref=f100e858]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e860] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/372
+              - article [ref=f100e863]:
+                - generic [ref=f100e864]:
+                  - paragraph [ref=f100e865]: Wave2 case oYjI
+                  - paragraph [ref=f100e866]: Wave2
+                  - paragraph [ref=f100e867]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e869] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/369
+              - article [ref=f100e872]:
+                - generic [ref=f100e873]:
+                  - paragraph [ref=f100e874]: Wave2 case ulf7
+                  - paragraph [ref=f100e875]: Wave2
+                  - paragraph [ref=f100e876]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e878] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/368
+              - article [ref=f100e881]:
+                - generic [ref=f100e882]:
+                  - paragraph [ref=f100e883]: Wave2 case UXLH
+                  - paragraph [ref=f100e884]: Wave2
+                  - paragraph [ref=f100e885]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e887] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/347
+              - article [ref=f100e890]:
+                - generic [ref=f100e891]:
+                  - paragraph [ref=f100e892]: Wave2 case i894
+                  - paragraph [ref=f100e893]: Wave2
+                  - paragraph [ref=f100e894]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e896] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/346
+              - article [ref=f100e899]:
+                - generic [ref=f100e900]:
+                  - paragraph [ref=f100e901]: Wave2 case vdYS
+                  - paragraph [ref=f100e902]: Wave2
+                  - paragraph [ref=f100e903]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e905] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/335
+              - article [ref=f100e908]:
+                - generic [ref=f100e909]:
+                  - paragraph [ref=f100e910]: Wave2 case rnYH
+                  - paragraph [ref=f100e911]: Wave2
+                  - paragraph [ref=f100e912]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e914] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/334
+              - article [ref=f100e917]:
+                - generic [ref=f100e918]:
+                  - paragraph [ref=f100e919]: Wave2 case n3z9
+                  - paragraph [ref=f100e920]: Wave2
+                  - paragraph [ref=f100e921]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e923] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/320
+              - article [ref=f100e926]:
+                - generic [ref=f100e927]:
+                  - paragraph [ref=f100e928]: Wave2 case WY8y
+                  - paragraph [ref=f100e929]: Wave2
+                  - paragraph [ref=f100e930]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e932] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/319
+              - article [ref=f100e935]:
+                - generic [ref=f100e936]:
+                  - paragraph [ref=f100e937]: Wave2 case rTwx
+                  - paragraph [ref=f100e938]: Wave2
+                  - paragraph [ref=f100e939]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e941] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/308
+              - article [ref=f100e944]:
+                - generic [ref=f100e945]:
+                  - paragraph [ref=f100e946]: Wave2 case fNMo
+                  - paragraph [ref=f100e947]: Wave2
+                  - paragraph [ref=f100e948]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e950] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/307
+              - article [ref=f100e953]:
+                - generic [ref=f100e954]:
+                  - paragraph [ref=f100e955]: Wave2 case Ij7Y
+                  - paragraph [ref=f100e956]: Wave2
+                  - paragraph [ref=f100e957]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e959] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/296
+              - article [ref=f100e962]:
+                - generic [ref=f100e963]:
+                  - paragraph [ref=f100e964]: Wave2 case OPyA
+                  - paragraph [ref=f100e965]: Wave2
+                  - paragraph [ref=f100e966]: New · Broken Aggregation Hierarchy
+                  - link "Investigate exception" [ref=f100e968] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/exceptions/295
+            - paragraph [ref=f100e972]: Showing 16 of 16
+  - generic:
+    - status

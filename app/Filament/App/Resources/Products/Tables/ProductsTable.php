@@ -6,8 +6,10 @@ use App\Enums\PartnerType;
 use App\Filament\App\Resources\FdaProducts\Actions\AddFdaProductPackagesAction;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
+use App\Models\Fda\FdaProduct;
 use App\Models\Product;
 use App\Support\Catalog\DisplayName;
+use App\Support\Fda\FdaRegistryStatus;
 use App\Support\Gs1\Ndc;
 use App\Support\MasterData\ProductComplianceStatus;
 use App\Support\Scout\TenantModelSearch;
@@ -81,6 +83,25 @@ class ProductsTable
                     ->badge()
                     ->state(fn (Product $record): string => ProductComplianceStatus::label($record))
                     ->color(fn (string $state): string => ProductComplianceStatus::color($state)),
+                TextColumn::make('dea_schedule')
+                    ->label('DEA')
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->state(function (Product $record): ?string {
+                        $fda = $record->relationLoaded('fdaProduct')
+                            ? $record->fdaProduct
+                            : (filled($record->fda_product_id)
+                                ? FdaProduct::query()->find($record->fda_product_id)
+                                : null);
+
+                        return FdaRegistryStatus::deaScheduleLabel($fda?->dea_schedule);
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'CII' => 'danger',
+                        'CIII', 'CIV', 'CV' => 'warning',
+                        default => 'gray',
+                    })
+                    ->placeholder('—'),
                 TextColumn::make('is_active')
                     ->label('Active')
                     ->badge()

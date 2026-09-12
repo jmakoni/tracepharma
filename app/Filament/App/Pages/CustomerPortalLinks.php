@@ -2,6 +2,9 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Actions\Portal\EnsurePortalOrganization;
+use App\Filament\Notifications\Notification;
+use App\Models\PortalUser;
 use App\Models\TradingPartner;
 use App\Models\User;
 use App\Services\Outbound\CustomerPortalService;
@@ -9,16 +12,18 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use RuntimeException;
 use UnitEnum;
 
-class CustomerPortalLinks extends Page
+class CustomerPortalLinks extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedLink;
 
@@ -58,6 +63,10 @@ class CustomerPortalLinks extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
+        if (TenantFeatures::forTenant(tenant())->supportsClientPortalV2()) {
+            return 'OTP client portal invites (email login codes) plus legacy signed download links. Separate from the supplier exception portal.';
+        }
+
         return 'Issue a signed buyer download link. Separate from the supplier exception portal. Trading Partners is unchanged.';
     }
 
@@ -71,6 +80,136 @@ class CustomerPortalLinks extends Page
             ->orderBy('name')
             ->limit(100)
             ->get(['id', 'name', 'gln', 'email', 'customer_portal_uuid']);
+    }
+
+    public function supportsClientPortalV2(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsClientPortalV2();
+    }
+
+    /**
+     * @return Collection<int, PortalUser>
+     */
+    public function portalUsers(): Collection
+    {
+        return PortalUser::query()
+            ->with('organizations')
+            ->orderBy('email')
+            ->limit(200)
+            ->get();
+    }
+
+    public function togglePortalUserActive(int $portalUserId): void
+    {
+        $portalUser = PortalUser::query()->find($portalUserId);
+
+        if ($portalUser === null) {
+            Notification::make()->title('Portal user not found')->danger()->send();
+
+            return;
+        }
+
+        if ($portalUser->is_active) {
+            $portalUser->disable('Disabled from Customer portal page');
+            Notification::make()->title('Portal user disabled')->success()->send();
+
+            return;
+        }
+
+        $portalUser->enable();
+        Notification::make()->title('Portal user enabled')->success()->send();
+    }
+
+    public function unlockPortalUser(int $portalUserId): void
+    {
+        $portalUser = PortalUser::query()->find($portalUserId);
+
+        if ($portalUser === null) {
+            Notification::make()->title('Portal user not found')->danger()->send();
+
+            return;
+        }
+
+        $portalUser->unlock();
+        Notification::make()->title('Portal user unlocked')->success()->send();
+    }
+
+    protected function getHeaderActions(): array
+    {
+        if (! $this->supportsClientPortalV2()) {
+            return [];
+        }
+
+        return [
+            Action::make('inviteToClientPortal')
+                ->label('Invite to client portal')
+                ->color('primary')
+                ->form([
+                    Select::make('partner_id')
+                        ->label('Trading partner')
+                        ->options(fn (): array => $this->partners()->mapWithKeys(
+                            fn (TradingPartner $partner): array => [
+                                (int) $partner->getKey() => (string) $partner->name,
+                            ],
+                        )->all())
+                        ->searchable()
+                        ->required(),
+                    TextInput::make('email')
+                        ->label('Invite email')
+                        ->email()
+                        ->required()
+                        ->maxLength(255),
+                ])
+                ->action(function (array $data): void {
+                    $partner = TradingPartner::query()
+                        ->where('is_active', true)
+                        ->whereKey((int) ($data['partner_id'] ?? 0))
+                        ->first();
+
+                    if ($partner === null) {
+                        Notification::make()->title('Partner not found')->danger()->send();
+
+                        return;
+                    }
+
+                    $this->authorize('managePortalLink', $partner);
+
+                    $email = strtolower(trim((string) ($data['email'] ?? '')));
+                    if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                        Notification::make()->title('Invalid email')->danger()->send();
+
+                        return;
+                    }
+
+                    $org = app(EnsurePortalOrganization::class)->handle($partner);
+                    $portalUser = PortalUser::query()->firstOrCreate(
+                        ['email' => $email],
+                    );
+
+                    if ($portalUser->wasRecentlyCreated) {
+                        $portalUser->forceFill(['is_active' => true])->save();
+                    }
+
+                    if ($portalUser->organizations()->where('portal_organizations.id', $org->getKey())->exists()) {
+                        Notification::make()
+                            ->title('Already a member')
+                            ->body($email.' is already linked to '.$partner->name.'.')
+                            ->warning()
+                            ->send();
+
+                        return;
+                    }
+
+                    $role = $org->users()->count() === 0 ? 'admin' : 'member';
+                    $org->users()->attach($portalUser->getKey(), ['role' => $role]);
+
+                    Notification::make()
+                        ->title('Client portal invite ready')
+                        ->body($email.' can sign in at /client-portal with an email OTP (role: '.$role.').')
+                        ->success()
+                        ->send();
+                }),
+        ];
     }
 
     public function issueLinkAction(): Action
@@ -107,5 +246,10 @@ class CustomerPortalLinks extends Page
                     ->success()
                     ->send();
             });
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'master-data.customer-portal';
     }
 }

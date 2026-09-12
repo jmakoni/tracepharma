@@ -12,6 +12,7 @@ use App\Enums\SsccLabelBatchStatus;
 use App\Enums\SsccLabelPrintStatus;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Concerns\DispatchesClientLabelPrint;
+use App\Filament\Notifications\Notification;
 use App\Models\LabelPrinter;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
@@ -28,7 +29,6 @@ use DomainException;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Schema;
@@ -127,7 +127,12 @@ class ViewSsccLabelBatch extends Page
         // list faces the same custody + quarantine gate as a scan at the pack workstation.
         // Removing an offending child still saves — it is no longer part of the claim.
         try {
-            app(SsccChildCustodyGuard::class)->assertMultilineOperable($this->childEpcsText);
+            app(SsccChildCustodyGuard::class)->assertMultilineOperable(
+                $this->childEpcsText,
+                siteId: $this->batch->commission_site_id !== null
+                    ? (int) $this->batch->commission_site_id
+                    : null,
+            );
         } catch (\InvalidArgumentException $exception) {
             Notification::make()
                 ->title('Child EPCs not saved')
@@ -565,6 +570,7 @@ class ViewSsccLabelBatch extends Page
             Action::make('commissionNow')
                 ->label('Commission now')
                 ->icon('heroicon-o-check-badge')
+                ->color('primary')
                 ->visible(fn (): bool => $this->batch->commissioned_at === null)
                 ->form([
                     Select::make('site_id')
@@ -580,17 +586,20 @@ class ViewSsccLabelBatch extends Page
             Action::make('emitDisaggregation')
                 ->label('Emit disaggregation EPCIS')
                 ->icon('heroicon-o-scissors')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null
                     && $this->batch->source_parent_sscc_urn !== null)
                 ->action('emitDisaggregation'),
             Action::make('emitEpcis')
                 ->label('Emit aggregation EPCIS')
                 ->icon('heroicon-o-paper-airplane')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null)
                 ->action('emitEpcis'),
             Action::make('downloadAll')
                 ->label('Download all PDFs')
                 ->icon('heroicon-o-archive-box-arrow-down')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null)
                 ->action(fn (): ?BinaryFileResponse => $this->downloadAllLabels()),
         ];

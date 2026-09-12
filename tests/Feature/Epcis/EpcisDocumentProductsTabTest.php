@@ -97,8 +97,11 @@ class EpcisDocumentProductsTabTest extends TestCase
             $this->assertTrue($summaries->first()['linked']);
             $this->assertSame(3, $summaries->first()['document_epc_count']);
             $this->assertSame('3 units', $summaries->first()['epc_breakdown']);
-            $this->assertSame('Unknown product', $summaries->first()['name']);
-            $this->assertNull($summaries->first()['ndc']);
+            // Vocabulary-less file: display columns fall back to the linked product.
+            $this->assertSame('Chlorhexidine Gluconate 4%', $summaries->first()['name']);
+            $this->assertSame('0116-2001-16', $summaries->first()['ndc']);
+            $this->assertSame('solution', $summaries->first()['dosage_form']);
+            $this->assertSame('4%', $summaries->first()['strength']);
             $this->assertSame('assortment', $summaries->first()['catalog_status']);
 
             $ids = $document->productsQuery()->pluck('products.id')->map(fn ($id) => (int) $id)->all();

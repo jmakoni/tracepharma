@@ -2,16 +2,24 @@
 
 namespace App\Support;
 
+use App\Actions\Exceptions\SyncDestinationGlnMismatchReceiveImpact;
 use App\Actions\MasterData\RederiveOrganizationSglns;
 use App\Enums\ClientPrintBridge;
+use App\Enums\ExceptionReceiveImpact;
+use App\Enums\TenantRole;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Support\Dashboard\DashboardWidgetCatalog;
+use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
+use App\Support\Gs1\Sgln;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Tenancy\TenantKillSwitches;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
 
 /**
  * Typed accessors for tenant organization settings.
@@ -23,6 +31,8 @@ use Illuminate\Support\Facades\Crypt;
  */
 class TenantSettings
 {
+    public const MIN_INTEGRATION_API_KEY_LENGTH = 16;
+
     /** @var list<string> */
     public const ADDRESS_KEYS = [
         'street_address',
@@ -81,6 +91,50 @@ class TenantSettings
         $this->tenant->company_prefix = self::normalizeCompanyPrefix($prefix);
 
         return $this;
+    }
+
+    /**
+     * When true, trading partners and their sites may use GLNs issued under the
+     * organization GS1 Company Prefix; SGLNs for those locations derive from it.
+     */
+    public function allowAssignPartnerGlnsFromPrefix(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'identity.allow_assign_partner_glns_from_prefix', false);
+    }
+
+    public function setAllowAssignPartnerGlnsFromPrefix(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'identity.allow_assign_partner_glns_from_prefix', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Organization prefix for encoding partner locations — only when explicitly allowed.
+     */
+    public function companyPrefixForPartnerEncoding(): ?string
+    {
+        return $this->allowAssignPartnerGlnsFromPrefix()
+            ? $this->companyPrefix()
+            : null;
+    }
+
+    public function glnIsUnderCompanyPrefix(?string $gln): bool
+    {
+        $normalized = Sgln::normalizeGln($gln);
+        $prefix = self::normalizeCompanyPrefix($this->companyPrefix());
+
+        if ($normalized === null || $prefix === null) {
+            return false;
+        }
+
+        return str_starts_with(substr($normalized, 0, 12), $prefix);
     }
 
     /**
@@ -227,6 +281,271 @@ class TenantSettings
         return $this;
     }
 
+    /**
+     * Pharmacy tenants: hide wholesaler-heavy floor nav (transfer, pack, ship order, etc.).
+     * Default on for Pharmacy profile.
+     */
+    public function pharmacySimplifiedNavEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'access.pharmacy_simplified_nav', true);
+    }
+
+    public function setPharmacySimplifiedNavEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'access.pharmacy_simplified_nav', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Pharmacy tenants: unlock Scan Out + Outbound EPCIS when warehouse tools are shown.
+     * Default off. Does not unlock Ship Order list or SSCC labeling.
+     */
+    public function pharmacyFullOutboundEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'access.pharmacy_full_outbound', false);
+    }
+
+    public function setPharmacyFullOutboundEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'access.pharmacy_full_outbound', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * @return array{
+     *     enabled: bool,
+     *     sso_only: bool,
+     *     provider: string,
+     *     issuer: string,
+     *     client_id: string,
+     *     client_secret: string|null,
+     *     entra_tenant_id: string|null,
+     *     jit_default_role: string|null,
+     *     allowed_email_domains: list<string>
+     * }
+     */
+    public function ssoConfig(): array
+    {
+        $settings = $this->settingsBag();
+
+        $secret = data_get($settings, 'sso.client_secret');
+        $decrypted = null;
+        if (is_string($secret) && $secret !== '') {
+            try {
+                $decrypted = Crypt::decryptString($secret);
+            } catch (\Throwable) {
+                $decrypted = null;
+            }
+        }
+
+        $domains = data_get($settings, 'sso.allowed_email_domains', []);
+        $normalizedDomains = [];
+        if (is_array($domains)) {
+            foreach ($domains as $domain) {
+                if (is_string($domain) && trim($domain) !== '') {
+                    $normalizedDomains[] = strtolower(trim($domain));
+                }
+            }
+        }
+
+        return [
+            'enabled' => (bool) data_get($settings, 'sso.enabled', false),
+            'sso_only' => (bool) data_get($settings, 'sso.sso_only', false),
+            'provider' => (string) data_get($settings, 'sso.provider', 'entra'),
+            'issuer' => (string) data_get($settings, 'sso.issuer', ''),
+            'client_id' => (string) data_get($settings, 'sso.client_id', ''),
+            'client_secret' => $decrypted,
+            'entra_tenant_id' => filled(data_get($settings, 'sso.entra_tenant_id'))
+                ? (string) data_get($settings, 'sso.entra_tenant_id')
+                : null,
+            'jit_default_role' => filled(data_get($settings, 'sso.jit_default_role'))
+                ? (string) data_get($settings, 'sso.jit_default_role')
+                : null,
+            'allowed_email_domains' => $normalizedDomains,
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     enabled?: bool,
+     *     sso_only?: bool,
+     *     provider?: string,
+     *     issuer?: string,
+     *     client_id?: string,
+     *     client_secret?: string|null,
+     *     entra_tenant_id?: string|null,
+     *     jit_default_role?: string|null,
+     *     allowed_email_domains?: list<string>|string|null
+     * }  $data
+     */
+    public function saveSsoConfig(array $data): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        $current = $this->ssoConfig();
+
+        data_set($settings, 'sso.enabled', (bool) ($data['enabled'] ?? $current['enabled']));
+        data_set($settings, 'sso.sso_only', (bool) ($data['sso_only'] ?? $current['sso_only']));
+        data_set($settings, 'sso.provider', (string) ($data['provider'] ?? $current['provider']));
+        data_set($settings, 'sso.issuer', trim((string) ($data['issuer'] ?? $current['issuer'])));
+        data_set($settings, 'sso.client_id', trim((string) ($data['client_id'] ?? $current['client_id'])));
+
+        if (array_key_exists('client_secret', $data) && filled($data['client_secret'])) {
+            data_set($settings, 'sso.client_secret', Crypt::encryptString(trim((string) $data['client_secret'])));
+        }
+
+        $entra = $data['entra_tenant_id'] ?? $current['entra_tenant_id'];
+        data_set($settings, 'sso.entra_tenant_id', filled($entra) ? trim((string) $entra) : null);
+
+        $jitRole = $data['jit_default_role'] ?? $current['jit_default_role'];
+        if (filled($jitRole)) {
+            $parsed = TenantRole::tryFrom((string) $jitRole);
+            if ($parsed === null || ! $parsed->isJitAssignable()) {
+                throw new \InvalidArgumentException(
+                    'SSO JIT default role cannot be Owner or Support Engineer.',
+                );
+            }
+            $jitRole = $parsed->value;
+        } else {
+            $jitRole = null;
+        }
+        data_set($settings, 'sso.jit_default_role', $jitRole);
+
+        $domainsRaw = $data['allowed_email_domains'] ?? $current['allowed_email_domains'];
+        $domains = [];
+        if (is_string($domainsRaw)) {
+            $domainsRaw = preg_split('/[\s,]+/', $domainsRaw) ?: [];
+        }
+        if (is_array($domainsRaw)) {
+            foreach ($domainsRaw as $domain) {
+                if (is_string($domain) && trim($domain) !== '') {
+                    $domains[] = strtolower(trim($domain));
+                }
+            }
+        }
+
+        $enabled = (bool) data_get($settings, 'sso.enabled', false);
+        if ($enabled && $domains === []) {
+            throw new \InvalidArgumentException(
+                'SSO allowed email domains are required when SSO is enabled.',
+            );
+        }
+
+        data_set($settings, 'sso.allowed_email_domains', array_values(array_unique($domains)));
+
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Daily/weekly digest of Compliance Alert Center signals.
+     * Default on — peers market real-time alerts; in-app center alone is not enough.
+     */
+    public function alertDigestEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'notifications.alert_digest_enabled', true);
+    }
+
+    public function setAlertDigestEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('notifications.alert_digest_enabled', $enabled);
+    }
+
+    /**
+     * @return 'daily'|'weekly'
+     */
+    public function alertDigestFrequency(): string
+    {
+        $value = data_get($this->settingsBag(), 'notifications.alert_digest_frequency', 'daily');
+
+        return $value === 'weekly' ? 'weekly' : 'daily';
+    }
+
+    public function setAlertDigestFrequency(string $frequency): self
+    {
+        return $this->putNestedSetting(
+            'notifications.alert_digest_frequency',
+            $frequency === 'weekly' ? 'weekly' : 'daily',
+        );
+    }
+
+    public function alertDigestLastSentAt(): ?Carbon
+    {
+        $raw = data_get($this->settingsBag(), 'notifications.alert_digest_last_sent_at');
+
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function setAlertDigestLastSentAt(Carbon|string|null $at): self
+    {
+        $value = $at instanceof Carbon
+            ? $at->toIso8601String()
+            : (is_string($at) && $at !== '' ? $at : null);
+
+        return $this->putNestedSetting('notifications.alert_digest_last_sent_at', $value);
+    }
+
+    /**
+     * After outbound ship complete, email the trading partner a signed customer portal link.
+     */
+    public function emailPortalOnShipEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'outbound.email_portal_on_ship', true);
+    }
+
+    public function setEmailPortalOnShipEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('outbound.email_portal_on_ship', $enabled);
+    }
+
+    public function saveQuietly(): void
+    {
+        if ($this->tenant === null) {
+            return;
+        }
+
+        $this->tenant->saveQuietly();
+    }
+
+    private function putNestedSetting(string $path, mixed $value): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, $path, $value);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
     public function dashboardAllowUserCustomize(): bool
     {
         return (bool) data_get($this->settingsBag(), 'dashboard.allow_user_customize', true);
@@ -319,6 +638,28 @@ class TenantSettings
         return $this;
     }
 
+    /**
+     * Guardian (Systech) lot-close inbound: archive raw DataFeed XML and
+     * auto-project commissioning/aggregation into TracePharma. Manufacturer only.
+     */
+    public function l3GuardianLotCloseEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'l3.guardian_lot_close_enabled', false);
+    }
+
+    public function setL3GuardianLotCloseEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'l3.guardian_lot_close_enabled', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
     public function l3Provider(): ?string
     {
         $value = data_get($this->settingsBag(), 'l3.provider');
@@ -354,6 +695,11 @@ class TenantSettings
 
         $normalized = blank($url) ? null : trim($url);
         self::assertL3EndpointUrlWithoutUserinfo($normalized);
+
+        // Match ForwardCommissioningToL3 runtime guard (HTTPS + private/metadata deny).
+        if ($normalized !== null) {
+            EpcisSubscriptionUrl::assertSafeTargetUrl($normalized);
+        }
 
         $settings = $this->settingsBag();
         data_set($settings, 'l3.endpoint_url', $normalized);
@@ -397,8 +743,9 @@ class TenantSettings
 
         try {
             return Crypt::decryptString((string) $encrypted);
-        } catch (\Throwable) {
-            return null;
+        } catch (\Throwable $e) {
+            // Fail closed: corrupt ciphertext must not POST to L3 without auth.
+            throw new \RuntimeException('Tenant L3 API key could not be decrypted.', 0, $e);
         }
     }
 
@@ -454,7 +801,13 @@ class TenantSettings
         if (blank($key)) {
             data_set($settings, 'integrations.wms_bridge_api_key', null);
         } else {
-            data_set($settings, 'integrations.wms_bridge_api_key', Crypt::encryptString(trim($key)));
+            $trimmed = trim($key);
+            if (strlen($trimmed) < self::MIN_INTEGRATION_API_KEY_LENGTH) {
+                throw new \InvalidArgumentException(
+                    'WMS bridge API key must be at least '.self::MIN_INTEGRATION_API_KEY_LENGTH.' characters.',
+                );
+            }
+            data_set($settings, 'integrations.wms_bridge_api_key', Crypt::encryptString($trimmed));
         }
 
         if (data_get($settings, 'integrations') === []) {
@@ -560,6 +913,14 @@ class TenantSettings
             ? [$host]
             : self::resolveWmsHostAddresses($host);
 
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
+        }
+
         foreach ($addresses as $address) {
             if (self::isDeniedWmsResolvedAddress($address)) {
                 throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
@@ -589,6 +950,10 @@ class TenantSettings
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
             $octets = array_map('intval', explode('.', $ip));
+            // Unspecified / "this" network (0.0.0.0/8) — some stacks treat as localhost.
+            if (($octets[0] ?? null) === 0) {
+                return true;
+            }
             if (($octets[0] ?? null) === 127) {
                 return true;
             }
@@ -596,11 +961,17 @@ class TenantSettings
             return ($octets[0] ?? null) === 169 && ($octets[1] ?? null) === 254;
         }
 
+        $packed = inet_pton($ip);
+        $unspecified = inet_pton('::');
+        // IPv6 unspecified (:: / 0:0:0:0:0:0:0:0) — normalize via inet_pton.
+        if ($packed !== false && $unspecified !== false && $packed === $unspecified) {
+            return true;
+        }
+
         if ($ip === '::1') {
             return true;
         }
 
-        $packed = inet_pton($ip);
         $fe80 = inet_pton('fe80::');
         if ($packed !== false && $fe80 !== false) {
             return (ord($packed[0]) === 0xFE) && ((ord($packed[1]) & 0xC0) === 0x80);
@@ -635,6 +1006,134 @@ class TenantSettings
     }
 
     /**
+     * Pending HTTP client that resolves + pins the WMS URL (CURLOPT_RESOLVE).
+     * Uses WMS deny rules: loopback / link-local / metadata blocked; RFC1918 allowed.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function wmsPinnedHttpClient(string $url, int $timeoutSeconds = 30): PendingRequest
+    {
+        self::assertWmsReceiveConfirmHostAtConnect($url);
+
+        $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+
+        $host = self::unwrapIpv4MappedAddress((string) (parse_url($url, PHP_URL_HOST) ?? ''));
+        if ($host === '') {
+            return $pending;
+        }
+
+        $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false
+            ? [$host]
+            : self::resolveWmsHostAddresses($host);
+
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return $pending;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
+        }
+
+        $safe = [];
+        foreach ($addresses as $address) {
+            if (self::isDeniedWmsResolvedAddress($address)) {
+                throw new \InvalidArgumentException('WMS receive-confirm URL must not target a private or metadata host.');
+            }
+            $safe[] = $address;
+        }
+
+        if ($safe === []) {
+            if (app()->runningUnitTests()) {
+                return $pending;
+            }
+
+            throw new \InvalidArgumentException('WMS receive-confirm URL host could not be resolved.');
+        }
+
+        $options = EpcisSubscriptionUrl::pinnedCurlOptions($url, $safe);
+        if ($options !== []) {
+            $pending = $pending->withOptions($options);
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Resolve + deny loopback/link-local/metadata for on-prem HTTP(S) egress (VRS HTTP, etc.).
+     * RFC1918 remains allowed — stricter subscription HTTPS deny is NOT applied.
+     *
+     * @return list<string>
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function assertAndResolveWmsStyleHost(string $url): array
+    {
+        $parsed = parse_url($url);
+        if ($parsed === false || ! is_array($parsed)) {
+            throw new \InvalidArgumentException('URL is not valid.');
+        }
+
+        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('URL must use HTTP or HTTPS.');
+        }
+
+        $host = self::unwrapIpv4MappedAddress((string) ($parsed['host'] ?? ''));
+        if ($host === '') {
+            throw new \InvalidArgumentException('URL host is not valid.');
+        }
+
+        if ($host === 'localhost'
+            || str_ends_with($host, '.localhost')
+            || $host === 'metadata.google.internal'
+            || $host === 'metadata.goog') {
+            throw new \InvalidArgumentException('URL must not target a private or metadata host.');
+        }
+
+        $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false
+            ? [$host]
+            : self::resolveWmsHostAddresses($host);
+
+        if ($addresses === [] && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            if (app()->runningUnitTests()) {
+                return [];
+            }
+
+            throw new \InvalidArgumentException('URL host could not be resolved.');
+        }
+
+        foreach ($addresses as $address) {
+            if (self::isDeniedWmsResolvedAddress($address)) {
+                throw new \InvalidArgumentException('URL must not target a private or metadata host.');
+            }
+        }
+
+        return array_values($addresses);
+    }
+
+    /**
+     * Pin DNS for on-prem HTTP(S) egress that allows RFC1918 (WMS-style deny).
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function wmsStylePinnedHttpClient(string $url, int $timeoutSeconds = 30): PendingRequest
+    {
+        $addresses = self::assertAndResolveWmsStyleHost($url);
+        $pending = Http::timeout($timeoutSeconds)->withoutRedirecting();
+
+        if ($addresses === []) {
+            return $pending;
+        }
+
+        $options = EpcisSubscriptionUrl::pinnedCurlOptions($url, $addresses);
+        if ($options !== []) {
+            $pending = $pending->withOptions($options);
+        }
+
+        return $pending;
+    }
+
+    /**
      * Per-tenant VRS responder API key (encrypted at rest in settings JSON).
      */
     public function vrsResponderApiKey(): ?string
@@ -663,7 +1162,13 @@ class TenantSettings
         if (blank($key)) {
             data_set($settings, 'integrations.vrs_responder_api_key', null);
         } else {
-            data_set($settings, 'integrations.vrs_responder_api_key', Crypt::encryptString(trim($key)));
+            $trimmed = trim($key);
+            if (strlen($trimmed) < self::MIN_INTEGRATION_API_KEY_LENGTH) {
+                throw new \InvalidArgumentException(
+                    'VRS responder API key must be at least '.self::MIN_INTEGRATION_API_KEY_LENGTH.' characters.',
+                );
+            }
+            data_set($settings, 'integrations.vrs_responder_api_key', Crypt::encryptString($trimmed));
         }
 
         if (data_get($settings, 'integrations') === []) {
@@ -673,6 +1178,258 @@ class TenantSettings
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
+    }
+
+    public function vrsVerificationContactEmail(): ?string
+    {
+        $email = data_get($this->settingsBag(), 'vrs.verification_contact_email');
+
+        return is_string($email) && filled($email) ? strtolower(trim($email)) : null;
+    }
+
+    /**
+     * OCI wallet ATP mode for inbound VRS responder: off | warn | require.
+     * Default off — parse/store without wallet verification.
+     */
+    public function atpOciMode(): string
+    {
+        $mode = data_get($this->settingsBag(), 'atp.oci_mode', 'off');
+
+        return in_array($mode, ['off', 'warn', 'require'], true) ? $mode : 'off';
+    }
+
+    public function setAtpOciMode(string $mode): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        $mode = in_array($mode, ['off', 'warn', 'require'], true) ? $mode : 'off';
+        data_set($settings, 'atp.oci_mode', $mode);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciPresentOutbound(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'atp.oci_present_outbound', false);
+    }
+
+    public function setAtpOciPresentOutbound(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'atp.oci_present_outbound', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciWalletBaseUrl(): ?string
+    {
+        $url = data_get($this->settingsBag(), 'atp.oci_wallet_base_url');
+
+        return is_string($url) && filled($url) ? rtrim(trim($url), '/') : null;
+    }
+
+    public function setAtpOciWalletBaseUrl(?string $url): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'atp.oci_wallet_base_url', filled($url) ? rtrim(trim($url), '/') : null);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciWalletApiKey(): ?string
+    {
+        $encrypted = data_get($this->settingsBag(), 'atp.oci_wallet_api_key');
+
+        if (blank($encrypted)) {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString((string) $encrypted);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function setAtpOciWalletApiKey(?string $key): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+
+        if (blank($key)) {
+            data_set($settings, 'atp.oci_wallet_api_key', null);
+        } else {
+            data_set($settings, 'atp.oci_wallet_api_key', Crypt::encryptString(trim($key)));
+        }
+
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    public function atpOciVerifyPath(): ?string
+    {
+        $path = data_get($this->settingsBag(), 'atp.oci_verify_path');
+
+        return is_string($path) && filled($path) ? '/'.ltrim(trim($path), '/') : null;
+    }
+
+    public function atpOciPresentPath(): ?string
+    {
+        $path = data_get($this->settingsBag(), 'atp.oci_present_path');
+
+        return is_string($path) && filled($path) ? '/'.ltrim(trim($path), '/') : null;
+    }
+
+    /**
+     * Manufacturer verification request portal (email + secure respond link). Default off.
+     */
+    public function manufacturerVerificationPortalEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.manufacturer_verification_portal', false);
+    }
+
+    public function setManufacturerVerificationPortalEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.manufacturer_verification_portal', $enabled);
+    }
+
+    /**
+     * Manufacturer opt-in VRS requestor UI (Verify Product / history / directory). Default off.
+     * Responder webhook stays on supportsVrsResponder() regardless of this flag.
+     */
+    public function manufacturerVrsRequestorEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.manufacturer_vrs_requestor', false);
+    }
+
+    public function setManufacturerVrsRequestorEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.manufacturer_vrs_requestor', $enabled);
+    }
+
+    /**
+     * Opt-in client portal v2 (OTP auth + org membership). Default off.
+     */
+    public function clientPortalV2Enabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.client_portal_v2', false);
+    }
+
+    public function setClientPortalV2Enabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.client_portal_v2', $enabled);
+    }
+
+    /**
+     * Logistics3pl only (with supportsPrincipals): hard-gate EPC principal ownership.
+     * Default off — soft site/ship filters remain available without blocking scans.
+     */
+    public function principalCustodyEnforced(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.principal_custody_enforced', false);
+    }
+
+    public function setPrincipalCustodyEnforced(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.principal_custody_enforced', $enabled);
+    }
+
+    /**
+     * Pharmacy members: consent to hard-link with buying-group network rollups.
+     * Source of truth for links remains central buying_group_memberships; this flag mirrors UX.
+     */
+    public function buyingGroupNetworkConsent(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.buying_group_network_consent', false);
+    }
+
+    public function setBuyingGroupNetworkConsent(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.buying_group_network_consent', $enabled);
+    }
+
+    /**
+     * BuyingGroup: run member metric rollups into BG snapshot tables.
+     * Default true when unset (profile also gates pages/command).
+     */
+    public function buyingGroupMemberRollupsEnabled(): bool
+    {
+        $value = data_get($this->settingsBag(), 'features.buying_group_member_rollups');
+
+        if ($value === null) {
+            return true;
+        }
+
+        return (bool) $value;
+    }
+
+    public function setBuyingGroupMemberRollupsEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.buying_group_member_rollups', $enabled);
+    }
+
+    /**
+     * BuyingGroup program / affiliation code for channel enrollment (Wave F5).
+     * Distinct from per-roster-row `buying_group_members.affiliation_code`.
+     */
+    public function affiliationCode(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'buying_group.affiliation_code');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function setAffiliationCode(?string $code): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $normalized = is_string($code) ? trim($code) : null;
+
+        return $this->putNestedSetting(
+            'buying_group.affiliation_code',
+            filled($normalized) ? $normalized : null,
+        );
+    }
+
+    public function stateLicenseNumber(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'compliance.state_license_number');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function vendorNumber(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'integrations.vendor_number');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function manufacturerVerificationPortalTtlBusinessDays(): int
+    {
+        $days = data_get($this->settingsBag(), 'vrs.manufacturer_request_ttl_business_days', 4);
+
+        return max(1, (int) $days);
     }
 
     /**
@@ -687,6 +1444,196 @@ class TenantSettings
     public function inboundEpcisKilled(): bool
     {
         return $this->killSwitch(TenantKillSwitches::INBOUND_EPCIS);
+    }
+
+    /**
+     * Tenant override for EPCIS 2.0 JSON-LD capture. Defaults true when the
+     * platform flag TRACEPHARMA_EPCIS_ACCEPT_20 is on; set false to opt out.
+     */
+    public function epcisAccept20(): bool
+    {
+        $value = $this->setting('epcis.accept_20');
+
+        if ($value === false || $value === 0 || $value === '0' || $value === 'false') {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function setEpcisAccept20(?bool $enabled): self
+    {
+        if ($enabled === null) {
+            return $this->putSetting('epcis.accept_20', null);
+        }
+
+        return $this->putSetting('epcis.accept_20', $enabled);
+    }
+
+    /**
+     * When true, inbound SOAP-wrapped EPCIS is rejected. When false (default),
+     * SOAP envelopes are unwrapped and the inner EPCISDocument is ingested.
+     */
+    public function requirePureEpcisDocument(): bool
+    {
+        $value = $this->setting('epcis.require_pure_document');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setRequirePureEpcisDocument(bool $enabled): self
+    {
+        return $this->putSetting('epcis.require_pure_document', $enabled);
+    }
+
+    /**
+     * When true, open DESTINATION_* mismatch signals/cases block ASN receive
+     * (BusinessRule). Default false — Phase 1 warning-only behavior.
+     */
+    public function blockReceiveOnDestinationGlnMismatch(): bool
+    {
+        $value = $this->setting('epcis.block_receive_on_destination_gln_mismatch');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setBlockReceiveOnDestinationGlnMismatch(bool $enabled): self
+    {
+        $this->putSetting('epcis.block_receive_on_destination_gln_mismatch', $enabled);
+
+        // Elevate/demote ExceptionType.receive_impact only (no Seeder::ensure, no mass
+        // promote). Fresh signals promote lazily via RecordDestinationGlnMismatch /
+        // ReceivingGate safety net.
+        if (
+            $this->tenant !== null
+            && tenancy()->initialized
+            && tenant()?->getKey() === $this->tenant->getKey()
+        ) {
+            $impact = $enabled
+                ? ExceptionReceiveImpact::BusinessRule
+                : ExceptionReceiveImpact::Warning;
+
+            ExceptionType::query()
+                ->whereIn('code', SyncDestinationGlnMismatchReceiveImpact::CODES)
+                ->update(['receive_impact' => $impact->value]);
+        }
+
+        return $this;
+    }
+
+    /**
+     * When true, inbound ASN enrichment resolves ship-to GLN → sites.ship_to_site_id.
+     * Default false while testing — partner destination GLNs must not bind site access.
+     */
+    public function matchInboundShipToSite(): bool
+    {
+        $value = $this->setting('epcis.match_inbound_ship_to_site');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setMatchInboundShipToSite(bool $enabled): self
+    {
+        return $this->putSetting('epcis.match_inbound_ship_to_site', $enabled);
+    }
+
+    /**
+     * When true, missing/expired ship-to ATP licenses hard-block outbound send.
+     * When false (default), the same gaps are soft warnings — send is allowed.
+     */
+    public function blockSendOnAtpGap(): bool
+    {
+        $value = $this->setting('shipping.block_send_on_atp_gap');
+
+        // Absent key = soft warning (operators opt into hard block).
+        if ($value === null) {
+            return false;
+        }
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setBlockSendOnAtpGap(bool $enabled): self
+    {
+        return $this->putSetting('shipping.block_send_on_atp_gap', $enabled);
+    }
+
+    /**
+     * When true, Filament "Ship transfer" opens the destination receive session and
+     * redirects there. Default false — ATTP-style separate destination receive step.
+     */
+    public function autoOpenReceiveAfterTransferShip(): bool
+    {
+        $value = $this->setting('transferring.auto_open_receive_after_ship');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoOpenReceiveAfterTransferShip(bool $enabled): self
+    {
+        return $this->putSetting('transferring.auto_open_receive_after_ship', $enabled);
+    }
+
+    /**
+     * When true, ASN receive auto-completes (and authors EPCIS) once every expected
+     * line is confirmed. Default false — ATTP/TraceLink-style explicit Complete receive.
+     */
+    public function autoCompleteAsnOnReady(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.auto_complete_asn_on_ready');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoCompleteAsnOnReady(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.auto_complete_asn_on_ready', $enabled);
+    }
+
+    /**
+     * Manufacturer master switch: when true, inbound EPCIS from trading partners
+     * marked is_cmo + auto_receive_inbound may auto-complete receive (no Scan In).
+     * Default false. Partner flag alone is never enough.
+     */
+    public function autoReceiveFromCmo(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.auto_receive_from_cmo');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoReceiveFromCmo(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.auto_receive_from_cmo', $enabled);
+    }
+
+    /**
+     * When true, receiving from a partner with expired/missing ATP licenses opens a
+     * critical exception (alert-center escalation) instead of a soft warning.
+     * Default false — DSCSA does not mandate blocking inbound product.
+     */
+    public function atpInboundEscalation(): bool
+    {
+        $value = data_get($this->settingsBag(), 'compliance.atp_inbound_escalation');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAtpInboundEscalation(bool $enabled): self
+    {
+        return $this->putNestedSetting('compliance.atp_inbound_escalation', $enabled);
+    }
+
+    public function autoPauseOnFailureStreak(): bool
+    {
+        $value = data_get($this->settingsBag(), 'integrations.auto_pause_on_failure_streak');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoPauseOnFailureStreak(bool $enabled): self
+    {
+        return $this->putNestedSetting('integrations.auto_pause_on_failure_streak', $enabled);
     }
 
     public function sanctumApiKilled(): bool
@@ -1063,6 +2010,12 @@ class TenantSettings
      *     serialization_contact_name?: string|null,
      *     serialization_contact_email?: string|null,
      *     require_ti_for_scan_first?: bool|null,
+     *     require_pure_epcis_document?: bool|null,
+     *     block_receive_on_destination_gln_mismatch?: bool|null,
+     *     match_inbound_ship_to_site?: bool|null,
+     *     auto_open_receive_after_transfer_ship?: bool|null,
+     *     auto_complete_asn_on_ready?: bool|null,
+     *     auto_receive_from_cmo?: bool|null,
      *     receiving_edge_mode?: string|ReceivingEdgeMode|null,
      *     job_roles_enabled?: bool|null,
      *     client_print_bridge?: string|null,
@@ -1070,6 +2023,7 @@ class TenantSettings
      *     l3_provider?: string|null,
      *     l3_endpoint_url?: string|null,
      *     l3_api_key?: string|null,
+     *     l3_guardian_lot_close_enabled?: bool|null,
      *     wms_bridge_api_key?: string|null,
      *     wms_receive_confirm_url?: string|null,
      *     dashboard_allow_user_customize?: bool|null,
@@ -1125,6 +2079,13 @@ class TenantSettings
             'serialization_contact_name',
             'serialization_contact_email',
             'require_ti_for_scan_first',
+            'require_pure_epcis_document',
+            'block_receive_on_destination_gln_mismatch',
+            'match_inbound_ship_to_site',
+            'block_send_on_atp_gap',
+            'auto_open_receive_after_transfer_ship',
+            'auto_complete_asn_on_ready',
+            'auto_receive_from_cmo',
             'receiving_edge_mode',
             'job_roles_enabled',
             'client_print_bridge',
@@ -1132,11 +2093,24 @@ class TenantSettings
             'l3_provider',
             'l3_endpoint_url',
             'l3_api_key',
+            'l3_guardian_lot_close_enabled',
             'wms_bridge_api_key',
             'wms_receive_confirm_url',
             'dashboard_allow_user_customize',
             'dashboard_defaults',
             'dashboard_allowed',
+            'pharmacy_simplified_nav',
+            'pharmacy_full_outbound',
+            'alert_digest_enabled',
+            'alert_digest_frequency',
+            'email_portal_on_ship',
+            'allow_assign_partner_glns_from_prefix',
+            'manufacturer_verification_portal',
+            'manufacturer_vrs_requestor',
+            'client_portal_v2',
+            'principal_custody_enforced',
+            'buying_group_network_consent',
+            'affiliation_code',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -1186,6 +2160,13 @@ class TenantSettings
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
                 'require_ti_for_scan_first' => $this->setRequireTiForScanFirst((bool) $data[$key]),
+                'require_pure_epcis_document' => $this->setRequirePureEpcisDocument((bool) $data[$key]),
+                'block_receive_on_destination_gln_mismatch' => $this->setBlockReceiveOnDestinationGlnMismatch((bool) $data[$key]),
+                'match_inbound_ship_to_site' => $this->setMatchInboundShipToSite((bool) $data[$key]),
+                'block_send_on_atp_gap' => $this->setBlockSendOnAtpGap((bool) $data[$key]),
+                'auto_open_receive_after_transfer_ship' => $this->setAutoOpenReceiveAfterTransferShip((bool) $data[$key]),
+                'auto_complete_asn_on_ready' => $this->setAutoCompleteAsnOnReady((bool) $data[$key]),
+                'auto_receive_from_cmo' => $this->setAutoReceiveFromCmo((bool) $data[$key]),
                 'receiving_edge_mode' => $this->setReceivingEdgeMode($this->normalizeReceivingEdgeMode($data[$key])),
                 'job_roles_enabled' => $this->setJobRolesEnabled((bool) $data[$key]),
                 'client_print_bridge' => $this->setClientPrintBridge(
@@ -1201,6 +2182,7 @@ class TenantSettings
                 'l3_api_key' => $this->setL3ApiKey(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
+                'l3_guardian_lot_close_enabled' => $this->setL3GuardianLotCloseEnabled((bool) $data[$key]),
                 'wms_bridge_api_key' => $this->setWmsBridgeApiKey(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
@@ -1213,6 +2195,22 @@ class TenantSettings
                 ),
                 'dashboard_allowed' => $this->setDashboardAllowed(
                     is_array($data[$key]) ? $data[$key] : [],
+                ),
+                'pharmacy_simplified_nav' => $this->setPharmacySimplifiedNavEnabled((bool) $data[$key]),
+                'pharmacy_full_outbound' => $this->setPharmacyFullOutboundEnabled((bool) $data[$key]),
+                'alert_digest_enabled' => $this->setAlertDigestEnabled((bool) $data[$key]),
+                'alert_digest_frequency' => $this->setAlertDigestFrequency(
+                    is_string($data[$key]) ? $data[$key] : 'daily',
+                ),
+                'email_portal_on_ship' => $this->setEmailPortalOnShipEnabled((bool) $data[$key]),
+                'allow_assign_partner_glns_from_prefix' => $this->setAllowAssignPartnerGlnsFromPrefix((bool) $data[$key]),
+                'manufacturer_verification_portal' => $this->setManufacturerVerificationPortalEnabled((bool) $data[$key]),
+                'manufacturer_vrs_requestor' => $this->setManufacturerVrsRequestorEnabled((bool) $data[$key]),
+                'client_portal_v2' => $this->setClientPortalV2Enabled((bool) $data[$key]),
+                'principal_custody_enforced' => $this->setPrincipalCustodyEnforced((bool) $data[$key]),
+                'buying_group_network_consent' => $this->setBuyingGroupNetworkConsent((bool) $data[$key]),
+                'affiliation_code' => $this->setAffiliationCode(
+                    is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
                 ),
             };
         }

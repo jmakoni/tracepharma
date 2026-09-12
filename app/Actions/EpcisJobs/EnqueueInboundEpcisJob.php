@@ -43,7 +43,7 @@ final class EnqueueInboundEpcisJob
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
         $lockKey = 'epcis-enqueue:'.$tenantId.':'.$document->getKey();
 
-        return EpcisCacheLock::store()->lock($lockKey, 30)->block(10, function () use ($document, $sync, $requestedBy): EpcisJob {
+        return EpcisCacheLock::lock($lockKey, 30)->block(10, function () use ($document, $sync, $requestedBy): EpcisJob {
             $created = false;
 
             $job = DB::transaction(function () use ($document, $requestedBy, &$created): EpcisJob {
@@ -106,7 +106,7 @@ final class EnqueueInboundEpcisJob
             if ($runSync) {
                 // Calling handle() directly skips WithoutOverlapping middleware; mirror
                 // ReceiveEpcisUpload so sync ingest cannot race a concurrent process.
-                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
+                EpcisCacheLock::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
                     $processJob->handle(app(EpcisIngestionService::class));
                 });
             } else {
@@ -143,7 +143,7 @@ final class EnqueueInboundEpcisJob
             ])->save();
 
             if ($runSync) {
-                EpcisCacheLock::store()->lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
+                EpcisCacheLock::lock($this->epcisProcessLockKey($document), 600)->block(30, function () use ($processJob): void {
                     $processJob->handle(app(EpcisIngestionService::class));
                 });
             } else {

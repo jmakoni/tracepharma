@@ -6,6 +6,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\EpcisQueryFieldRegistry;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,8 +35,7 @@ final class SearchEpcisSchema
         int $limit = 1000,
         int $displayLimit = 100,
         ?User $actor = null,
-    ): array
-    {
+    ): array {
         if (! in_array($resultType, ['epcs', 'documents'], true)) {
             throw new InvalidArgumentException('resultType must be epcs or documents.');
         }
@@ -95,6 +95,35 @@ final class SearchEpcisSchema
             'ids' => $ids->all(),
             'truncated' => $truncated,
         ];
+    }
+
+    /**
+     * Build an unconstrained EPC query for large exports (no row cap).
+     *
+     * @param  list<array{field: string, operator: string, value?: mixed, value_to?: mixed, boolean?: string}>  $rules
+     * @return Builder<Epc>
+     */
+    public function buildExportableEpcQuery(array $rules, ?User $actor = null): Builder
+    {
+        $normalized = $this->normalizeRules('epcs', $rules);
+
+        if ($normalized === []) {
+            throw new InvalidArgumentException('At least one complete search rule is required.');
+        }
+
+        if (! $this->hasSelectiveRule($normalized)) {
+            throw new DomainException(
+                'Add a product or shipment identifier (GTIN, lot, SSCC, ASN, or PO).',
+            );
+        }
+
+        $query = $this->buildEpcQuery($normalized);
+
+        if ($actor instanceof User) {
+            $query = SiteAccess::constrainEpcsViaInboundDocuments($query, $actor);
+        }
+
+        return PrincipalCustody::forTenant()->constrainEpcQueryForActor($query, $actor);
     }
 
     /**

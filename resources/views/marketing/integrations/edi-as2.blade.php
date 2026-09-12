@@ -63,6 +63,15 @@
                     'Outbound webhooks for downstream ERP/WMS automation.',
                 ]"
             />
+            <x-marketing.detail-section
+                title="Hub connectivity (not Pulse certification)"
+                :items="[
+                    'Connection approval queue gates new inbound/outbound partner connections until platform admin approves.',
+                    'Hub GLN route directory maps receiver GLNs to the correct tenant for partner delivery.',
+                    'Optional TracePharma-owned platform AS2 station and platform SFTP drop when partners cannot land on your edge.',
+                    'NABP Pulse directory API certification remains roadmap—EPCIS transport interoperability today is not Pulse listing.',
+                ]"
+            />
         </div>
 
         <h2 class="mt-14 text-xl font-semibold text-tp-ink">Related integration pages</h2>

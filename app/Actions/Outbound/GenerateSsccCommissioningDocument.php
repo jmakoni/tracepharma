@@ -7,6 +7,7 @@ namespace App\Actions\Outbound;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Services\Epcis\Outbound\OutboundEpcisXmlBuilder;
+use App\Support\Epcis\OutboundCorrelationGlns;
 use Illuminate\Support\Collection;
 
 final class GenerateSsccCommissioningDocument
@@ -18,7 +19,7 @@ final class GenerateSsccCommissioningDocument
 
     /**
      * @param  Collection<int, SsccLabel>|null  $labels
-     * @param  array{sgln_urn?: string}|null  $settings
+     * @param  array{sgln_urn?: string, gln?: string}|null  $settings
      */
     public function forBatch(SsccLabelBatch $batch, ?Collection $labels = null, ?string $correlationId = null, ?int $siteId = null, ?array $settings = null): string
     {
@@ -42,16 +43,32 @@ final class GenerateSsccCommissioningDocument
             throw new \InvalidArgumentException('No SSCC labels available for commissioning.');
         }
 
-        return $this->xmlBuilder->buildDocument(now()->toIso8601String(), $events, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xmlBuilder->buildDocument(
+            now()->toIso8601String(),
+            $events,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 
     /**
-     * @param  array{sgln_urn?: string}|null  $settings
+     * @param  array{sgln_urn?: string, gln?: string}|null  $settings
      */
     public function forLabel(SsccLabel $label, ?string $correlationId = null, ?int $siteId = null, ?array $settings = null): string
     {
         $event = $this->commissioningEvent->execute($label, $siteId, $settings);
 
-        return $this->xmlBuilder->buildDocument(now()->toIso8601String(), $event, $correlationId);
+        [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
+
+        return $this->xmlBuilder->buildDocument(
+            now()->toIso8601String(),
+            $event,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+        );
     }
 }

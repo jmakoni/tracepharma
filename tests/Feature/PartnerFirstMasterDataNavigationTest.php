@@ -72,10 +72,22 @@ class PartnerFirstMasterDataNavigationTest extends TestCase
     }
 
     #[Test]
-    public function site_and_location_device_resources_hide_flat_navigation(): void
+    public function site_resource_registers_master_data_navigation_while_location_devices_stay_hidden(): void
     {
-        $this->assertFalse(SiteResource::shouldRegisterNavigation());
+        $this->assertTrue(SiteResource::shouldRegisterNavigation());
         $this->assertFalse(LocationDeviceResource::shouldRegisterNavigation());
+
+        $reflection = new \ReflectionClass(SiteResource::class);
+        $label = $reflection->getProperty('navigationLabel');
+        $label->setAccessible(true);
+        $sort = $reflection->getProperty('navigationSort');
+        $sort->setAccessible(true);
+        $group = $reflection->getProperty('navigationGroup');
+        $group->setAccessible(true);
+
+        $this->assertSame('Sites', $label->getValue());
+        $this->assertSame(15, $sort->getValue());
+        $this->assertSame('Master Data', $group->getValue());
     }
 
     #[Test]

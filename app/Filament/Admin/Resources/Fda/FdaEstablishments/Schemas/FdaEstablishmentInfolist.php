@@ -21,7 +21,11 @@ class FdaEstablishmentInfolist
                     TextEntry::make('name')->placeholder('—'),
                     TextEntry::make('firm_name')->placeholder('—'),
                     FdaRegistryBadges::identifierEntry('gln', 'GLN'),
+                    FdaRegistryBadges::identifierEntry('sgln', 'SGLN'),
                     FdaRegistryBadges::identifierEntry('duns_number', 'DUNS'),
+                    FdaRegistryBadges::identifierEntry('dea_number', 'DEA'),
+                    FdaRegistryBadges::identifierEntry('hin_number', 'HIN'),
+                    FdaRegistryBadges::identifierEntry('chemical_reg_number', 'Chemical Reg'),
                     FdaRegistryBadges::establishmentEntry(),
                     FdaRegistryBadges::activeEntry(),
                     TextEntry::make('organization.name')

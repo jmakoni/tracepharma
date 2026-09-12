@@ -17,6 +17,7 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\UnreceivedPartnerShipment;
 use App\Support\Gs1\ElementString;
@@ -79,11 +80,11 @@ final class ConfirmReceivingScan
         $scan = ElementString::normalize($scan);
         $session = $session->fresh() ?? $session;
 
-        if (! JobRoleAccess::allows(Permissions::NavReceive)) {
+        $actor = $this->resolveActor($userId);
+        if (! JobRoleAccess::allowsForActor(Permissions::NavReceive, $actor)) {
             throw new DomainException('Receiving is not authorized for your job role.');
         }
 
-        $actor = $this->resolveActor($userId);
         if ($actor !== null) {
             $this->assertCanAccessSessionSite($actor, $session);
         }
@@ -355,12 +356,15 @@ final class ConfirmReceivingScan
 
                 $confirmedChildren = 0;
                 if ($lineRole === 'parent') {
-                    $documentIdForChildren = $matchedAsnId ?? $session->matched_epcis_document_id;
+                    // Scope children to THIS scan's ASN match only. Sticky session
+                    // matched_epcis_document_id must not block open-link fallback for
+                    // later sealed parents that have no ASN match.
+                    $documentIdForChildren = $matchedAsnId !== null ? (int) $matchedAsnId : null;
 
                     $confirmedChildren = $this->seedAndConfirmChildrenForParent(
                         $session,
                         $epc,
-                        $documentIdForChildren !== null ? (int) $documentIdForChildren : null,
+                        $documentIdForChildren,
                         $userId,
                         $autoConfirmChildren,
                         $now,
@@ -521,6 +525,11 @@ final class ConfirmReceivingScan
         $sessionSiteId = (int) $sessionSiteId;
         $epcId = (int) $epc->getKey();
 
+        $principalBlock = $this->principalCustodyBlock($session, $epc, $hasTi, $tiWarning, $context);
+        if ($principalBlock !== null) {
+            return $principalBlock;
+        }
+
         $transferId = $context['in_transit_transferring_session_id'] ?? null;
         if ($transferId !== null) {
             $transfer = TransferringSession::query()->find($transferId);
@@ -533,7 +542,8 @@ final class ConfirmReceivingScan
             return null;
         }
 
-        if ($this->shippableEpcsAtSite->contains($sessionSiteId, $epcId)) {
+        // Location-only: principal filtering must not fail-open this cross-site gate.
+        if ($this->shippableEpcsAtSite->isOnHandAtSite($sessionSiteId, $epcId)) {
             return null;
         }
 
@@ -543,7 +553,7 @@ final class ConfirmReceivingScan
                 continue;
             }
 
-            if ($this->shippableEpcsAtSite->contains($otherSiteId, $epcId)) {
+            if ($this->shippableEpcsAtSite->isOnHandAtSite($otherSiteId, $epcId)) {
                 return [
                     'ok' => false,
                     'message' => 'This unit is on hand at another site. Receive it there or transfer it first.',
@@ -563,8 +573,67 @@ final class ConfirmReceivingScan
     }
 
     /**
+     * When principal custody is enforced, refuse scans that would mix clients.
+     * First-time receive (EPC not yet stamped) is allowed — stamp happens on complete.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>|null
+     */
+    private function principalCustodyBlock(
+        ReceivingSession $session,
+        Epc $epc,
+        bool $hasTi = false,
+        ?string $tiWarning = null,
+        array $context = [],
+    ): ?array {
+        if (! PrincipalCustody::forTenant()->isEnforced()) {
+            return null;
+        }
+
+        $sessionPrincipalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        $epcPrincipalId = $epc->principal_id !== null ? (int) $epc->principal_id : null;
+
+        if ($sessionPrincipalId === null || $sessionPrincipalId <= 0) {
+            return [
+                'ok' => false,
+                'message' => 'Principal custody is enforced — select a principal before operating on serials.',
+                'line' => null,
+                'epc' => $epc,
+                'effect' => 'principal_required',
+                'has_ti' => $hasTi,
+                'matched_asn_document_id' => $context['matched_inbound_document_id'] ?? null,
+                'matched_transfer_session_id' => $context['in_transit_transferring_session_id'] ?? null,
+                'ti_warning' => $tiWarning,
+                'reconciled_asn_session_id' => null,
+            ];
+        }
+
+        if ($epcPrincipalId === null) {
+            return null;
+        }
+
+        if ($epcPrincipalId === $sessionPrincipalId) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'message' => 'This serial belongs to another principal.',
+            'line' => null,
+            'epc' => $epc,
+            'effect' => 'wrong_principal',
+            'has_ti' => $hasTi,
+            'matched_asn_document_id' => $context['matched_inbound_document_id'] ?? null,
+            'matched_transfer_session_id' => $context['in_transit_transferring_session_id'] ?? null,
+            'ti_warning' => $tiWarning,
+            'reconciled_asn_session_id' => null,
+        ];
+    }
+
+    /**
      * Seed (and optionally auto-confirm) aggregation children under a scanned SSCC
-     * for scan-first receives, using the matched inbound ASN document.
+     * for scan-first receives. Uses the matched inbound ASN document when present;
+     * otherwise falls back to open aggregation links under the parent.
      *
      * @return int Newly confirmed child count for this parent
      */
@@ -576,34 +645,41 @@ final class ConfirmReceivingScan
         bool $autoConfirmChildren,
         mixed $now,
     ): int {
-        if ($documentId === null) {
-            return 0;
+        if ($documentId !== null) {
+            $document = EpcisDocument::query()->find($documentId);
+
+            $childEpcIds = AggregationLink::query()
+                ->where('parent_epc_id', $parentEpc->getKey())
+                ->whereNull('valid_to')
+                ->whereIn('established_by_event_id', function ($query) use ($documentId, $document): void {
+                    $query->select('id')
+                        ->from('epcis_events')
+                        ->where('document_id', $documentId);
+
+                    if (
+                        $document !== null
+                        && Schema::hasColumn('epcis_events', 'ingest_generation')
+                        && Schema::hasColumn('epcis_documents', 'ingest_generation')
+                        && filled($document->getAttribute('ingest_generation'))
+                    ) {
+                        $query->where('ingest_generation', $document->getAttribute('ingest_generation'));
+                    }
+                })
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        } else {
+            $childEpcIds = AggregationLink::query()
+                ->where('parent_epc_id', $parentEpc->getKey())
+                ->whereNull('valid_to')
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
         }
-
-        $document = EpcisDocument::query()->find($documentId);
-
-        $childEpcIds = AggregationLink::query()
-            ->where('parent_epc_id', $parentEpc->getKey())
-            ->whereNull('valid_to')
-            ->whereIn('established_by_event_id', function ($query) use ($documentId, $document): void {
-                $query->select('id')
-                    ->from('epcis_events')
-                    ->where('document_id', $documentId);
-
-                if (
-                    $document !== null
-                    && Schema::hasColumn('epcis_events', 'ingest_generation')
-                    && Schema::hasColumn('epcis_documents', 'ingest_generation')
-                    && filled($document->getAttribute('ingest_generation'))
-                ) {
-                    $query->where('ingest_generation', $document->getAttribute('ingest_generation'));
-                }
-            })
-            ->pluck('child_epc_id')
-            ->map(fn ($id): int => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
 
         if ($childEpcIds === []) {
             return 0;
@@ -832,6 +908,13 @@ final class ConfirmReceivingScan
                 'effect' => 'not_found',
                 'session_completed' => false,
             ];
+        }
+
+        $principalBlock = $this->principalCustodyBlock($session, $epc);
+        if ($principalBlock !== null) {
+            $principalBlock['session_completed'] = false;
+
+            return $principalBlock;
         }
 
         $line = ReceivingScanLine::query()
@@ -1205,6 +1288,11 @@ final class ConfirmReceivingScan
                 ];
             }
 
+            $principalBlock = $this->principalCustodyBlock($session, $epc);
+            if ($principalBlock !== null) {
+                return $principalBlock;
+            }
+
             if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
                 return [
                     'ok' => false,
@@ -1354,6 +1442,7 @@ final class ConfirmReceivingScan
 
         $session->forceFill($sessionUpdates)->save();
 
+        $this->releaseOpenToteLockIfChildrenDone($session->refresh());
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
         $message = $confirmedChildren > 0
@@ -1413,6 +1502,7 @@ final class ConfirmReceivingScan
             'confirmed_child_count' => (int) $session->confirmed_child_count + 1,
         ])->save();
 
+        $this->releaseOpenToteLockIfChildrenDone($session->refresh());
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
         return [
@@ -1515,6 +1605,31 @@ final class ConfirmReceivingScan
     }
 
     /**
+     * Open-tote lock used to clear only inside markSessionCompletedIfReady. With
+     * explicit Complete receive, release the lock when the ASN is fully ready
+     * (locked parent's children done and no other expected work). Keep the lock
+     * while other totes remain so comingling scans are still rejected.
+     */
+    private function releaseOpenToteLockIfChildrenDone(ReceivingSession $session): void
+    {
+        if ($session->active_parent_epc_id === null) {
+            return;
+        }
+
+        if ($session->openToteLockBlocksComplete()) {
+            return;
+        }
+
+        if (! $session->isReadyToCompleteInboundAsn()) {
+            return;
+        }
+
+        $session->forceFill([
+            'active_parent_epc_id' => null,
+        ])->save();
+    }
+
+    /**
      * Flip the session to completed when every expected line is in, but do not author
      * EPCIS here: this runs inside the scan-confirm transaction, and a completion
      * failure (e.g. no SGLN on record) must not roll back the scan that was just
@@ -1526,6 +1641,10 @@ final class ConfirmReceivingScan
         // Scan-first and transfer_receive complete only via explicit CompleteReceivingSession
         // (transfer_receive triggers that from confirmTransferReceive when all lines done).
         if ($session->isScanFirst() || $session->isTransferReceive()) {
+            return false;
+        }
+
+        if (! TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady()) {
             return false;
         }
 

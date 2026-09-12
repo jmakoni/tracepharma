@@ -15,15 +15,21 @@ class OnboardingCopy
 {
     public function __construct(
         protected TenantFeatures $features,
+        protected ?Tenant $tenant = null,
     ) {}
 
     public static function forTenant(?Tenant $tenant): self
     {
-        return new self(TenantFeatures::forTenant($tenant));
+        return new self(TenantFeatures::forTenant($tenant), $tenant);
     }
 
     public function subheading(): string
     {
+        if ($this->features->profile() === TenantProfile::Logistics3pl) {
+            return 'Set up your 3PL for DSCSA receive and ship — company GLN, sites, partners, and inbound path. '
+                .PrincipalsHonesty::forTenant($this->tenant)->sentence();
+        }
+
         if ($this->usesWholesalerChecklist()) {
             return 'Set up your drug wholesaler for DSCSA receive and ship — company GLN, sites, partners, and inbound path.';
         }
@@ -33,6 +39,11 @@ class OnboardingCopy
 
     public function banner(): string
     {
+        if ($this->features->profile() === TenantProfile::Logistics3pl) {
+            return '3PL setup: receive and ship on behalf of clients with the right GLNs and sites. '
+                .PrincipalsHonesty::forTenant($this->tenant)->sentence();
+        }
+
         if ($this->usesWholesalerChecklist()) {
             return 'Drug wholesaler setup: receive from manufacturers/upstream partners and ship to pharmacies with the right GLNs and sites.';
         }
@@ -71,10 +82,10 @@ class OnboardingCopy
     {
         return [
             'org_gln' => 'Your company GLN identifies you as the wholesaler on EPCIS and VRS traffic.',
-            'receiving_state' => 'The state where you evaluate ATP / WDD licenses for inbound product.',
+            'receiving_state' => 'Organization facility states/countries used to evaluate partner ATP / WDD licenses. A preferred receiving state is optional for badges when multiple jurisdictions apply.',
             'default_receive_site' => 'Warehouse or DC that owns inbound receiving when ASN ship-to is unclear.',
             'default_ship_from_site' => 'Default origin site when you ship to pharmacies and other trading partners.',
-            'atp_ready' => 'Required for go-live: a manufacturer or wholesaler you receive from needs a site licensed for your receiving state.',
+            'atp_ready' => 'Required for go-live: a manufacturer or wholesaler you receive from needs a site licensed for your organization jurisdictions.',
             'upstream_partner' => 'Add manufacturers or wholesalers you receive from, each with a GLN.',
             'downstream_partner' => 'Add pharmacies or other customers you ship to, each with a GLN.',
             'inbound_path' => 'Configure an inbound connection or validate at least one EPCIS document.',
@@ -91,9 +102,9 @@ class OnboardingCopy
     {
         return [
             'org_gln' => 'Your company GLN identifies your pharmacy on EPCIS and VRS traffic.',
-            'receiving_state' => 'The state where you evaluate ATP licenses for inbound product.',
+            'receiving_state' => 'Organization facility states/countries used to evaluate partner ATP licenses. A preferred receiving state is optional for badges when multiple jurisdictions apply.',
             'default_receive_site' => 'Store or facility that owns inbound receiving when ASN ship-to is unclear.',
-            'atp_ready' => 'Required for go-live: a manufacturer or wholesaler you receive from needs a site licensed for your receiving state.',
+            'atp_ready' => 'Required for go-live: a manufacturer or wholesaler you receive from needs a site licensed for your organization jurisdictions.',
             'upstream_partner' => 'Add manufacturers or wholesalers you receive from, each with a GLN.',
             'inbound_path' => 'Configure an inbound connection or validate at least one EPCIS document.',
             'receive_proven' => 'Complete at least one receiving session assigned to a site to prove inbound choreography.',

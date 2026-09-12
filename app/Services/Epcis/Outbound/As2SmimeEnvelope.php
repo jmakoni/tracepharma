@@ -16,20 +16,22 @@ final class As2SmimeEnvelope
         ?string $signingCertPem,
         ?string $signingKeyPem,
         ?string $partnerEncryptCertPem,
+        ?string $contentType = null,
     ): As2SmimeEnvelopeResult {
+        $contentType ??= 'application/xml';
+
         $canSign = filled($signingCertPem) && filled($signingKeyPem);
         $canEncrypt = filled($partnerEncryptCertPem);
 
         if (! $canSign && ! $canEncrypt) {
             return new As2SmimeEnvelopeResult(
                 body: $payload,
-                contentType: 'application/xml',
+                contentType: $contentType,
                 smimeApplied: false,
             );
         }
 
         $body = $payload;
-        $contentType = 'application/xml';
 
         if ($canSign) {
             [$body, $contentType] = $this->sign($payload, $signingCertPem, $signingKeyPem);

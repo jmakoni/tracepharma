@@ -7,6 +7,7 @@ use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionAction as ExceptionActionModel;
@@ -15,13 +16,13 @@ use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseEditor;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -56,7 +57,7 @@ final class CorrectDocumentActions
 
     public static function uploadCorrectedFile(ViewException $page): Action
     {
-        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 20480));
+        $maxKb = max(1, (int) config('tracepharma.epcis.max_upload_kb', 81920));
 
         return RegulatoryCompliance::apply(
             Action::make('uploadCorrectedFile')
@@ -91,10 +92,8 @@ final class CorrectDocumentActions
                         ->maxSize($maxKb)
                         ->required()
                         ->storeFiles(false),
-                    Textarea::make('notes')
+                    ProseEditor::make('notes')
                         ->label('Notes')
-                        ->rows(2)
-                        ->maxLength(5000)
                         ->nullable(),
                 ])
                 ->action(function (array $data) use ($page): void {

@@ -121,7 +121,7 @@ class MarketingResources
                     [
                         'heading' => 'Non-negotiable capability checks',
                         'paragraphs' => [
-                            'Ask for live EPCIS 2.0 investigation—not slide decks. Request exception workflows with supplier accountability, not just ingest logs. Confirm VRS audit trails for dispensers. Validate that pricing includes the partner count you will actually onboard in year one.',
+                            'Ask for live EPCIS event-store investigation (1.2 GA; confirm whether 2.0 JSON-LD is enabled)—not slide decks claiming a full CBV 2.0 hub. Request exception workflows with supplier accountability, not just ingest logs. Confirm VRS audit trails for dispensers. Validate that pricing includes the partner count you will actually onboard in year one.',
                         ],
                     ],
                     [
@@ -241,7 +241,7 @@ class MarketingResources
                     [
                         'heading' => 'Deployment pattern',
                         'paragraphs' => [
-                            'Inbound EPCIS from primary wholesaler HTTPS preset. Receiving aligned to tote and invoice. PMS dispense-check API hook for verification before fill. Quarantine workflow with 3911 export template for compliance lead review.',
+                            'Inbound EPCIS from primary wholesaler HTTPS preset. Receiving aligned to tote and invoice. POST /api/v1/dispense-check for verification before fill (named PMS adapters not GA). Quarantine workflow with 3911 export template for compliance lead review.',
                         ],
                     ],
                     [
@@ -275,7 +275,7 @@ class MarketingResources
                     [
                         'heading' => 'Deployment pattern',
                         'paragraphs' => [
-                            'L3 serial provisioning handoff to L4 tenant. Outbound ObjectEvents at ship confirm from ERP/WMS integration. Per-customer ACK dashboard with transport status. Exception queue for rejected or missing ACKs with resend workflow.',
+                            'L3 commissioning forward (Organization settings URL + idempotent POST) to plant or corporate L3. Outbound ObjectEvents at ship confirm from ERP/WMS integration. Per-customer ACK dashboard with transport status. Exception queue for rejected or missing ACKs with resend workflow.',
                         ],
                     ],
                     [

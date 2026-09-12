@@ -45,6 +45,15 @@
                 ]"
             />
             <x-marketing.detail-section
+                title="Hub connectivity (tenant L4)"
+                :items="[
+                    'Connection approval: tenant-created inbound/outbound connections stay pending until platform admin approves—so go-live is gated, not silent.',
+                    'Hub GLN route directory routes partner delivery to the correct tenant—distinct from principal GLNs on 3PL floors.',
+                    'Platform AS2 station and platform SFTP drop are TracePharma-owned edges partners can target when you do not run your own AS2/SFTP.',
+                    'Go-live checklists and evidence packs support cutover—without claiming NABP Pulse directory certification (roadmap; not yet certified).',
+                ]"
+            />
+            <x-marketing.detail-section
                 title="Outbound shipping"
                 :items="[
                     'Generate EPCIS shipping documents and consolidated shipments.',
@@ -53,11 +62,12 @@
                 ]"
             />
             <x-marketing.detail-section
-                title="L3 serial provisioning (manufacturers)"
+                title="L3 commissioning forward (manufacturers)"
                 :items="[
-                    'REST API to create allocations and export serial ranges to plant-floor systems.',
-                    'Inbound commissioning EPCIS reconciled against reserved allocations.',
-                    'Presets for TraceLink, UniTrace, LSPedia, and regional connectivity vendors.',
+                    'Configure an L3 HTTPS forward URL and credentials in Organization settings.',
+                    'When commissioning EPCIS is authored, ForwardCommissioningToL3 POSTs it to your endpoint (idempotent).',
+                    'No public /api/v1/l3/allocations surface or provision-l3 commands—settings plus commissioning forward drive the handoff.',
+                    'Plant commissioning is Manufacturer + Prepackager only—wholesaler and 3PL profiles do not commission.',
                 ]"
             />
             <x-marketing.detail-section
@@ -71,19 +81,20 @@
             <x-marketing.detail-section
                 title="Pharmacy PMS dispense check"
                 :items="[
-                    'Unified POST /api/v1/pms/{vendor}/dispense for PioneerRx, BestRx, PrimeRx, Liberty/Rx30, QS/1, EnterpriseRx, and ScriptPro.',
-                    'Optional per-vendor shared-secret headers before completing a fill.',
-                    'pms_dispense_events audit trail with Filament list/view and 30-day blocked-reason trends on the dispenser scorecard.',
-                    'GET /api/v1/compliance/dispenser-scorecard embeds pms_blocked_reason_trends; standalone GET /api/v1/compliance/pms-blocked-reason-trends for BI.',
+                    'Single Sanctum endpoint: POST /api/v1/dispense-check—PMS middleware calls TracePharma before completing a fill.',
+                    'Named per-vendor PMS adapter routes (e.g. POST /api/v1/pms/{vendor}/dispense) are not GA; use the unified dispense-check API.',
+                    'Dispense outcomes feed the dispenser scorecard and verification audit trail for inspection-ready evidence.',
+                    'Dedicated GET /api/v1/compliance/* scorecard routes are not GA — use in-app scorecards and verification history for BI today.',
                 ]"
             />
             <x-marketing.detail-section
                 title="WMS ship-confirm bridge"
                 :items="[
-                    'POST /api/webhooks/wms/{tenantId}/{vendor}/ship-confirm for Manhattan Active WM and Körber (HighJump).',
+                    'POST /api/webhooks/wms/{tenantId} (tenant webhook) and Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic, not a per-vendor URL path.',
                     'Normalizes ship-confirm JSON into outbound EPCIS shipment drafts with optional auto-queue.',
-                    'wms_ship_confirm_events audit trail with Filament list/view and 30-day blocked-reason trends on the operations scorecard.',
-                    'GET /api/v1/compliance/operations-scorecard embeds wms_ship_confirm_blocked_reason_trends; standalone GET /api/v1/compliance/wms-ship-confirm-trends for BI.',
+                    'For Logistics3pl: optional principal_id, principal_external_ref, or principal_gln (or site default) tags the outbound session—soft filter by default; custody walls only when enforcement is on.',
+                    'wms_ship_confirm_events audit trail with Filament list/view and blocked-reason trends on in-app operations scorecards.',
+                    'Standalone GET /api/v1/compliance/wms-ship-confirm-trends is not GA; use in-app operations scorecards meanwhile.',
                 ]"
             />
         </div>

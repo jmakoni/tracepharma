@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\TradingPartner;
+use App\Support\Exceptions\InvestigatorSlaClock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use Illuminate\View\View;
@@ -21,6 +22,9 @@ class SupplierExceptionPortalController extends Controller
         // A revoked or rotated uuid, and a partner that has since been deactivated, both
         // read as the same thing to the supplier: this link no longer grants access.
         abort_if($partner === null || ! $partner->is_active, 403, 'This supplier portal link is no longer active.');
+
+        $clock = app(InvestigatorSlaClock::class);
+        $agingDays = max(1, (int) config('tracepharma.supplier_exception_notify.aging_days', 3));
 
         $cases = ExceptionCase::query()
             ->open()
@@ -54,10 +58,18 @@ class SupplierExceptionPortalController extends Controller
             )],
         );
 
+        $lastNotified = $cases->mapWithKeys(
+            fn (ExceptionCase $case): array => [
+                (int) $case->getKey() => $clock->lastSupplierEmailAt($case),
+            ],
+        );
+
         return view('supplier-exceptions.index', [
             'partner' => $partner,
             'cases' => $cases,
             'caseLinks' => $caseLinks,
+            'lastNotified' => $lastNotified,
+            'agingDays' => $agingDays,
         ]);
     }
 }

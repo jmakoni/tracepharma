@@ -18,10 +18,12 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class OutboundConnectionResource extends Resource
+class OutboundConnectionResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = OutboundConnection::class;
 
@@ -39,7 +41,7 @@ class OutboundConnectionResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations())
+        return TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavIntegrations);
     }
 
@@ -55,6 +57,10 @@ class OutboundConnectionResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
+        if ($record instanceof OutboundConnection && $record->isSystemTemplate()) {
+            return false;
+        }
+
         return auth()->user()?->can('delete', $record) ?? false;
     }
 
@@ -73,6 +79,11 @@ class OutboundConnectionResource extends Resource
         return OutboundConnectionsTable::configure($table);
     }
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['tradingPartners']);
+    }
+
     public static function getPages(): array
     {
         return [
@@ -81,5 +92,10 @@ class OutboundConnectionResource extends Resource
             'view' => ViewOutboundConnection::route('/{record}'),
             'edit' => EditOutboundConnection::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.connections';
     }
 }

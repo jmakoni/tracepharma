@@ -32,11 +32,11 @@ use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Services\Labeling\SsccBuilder;
+use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -473,7 +473,7 @@ class PackWorkstationTest extends TestCase
             $this->epcIds[] = (int) $child->getKey();
             $this->receiveAtSite($site, $child);
 
-            $held = Cache::lock('pack-child:'.$tenant->getKey().':'.$child->getKey(), 30);
+            $held = EpcisCacheLock::lock('pack-child:'.$tenant->getKey().':'.$child->getKey(), 30);
             $this->assertTrue($held->get());
 
             try {
@@ -510,7 +510,7 @@ class PackWorkstationTest extends TestCase
 
             [$parent, $child] = $this->seedOpenHierarchy($site);
 
-            $held = Cache::lock('pack-child:'.$tenant->getKey().':'.$parent->getKey(), 30);
+            $held = EpcisCacheLock::lock('pack-child:'.$tenant->getKey().':'.$parent->getKey(), 30);
             $this->assertTrue($held->get());
 
             try {

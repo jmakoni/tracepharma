@@ -3,7 +3,6 @@
 namespace Tests\Feature\MasterData;
 
 use App\Actions\MasterData\EnsureManufacturerPartnerFromCatalog;
-use App\Actions\MasterData\EnsureWholesalerPartnerFromCatalog;
 use App\Models\Fda\FdaOrganization;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
@@ -30,21 +29,6 @@ class EnsurePartnerFromMissingCatalogTest extends TestCase
             });
 
         $this->assertNull(app(EnsureManufacturerPartnerFromCatalog::class)->handle($missingId));
-    }
-
-    #[Test]
-    public function a_missing_fda_wholesaler_organization_yields_no_partner_and_a_warning(): void
-    {
-        $missingId = $this->missingFdaOrganizationId();
-
-        Log::shouldReceive('warning')
-            ->once()
-            ->withArgs(function (string $message, array $context) use ($missingId): bool {
-                return str_contains($message, 'no longer exists')
-                    && $context['fda_organization_id'] === $missingId;
-            });
-
-        $this->assertNull(app(EnsureWholesalerPartnerFromCatalog::class)->handle($missingId));
     }
 
     private function missingFdaOrganizationId(): int

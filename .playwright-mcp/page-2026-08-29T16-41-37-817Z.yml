@@ -1,0 +1,35 @@
+- generic [ref=f43e1]:
+  - main [ref=f43e4]:
+    - generic [ref=f43e5]:
+      - generic [ref=f43e6]:
+        - generic [ref=f43e7]:
+          - img "TracePharma logo" [ref=f43e8]
+          - heading "Sign in" [level=1] [ref=f43e9]
+        - generic [ref=f43e10]:
+          - generic [ref=f43e13]:
+            - generic [ref=f43e17]:
+              - generic [ref=f43e20]:
+                - generic [ref=f43e24]:
+                  - text: Email address
+                  - superscript [ref=f43e25]: "*"
+                - textbox "Email address*" [active] [ref=f43e29]
+              - generic [ref=f43e32]:
+                - generic [ref=f43e36]:
+                  - text: Password
+                  - superscript [ref=f43e37]: "*"
+                - generic [ref=f43e39]:
+                  - textbox "Password*" [ref=f43e41]
+                  - button "Show Password" [ref=f43e44] [cursor=pointer]
+              - generic [ref=f43e53]:
+                - checkbox "Remember me" [ref=f43e54]
+                - generic [ref=f43e55]: Remember me
+            - button "Sign In" [ref=f43e61] [cursor=pointer]
+          - button "Authenticate using Passkey" [ref=f43e65] [cursor=pointer]
+      - navigation "Legal documents" [ref=f43e66]:
+        - link "Terms of Service" [ref=f43e67] [cursor=pointer]:
+          - /url: https://tracepharma.io/tos
+        - text: ·
+        - link "Privacy Policy" [ref=f43e68] [cursor=pointer]:
+          - /url: https://tracepharma.io/privacy
+  - generic:
+    - status

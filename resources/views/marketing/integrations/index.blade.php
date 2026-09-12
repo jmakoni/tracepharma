@@ -7,7 +7,7 @@
     <x-marketing.page-hero
         eyebrow="Integrations"
         title="Interoperate with the platforms your partners already use"
-        description="TracePharma connects to serialization vendors, pharmacy platforms, and middleware listed in the NABP Pulse ecosystem. Use tenant-scoped AS2, SFTP, and HTTPS presets. Run L4 receiving, outbound ship, exceptions, and compliance in one workspace."
+        description="TracePharma interops with serialization vendors, pharmacy platforms, and middleware—including many Pulse-listed partners—over AS2, SFTP, HTTPS, and hub GLN routing. Use tenant-scoped connection presets. TracePharma itself is not Pulse certified. Run L4 receiving, outbound ship, exceptions, and compliance in one workspace."
     >
         <x-slot:actions>
             <a href="{{ route('marketing.features.show', 'integrations') }}">Integration features →</a>
@@ -36,8 +36,8 @@
         <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <a href="{{ route('marketing.integrations.pms.index') }}" class="tp-card-accent group border-tp-accent-500/30 p-6 transition hover:border-tp-accent-500/50">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pharmacy PMS</p>
-                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">7 dispense-check APIs</h3>
-                <p class="mt-2 text-sm text-tp-muted">PioneerRx, BestRx, PrimeRx, and more</p>
+                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">One dispense-check API</h3>
+                <p class="mt-2 text-sm text-tp-muted">POST /api/v1/dispense-check · named adapters not GA</p>
             </a>
             <a href="{{ route('marketing.integrations.wms.index') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">WMS</p>
@@ -54,15 +54,20 @@
                 <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">Middleware &amp; transport</h3>
                 <p class="mt-2 text-sm text-tp-muted">AS2, SFTP, Axway patterns</p>
             </a>
+            <a href="{{ route('marketing.features.show', 'integrations') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
+                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Hub connectivity</p>
+                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">Approval · GLN routes · platform edges</h3>
+                <p class="mt-2 text-sm text-tp-muted">Connection approval + hub GLN routing · not Pulse certified</p>
+            </a>
             <a href="{{ route('marketing.integrations.erp.index') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">ERP</p>
                 <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">SAP &amp; ERP adjacency</h3>
-                <p class="mt-2 text-sm text-tp-muted">ATTP + REST/webhook patterns</p>
+                <p class="mt-2 text-sm text-tp-muted">SAP ICH / HTTPS EPCIS patterns (beside ATTP)</p>
             </a>
             <a href="{{ route('marketing.integrations.nabp-pulse') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">NABP Pulse</p>
                 <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">Interoperability status</h3>
-                <p class="mt-2 text-sm text-tp-muted">Pulse ecosystem &amp; roadmap</p>
+                <p class="mt-2 text-sm text-tp-muted">Not Pulse certified · roadmap</p>
             </a>
         </div>
 
@@ -74,7 +79,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                         <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">{{ $page['category'] }}</p>
                         @if ($page['pulse_listed'])
-                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse ecosystem</span>
+                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse-listed partner</span>
                         @endif
                     </div>
                     <h3 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">{{ $page['name'] }}</h3>
@@ -93,7 +98,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                         <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">{{ $page['category'] }}</p>
                         @if ($page['pulse_listed'])
-                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse ecosystem</span>
+                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse-listed partner</span>
                         @endif
                     </div>
                     <h3 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">{{ $page['name'] }}</h3>
@@ -110,7 +115,7 @@
             <a href="{{ route('marketing.integrations.show', 'axway') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <div class="flex flex-wrap items-center gap-2">
                     <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">{{ $page['category'] }}</p>
-                    <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse ecosystem</span>
+                    <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse-listed partner</span>
                 </div>
                 <h3 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">{{ $page['name'] }}</h3>
                 <p class="mt-2 text-sm text-tp-muted">{{ implode(' · ', $page['transports']) }}</p>
@@ -119,7 +124,7 @@
             </a>
         </div>
 
-        <h2 class="mt-14 text-2xl font-semibold tracking-tight text-tp-ink">ERP &amp; additional Pulse ecosystem vendors</h2>
+        <h2 class="mt-14 text-2xl font-semibold tracking-tight text-tp-ink">ERP &amp; additional Pulse-listed partner vendors</h2>
         <div class="mt-8 grid gap-4 md:grid-cols-2">
             @foreach (['sap', 'rfxcel', 'tracktracerx', 'optel'] as $slug)
                 @php $page = \App\Support\Marketing\MarketingIntegrationPages::get($slug); @endphp
@@ -127,7 +132,7 @@
                     <div class="flex flex-wrap items-center gap-2">
                         <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">{{ $page['category'] }}</p>
                         @if ($page['pulse_listed'])
-                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse ecosystem</span>
+                            <span class="rounded-full border border-tp-border px-2 py-0.5 text-xs text-tp-muted">Pulse-listed partner</span>
                         @endif
                     </div>
                     <h3 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">{{ $page['name'] }}</h3>

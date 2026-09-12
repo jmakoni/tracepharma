@@ -2,9 +2,12 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Actions\Integrations\RegisterConnectionApprovalRequest;
+use App\Enums\ConnectionApprovalStatus;
 use App\Enums\InboundTransport;
 use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
+use App\Filament\Notifications\Notification;
 use App\Models\InboundConnection;
 use App\Models\TradingPartner;
 use App\Models\User;
@@ -12,15 +15,15 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use UnitEnum;
 
-class InviteTradingPartner extends Page
+class InviteTradingPartner extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedUserPlus;
 
@@ -101,7 +104,7 @@ class InviteTradingPartner extends Page
 
                 $transport = InboundTransport::from($this->transport);
 
-                InboundConnection::query()->create([
+                $connection = InboundConnection::query()->create([
                     'name' => $partner->name.' inbound',
                     'serialization_provider' => $transport === InboundTransport::Sftp
                         ? SerializationProvider::CustomSftp
@@ -109,13 +112,17 @@ class InviteTradingPartner extends Page
                     'transport' => $transport,
                     'trading_partner_id' => $partner->getKey(),
                     'is_active' => $transport === InboundTransport::Https,
+                    'approval_status' => ConnectionApprovalStatus::Pending->value,
                 ]);
+
+                app(RegisterConnectionApprovalRequest::class)->register($connection);
 
                 Notification::make()
                     ->title('Partner invited')
-                    ->body($transport === InboundTransport::Sftp
-                        ? 'Add SFTP host credentials on Inbound Connections.'
-                        : 'HTTPS inbound token is ready on Inbound Connections.')
+                    ->body(($transport === InboundTransport::Sftp
+                        ? 'Add SFTP host credentials on Inbound Connections. '
+                        : 'HTTPS inbound token is ready on Inbound Connections. ')
+                        .'The connection needs platform approval before it can receive documents.')
                     ->success()
                     ->send();
 
@@ -124,5 +131,10 @@ class InviteTradingPartner extends Page
                 $this->email = '';
                 $this->transport = 'https';
             });
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'integrations.partner-onboarding';
     }
 }

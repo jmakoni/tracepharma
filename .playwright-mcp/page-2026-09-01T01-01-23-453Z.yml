@@ -1,0 +1,38 @@
+- generic [ref=f10e1]:
+  - main [ref=f10e4]:
+    - generic [ref=f10e5]:
+      - generic [ref=f10e6]:
+        - generic [ref=f10e7]:
+          - img "TracePharma logo" [ref=f10e8]
+          - heading "Sign in" [level=1] [ref=f10e9]
+        - generic [ref=f10e10]:
+          - generic [ref=f10e13]:
+            - generic [ref=f10e17]:
+              - generic [ref=f10e20]:
+                - generic [ref=f10e24]:
+                  - text: Email address
+                  - superscript [ref=f10e25]: "*"
+                - textbox "Email address*" [active] [ref=f10e29]
+              - generic [ref=f10e32]:
+                - generic [ref=f10e34]:
+                  - generic [ref=f10e36]:
+                    - text: Password
+                    - superscript [ref=f10e37]: "*"
+                  - link "Forgot password?" [ref=f10e42] [cursor=pointer]:
+                    - /url: https://demo2.internal.vatengi.com/password-reset/request
+                - generic [ref=f10e45]:
+                  - textbox "Password*" [ref=f10e47]
+                  - button "Show Password" [ref=f10e50] [cursor=pointer]
+              - generic [ref=f10e59]:
+                - checkbox "Remember me" [ref=f10e60]
+                - generic [ref=f10e61]: Remember me
+            - button "Sign In" [ref=f10e67] [cursor=pointer]
+          - button "Authenticate using Passkey" [ref=f10e71] [cursor=pointer]
+      - navigation "Legal documents" [ref=f10e72]:
+        - link "Terms of Service" [ref=f10e73] [cursor=pointer]:
+          - /url: https://tracepharma.io/tos
+        - text: ·
+        - link "Privacy Policy" [ref=f10e74] [cursor=pointer]:
+          - /url: https://tracepharma.io/privacy
+  - generic:
+    - status

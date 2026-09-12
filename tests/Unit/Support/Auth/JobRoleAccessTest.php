@@ -29,6 +29,31 @@ class JobRoleAccessTest extends TestCase
     }
 
     #[Test]
+    public function global_role_based_menus_kill_switch_disables_job_role_enforcement(): void
+    {
+        $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
+        if ($tenant === null) {
+            $this->markTestSkipped('Demo2 tenant not provisioned.');
+        }
+
+        $tenant->run(function () use ($tenant): void {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
+            $tenant->save();
+
+            config(['tracepharma.role_based_menus' => false]);
+
+            $this->assertFalse(JobRoleAccess::enabled($tenant));
+            $this->assertTrue(JobRoleAccess::allows(Permissions::NavShip));
+
+            config(['tracepharma.role_based_menus' => true]);
+            TenantSettings::forTenant($tenant)->setJobRolesEnabled(false);
+            $tenant->save();
+        });
+    }
+
+    #[Test]
     public function allows_for_actor_bypasses_nav_gate_for_machine_context_when_job_roles_are_enabled(): void
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -137,6 +162,22 @@ class JobRoleAccessTest extends TestCase
         $this->assertSame(
             Permissions::tenantAppPermissions(),
             TenantRoleSeeder::permissionNamesFor(TenantRole::Owner),
+        );
+
+        foreach ([
+            TenantRole::PackagingLineOperator,
+            TenantRole::SerializationSystemsEngineer,
+            TenantRole::CmoIntegrationManager,
+        ] as $plantRole) {
+            $this->assertContains(
+                Permissions::NavReceive,
+                TenantRoleSeeder::permissionNamesFor($plantRole),
+                $plantRole->value,
+            );
+        }
+        $this->assertNotContains(
+            Permissions::NavReceive,
+            TenantRoleSeeder::permissionNamesFor(TenantRole::MasterDataAdministrator),
         );
     }
 

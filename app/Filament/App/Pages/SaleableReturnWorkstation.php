@@ -5,6 +5,8 @@ namespace App\Filament\App\Pages;
 use App\Actions\Disposition\EmitReturningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
+use App\Exceptions\VrsConfigurationException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -16,6 +18,8 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
+use App\Support\Disposition\SaleableReturnScorecardMetrics;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Recalls\OpenRecallFlag;
@@ -24,10 +28,10 @@ use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -35,8 +39,10 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class SaleableReturnWorkstation extends Page
+class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
 
     protected static ?string $navigationLabel = 'Saleable return';
@@ -84,7 +90,15 @@ class SaleableReturnWorkstation extends Page
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Saleable return desk. VRS must pass before credit. The existing Return screen is unchanged.';
+        return 'Saleable return desk. VRS must pass before credit. Scorecard below shows VRS + returning EPCIS readiness.';
+    }
+
+    /**
+     * @return array{vrs_verified: int, vrs_blocked: int, vrs_deferred: int, returning_authored_today: int, session_confirmed: int}
+     */
+    public function scorecard(): array
+    {
+        return app(SaleableReturnScorecardMetrics::class)->handle(count($this->confirmed));
     }
 
     public function processScan(
@@ -146,7 +160,7 @@ class SaleableReturnWorkstation extends Page
 
         try {
             $vrs = app(RunProductVerification::class)->handle($scan, auth()->user());
-        } catch (InvalidArgumentException $exception) {
+        } catch (InvalidArgumentException|VrsConfigurationException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -175,7 +189,10 @@ class SaleableReturnWorkstation extends Page
             }
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        $siteId = (int) $site->getKey();
+        $principalId = $this->floorPrincipalId($this->siteId ?? $siteId);
+
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -201,7 +218,7 @@ class SaleableReturnWorkstation extends Page
         }
 
         try {
-            $custodyGate->assertInCustody($epc, 'returning');
+            $custodyGate->assertInCustody($epc, 'returning', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -366,8 +383,10 @@ class SaleableReturnWorkstation extends Page
         EpcCustodyGate $custodyGate,
         EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): ?string {
+        $principalId = $this->floorPrincipalId($siteId);
+
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $principalId)) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
 
@@ -385,7 +404,7 @@ class SaleableReturnWorkstation extends Page
             }
 
             try {
-                $custodyGate->assertInCustody($epc, 'returning');
+                $custodyGate->assertInCustody($epc, 'returning', $principalId);
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();
             }
@@ -477,5 +496,10 @@ class SaleableReturnWorkstation extends Page
         $this->lastTone = $tone;
         $this->lastMessage = $message;
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.saleable-return';
     }
 }

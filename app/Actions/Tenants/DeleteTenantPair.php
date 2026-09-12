@@ -8,6 +8,7 @@ use App\Support\TenantHostname;
 use App\Support\TenantPairAvailability;
 use App\Support\TenantSettings;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Component;
 use Illuminate\Support\Collection;
 use Stancl\Tenancy\Database\Models\Domain;
 
@@ -161,7 +162,7 @@ class DeleteTenantPair
 
     /**
      * @param  Collection<int, mixed>  $records
-     * @return list<\Filament\Forms\Components\Component>
+     * @return list<Component>
      */
     public function bulkDeleteModalSchema(Collection $records): array
     {
@@ -202,7 +203,7 @@ class DeleteTenantPair
     }
 
     /**
-     * @return list<\Filament\Forms\Components\Component>
+     * @return list<Component>
      */
     public function deleteModalSchema(Tenant $tenant): array
     {

@@ -2,11 +2,13 @@
 
 namespace App\Actions\Epcis;
 
+use App\Actions\Receiving\AttachInboundDocumentToShipment;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EventBizTransaction;
 use App\Models\Epcis\EventParty;
 use App\Support\Epcis\EpcisXmlReader;
+use App\Support\TenantSettings;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
@@ -22,16 +24,22 @@ final class EnrichEpcisDocumentShippingFields
 
     /**
      * @param  list<array<string, mixed>>|null  $locations
+     * @param  int|null  $ingestGeneration  When set (during process/reprocess), read that generation's events instead of document.activeEvents().
      */
-    public function handle(EpcisDocument $document, ?array $locations = null): EpcisDocument
+    public function handle(EpcisDocument $document, ?array $locations = null, ?int $ingestGeneration = null): EpcisDocument
     {
         if (! Schema::hasColumn('epcis_documents', 'customer_po')) {
             return $document;
         }
 
-        $eventsQuery = Schema::hasColumn('epcis_events', 'ingest_generation')
-            ? $document->activeEvents()
-            : $document->events();
+        $eventsQuery = $document->events();
+        if (Schema::hasColumn('epcis_events', 'ingest_generation')) {
+            $targetGeneration = $ingestGeneration ?? (int) ($document->ingest_generation ?? 1);
+            $eventsQuery->where('ingest_generation', $targetGeneration);
+        }
+        if ($ingestGeneration === null && Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $eventsQuery->whereNull('superseded_at');
+        }
 
         $events = $eventsQuery
             ->with(['bizTransactions', 'parties'])
@@ -103,8 +111,11 @@ final class EnrichEpcisDocumentShippingFields
             $shipFromSiteId = $resolvedFrom['site_id'];
         }
 
+        $matchInboundShipToSite = TenantSettings::forTenant(tenant())->matchInboundShipToSite();
+        $isInbound = (string) ($document->direction ?? '') === 'inbound';
+
         $shipToSiteId = null;
-        if ($shipToGln !== null) {
+        if ($shipToGln !== null && (! $isInbound || $matchInboundShipToSite)) {
             $resolvedTo = $this->resolveGln->handle($shipToGln);
             $shipToSiteId = $resolvedTo['site_id'];
         }
@@ -127,7 +138,11 @@ final class EnrichEpcisDocumentShippingFields
             'ship_to_gln' => $shipToGln,
             // Keep authored/persisted site when XML enrichment cannot resolve a GLN.
             'ship_from_site_id' => $shipFromSiteId ?? $document->ship_from_site_id,
-            'ship_to_site_id' => $shipToSiteId ?? $document->ship_to_site_id,
+            // Inbound: when site matching is off, clear ship_to_site_id so partner
+            // destination GLNs do not bind site-scoped View/Start receiving.
+            'ship_to_site_id' => $isInbound && ! $matchInboundShipToSite
+                ? null
+                : ($shipToSiteId ?? $document->ship_to_site_id),
             'ship_to_partner_id' => $shipToPartnerId,
             'trading_partner_id' => $tradingPartnerId,
         ];
@@ -140,8 +155,14 @@ final class EnrichEpcisDocumentShippingFields
         }
 
         $document->forceFill($attributes)->save();
+        $document = $document->refresh();
 
-        return $document->refresh();
+        if ((string) ($document->direction ?? '') === 'inbound' && filled($document->asn_number)) {
+            app(AttachInboundDocumentToShipment::class)->handle($document);
+            $document = $document->refresh();
+        }
+
+        return $document;
     }
 
     /**

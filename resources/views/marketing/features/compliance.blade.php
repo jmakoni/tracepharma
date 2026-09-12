@@ -46,9 +46,10 @@
             <x-marketing.detail-section
                 title="Operations scorecards"
                 :items="[
-                    'Manufacturer and wholesaler scorecards with ACK health and blocked-reason trends.',
-                    '3PL principal-scoped operations view for multi-brand warehouses.',
+                    'Manufacturer and wholesaler scorecards with ACK health and blocked-reason trends—in-app (dedicated GET /api/v1/compliance/* scorecard routes are not GA).',
+                    '3PL soft principal registry and filters on sites, ship orders, scorecards, expiry, and HQ are GA for Logistics3pl; optional EPC custody enforcement (tenant ops; default off) gates serials per principal when enabled—not the default product promise.',
                     'Dispenser scorecard with PMS blocked-reason trends for pharmacy profiles.',
+                    'Buying-group control plane: member health and partner-matrix snapshots for hard-linked members—not an ATP warehouse for the group entity.',
                 ]"
             />
             <x-marketing.detail-section
@@ -95,7 +96,7 @@
                 title="Analytics workspace"
                 :items="[
                     'Self-serve compliance and operations analytics beyond fixed scorecards.',
-                    'Export-ready views for management review and inspection prep.',
+                    'Export-ready views for management review and inspection prep via Inspection day readiness (ZIP pack, ATP, exceptions) — not a live NABP Pulse feed.',
                     'Profile-gated metrics for manufacturer, wholesaler, 3PL, and dispenser tenants.',
                 ]"
             />

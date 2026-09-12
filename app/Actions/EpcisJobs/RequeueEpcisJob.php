@@ -23,7 +23,7 @@ final class RequeueEpcisJob
         private readonly EpcisJobLogger $logger,
     ) {}
 
-    public function handle(EpcisJob $job, ?int $requestedBy = null): EpcisJob
+    public function handle(EpcisJob $job, ?int $requestedBy = null, bool $skipPayloadPrepare = false): EpcisJob
     {
         if (! JobRoleAccess::allowsAny(Permissions::NavIntegrations, Permissions::NavExceptions)) {
             throw new RuntimeException('Integrations or Exceptions are not authorized for your job role.');
@@ -42,7 +42,7 @@ final class RequeueEpcisJob
         }
 
         try {
-            $this->rebuildPayload->handle($job);
+            $this->rebuildPayload->handle($job, skipPrepare: $skipPayloadPrepare);
         } catch (\Throwable $e) {
             $this->logger->error($job, 'Rebuild/reprocess prep failed: '.$e->getMessage());
             $job->forceFill([
@@ -54,6 +54,8 @@ final class RequeueEpcisJob
         }
 
         $this->logger->info($job, 'Requeue requested; creating a new job receipt.');
+
+        $supersededJobId = (int) $job->getKey();
 
         if ($job->kind === EpcisJobKind::InboundProcess) {
             // Reset document then enqueue a new inbound ledger + ProcessEpcisDocumentJob.
@@ -72,12 +74,29 @@ final class RequeueEpcisJob
                 ->first();
 
             if ($newJob === null) {
-                return $this->enqueueInbound->handle($document->fresh() ?? $document, false, $requestedBy);
+                $newJob = $this->enqueueInbound->handle($document->fresh() ?? $document, false, $requestedBy);
             }
+
+            $this->archiveSupersededJob($supersededJobId);
 
             return $newJob;
         }
 
-        return $this->enqueue->handle($document->fresh() ?? $document, $requestedBy, forceRequeue: true);
+        $newJob = $this->enqueue->handle($document->fresh() ?? $document, $requestedBy, forceRequeue: true);
+        $this->archiveSupersededJob($supersededJobId);
+
+        return $newJob;
+    }
+
+    private function archiveSupersededJob(int $jobId): void
+    {
+        $superseded = EpcisJob::query()->find($jobId);
+
+        if ($superseded === null || $superseded->archived_at !== null) {
+            return;
+        }
+
+        $superseded->forceFill(['archived_at' => now()])->save();
+        $this->logger->info($superseded, 'Archived after requeue.');
     }
 }

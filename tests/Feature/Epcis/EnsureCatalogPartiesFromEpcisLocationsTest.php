@@ -19,6 +19,7 @@ use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Support\Fda\AddressFingerprint;
 use App\Support\Gs1\Gtin;
+use App\Support\Gs1\Sgln;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -135,6 +136,58 @@ class EnsureCatalogPartiesFromEpcisLocationsTest extends TestCase
             $this->assertNotNull($sourceSite);
             $this->assertSame('US', $sourcePartner->country_code);
             $this->assertSame('US', $sourceSite->country_code);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function stamps_published_sgln_on_owning_partner_when_location_gln_differs(): void
+    {
+        $suffix = substr((string) str()->ulid(), -6);
+        $sourceOwningGln = $this->uniqueTestGln('61');
+        $destOwningGln = $this->uniqueTestGln('62');
+        $sourceLocationGln = $this->uniqueTestGln('63');
+        $sourceOwningUrn = Sgln::toUrn($sourceOwningGln, 6);
+        $this->assertNotNull($sourceOwningUrn);
+
+        $this->cleanupGlns = [$sourceOwningGln, $destOwningGln, $sourceLocationGln];
+
+        $locations = [
+            [
+                'gln' => $sourceOwningGln,
+                'gln_uri' => $sourceOwningUrn,
+                'name' => 'Owning Mfr '.$suffix,
+                'country_code' => 'US',
+            ],
+            [
+                'gln' => $destOwningGln,
+                'name' => 'Dest Co '.$suffix,
+                'country_code' => 'US',
+            ],
+            [
+                'gln' => $sourceLocationGln,
+                'name' => '3PL dock '.$suffix,
+                'country_code' => 'US',
+            ],
+        ];
+
+        $partyGlns = [
+            'source_owning_party_gln' => $sourceOwningGln,
+            'destination_owning_party_gln' => $destOwningGln,
+            'source_location_gln' => $sourceLocationGln,
+        ];
+
+        $tenant = $this->initializeDemo2Tenant();
+        $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+        tenancy()->initialize($tenant->fresh());
+
+        try {
+            app(EnsureCatalogPartiesFromEpcisLocations::class)->handle($locations, $partyGlns);
+
+            $owning = TradingPartner::query()->where('gln', $sourceOwningGln)->first();
+            $this->assertNotNull($owning);
+            $this->assertSame($sourceOwningUrn, $owning->sgln);
         } finally {
             $this->cleanup();
         }

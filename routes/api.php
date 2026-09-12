@@ -1,16 +1,25 @@
 <?php
 
+use App\Http\Controllers\Api\V1\BuyingGroupNetworkController;
+use App\Http\Controllers\Api\V1\DataExportController;
 use App\Http\Controllers\Api\V1\DispenseCheckController;
+use App\Http\Controllers\Api\V1\EpcisCaptureController;
 use App\Http\Controllers\Api\V1\EpcisDocumentsController;
+use App\Http\Controllers\Api\V1\EpcisEventsQueryController;
+use App\Http\Controllers\Api\V1\EpcisGs1SubscriptionsController;
 use App\Http\Controllers\Api\V1\EpcisInboundController;
 use App\Http\Controllers\Api\V1\EpcisOutboundController;
+use App\Http\Controllers\Api\V1\GuardianLotCloseController;
+use App\Http\Controllers\Api\V1\TrackTraceExportController;
 use App\Http\Controllers\Api\V1\WmsShipConfirmController;
+use App\Http\Controllers\Webhooks\As2HubInboundWebhookController;
 use App\Http\Controllers\Webhooks\As2InboundWebhookController;
 use App\Http\Controllers\Webhooks\As2MdnWebhookController;
 use App\Http\Controllers\Webhooks\EpcisHubInboundWebhookController;
 use App\Http\Controllers\Webhooks\EpcisInboundWebhookController;
 use App\Http\Controllers\Webhooks\VrsResponderWebhookController;
 use App\Http\Controllers\Webhooks\WmsShipConfirmWebhookController;
+use App\Http\Middleware\EnsureAccountIsUsable;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:webhooks')->group(function (): void {
@@ -26,6 +35,9 @@ Route::middleware('throttle:webhooks')->group(function (): void {
     Route::post('webhooks/wms/{tenantId}', [WmsShipConfirmWebhookController::class, 'handle'])
         ->name('webhooks.wms.ship-confirm');
 
+    Route::post('webhooks/as2/hub', [As2HubInboundWebhookController::class, 'handle'])
+        ->name('webhooks.as2.hub');
+
     Route::post('webhooks/as2/mdn/{tenantId}/{connectionId}', [As2MdnWebhookController::class, 'handle'])
         ->name('webhooks.as2.mdn');
 
@@ -33,7 +45,7 @@ Route::middleware('throttle:webhooks')->group(function (): void {
         ->name('webhooks.as2.inbound');
 });
 
-Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v1')->group(function (): void {
+Route::middleware(['auth:sanctum', EnsureAccountIsUsable::class.':sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v1')->group(function (): void {
     Route::post('dispense-check', DispenseCheckController::class)
         ->middleware('abilities:vrs:dispense-check')
         ->name('api.v1.dispense-check');
@@ -57,4 +69,70 @@ Route::middleware(['auth:sanctum', 'tenant.active', 'throttle:60,1'])->prefix('v
     Route::get('epcis/documents', [EpcisDocumentsController::class, 'index'])
         ->middleware('abilities:epcis:view')
         ->name('api.v1.epcis.documents');
+
+    Route::get('epcis/documents/{document}', [EpcisDocumentsController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.documents.show');
+
+    Route::get('epcis/documents/{document}/epcis-2.0', [EpcisDocumentsController::class, 'epcis20'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.documents.epcis20');
+
+    Route::post('epcis/capture', [EpcisCaptureController::class, 'store'])
+        ->middleware('abilities:epcis:upload')
+        ->name('api.v1.epcis.capture.store');
+
+    Route::get('epcis/capture/{captureId}', [EpcisCaptureController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->whereNumber('captureId')
+        ->name('api.v1.epcis.capture.show');
+
+    Route::get('epcis/events', [EpcisEventsQueryController::class, 'index'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.epcis.events.index');
+
+    Route::get('epcis/events/{eventID}', [EpcisEventsQueryController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->where('eventID', '.*')
+        ->name('api.v1.epcis.events.show');
+
+    Route::get('epcis/subscriptions', [EpcisGs1SubscriptionsController::class, 'index'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.index');
+
+    Route::post('epcis/subscriptions', [EpcisGs1SubscriptionsController::class, 'store'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.store');
+
+    Route::delete('epcis/subscriptions/{subscriptionID}', [EpcisGs1SubscriptionsController::class, 'destroy'])
+        ->middleware('abilities:epcis:subscriptions')
+        ->name('api.v1.epcis.subscriptions.destroy');
+
+    Route::post('exports/track-and-trace', [TrackTraceExportController::class, 'store'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.exports.track-and-trace.store');
+
+    Route::get('exports/{export}', [DataExportController::class, 'show'])
+        ->middleware('abilities:epcis:view')
+        ->name('api.v1.exports.show');
+
+    Route::prefix('buying-group')->middleware('abilities:buying-group:network')->group(function (): void {
+        Route::get('members', [BuyingGroupNetworkController::class, 'members'])
+            ->name('api.v1.buying-group.members');
+        Route::get('members/{id}/readiness', [BuyingGroupNetworkController::class, 'readiness'])
+            ->whereNumber('id')
+            ->name('api.v1.buying-group.members.readiness');
+        Route::get('network/summary', [BuyingGroupNetworkController::class, 'networkSummary'])
+            ->name('api.v1.buying-group.network.summary');
+        Route::get('partner-matrix', [BuyingGroupNetworkController::class, 'partnerMatrix'])
+            ->name('api.v1.buying-group.partner-matrix');
+    });
+});
+
+// Guardian (Systech) lot-close inbound: L3 API key auth (not Sanctum). Tenant
+// is resolved from the request host by InitializeTenancyForTenantHosts (api
+// middleware prepend), same as the webhook group above.
+Route::middleware('throttle:webhooks')->prefix('v1')->group(function (): void {
+    Route::post('l3/guardian/lot-close', GuardianLotCloseController::class)
+        ->name('api.v1.l3.guardian.lot-close');
 });

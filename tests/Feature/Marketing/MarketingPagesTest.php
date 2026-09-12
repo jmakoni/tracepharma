@@ -273,4 +273,32 @@ class MarketingPagesTest extends TestCase
         $this->assertIsString($stored);
         $this->assertLessThanOrEqual(512, strlen($stored));
     }
+
+    #[Test]
+    public function buying_group_marketing_claims_health_matrix_and_apis_as_ga(): void
+    {
+        $home = $this->get('http://localhost/');
+        $home->assertOk();
+        $home->assertSee('Member roster, member health, exception trends, and partner authorization', false);
+        $home->assertDontSee('health dashboards and partner matrix deferred', false);
+
+        $features = $this->get('http://localhost/features');
+        $features->assertOk();
+        $features->assertSee('Member roster (CRUD)', false);
+        $features->assertSee('member health, exception trends, and partner authorization', false);
+        $features->assertDontSee('Health dashboards and partner matrix remain deferred', false);
+
+        $solutions = $this->get('http://localhost/solutions/buying-groups');
+        $solutions->assertOk();
+        $solutions->assertSee('Member roster (GA)', false);
+        $solutions->assertSee('What ships today (GA)', false);
+        $solutions->assertSee('Member roster (CRUD)', false);
+        $solutions->assertSee('Member health (GA)', false);
+        $solutions->assertSee('Authorized partner matrix (GA)', false);
+        $solutions->assertSee('Member APIs (GA)', false);
+        $solutions->assertDontSee('Member health (deferred)', false);
+        $solutions->assertDontSee('Authorized partner matrix (deferred)', false);
+        $solutions->assertDontSee('Member APIs (deferred)', false);
+        $solutions->assertDontSee('What remains deferred', false);
+    }
 }

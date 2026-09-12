@@ -37,11 +37,19 @@
                 <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">{{ $transport }}</span>
             @endforeach
             @if ($integration['pulse_listed'])
-                <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">Pulse ecosystem vendor</span>
+                <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">Pulse-listed partner (vendor)</span>
             @endif
         </div>
 
         <p class="mt-8 max-w-3xl text-lg leading-relaxed text-tp-muted">{{ $integration['summary'] }}</p>
+
+        @if (! empty($integration['runbook']))
+            <p class="mt-4 max-w-3xl text-sm leading-relaxed text-tp-muted">
+                Operator runbook (implementation docs path):
+                <code class="rounded border border-tp-border bg-black/20 px-1.5 py-0.5 font-mono text-xs text-tp-ink">{{ $integration['runbook'] }}</code>
+                — same <code class="font-mono text-xs">POST /api/v1/dispense-check</code> endpoint; no per-vendor product routes.
+            </p>
+        @endif
     </section>
 
     <section class="border-y border-tp-border bg-tp-canvas">

@@ -1,13 +1,13 @@
 @extends('marketing.layout')
 
-@section('title', 'Serialization & L3 provisioning — TracePharma features')
-@section('meta_description', 'Level 4 serial authority with Level 3 plant-floor handoff: SGTIN pools, allocation export or API, commissioning reconciliation, and EPCIS-native traceability.')
+@section('title', 'Serialization & L3 handoff — TracePharma features')
+@section('meta_description', 'Level 4 serial authority with Level 3 plant-floor handoff: SSCC labeling, commissioning forward to your L3 endpoint, and EPCIS-native traceability.')
 
 @section('content')
     <x-marketing.page-hero
         eyebrow="Feature deep dive"
         title="Serialization — L4 authority with L3 plant-floor handoff"
-        description="TracePharma holds your corporate SGTIN serial pools and provisions ranges to packaging-line systems. Commissioning events flow back for reconciliation—via standard file export or REST API, compatible with the plant-floor serialization software you already operate."
+        description="TracePharma authors commissioning and shipping EPCIS as the corporate L4 hub. When you configure an L3 endpoint in organization settings, authored commissioning documents can be forwarded to your plant-floor or enterprise serialization system—without inventing a separate allocation API surface."
     >
         <x-slot:breadcrumb>
             <a href="{{ route('marketing.features') }}">Features</a> / Serialization
@@ -31,11 +31,10 @@
                 <x-marketing.pipeline-steps
                     class="mt-8"
                     :steps="[
-                        ['phase' => 'Pool', 'title' => 'SGTIN serial pools', 'description' => 'Define GTIN-level pools with range boundaries and low-water visibility.'],
-                        ['phase' => 'Reserve', 'title' => 'Create allocation', 'description' => 'Reserve a serial sub-range for a packaging line or contract packager run.'],
-                        ['phase' => 'Deliver', 'title' => 'Provision to L3', 'description' => 'Download a structured export or POST via API adapter to your line system.'],
-                        ['phase' => 'Commission', 'title' => 'Line events return', 'description' => 'Commissioning EPCIS arrives inbound and tags against the allocation.'],
-                        ['phase' => 'Close', 'title' => 'Reconcile gaps', 'description' => 'Scorecard surfaces open allocations and commissioning mismatches.'],
+                        ['phase' => 'Label', 'title' => 'Author SSCCs / commissions', 'description' => 'Create SSCC ranges and commissioning EPCIS in TracePharma (L4).'],
+                        ['phase' => 'Forward', 'title' => 'Hand off to L3', 'description' => 'Optional: POST commissioning XML to your configured L3 HTTPS endpoint.'],
+                        ['phase' => 'Exchange', 'title' => 'Partner EPCIS', 'description' => 'Ship and receive EPCIS 1.2 with wholesalers and pharmacies.'],
+                        ['phase' => 'Trace', 'title' => 'Investigate', 'description' => 'Serial-level history across commission, ship, return, and repack.'],
                     ]"
                 />
             </div>
@@ -47,35 +46,35 @@
         <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <div class="grid gap-6 lg:grid-cols-2">
                 <x-marketing.detail-section
-                    title="Serial pool management"
+                    title="L4 commissioning & labeling"
                     :items="[
-                        'GTIN-scoped SGTIN pools with configurable range boundaries.',
-                        'Allocator reserves non-overlapping sub-ranges per production run.',
-                        'Open allocation tracking on manufacturer operations scorecard.',
+                        'SSCC number ranges and authored commissioning EPCIS in TracePharma.',
+                        'Ship Orders generate EPCIS 1.2 XML with TI/TS for trading partners.',
+                        'Tenant profiles gate labeling and outbound for manufacturers and prepackagers.',
                     ]"
                 />
                 <x-marketing.detail-section
-                    title="Provision methods"
+                    title="L3 forward (optional)"
                     :items="[
-                        'Structured file export for line-system import workflows.',
-                        'REST API adapter for automated handoff to plant-floor software.',
-                        'Per-system credentials and inbound connection linking.',
+                        'Configure an L3 HTTPS endpoint in Organization settings.',
+                        'Authored commissioning documents can be POSTed to that endpoint after generation.',
+                        'Idempotent forward markers prevent duplicate handoffs.',
                     ]"
                 />
                 <x-marketing.detail-section
-                    title="Commissioning reconciliation"
+                    title="Inbound commissioning"
                     :items="[
-                        'Inbound commissioning EPCIS auto-tagged to active allocations.',
-                        'Gap detection when commissioned serials fall outside reserved ranges.',
-                        'Commissioning reconciliation after each processed inbound file.',
+                        'Receive commissioning EPCIS from partners or plant systems into the tenant ledger.',
+                        'Reconcile custody and exceptions in the same compliance workflows as shipping.',
+                        'No separate vapor allocation API—events and settings drive the handoff.',
                     ]"
                 />
                 <x-marketing.detail-section
                     title="Works with your line systems"
                     :items="[
                         'Designed for standard plant-floor serialization platforms—not a single-vendor lock-in.',
-                        'Link allocations to plant floor connectors and packaging line GLNs.',
-                        'Manufacturer and prepackager tenant profiles gate this capability.',
+                        'Keep your L3 stack; TracePharma remains the L4 hub for partners and compliance.',
+                        'Guardian / Systech lot-feed ingest remains a separate planned path when needed.',
                     ]"
                 />
             </div>
@@ -84,10 +83,10 @@
 
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <div class="max-w-2xl">
-            <h2 class="text-xl font-semibold text-tp-ink">Beyond provisioning</h2>
-            <p class="mt-2 text-sm leading-relaxed text-tp-muted">
-                Serialization in TracePharma is EPCIS-native end to end—not a standalone UID module disconnected from ship and trace.
-            </p>
+                <h2 class="text-xl font-semibold text-tp-ink">Beyond L3 handoff</h2>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">
+                    Serialization in TracePharma is EPCIS-native end to end—not a standalone UID module disconnected from ship and trace.
+                </p>
         </div>
 
         <x-marketing.module-grid
@@ -107,13 +106,13 @@
                     'description' => 'Destroy and sample workflows with EPCIS events—so QA audits include scrap and sample pulls in the compliance package.',
                 ],
                 [
-                    'title' => 'EPCIS 2.0 repository',
-                    'description' => 'CBV 2.0 capture, queries, and subscriptions for manufacturer, wholesaler, 3PL, and prepackager profiles—pharmacy tenants get a read-only repository for IT trace queries.',
+                    'title' => 'EPCIS 1.2 GA + 2.0 capture & query',
+                    'description' => 'EPCIS 1.2 XML is the default outbound; Ship Orders always author 1.2 XML today. JSON-LD 2.0 is opt-in per connection for disposition and other resolver-backed documents when enabled. Capture JSON-LD and XML 2.0 when accept_20 is on. Sanctum offers query-as-2.0, GS1-shaped Capture + SimpleEventQuery, and GS1 subscribe/unsubscribe with HMAC callbacks—an honest dual-stack subset, not a certified GS1 Exchange hub.',
                     'href' => route('marketing.features.show', 'integrations'),
                 ],
                 [
-                    'title' => 'Plant floor telemetry',
-                    'description' => 'Line heartbeat API ties packaging throughput to operations scorecards—so serialization IT sees line health alongside outbound volume.',
+                    'title' => 'Operations scorecards',
+                    'description' => 'Outbound volume, ACK health, and commissioning forward status on operations scorecards—so serialization IT sees partner and handoff health without inventing a line-heartbeat API.',
                 ],
                 [
                     'title' => 'Prepack / repack lineage',
@@ -126,29 +125,26 @@
     <section class="border-t border-tp-border bg-tp-surface/30">
         <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <div class="max-w-2xl">
-                <h2 class="text-xl font-semibold text-tp-ink">L3 provisioning by line-system type</h2>
+                <h2 class="text-xl font-semibold text-tp-ink">L3 handoff today</h2>
                 <p class="mt-3 text-sm leading-relaxed text-tp-muted">
-                    TracePharma provisions the L4 hub — your plant-floor line software stays in place. Demo and staging commands vary by provider; all paths allocate SGTIN ranges, link commissioning inbound, and reconcile EPCIS.
+                    TracePharma remains the L4 hub. Plant-floor L3 systems stay in place. Configure an L3 forward URL and credentials in Organization settings; when commissioning EPCIS is authored, TracePharma can POST it to that endpoint (idempotent). Dedicated allocation provision commands and a public `/api/v1/l3/allocations` surface are not shipped—use settings + commissioning forward, or talk to us about a custom plant cutover.
                 </p>
             </div>
             <div class="mt-8 grid gap-4 md:grid-cols-3">
                 <div class="tp-card p-6">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Plant-floor line</p>
-                    <p class="mt-2 font-semibold text-tp-ink">Line serialization platform</p>
-                    <p class="mt-2 font-mono text-xs text-tp-muted">tracepharma:provision-l3-systech</p>
-                    <p class="mt-2 text-sm text-tp-muted">CSV export + commissioning inbound for standard packaging lines.</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Settings</p>
+                    <p class="mt-2 font-semibold text-tp-ink">L3 endpoint</p>
+                    <p class="mt-2 text-sm text-tp-muted">HTTPS URL and auth in Organization settings for commissioning forward.</p>
                 </div>
                 <div class="tp-card p-6">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">SAP ATTP</p>
-                    <p class="mt-2 font-semibold text-tp-ink">Corporate ERP serialization</p>
-                    <p class="mt-2 font-mono text-xs text-tp-muted">tracepharma:provision-l3-sap-attp</p>
-                    <p class="mt-2 text-sm text-tp-muted">REST adapter + serial request webhook for SAP Advanced Track and Trace.</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Runtime</p>
+                    <p class="mt-2 font-semibold text-tp-ink">Forward commissioning</p>
+                    <p class="mt-2 text-sm text-tp-muted">Queue job posts authored commissioning XML and stamps forwarded-at for idempotency.</p>
                 </div>
                 <div class="tp-card p-6">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">TraceLink SNM</p>
-                    <p class="mt-2 font-semibold text-tp-ink">Network serial manager</p>
-                    <p class="mt-2 font-mono text-xs text-tp-muted">tracepharma:provision-l3-tracelink-snm</p>
-                    <p class="mt-2 text-sm text-tp-muted">Serial number manager handoff for TraceLink-integrated plants.</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Partners</p>
+                    <p class="mt-2 font-semibold text-tp-ink">EPCIS 1.2 ship</p>
+                    <p class="mt-2 text-sm text-tp-muted">Ship Orders author 1.2 XML for wholesaler and pharmacy exchange regardless of connection 2.0 pins.</p>
                 </div>
             </div>
         </div>
@@ -157,18 +153,18 @@
     <section class="border-t border-tp-border bg-tp-canvas">
         <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <div class="tp-card p-8">
-                <h2 class="text-lg font-semibold text-tp-ink">API surface (manufacturer tenants)</h2>
+                <h2 class="text-lg font-semibold text-tp-ink">Integration surfaces (honest)</h2>
                 <p class="mt-3 text-sm leading-relaxed text-tp-muted">
-                    Integration teams can automate allocation lifecycle without the Filament UI.
+                    Use Sanctum APIs that exist today—EPCIS capture/query, ship confirm, and dispense-check—rather than a fictional L3 allocation CRUD.
                 </p>
                 <ul class="mt-6 space-y-3 font-mono text-sm text-tp-muted">
-                    <li><span class="text-tp-teal-400">GET</span> /api/v1/l3/allocations</li>
-                    <li><span class="text-tp-teal-400">POST</span> /api/v1/l3/allocations</li>
-                    <li><span class="text-tp-teal-400">GET</span> /api/v1/l3/allocations/{id}/export</li>
-                    <li><span class="text-tp-teal-400">POST</span> /api/v1/plant-floor/telemetry</li>
+                    <li><span class="text-tp-teal-400">POST</span> /api/v1/epcis/capture <span class="font-sans text-tp-muted">(when accept_20 / capture enabled)</span></li>
+                    <li><span class="text-tp-teal-400">GET</span> /api/v1/epcis/events <span class="font-sans text-tp-muted">(SimpleEventQuery subset)</span></li>
+                    <li><span class="text-tp-teal-400">POST</span> /api/v1/wms/ship-confirm</li>
+                    <li><span class="text-tp-teal-400">POST</span> /api/v1/dispense-check</li>
                 </ul>
                 <p class="mt-6 text-sm text-tp-muted">
-                    Sanctum-authenticated, tenant-scoped. See operations documentation for payload schemas.
+                    Sanctum-authenticated, tenant-scoped. See docs/integrations for payloads and abilities.
                 </p>
             </div>
         </div>
@@ -177,6 +173,6 @@
     @include('marketing.partials.feature-related', ['current' => 'serialization'])
     <x-marketing.cta-banner
         title="Map your L3 ↔ L4 cutover"
-        description="Request a demo—we'll align serial pools, provision method, and inbound commissioning path to your packaging lines and wholesaler customers."
+        description="Request a demo—we'll align commissioning forward, Ship Order EPCIS, and partner exchange to your packaging lines and wholesaler customers."
     />
 @endsection

@@ -20,6 +20,7 @@ class AtpLicenseFactory extends Factory
             'site_id' => Site::factory(),
             'facility_type' => fake()->randomElement(FacilityType::cases()),
             'license_number' => fake()->unique()->bothify('ATP-####'),
+            'license_country' => 'US',
             'license_state' => fake()->stateAbbr(),
             'license_expiration_date' => fake()->dateTimeBetween('+4 months', '+3 years'),
             'reporting_year' => (int) now()->year,

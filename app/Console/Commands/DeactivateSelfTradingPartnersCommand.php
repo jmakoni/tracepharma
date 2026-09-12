@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\MasterData\DeactivateSelfTradingPartners;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -32,7 +33,7 @@ class DeactivateSelfTradingPartnersCommand extends Command
         ];
 
         foreach ($tenants as $tenant) {
-            $result = $tenant->run(fn (): array => $deactivate->handle());
+            $result = TenantRunner::run($tenant, fn (): array => $deactivate->handle());
 
             $totals['tenants']++;
             $totals['partners_deactivated'] += $result['partners_deactivated'];

@@ -47,16 +47,10 @@ class RegulatoryComplianceVoidActionTest extends TestCase
                 ->fillForm(['reason' => 'Discarded bad ASN'])
                 ->mountAction('submit')
                 ->fillForm(['regulatory_password' => 'not-the-password'])
-                ->callMountedAction();
+                ->callMountedAction()
+                ->assertHasActionErrors(['regulatory_password' => 'The password you entered is incorrect.']);
 
             $this->assertSame('error', $document->fresh()->status);
-            $errors = $component->instance()->getErrorBag()->toArray();
-            $this->assertNotSame([], $errors, 'Expected action errors; bag was empty');
-            $joined = json_encode($errors);
-            $this->assertTrue(
-                str_contains($joined, 'regulatory_password') || str_contains(strtolower($joined), 'password'),
-                'Expected a password-related validation error. Errors: '.$joined,
-            );
         } finally {
             $this->cleanup();
         }

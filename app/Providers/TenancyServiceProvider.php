@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Actions\Epcis\ResolveProductFromIdentifier;
 use App\Jobs\EnsureTenantStorageDirectoriesJob;
 use App\Jobs\Scout\ProvisionTenantScoutIndexes;
+use App\Jobs\SeedSystemOutboundTemplates;
 use App\Jobs\SeedTenantRoles;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\Event;
@@ -35,6 +36,7 @@ class TenancyServiceProvider extends ServiceProvider
                     Jobs\CreateDatabase::class,
                     Jobs\MigrateDatabase::class,
                     SeedTenantRoles::class,
+                    SeedSystemOutboundTemplates::class,
                     EnsureTenantStorageDirectoriesJob::class,
                 ])->send(function (Events\TenantCreated $event) {
                     return $event->tenant;

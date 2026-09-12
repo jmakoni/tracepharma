@@ -39,7 +39,7 @@
 
         <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <x-marketing.feature-card title="EPCIS receiving &amp; shipping" description="Ingest inbound files via upload, SFTP, AS2, or webhooks—so dock staff match scans to partner events instead of reconciling spreadsheets." />
-            <x-marketing.feature-card title="L3 ↔ L4 serialization" description="Allocate SGTIN ranges to plant-floor systems and reconcile commissioning—so you ship DSCSA outbound without replacing line software." />
+            <x-marketing.feature-card title="L3 ↔ L4 serialization" description="Configure an L3 forward URL and POST authored commissioning EPCIS to your plant endpoint—so you ship DSCSA outbound without replacing line software." />
             <x-marketing.feature-card title="Exception workflows" description="Structured reason codes and supplier correction loops—so compliance leads close tickets with evidence, not email threads." />
             <x-marketing.feature-card title="Partner connectivity" description="Direct AS2, SFTP, and HTTPS to your known partners—so IT provisions presets without a mandatory exchange middleman." />
             <x-marketing.feature-card title="VRS verification" description="Workstation and API verification with full audit log—so dispensers block unverified fills and keep inspection-ready history." />
@@ -75,7 +75,7 @@
                     <h3 class="text-sm font-semibold uppercase tracking-wide text-tp-muted">Questions to ask any provider</h3>
                     <ul class="mt-5 space-y-4 text-sm text-tp-muted">
                         <li class="flex gap-3"><span class="font-mono text-tp-teal-400">→</span> Can I receive and ship EPCIS from the same L4 workspace?</li>
-                        <li class="flex gap-3"><span class="font-mono text-tp-teal-400">→</span> Do you support L3 serial handoff without replacing my line software?</li>
+                        <li class="flex gap-3"><span class="font-mono text-tp-teal-400">→</span> Do you support L3 commissioning forward without replacing my line software?</li>
                         <li class="flex gap-3"><span class="font-mono text-tp-teal-400">→</span> Can I resolve exceptions and document supplier follow-up?</li>
                         <li class="flex gap-3"><span class="font-mono text-tp-teal-400">→</span> Is outbound ACK health visible per customer or principal?</li>
                     </ul>
@@ -93,7 +93,7 @@
                 <p class="text-sm font-semibold uppercase tracking-wide text-tp-teal-400">For drug manufacturers</p>
                 <h2 class="mt-3 text-2xl font-semibold tracking-tight text-tp-ink sm:text-3xl">L4 hub from packaging line to wholesaler dock</h2>
                 <p class="mt-4 leading-relaxed text-tp-muted">
-                    Allocate SGTIN ranges to your plant-floor serialization systems, reconcile commissioning inbound, ship DSCSA outbound EPCIS, and monitor wholesaler ACK health—without TraceLink-scale network fees or replacing the line software you already run.
+                    Forward authored commissioning EPCIS to your plant-floor L3 endpoint, ship DSCSA outbound EPCIS, and monitor wholesaler ACK health—without TraceLink-scale network fees or replacing the line software you already run.
                 </p>
                 <div class="mt-6 flex flex-wrap gap-4">
                     <a href="{{ route('marketing.solutions.manufacturers') }}" class="tp-btn-ghost">Manufacturer solution</a>
@@ -111,12 +111,12 @@
         <x-marketing.industry-picker
             class="mt-10"
             :industries="[
-                ['label' => 'Manufacturer', 'title' => 'Drug manufacturers', 'description' => 'L3 serial handoff, outbound EPCIS, and customer ACK health.', 'href' => route('marketing.solutions.manufacturers'), 'highlight' => true],
+                ['label' => 'Manufacturer', 'title' => 'Drug manufacturers', 'description' => 'L3 commissioning forward, outbound EPCIS, and customer ACK health.', 'href' => route('marketing.solutions.manufacturers'), 'highlight' => true],
                 ['label' => 'Distributor', 'title' => 'Drug wholesalers', 'description' => 'Receive-to-ship L4 with ACK monitoring and exceptions.', 'href' => route('marketing.solutions.wholesalers'), 'highlight' => true],
-                ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Principal-scoped receiving, cross-dock, and lot-level ship.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
+                ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Soft principal filters GA; optional EPC custody enforcement (default off) when serials must be gated per client.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
                 ['label' => 'Dispenser', 'title' => 'Pharmacies', 'description' => 'Receive, verify, dispense, and file FDA 3911.', 'href' => route('marketing.solutions.pharmacies')],
                 ['label' => 'Repack', 'title' => 'Prepackagers', 'description' => 'Bulk receive, repack lineage, and outbound EPCIS with new serials.', 'href' => route('marketing.solutions.prepackagers')],
-                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member health, exception trends, and partner authorization.', 'href' => route('marketing.solutions.buying-groups')],
+                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member roster with invite/consent, health scorecards, partner matrix, affiliation code, ATP readiness, alerts, and member APIs — control plane only, not an ATP warehouse.', 'href' => route('marketing.solutions.buying-groups')],
                 ['label' => 'Supply', 'title' => 'Dental & medical', 'description' => 'Mixed Rx/non-Rx catalog with practice ship-to GLNs.', 'href' => route('marketing.solutions.dental-medical')],
             ]"
         />
@@ -125,26 +125,31 @@
     <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 class="text-center text-2xl font-semibold tracking-tight text-tp-ink sm:text-3xl">How teams use TracePharma</h2>
         <p class="mx-auto mt-3 max-w-2xl text-center text-tp-muted">Same L4 platform—different entry points depending on your operating profile.</p>
-        <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Manufacturer</p>
                 <p class="mt-3 font-semibold text-tp-ink">Ship with attached 3T</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Allocate serials to L3, reconcile commissioning, generate outbound EPCIS, and monitor customer ACK health.</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Forward commissioning to L3, generate outbound EPCIS, and monitor customer ACK health.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Wholesaler</p>
                 <p class="mt-3 font-semibold text-tp-ink">Receive to ship</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Match inbound EPCIS, resolve exceptions before inventory, and ship downstream with SSCC labels and partner routing.</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Match inbound EPCIS, resolve exceptions before inventory, and ship downstream with SSCC labels and partner routing—no plant commission.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">3PL</p>
-                <p class="mt-3 font-semibold text-tp-ink">Principal-scoped ops</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Receive per principal, cross-dock between facilities, and ship lot-level or serialized outbound with isolated reporting.</p>
+                <p class="mt-3 font-semibold text-tp-ink">3PL floor + soft principal filters</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Same receive → ship spine as wholesalers, with soft principal filters on sites, ship orders, and scorecards (GA). Optional EPC custody enforcement (tenant ops; default off) gates serials per principal when enabled—not the default product promise.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Dispenser</p>
                 <p class="mt-3 font-semibold text-tp-ink">Verify before dispense</p>
                 <p class="mt-2 text-sm leading-relaxed text-tp-muted">Receive from wholesalers, run VRS checks at the workstation or via API, and file FDA 3911 from failed verifications.</p>
+            </div>
+            <div class="tp-card p-6">
+                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Buying group</p>
+                <p class="mt-3 font-semibold text-tp-ink">Network control plane</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Member roster with invite/consent, daily health and partner-matrix snapshots, affiliation code, and Sanctum member APIs—no central receiving hub, and not an ATP substitute for members.</p>
             </div>
         </div>
     </section>

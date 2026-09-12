@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -27,8 +28,11 @@ final class OpenTransferReceivingSession
         private readonly RevertTransferReceiveReceivingMarks $revertTransferReceiveReceivingMarks,
     ) {}
 
-    public function handle(TransferringSession $transfer, ?int $openedBy = null): ReceivingSession
-    {
+    public function handle(
+        TransferringSession $transfer,
+        ?int $openedBy = null,
+        ?int $principalId = null,
+    ): ReceivingSession {
         if (! TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             throw new DomainException('Receiving is not available for this tenant profile.');
         }
@@ -43,9 +47,15 @@ final class OpenTransferReceivingSession
             throw new DomainException('Receiving is not authorized for your job role.');
         }
 
+        $toSiteId = (int) $transfer->to_site_id;
+        $resolvedPrincipalId = PrincipalCustody::forTenant()->resolveSessionPrincipalId(
+            $toSiteId,
+            $principalId,
+        );
+
         $user = auth()->user();
         if ($user instanceof User) {
-            SiteAccess::assertCanAccessSite($user, (int) $transfer->to_site_id);
+            SiteAccess::assertCanAccessSite($user, $toSiteId);
         }
 
         $existing = ReceivingSession::query()
@@ -54,7 +64,13 @@ final class OpenTransferReceivingSession
 
         if ($existing !== null) {
             if ($existing->status === 'cancelled') {
-                $existing = $this->reopenCancelledTransferReceiveSession($existing, $transfer);
+                $existing = $this->reopenCancelledTransferReceiveSession(
+                    $existing,
+                    $transfer,
+                    $resolvedPrincipalId,
+                );
+            } elseif (in_array($existing->status, ['open', 'in_progress'], true)) {
+                $existing = $this->ensureSessionPrincipal($existing, $toSiteId, $resolvedPrincipalId);
             }
 
             $this->propagateScanFirstConfirmsToTransferReceiveSession->handle($existing, $openedBy);
@@ -76,14 +92,21 @@ final class OpenTransferReceivingSession
 
         $expectedCount = $confirmedLines->count();
 
-        $session = DB::transaction(function () use ($transfer, $openedBy, $confirmedLines, $expectedCount): ReceivingSession {
-            $session = ReceivingSession::query()->create([
+        $session = DB::transaction(function () use (
+            $transfer,
+            $openedBy,
+            $confirmedLines,
+            $expectedCount,
+            $resolvedPrincipalId,
+            $toSiteId,
+        ): ReceivingSession {
+            $attributes = [
                 'session_kind' => ReceivingSessionKind::TransferReceive,
                 'epcis_document_id' => null,
                 'transferring_session_id' => $transfer->getKey(),
                 'matched_epcis_document_id' => null,
                 'trading_partner_id' => null,
-                'site_id' => $transfer->to_site_id,
+                'site_id' => $toSiteId,
                 'status' => 'open',
                 'expected_parent_count' => $expectedCount,
                 'confirmed_parent_count' => 0,
@@ -91,7 +114,16 @@ final class OpenTransferReceivingSession
                 'confirmed_child_count' => 0,
                 'opened_by' => $openedBy,
                 'opened_at' => now(),
-            ]);
+            ];
+
+            if (
+                $resolvedPrincipalId !== null
+                && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            ) {
+                $attributes['principal_id'] = $resolvedPrincipalId;
+            }
+
+            $session = ReceivingSession::query()->create($attributes);
 
             $now = now();
             $rows = [];
@@ -122,12 +154,13 @@ final class OpenTransferReceivingSession
     private function reopenCancelledTransferReceiveSession(
         ReceivingSession $session,
         TransferringSession $transfer,
+        ?int $resolvedPrincipalId = null,
     ): ReceivingSession {
         if ($session->receiving_events_generated_at !== null || $session->receiving_epcis_document_id !== null) {
             throw new DomainException('Cannot reopen receiving: session already has authored receiving EPCIS.');
         }
 
-        return DB::transaction(function () use ($session, $transfer): ReceivingSession {
+        return DB::transaction(function () use ($session, $transfer, $resolvedPrincipalId): ReceivingSession {
             $session = ReceivingSession::query()
                 ->whereKey($session->getKey())
                 ->lockForUpdate()
@@ -180,6 +213,13 @@ final class OpenTransferReceivingSession
                 'completed_at' => null,
             ];
 
+            if (
+                $resolvedPrincipalId !== null
+                && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            ) {
+                $updates['principal_id'] = $resolvedPrincipalId;
+            }
+
             if (Schema::hasColumn('receiving_sessions', 'cancelled_at')) {
                 $updates['cancelled_at'] = null;
             }
@@ -188,5 +228,31 @@ final class OpenTransferReceivingSession
 
             return $session->refresh();
         });
+    }
+
+    private function ensureSessionPrincipal(
+        ReceivingSession $session,
+        int $siteId,
+        ?int $resolvedPrincipalId,
+    ): ReceivingSession {
+        if (! TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+            return $session;
+        }
+
+        $current = $session->principal_id !== null ? (int) $session->principal_id : null;
+        if ($current !== null && $current > 0) {
+            return $session;
+        }
+
+        $principalId = $resolvedPrincipalId
+            ?? PrincipalCustody::forTenant()->resolveSessionPrincipalId($siteId);
+
+        if ($principalId === null) {
+            return $session;
+        }
+
+        $session->forceFill(['principal_id' => $principalId])->save();
+
+        return $session->refresh();
     }
 }

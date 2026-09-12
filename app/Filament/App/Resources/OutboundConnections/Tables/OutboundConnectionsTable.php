@@ -2,10 +2,17 @@
 
 namespace App\Filament\App\Resources\OutboundConnections\Tables;
 
+use App\Enums\ConnectionApprovalStatus;
+use App\Enums\OutboundConformanceState;
+use App\Enums\OutboundConnectionKind;
 use App\Enums\OutboundTransport;
 use App\Enums\SerializationProvider;
+use App\Models\OutboundConnection;
+use App\Support\Integrations\ConnectionHealthTracker;
+use App\Support\Integrations\CredentialExpiry;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class OutboundConnectionsTable
@@ -17,22 +24,65 @@ class OutboundConnectionsTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('serialization_provider')
+                TextColumn::make('hub_badge')
+                    ->label('Send via')
+                    ->state(function (OutboundConnection $record): string {
+                        $provider = $record->serialization_provider instanceof SerializationProvider
+                            ? $record->serialization_provider->label()
+                            : '—';
+                        $transport = $record->transport instanceof OutboundTransport
+                            ? $record->transport->label()
+                            : '—';
+                        $conformance = $record->conformanceState()->label();
+
+                        return "{$provider} · {$transport} · {$conformance}";
+                    })
                     ->badge()
-                    ->formatStateUsing(fn (SerializationProvider $state): string => $state->label()),
-                TextColumn::make('transport')
+                    ->color(fn (OutboundConnection $record): string => match ($record->connectionKind()) {
+                        OutboundConnectionKind::ProviderHub => 'info',
+                        OutboundConnectionKind::DirectPartner => 'warning',
+                        OutboundConnectionKind::LocalDelivery => 'gray',
+                    }),
+                TextColumn::make('tradingPartners.name')
+                    ->label('Customers')
                     ->badge()
-                    ->formatStateUsing(fn (OutboundTransport $state): string => $state->label()),
-                TextColumn::make('tradingPartner.name')
-                    ->label('Trading partner')
-                    ->placeholder('—')
+                    ->separator(',')
+                    ->placeholder('Global')
                     ->toggleable(),
                 IconColumn::make('is_active')
                     ->boolean(),
+                TextColumn::make('approval_status')
+                    ->label('Review')
+                    ->badge()
+                    ->formatStateUsing(fn (ConnectionApprovalStatus $state): string => $state->label())
+                    ->color(fn (ConnectionApprovalStatus $state): string => $state === ConnectionApprovalStatus::Approved ? 'gray' : $state->color()),
+                TextColumn::make('credentials_expire_at')
+                    ->label('Credentials')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => CredentialExpiry::label($state))
+                    ->color(fn ($state): string => CredentialExpiry::badgeColor($state))
+                    ->toggleable(),
+                TextColumn::make('consecutive_failures')
+                    ->label('Health')
+                    ->badge()
+                    ->formatStateUsing(fn (int $state): string => $state === 0 ? 'Healthy' : "{$state} failure(s)")
+                    ->color(fn (int $state): string => $state >= ConnectionHealthTracker::ALERT_THRESHOLD ? 'danger' : ($state > 0 ? 'warning' : 'success'))
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('last_sent_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(),
+            ])
+            ->filters([
+                SelectFilter::make('serialization_provider')
+                    ->label('Network')
+                    ->options(collect(SerializationProvider::cases())->mapWithKeys(
+                        fn (SerializationProvider $p): array => [$p->value => $p->label()]
+                    )),
+                SelectFilter::make('conformance_state')
+                    ->label('Status')
+                    ->options(OutboundConformanceState::options()),
             ])
             ->defaultSort('name');
     }

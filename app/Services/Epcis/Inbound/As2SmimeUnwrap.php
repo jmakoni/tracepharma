@@ -13,44 +13,77 @@ final class As2SmimeUnwrap
 {
     public function unwrap(InboundConnection $connection, string $body, ?string $contentType): string
     {
-        $allowUnsigned = (bool) ($connection->settings['allow_unsigned_xml'] ?? false);
+        $credentials = $connection->credentials ?? [];
 
+        return $this->unwrapWithKeys(
+            decryptCertPem: filled($credentials['decrypt_cert_pem'] ?? null) ? (string) $credentials['decrypt_cert_pem'] : null,
+            decryptKeyPem: filled($credentials['decrypt_key_pem'] ?? null) ? (string) $credentials['decrypt_key_pem'] : null,
+            verifyCertPem: filled($credentials['partner_signing_cert_pem'] ?? null) ? (string) $credentials['partner_signing_cert_pem'] : null,
+            body: $body,
+            contentType: $contentType,
+            allowUnsignedXml: (bool) ($connection->settings['allow_unsigned_xml'] ?? false),
+        );
+    }
+
+    /**
+     * Connection-agnostic unwrap used by the platform AS2 hub edge: decrypt with
+     * the station keys and verify against the sender-registry certificate.
+     */
+    public function unwrapWithKeys(
+        ?string $decryptCertPem,
+        ?string $decryptKeyPem,
+        ?string $verifyCertPem,
+        string $body,
+        ?string $contentType,
+        bool $allowUnsignedXml = false,
+    ): string {
         if ($this->looksLikeXml($body)) {
-            if (! $allowUnsigned) {
+            if (! $allowUnsignedXml) {
                 throw new RuntimeException('Unsigned AS2 XML is not allowed for this connection.');
             }
+
+            $this->assertUnsignedXmlAllowedOutsideProduction();
 
             return $body;
         }
 
-        $credentials = $connection->credentials ?? [];
-        $decryptCert = $credentials['decrypt_cert_pem'] ?? null;
-        $decryptKey = $credentials['decrypt_key_pem'] ?? null;
-
-        if (! filled($decryptCert) || ! filled($decryptKey)) {
+        if (! filled($decryptCertPem) || ! filled($decryptKeyPem)) {
             throw new RuntimeException('AS2 payload is not XML and no decrypt certificate is configured.');
         }
 
-        $decrypted = $this->decrypt($body, $contentType, (string) $decryptCert, (string) $decryptKey);
-
-        $partnerCert = $credentials['partner_signing_cert_pem'] ?? null;
+        $decrypted = $this->decrypt($body, $contentType, (string) $decryptCertPem, (string) $decryptKeyPem);
 
         if ($this->looksLikeXml($decrypted)) {
-            if (! $allowUnsigned) {
+            if (! $allowUnsignedXml) {
                 throw new RuntimeException('AS2 payload is encrypted but not signed.');
             }
+
+            $this->assertUnsignedXmlAllowedOutsideProduction();
 
             return $decrypted;
         }
 
-        if (filled($partnerCert) && $this->looksLikeSmime($decrypted, null)) {
-            $verified = $this->verify($decrypted, (string) $partnerCert);
+        // Real partners embed full MIME headers in the signed layer; our own
+        // envelope strips them (the HTTP layer carries Content-Type), leaving a
+        // bare base64 signed blob. Both must verify.
+        if (filled($verifyCertPem) && ($this->looksLikeSmime($decrypted, null) || $this->looksLikeBase64($decrypted))) {
+            $verified = $this->verify($decrypted, (string) $verifyCertPem);
             if ($this->looksLikeXml($verified)) {
                 return $verified;
             }
         }
 
         throw new RuntimeException('AS2 S/MIME unwrap did not produce EPCIS XML.');
+    }
+
+    /**
+     * Lab-only flag: unsigned XML is never permitted in production.
+     */
+    private function assertUnsignedXmlAllowedOutsideProduction(): void
+    {
+        if (app()->environment('production')) {
+            throw new RuntimeException('Unsigned AS2 XML is not allowed in production.');
+        }
     }
 
     private function decrypt(string $body, ?string $contentType, string $certPem, string $keyPem): string
@@ -109,16 +142,22 @@ final class As2SmimeUnwrap
 
             $contentPath = stream_get_meta_data($contentFile)['uri'];
 
-            $caUri = $this->fileUri($certFile);
+            // CA/extra-cert params go through OpenSSL's BIO layer, which needs a
+            // plain path — a file:// URI fails to open there.
+            $caPath = stream_get_meta_data($certFile)['uri'] ?? null;
 
-            if (! @openssl_pkcs7_verify(
+            if (! is_string($caPath) || $caPath === '') {
+                throw new RuntimeException('Temporary PEM file URI is unavailable.');
+            }
+
+            if (@openssl_pkcs7_verify(
                 stream_get_meta_data($inputFile)['uri'],
                 0,
                 null,
-                [$caUri],
-                $caUri,
+                [$caPath],
+                $caPath,
                 $contentPath,
-            )) {
+            ) !== true) {
                 throw new RuntimeException('Failed to verify AS2 signature: '.(openssl_error_string() ?: 'unknown OpenSSL error'));
             }
 

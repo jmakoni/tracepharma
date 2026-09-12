@@ -4,12 +4,13 @@ namespace App\Actions\Shipping;
 
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Support\Epcis\EpcisCacheLock;
+use App\Support\Shipping\ResolveWmsShipPrincipal;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * WMS ship-confirm bridge: open a ship order, confirm scans, optionally set party/refs,
@@ -24,6 +25,7 @@ final class ProcessWmsShipConfirm
         private readonly UpdateOutboundShippingParty $updateParty,
         private readonly ValidateOutboundShippingSend $validateSend,
         private readonly CompleteOutboundShippingSession $completeSession,
+        private readonly ResolveWmsShipPrincipal $resolveWmsShipPrincipal,
     ) {}
 
     /**
@@ -73,7 +75,7 @@ final class ProcessWmsShipConfirm
         $tenantId = (string) (tenant()?->getKey() ?? 'unknown');
         $lockKey = 'wms-ship-confirm:'.$tenantId.':'.$idempotencyKey;
 
-        return Cache::lock($lockKey, 120)->block(10, function () use ($payload, $idempotencyKey, $complete): array {
+        return EpcisCacheLock::lock($lockKey, 120)->block(10, function () use ($payload, $idempotencyKey, $complete): array {
             $existing = OutboundShippingSession::query()
                 ->where('wms_idempotency_key', $idempotencyKey)
                 ->first();
@@ -129,7 +131,14 @@ final class ProcessWmsShipConfirm
             ? (int) $payload['site_id']
             : null;
 
-        $session = $this->openSession->handle($siteId);
+        $expectedCount = $this->payloadExpectedCount($payload);
+        $principalId = $this->resolveWmsShipPrincipal->handle($payload, $siteId);
+
+        $session = $this->openSession->handle(
+            $siteId,
+            expectedCount: $expectedCount,
+            principalId: $principalId,
+        );
 
         if ($idempotencyKey !== null) {
             try {
@@ -374,7 +383,7 @@ final class ProcessWmsShipConfirm
         if ($this->hasReferencePayload($payload)) {
             $references = $this->referencePayload($payload);
 
-            foreach (['asn_number', 'customer_po', 'invoice_number'] as $key) {
+            foreach (['asn_number', 'customer_po', 'invoice_number', 'expected_count'] as $key) {
                 if (! array_key_exists($key, $references)) {
                     continue;
                 }
@@ -385,6 +394,32 @@ final class ProcessWmsShipConfirm
                     );
                 }
             }
+        }
+
+        $this->assertPrincipalMatchesSession($payload, $session);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function assertPrincipalMatchesSession(array $payload, OutboundShippingSession $session): void
+    {
+        $hasPrincipalHint = filled($payload['principal_external_ref'] ?? null)
+            || filled($payload['principal_gln'] ?? null)
+            || (isset($payload['principal_id']) && $payload['principal_id'] !== null && $payload['principal_id'] !== '');
+
+        if (! $hasPrincipalHint) {
+            return;
+        }
+
+        $siteId = $session->site_id !== null ? (int) $session->site_id : null;
+        $resolved = $this->resolveWmsShipPrincipal->handle($payload, $siteId);
+        $sessionPrincipal = $session->principal_id !== null ? (int) $session->principal_id : null;
+
+        if ($resolved !== $sessionPrincipal) {
+            throw new WmsIdempotencyConflictException(
+                'Idempotency key replay rejected: principal differs from the original request.',
+            );
         }
     }
 
@@ -406,6 +441,10 @@ final class ProcessWmsShipConfirm
 
     private function referenceFieldMatches(string $key, mixed $expected, mixed $actual): bool
     {
+        if ($key === 'expected_count') {
+            return (int) $expected === (int) $actual;
+        }
+
         $expectedValue = blank($expected) ? null : trim((string) $expected);
         $actualValue = blank($actual) ? null : trim((string) $actual);
 
@@ -582,6 +621,8 @@ final class ProcessWmsShipConfirm
             'invoice_number',
             'shipment_reference',
             'dscsa_affirm',
+            'expected_count',
+            'quantity',
         ]);
     }
 
@@ -611,6 +652,27 @@ final class ProcessWmsShipConfirm
             }
         }
 
+        $expected = $this->payloadExpectedCount($payload);
+        if ($expected !== null) {
+            $data['expected_count'] = $expected;
+        }
+
         return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadExpectedCount(array $payload): ?int
+    {
+        if (Arr::has($payload, 'expected_count') && $payload['expected_count'] !== null && $payload['expected_count'] !== '') {
+            return max(0, (int) $payload['expected_count']);
+        }
+
+        if (Arr::has($payload, 'quantity') && $payload['quantity'] !== null && $payload['quantity'] !== '') {
+            return max(0, (int) $payload['quantity']);
+        }
+
+        return null;
     }
 }

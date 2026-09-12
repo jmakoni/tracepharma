@@ -50,6 +50,9 @@ class ExceptionEmailContextBuilderTest extends TestCase
             $this->assertNotSame('', $context['sscc']);
             $this->assertSame('DSCSA §582.1(a)(6) Transaction Statement (TS)', $context['dscsa_section']);
             $this->assertTrue($context['compliance_hold']);
+            $this->assertSame('Send Corrected Data', $context['resolution_request']);
+            $this->assertArrayHasKey('notification_uuid', $context);
+            $this->assertArrayHasKey('ship_to_gln', $context);
             $this->assertContains('Awaiting corrected TI/TS or re-transmitted EPCIS from supplier', $context['receiver_actions']);
 
             $subject = app(ExceptionEmailContextBuilder::class)->subject($context);

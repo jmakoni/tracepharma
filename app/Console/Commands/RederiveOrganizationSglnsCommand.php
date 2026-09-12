@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\MasterData\RederiveOrganizationSglns;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantSettings;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
@@ -48,7 +49,7 @@ class RederiveOrganizationSglnsCommand extends Command
             }
 
             /** @var array{sites: int, location_devices: int} $counts */
-            $counts = $tenant->run(fn (): array => $rederive->handle($prefix, $dryRun));
+            $counts = TenantRunner::run($tenant, fn (): array => $rederive->handle($prefix, $dryRun));
 
             $totals['sites'] += $counts['sites'];
             $totals['location_devices'] += $counts['location_devices'];

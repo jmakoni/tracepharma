@@ -14,6 +14,13 @@ enum SerializationProvider: string
     case Axway = 'axway';
     case Rfxcel = 'rfxcel';
     case UniTrace = 'unitrace';
+    case TracePharma = 'tracepharma';
+    case CustomAs2 = 'custom_as2';
+    case GatewayChecker = 'gateway_checker';
+    case Jennason = 'jennason';
+    case InfiniTrak = 'infinitrak';
+    case TheSystemsHouse = 'the_systems_house';
+    case TrackTraceRx = 'tracktracerx';
     case Other = 'other';
 
     public function label(): string
@@ -29,6 +36,13 @@ enum SerializationProvider: string
             self::Axway => 'Axway',
             self::Rfxcel => 'rfXcel',
             self::UniTrace => 'UniTrace',
+            self::TracePharma => 'TracePharma',
+            self::CustomAs2 => 'Custom (AS2)',
+            self::GatewayChecker => 'Gateway Checker',
+            self::Jennason => 'Jennason',
+            self::InfiniTrak => 'InfiniTrak',
+            self::TheSystemsHouse => 'The Systems House',
+            self::TrackTraceRx => 'TrackTraceRx',
             self::Other => 'Other',
         };
     }
@@ -43,12 +57,15 @@ enum SerializationProvider: string
 
     public function defaultOutboundTransport(): OutboundTransport
     {
-        return OutboundTransport::Https;
+        return match ($this) {
+            self::CustomAs2, self::TraceLink, self::Lspedia, self::Axway, self::Rfxcel => OutboundTransport::As2,
+            default => OutboundTransport::Https,
+        };
     }
 
     public function supportsHubRouting(): bool
     {
-        return in_array($this, [self::Systech, self::UniTrace], true);
+        return in_array($this, [self::Systech, self::UniTrace, self::TracePharma], true);
     }
 
     public function hubProviderSlug(): string
@@ -56,7 +73,40 @@ enum SerializationProvider: string
         return match ($this) {
             self::Systech => 'systech',
             self::UniTrace => 'unitrace',
+            self::TracePharma => 'tracepharma',
             default => throw new \InvalidArgumentException("Provider [{$this->value}] does not support hub routing."),
         };
+    }
+
+    /**
+     * Slugs that have Admin outbound network profiles (not Custom SFTP / Other).
+     *
+     * @return list<self>
+     */
+    public static function networkProfileProviders(): array
+    {
+        return [
+            self::TracePharma,
+            self::Systech,
+            self::UniTrace,
+            self::CustomAs2,
+            self::CustomHttps,
+            self::SapIch,
+            self::TraceLink,
+            self::Lspedia,
+            self::Advasur,
+            self::Axway,
+            self::Rfxcel,
+            self::GatewayChecker,
+            self::Jennason,
+            self::InfiniTrak,
+            self::TheSystemsHouse,
+            self::TrackTraceRx,
+        ];
+    }
+
+    public function isNetworkProfileProvider(): bool
+    {
+        return in_array($this, self::networkProfileProviders(), true);
     }
 }

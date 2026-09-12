@@ -13,11 +13,9 @@ use App\Models\Fda\FdaWdd3plImportRun;
 use App\Models\Fda\FdaWdd3plStaging;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\Fda\FdaWddLicense;
-use App\Jobs\SyncTenantAtpLicensesFromFda;
 use App\Support\Fda\CompanyNameNormalizer;
 use App\Support\Fda\FdaWdd3plDataset;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -204,41 +202,6 @@ class ImportFdaWdd3plTest extends TestCase
         $this->assertSame($run->id, FdaWdd3plImportRun::latestRun()?->id);
 
         $this->cleanupFixtureRows();
-    }
-
-    #[Test]
-    public function promote_flag_is_a_noop_and_does_not_write_catalog_licenses(): void
-    {
-        Queue::fake();
-        $this->cleanupFixtureRows();
-
-        $this->createFixturePartners();
-
-        $path = base_path('tests/fixtures/fda/wdd_3pl_sample.txt');
-
-        $this->recordPreviousImportOf(100);
-
-        $this->artisan('tracepharma:import-fda-wdd-3pl', ['--path' => $path, '--promote' => true])
-            ->expectsOutputToContain('Promoting staging rows to catalog sites')
-            ->assertSuccessful();
-
-        $this->assertSame(2, FdaWdd3plStaging::query()->count());
-        Queue::assertPushed(SyncTenantAtpLicensesFromFda::class);
-
-        File::delete(storage_path('app/fda/wdd_unmatched_'.now()->format('Y-m-d').'.csv'));
-        $this->cleanupFixtureRows();
-    }
-
-    private function recordPreviousImportOf(int $rowCount): void
-    {
-        FdaWdd3plImportRun::query()->create([
-            'source_path' => 'previous.txt',
-            'rows_read' => $rowCount,
-            'rows_matched' => $rowCount,
-            'row_count' => $rowCount,
-            'started_at' => now()->subDay(),
-            'completed_at' => now()->subDay(),
-        ]);
     }
 
     private function createFixturePartners(): void

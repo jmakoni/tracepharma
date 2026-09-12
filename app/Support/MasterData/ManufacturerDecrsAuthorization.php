@@ -13,7 +13,8 @@ use Illuminate\Support\Collection;
 
 /**
  * Only the manufacturer's own plant address is authorized without a WDD license.
- * Other sites (DCs, 3PLs, extra warehouses) must have a receiving-state WDD/3PL license.
+ * Other sites (DCs, 3PLs, extra warehouses) must have a WDD/3PL license for the
+ * tenant organization jurisdictions (footprint or preferred receiving-state fallback).
  */
 final class ManufacturerDecrsAuthorization
 {

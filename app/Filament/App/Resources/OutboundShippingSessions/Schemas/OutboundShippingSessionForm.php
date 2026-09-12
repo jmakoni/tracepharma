@@ -4,9 +4,11 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Schemas;
 
 use App\Support\Auth\CurrentSite;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -29,6 +31,24 @@ class OutboundShippingSessionForm
                         ->searchable()
                         ->native(false)
                         ->helperText('Defaults to the site chooser’s current site when valid, otherwise Organization ship-from site when set.'),
+                    Select::make('principal_id')
+                        ->label('Principal')
+                        ->relationship(
+                            'principal',
+                            'name',
+                            fn ($query) => $query->where('is_active', true)->orderBy('name'),
+                        )
+                        ->searchable()
+                        ->preload()
+                        ->searchDebounce(500)
+                        ->nullable()
+                        ->native(false)
+                        ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals())
+                        ->helperText('Optional soft label for this ship order — not custody isolation.'),
+                    Toggle::make('is_drop_shipment')
+                        ->label('Drop shipment')
+                        ->helperText('When on, outbound EPCIS includes the GS1 dropShipment indicator. Default off.')
+                        ->default(false),
                     Textarea::make('notes')
                         ->label('Notes')
                         ->rows(3)

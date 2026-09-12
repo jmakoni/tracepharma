@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\Epcis\Epc;
+use App\Models\Principal;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
@@ -15,11 +16,12 @@ use App\Support\Tracing\Gs1DualDisplay;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use UnitEnum;
 
-class OnHandList extends Page
+class OnHandList extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedSquares2x2;
 
@@ -35,6 +37,8 @@ class OnHandList extends Page
 
     public ?int $siteId = null;
 
+    public ?int $principalId = null;
+
     public static function getSlug(?Panel $panel = null): string
     {
         return 'on-hand';
@@ -48,7 +52,8 @@ class OnHandList extends Page
 
     public static function shouldRegisterNavigation(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav()
+            && static::canAccess();
     }
 
     public function mount(): void
@@ -70,6 +75,24 @@ class OnHandList extends Page
         return EligibleReceiveSites::options($this->authUser());
     }
 
+    public function supportsPrincipalFilter(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsPrincipals();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function principalOptions(): array
+    {
+        return Principal::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id): array => [(int) $id => (string) $name])
+            ->all();
+    }
+
     /**
      * @return Collection<int, Epc>
      */
@@ -80,7 +103,13 @@ class OnHandList extends Page
             return collect();
         }
 
-        return app(ShippableEpcsAtSite::class)->query($siteId)
+        $query = app(ShippableEpcsAtSite::class)->query($siteId);
+        $principalId = $this->resolvedPrincipalId();
+        if ($principalId !== null) {
+            $query->where('epcs.principal_id', $principalId);
+        }
+
+        return $query
             ->with('ilmd')
             ->orderBy('epcs.id')
             ->limit(200)
@@ -106,10 +135,28 @@ class OnHandList extends Page
         return $this->siteId;
     }
 
+    private function resolvedPrincipalId(): ?int
+    {
+        if (! $this->supportsPrincipalFilter()) {
+            return null;
+        }
+
+        if ($this->principalId === null || $this->principalId <= 0) {
+            return null;
+        }
+
+        return $this->principalId;
+    }
+
     private function authUser(): ?User
     {
         $user = auth()->user();
 
         return $user instanceof User ? $user : null;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'operations.on-hand-and-unpacked';
     }
 }

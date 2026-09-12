@@ -84,7 +84,7 @@ class TenantOnboardingUpstreamAtpGateTest extends TestCase
 
             $item = $this->atpItem($onboarding);
             $this->assertFalse($item['done']);
-            $this->assertSame('Upstream partner ATP ready for receiving state', $item['label']);
+            $this->assertSame('Upstream partner ATP ready for org jurisdictions', $item['label']);
         } finally {
             $this->cleanup($tenant);
         }

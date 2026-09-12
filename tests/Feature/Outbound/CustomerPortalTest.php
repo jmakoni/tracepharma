@@ -42,6 +42,153 @@ class CustomerPortalTest extends TestCase
     private array $payloadPaths = [];
 
     #[Test]
+    public function customer_portal_lists_inbound_and_outbound_with_filters(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $partner = $this->createPartner('Portal V2 Buyer');
+            $partner->forceFill(['gln' => '0860000000100'])->save();
+
+            $outbound = $this->createOutboundDocument($partner, 'outbound-v2.xml');
+            $inboundPath = 'epcis/inbound/portal-v2-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($inboundPath, '<?xml version="1.0"?><epcis/>');
+            $this->payloadPaths[] = $inboundPath;
+
+            EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'inbound-v2.xml',
+                'payload_disk' => 'local',
+                'payload_path' => $inboundPath,
+                'file_sha256' => hash('sha256', 'inbound'),
+                'dscsa_affirm' => false,
+                'status' => 'parsed',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 0,
+                'received_at' => now(),
+                'trading_partner_id' => $partner->getKey(),
+                'sender_gln' => '0860000000100',
+                'customer_po' => 'PO-PORTAL-99',
+            ]);
+
+            URL::forceRootUrl('http://'.self::DEMO2_DOMAIN);
+            $indexUrl = app(CustomerPortalService::class)->signedCustomerPortalUrl($partner);
+
+            $inboundOnly = app(CustomerPortalService::class)
+                ->portalDocumentsQuery($partner, 'inbound')
+                ->pluck('original_filename')
+                ->all();
+            $this->assertContains('inbound-v2.xml', $inboundOnly);
+            $this->assertNotContains('outbound-v2.xml', $inboundOnly);
+
+            $poMatches = app(CustomerPortalService::class)
+                ->portalDocumentsQuery($partner, po: 'PO-PORTAL-99')
+                ->pluck('original_filename')
+                ->all();
+            $this->assertContains('inbound-v2.xml', $poMatches);
+
+            tenancy()->end();
+
+            $this->get($indexUrl)
+                ->assertOk()
+                ->assertSee('inbound-v2.xml', false)
+                ->assertSee('outbound-v2.xml', false)
+                ->assertSee('Records are retained', false);
+        } finally {
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function inbound_portal_does_not_expose_docs_via_spoofed_sender_gln(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $partnerA = $this->createPartner('Portal Buyer A');
+            $partnerA->forceFill(['gln' => '0860000000100'])->save();
+            $partnerB = $this->createPartner('Portal Buyer B');
+            $partnerB->forceFill(['gln' => '0860000000200'])->save();
+
+            $spoofPath = 'epcis/inbound/portal-spoof-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($spoofPath, '<?xml version="1.0"?><epcis>secret-for-b</epcis>');
+            $this->payloadPaths[] = $spoofPath;
+
+            $spoofed = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'spoofed-sender.xml',
+                'payload_disk' => 'local',
+                'payload_path' => $spoofPath,
+                'file_sha256' => hash('sha256', 'spoof-inbound'),
+                'dscsa_affirm' => false,
+                'status' => 'parsed',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 0,
+                'received_at' => now(),
+                // Linked to B, but payload claims A's GLN as sender.
+                'trading_partner_id' => $partnerB->getKey(),
+                'sender_gln' => '0860000000100',
+            ]);
+            $this->documentIds[] = (int) $spoofed->getKey();
+
+            $nullPartnerPath = 'epcis/inbound/portal-null-'.Str::uuid().'.xml';
+            Storage::disk('local')->put($nullPartnerPath, '<?xml version="1.0"?><epcis>unlinked</epcis>');
+            $this->payloadPaths[] = $nullPartnerPath;
+
+            $unlinked = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'direction' => 'inbound',
+                'format' => 'xml',
+                'original_filename' => 'unlinked-sender.xml',
+                'payload_disk' => 'local',
+                'payload_path' => $nullPartnerPath,
+                'file_sha256' => hash('sha256', 'unlinked-inbound'),
+                'dscsa_affirm' => false,
+                'status' => 'parsed',
+                'reprocess_count' => 0,
+                'event_count' => 1,
+                'epc_count' => 0,
+                'received_at' => now(),
+                'trading_partner_id' => null,
+                'sender_gln' => '0860000000100',
+            ]);
+            $this->documentIds[] = (int) $unlinked->getKey();
+
+            $visibleToA = app(CustomerPortalService::class)
+                ->inboundDocumentsQuery($partnerA)
+                ->pluck('original_filename')
+                ->all();
+
+            $this->assertNotContains('spoofed-sender.xml', $visibleToA);
+            $this->assertNotContains('unlinked-sender.xml', $visibleToA);
+
+            $visibleToB = app(CustomerPortalService::class)
+                ->inboundDocumentsQuery($partnerB)
+                ->pluck('original_filename')
+                ->all();
+
+            $this->assertContains('spoofed-sender.xml', $visibleToB);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function unsigned_customer_portal_is_forbidden(): void
     {
         $tenant = $this->initializeDemo2Tenant();

@@ -51,9 +51,4 @@ class CreateReceivingSession extends CreateRecord
             ]);
         }
     }
-
-    protected function getRedirectUrl(): string
-    {
-        return $this->getResourceUrl('view', $this->getRedirectUrlParameters());
-    }
 }

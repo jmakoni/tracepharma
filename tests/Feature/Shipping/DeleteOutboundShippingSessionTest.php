@@ -7,6 +7,7 @@ use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileViewOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\ViewOutboundShippingSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -253,6 +254,37 @@ class DeleteOutboundShippingSessionTest extends TestCase
             $sessionId = (int) $session->getKey();
 
             Livewire::test(ViewOutboundShippingSession::class, ['record' => $sessionId])
+                ->assertActionVisible('deleteShipOrder')
+                ->callAction('deleteShipOrder')
+                ->assertHasNoActionErrors()
+                ->assertRedirect();
+
+            $this->assertNull(OutboundShippingSession::query()->find($sessionId));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function mobile_delete_ship_action_is_visible_and_deletes(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+
+            $site = $this->createShipSite($tenant);
+            $user = $this->createShippingUser();
+            $user->syncSites([(int) $site->getKey()]);
+            $this->actingAs($user);
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+            $sessionId = (int) $session->getKey();
+
+            Livewire::test(MobileViewOutboundShippingSession::class, ['record' => $sessionId])
                 ->assertActionVisible('deleteShipOrder')
                 ->callAction('deleteShipOrder')
                 ->assertHasNoActionErrors()

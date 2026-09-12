@@ -24,6 +24,7 @@ class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */
     use HasFactory;
+
     use LogsActivity;
     use TenantSearchable;
 
@@ -103,6 +104,9 @@ class Product extends Model
         });
     }
 
+    /**
+     * Direct belongsTo load works cross-connection; do not use whereHas/joins on this relation.
+     */
     public function fdaProduct(): BelongsTo
     {
         return $this->belongsTo(FdaProduct::class);

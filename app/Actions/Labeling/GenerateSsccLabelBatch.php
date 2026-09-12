@@ -12,7 +12,6 @@ use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Models\SsccLabelChild;
 use App\Models\User;
-use App\Support\Auth\SiteAccess;
 use App\Services\Labeling\ResolveSsccNumberRange;
 use App\Services\Labeling\SsccBuilder;
 use App\Services\Labeling\SsccChildCustodyGuard;
@@ -20,12 +19,14 @@ use App\Services\Labeling\SsccLabelChildAttacher;
 use App\Services\Labeling\SsccLabelPdfGenerator;
 use App\Services\Labeling\SsccSerialAllocator;
 use App\Services\Labeling\SsccSerialPoolService;
+use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\AssertOrganizationSsccIdentity;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\TenantSettings;
 use App\Support\TenantSsccSettings;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -333,6 +334,10 @@ class GenerateSsccLabelBatch
             throw $exception;
         }
 
+        // Commissioning stamps commissioned_at via the ingested document's own batch instance —
+        // reload so the disaggregation/aggregation guards below see the committed state.
+        $batch->refresh();
+
         // Skip print when PDF write failed — labels are still commissioned for Trace.
         $printDispatch = null;
 
@@ -361,7 +366,7 @@ class GenerateSsccLabelBatch
         $disaggregationTime = $input['disaggregation_event_time'] ?? $clock;
         $aggregationTime = $input['event_time']
             ?? ($willDisaggregate
-                ? \Illuminate\Support\Carbon::parse($disaggregationTime)->copy()->addSecond()
+                ? Carbon::parse($disaggregationTime)->copy()->addSecond()
                 : $clock);
 
         if ($willDisaggregate) {

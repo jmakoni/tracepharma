@@ -11,6 +11,7 @@ use App\Notifications\SsccPoolLowWaterNotification;
 use App\Notifications\SsccRangeLowThresholdNotification;
 use App\Services\Labeling\SsccNumberRangeMonitorService;
 use App\Services\Labeling\SsccPoolMonitorService;
+use App\Support\Tenancy\TenantRunner;
 use Illuminate\Console\Command;
 
 class CheckSsccPoolLevelsCommand extends Command
@@ -36,7 +37,7 @@ class CheckSsccPoolLevelsCommand extends Command
                 continue;
             }
 
-            $tenant->run(function () use ($poolMonitor, $rangeMonitor, &$alertedPools, &$alertedRanges): void {
+            TenantRunner::run($tenant, function () use ($poolMonitor, $rangeMonitor, &$alertedPools, &$alertedRanges): void {
                 $owners = User::query()
                     ->role([TenantRole::Owner->value])
                     ->get();

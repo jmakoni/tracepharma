@@ -21,6 +21,10 @@ class ExportTenantComplianceArchive implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $timeout = 3600;
+
+    public int $tries = 1;
+
     public function __construct(
         public readonly Tenant $tenant,
         public readonly int $adminId,

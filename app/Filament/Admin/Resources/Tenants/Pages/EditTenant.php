@@ -9,13 +9,15 @@ use App\Actions\Tenants\DeleteTenantPair;
 use App\Filament\Admin\Resources\Tenants\Actions\ExportTenantComplianceArchiveAction;
 use App\Filament\Admin\Resources\Tenants\Actions\ImpersonateTenantUserAction;
 use App\Filament\Admin\Resources\Tenants\TenantResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Resources\Pages\EditRecord;
 use App\Models\Tenant;
-use App\Support\TenantSettings;
+use App\Support\Admin\PlatformAudit;
 use App\Support\Tenancy\TenantKillSwitches;
+use App\Support\TenantSettings;
 use Filament\Actions\DeleteAction;
-use Filament\Notifications\Notification;
 use Filament\Support\Exceptions\Halt;
+use Illuminate\Support\Facades\Auth;
 
 class EditTenant extends EditRecord
 {
@@ -44,6 +46,9 @@ class EditTenant extends EditRecord
 
     /** @var array<string, bool> */
     protected array $killSwitches = [];
+
+    /** @var array<string, mixed> */
+    protected array $ssoConfig = [];
 
     private ?string $previousStatus = null;
 
@@ -80,6 +85,7 @@ class EditTenant extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $settings = TenantSettings::forTenant($this->record);
+        $sso = $settings->ssoConfig();
 
         return array_merge(
             $data,
@@ -89,6 +95,15 @@ class EditTenant extends EditRecord
                 'kill_switch_inbound_epcis' => $settings->inboundEpcisKilled(),
                 'kill_switch_sanctum_api' => $settings->sanctumApiKilled(),
                 'kill_switch_wms_webhooks' => $settings->wmsWebhooksKilled(),
+                'sso_enabled' => $sso['enabled'],
+                'sso_only' => $sso['sso_only'],
+                'sso_provider' => $sso['provider'],
+                'sso_issuer' => $sso['issuer'],
+                'sso_client_id' => $sso['client_id'],
+                'sso_client_secret' => null,
+                'sso_entra_tenant_id' => $sso['entra_tenant_id'],
+                'sso_jit_default_role' => $sso['jit_default_role'],
+                'sso_allowed_email_domains' => implode(', ', $sso['allowed_email_domains']),
             ],
         );
     }
@@ -105,6 +120,7 @@ class EditTenant extends EditRecord
 
         $this->organizationAddress = [];
         $this->killSwitches = [];
+        $this->ssoConfig = [];
 
         foreach (self::ADDRESS_KEYS as $key) {
             if (! array_key_exists($key, $data)) {
@@ -124,6 +140,27 @@ class EditTenant extends EditRecord
             unset($data[$formKey]);
         }
 
+        $ssoKeys = [
+            'sso_enabled' => 'enabled',
+            'sso_only' => 'sso_only',
+            'sso_provider' => 'provider',
+            'sso_issuer' => 'issuer',
+            'sso_client_id' => 'client_id',
+            'sso_client_secret' => 'client_secret',
+            'sso_entra_tenant_id' => 'entra_tenant_id',
+            'sso_jit_default_role' => 'jit_default_role',
+            'sso_allowed_email_domains' => 'allowed_email_domains',
+        ];
+
+        foreach ($ssoKeys as $formKey => $configKey) {
+            if (! array_key_exists($formKey, $data)) {
+                continue;
+            }
+
+            $this->ssoConfig[$configKey] = $data[$formKey];
+            unset($data[$formKey]);
+        }
+
         return $data;
     }
 
@@ -134,18 +171,79 @@ class EditTenant extends EditRecord
 
         TenantSettings::forTenant($this->record)->saveOrganization($this->organizationAddress);
 
+        if ($this->ssoConfig !== []) {
+            TenantSettings::forTenant($this->record)->saveSsoConfig($this->ssoConfig);
+            $this->record->save();
+        }
+
         if ($this->killSwitches !== []) {
             TenantSettings::forTenant($this->record)->setKillSwitches($this->killSwitches);
             $this->record->save();
             app(CascadeTenantPairKillSwitches::class)->handle($this->record, $this->killSwitches);
+
+            PlatformAudit::record(
+                'tenant.kill_switches_updated',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: ['kill_switches' => $this->killSwitches],
+            );
         }
 
         if ($statusChanged) {
+            if ($this->record->status === 'suspended') {
+                $this->record->forceFill([
+                    'suspended_at' => $this->record->suspended_at ?? now(),
+                    'suspended_by' => Auth::guard('admin')->id(),
+                ])->save();
+            } else {
+                $this->record->forceFill([
+                    'suspension_reason' => null,
+                    'suspended_at' => null,
+                    'suspended_by' => null,
+                ])->save();
+            }
+
             app(CascadeTenantPairStatus::class)->handle($this->record, $this->previousStatus);
+
+            PlatformAudit::record(
+                'tenant.status_changed',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: [
+                    'previous_status' => $this->previousStatus,
+                    'new_status' => $this->record->status,
+                    'suspension_reason' => $this->record->suspension_reason,
+                ],
+            );
         }
+
+        $this->recordEntitlementDiffs();
 
         if ($prefixChanged) {
             $this->rederiveOrganizationSglns();
+        }
+    }
+
+    private function recordEntitlementDiffs(): void
+    {
+        foreach (['hub_providers', 'inbound_environment'] as $attribute) {
+            if (! $this->record->wasChanged($attribute)) {
+                continue;
+            }
+
+            PlatformAudit::record(
+                'tenant.entitlement_changed',
+                tenantId: (string) $this->record->getKey(),
+                targetType: Tenant::class,
+                targetId: (string) $this->record->getKey(),
+                payload: [
+                    'attribute' => $attribute,
+                    'old' => $this->record->getOriginal($attribute),
+                    'new' => $this->record->getAttribute($attribute),
+                ],
+            );
         }
     }
 

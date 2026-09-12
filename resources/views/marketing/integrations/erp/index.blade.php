@@ -27,7 +27,7 @@
 
         <div class="mt-12 grid gap-6 lg:grid-cols-2">
             <a href="{{ route('marketing.integrations.show', 'sap') }}" class="tp-card-accent group border-tp-accent-500/30 p-8 transition hover:border-tp-accent-500/50">
-                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pulse ecosystem · ERP serialization</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Pulse-listed partner · ERP serialization</p>
                 <h2 class="mt-3 text-lg font-semibold text-tp-ink group-hover:text-tp-link">SAP Advanced Track and Trace (ATTP)</h2>
                 <p class="mt-3 text-sm leading-relaxed text-tp-muted">HTTPS SAP ICH preset when Integration Suite delivers EPCIS to TracePharma. ATTP stays the corporate serial repository; TracePharma runs partner-edge receive/ship and exceptions.</p>
                 <span class="mt-4 inline-flex text-sm font-semibold text-tp-link">View SAP integration →</span>

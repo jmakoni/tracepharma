@@ -20,6 +20,10 @@ class ProvisionTenantScoutIndexes implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $timeout = 300;
+
+    public int $tries = 3;
+
     public function __construct(
         public readonly string $tenantId,
     ) {}

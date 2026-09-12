@@ -7,7 +7,7 @@
     <x-marketing.page-hero
         eyebrow="Integrations · WMS"
         title="Ship-confirm bridges for warehouse systems"
-        description="Your WMS runs pick, pack, and ship. TracePharma turns ship-confirm callbacks into outbound EPCIS—with blocked-reason audit on the operations scorecard."
+        description="Your WMS runs pick, pack, and ship. TracePharma turns ship-confirm callbacks into outbound EPCIS—with blocked-reason audit on the operations scorecard. For multi-client 3PL tenants, ship-confirm can map a principal (id, external ref, or GLN); soft filters are GA, and optional EPC custody enforcement stays off by default."
     >
         <x-slot:breadcrumb>
             <a href="{{ route('marketing.integrations.index') }}">Integrations</a> / WMS
@@ -34,6 +34,6 @@
 
     <x-marketing.cta-banner
         title="Running a different WMS?"
-        description="REST API and outbound webhooks support custom middleware—we'll review your ship-confirm JSON shape in a demo."
+        description="REST API and outbound webhooks support custom middleware—we'll review your ship-confirm JSON shape (and principal fields for 3PL) in a demo. Named per-vendor WMS product routes are not GA; use the vendor-agnostic ship-confirm bridge."
     />
 @endsection

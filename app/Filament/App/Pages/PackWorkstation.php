@@ -7,11 +7,14 @@ use App\Actions\Labeling\AttachChildrenToExistingSscc;
 use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccLabelBatchStatus;
+use App\Enums\TenantProfile;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
 use App\Models\SsccLabel;
+use App\Models\SsccLabelBatch;
 use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
@@ -19,6 +22,8 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Labeling\PreviewNextSsccLabels;
@@ -28,9 +33,9 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
@@ -38,8 +43,10 @@ use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
-class PackWorkstation extends Page
+class PackWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
     protected static ?string $navigationLabel = 'Pack';
@@ -81,6 +88,18 @@ class PackWorkstation extends Page
     {
         return TenantFeatures::forTenant(tenant())->supportsPacking()
             && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    /**
+     * Pharmacy packing stays Operations Hub–only (no sidebar), even with warehouse tools.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        if (TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Pharmacy) {
+            return false;
+        }
+
+        return parent::shouldRegisterNavigation();
     }
 
     public function getSubheading(): string|Htmlable|null
@@ -155,7 +174,9 @@ class PackWorkstation extends Page
         }
 
         try {
-            $custodyGate->assertOperableFor($epc, 'packing');
+            $siteId = (int) $site->getKey();
+            $principalId = $this->floorPrincipalId($siteId);
+            $custodyGate->assertOperableFor($epc, 'packing', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -167,7 +188,7 @@ class PackWorkstation extends Page
 
         $epcId = (int) $epc->getKey();
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -330,7 +351,7 @@ class PackWorkstation extends Page
         try {
             // Re-check under the locks: another operator may have claimed these children,
             // or a hold may have been raised, between the scan and this confirmation.
-            $custodyGate->assertOperableFor($childIds, 'packing');
+            $custodyGate->assertOperableFor($childIds, 'packing', $this->floorPrincipalId($siteId));
 
             $onHandError = $this->assertChildrenOnHand($childIds, $siteId, $shippable);
             if ($onHandError !== null) {
@@ -374,7 +395,7 @@ class PackWorkstation extends Page
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -398,10 +419,12 @@ class PackWorkstation extends Page
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
+
+        $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
 
         $this->children = [];
         $this->lockedCommissionSiteId = null;
@@ -414,7 +437,7 @@ class PackWorkstation extends Page
                 ->title('Pack completed with warnings')
                 ->body('SSCC batch #'.$batch->getKey().'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Created SSCC batch #'.$batch->getKey().'.');
 
@@ -422,7 +445,7 @@ class PackWorkstation extends Page
                 ->title('Pack complete')
                 ->body('SSCC batch #'.$batch->getKey().' ready.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
 
         $this->redirect($this->batchUrl);
@@ -469,7 +492,7 @@ class PackWorkstation extends Page
         }
 
         try {
-            $custodyGate->assertOperableFor($childIds, 'packing');
+            $custodyGate->assertOperableFor($childIds, 'packing', $this->floorPrincipalId($siteId));
 
             $onHandError = $this->assertChildrenOnHand($childIds, $siteId, $shippable);
             if ($onHandError !== null) {
@@ -505,7 +528,7 @@ class PackWorkstation extends Page
                 ->title('Pack failed')
                 ->body($exception->getMessage())
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         } finally {
@@ -527,10 +550,12 @@ class PackWorkstation extends Page
                 ->title('Pack incomplete')
                 ->body('SSCC batch #'.$batch->getKey().' was not fully packed. '.$detail)
                 ->danger()
-                ->send();
+                ->ephemeral()->send();
 
             return;
         }
+
+        $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
 
         $this->children = [];
 
@@ -542,7 +567,7 @@ class PackWorkstation extends Page
                 ->title('Pack completed with warnings')
                 ->body('SSCC '.$this->parentSscc18.'. '.$detail)
                 ->warning()
-                ->send();
+                ->ephemeral()->send();
         } else {
             $this->flash('ok', 'Added children to SSCC '.$this->parentSscc18.'. Scan more or ship this SSCC.');
 
@@ -550,7 +575,7 @@ class PackWorkstation extends Page
                 ->title('Pack complete')
                 ->body('SSCC '.$this->parentSscc18.' updated.')
                 ->success()
-                ->send();
+                ->ephemeral()->send();
         }
     }
 
@@ -606,6 +631,11 @@ class PackWorkstation extends Page
         return implode("\n", $lines);
     }
 
+    public function commissionSiteLabel(): string
+    {
+        return $this->commissionSite()?->name ?? 'No site selected';
+    }
+
     private function commissionSiteName(): ?string
     {
         return $this->commissionSite()?->name;
@@ -631,7 +661,7 @@ class PackWorkstation extends Page
     private function assertChildrenOnHand(array $childIds, int $siteId, ShippableEpcsAtSite $shippable): ?string
     {
         foreach ($childIds as $childId) {
-            if (! $shippable->contains($siteId, $childId)) {
+            if (! $shippable->contains($siteId, $childId, $this->floorPrincipalId($siteId))) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
         }
@@ -673,6 +703,48 @@ class PackWorkstation extends Page
             fn (array $row): int => (int) $row['epc_id'],
             $this->children,
         ));
+    }
+
+    /**
+     * Stamp parent SSCC + children with a homogeneous child principal when present.
+     *
+     * @param  list<int>  $childIds
+     */
+    private function inheritPrincipalOntoPackedBatch(SsccLabelBatch $batch, array $childIds): void
+    {
+        if ($childIds === []) {
+            return;
+        }
+
+        $principalIds = Epc::query()
+            ->whereIn('id', $childIds)
+            ->whereNotNull('principal_id')
+            ->distinct()
+            ->pluck('principal_id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if (count($principalIds) !== 1) {
+            return;
+        }
+
+        $principalId = $principalIds[0];
+        $stampIds = $childIds;
+
+        $batch->loadMissing('labels');
+        foreach ($batch->labels as $label) {
+            if (! filled($label->sscc_urn)) {
+                continue;
+            }
+
+            $parentEpcId = Epc::query()->where('epc_uri', (string) $label->sscc_urn)->value('id');
+            if ($parentEpcId !== null) {
+                $stampIds[] = (int) $parentEpcId;
+            }
+        }
+
+        PrincipalCustody::forTenant()->stamp($stampIds, $principalId);
     }
 
     /**
@@ -950,7 +1022,8 @@ class PackWorkstation extends Page
         $parentEpc = $this->parentEpcForLabel($label);
         if ($parentEpc instanceof Epc) {
             try {
-                $custodyGate->assertOperableFor($parentEpc, 'packing');
+                $siteId = $site?->getKey() !== null ? (int) $site->getKey() : null;
+                $custodyGate->assertOperableFor($parentEpc, 'packing', $this->floorPrincipalId($siteId));
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();
             }
@@ -1084,5 +1157,10 @@ class PackWorkstation extends Page
     {
         $this->lastTone = $tone;
         $this->lastMessage = $message;
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.pack';
     }
 }

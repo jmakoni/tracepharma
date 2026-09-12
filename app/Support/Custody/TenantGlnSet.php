@@ -15,7 +15,7 @@ use App\Support\TenantSettings;
  *
  * An EPC last seen at one of these GLNs is in tenant custody.
  */
-final class TenantGlnSet
+class TenantGlnSet
 {
     /** @var list<string>|null */
     private ?array $cached = null;

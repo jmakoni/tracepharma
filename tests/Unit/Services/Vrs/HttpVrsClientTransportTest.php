@@ -6,6 +6,7 @@ use App\Exceptions\VrsConfigurationException;
 use App\Services\Vrs\HttpVrsClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -79,6 +80,61 @@ class HttpVrsClientTransportTest extends TestCase
     }
 
     #[Test]
+    public function timeout_returns_unavailable_not_verified(): void
+    {
+        Http::fake(function (): never {
+            throw new ConnectionException('cURL error 28: Operation timed out after 30001 milliseconds');
+        });
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN-TIMEOUT');
+
+        $this->assertSame('unavailable', $result['status']);
+        $this->assertNotSame('verified', $result['status']);
+        $this->assertStringContainsString('VRS unreachable', $result['message']);
+    }
+
+    #[Test]
+    public function transport_failure_logs_identity_hash_without_raw_serial(): void
+    {
+        Log::spy();
+
+        Http::fake(function (): never {
+            throw new ConnectionException('cURL error 28: Operation timed out');
+        });
+
+        app(HttpVrsClient::class)->verify('00301164024167', 'SECRET-SERIAL-99');
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(function (string $message, array $context): bool {
+                if ($message !== 'VRS verification could not complete.') {
+                    return false;
+                }
+
+                $encoded = json_encode($context);
+
+                return isset($context['identity_hash'])
+                    && ! str_contains((string) $encoded, 'SECRET-SERIAL-99')
+                    && ! array_key_exists('serial', $context);
+            })
+            ->atLeast()
+            ->once();
+    }
+
+    #[Test]
+    public function successful_verify_includes_http_evidence(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response(['verified' => true, 'message' => 'ok'], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('verified', $result['status']);
+        $this->assertSame(200, $result['http_status']);
+        $this->assertStringContainsString('verified', (string) $result['http_body']);
+    }
+
+    #[Test]
     public function placeholder_base_url_is_rejected(): void
     {
         config(['vrs.http.base_url' => 'https://vrs.example.com']);
@@ -131,5 +187,68 @@ class HttpVrsClientTransportTest extends TestCase
         HttpVrsClient::assertConfigured();
 
         $this->assertInstanceOf(HttpVrsClient::class, app(HttpVrsClient::class));
+    }
+
+    #[Test]
+    public function private_https_base_url_is_rejected(): void
+    {
+        config(['vrs.http.base_url' => 'https://10.0.0.1']);
+
+        $this->expectException(VrsConfigurationException::class);
+        $this->expectExceptionMessage('private or metadata host');
+
+        HttpVrsClient::assertConfigured();
+    }
+
+    #[Test]
+    public function http_rfc1918_base_url_is_allowed(): void
+    {
+        config(['vrs.http.base_url' => 'http://10.0.0.1']);
+
+        HttpVrsClient::assertConfigured();
+
+        $this->assertInstanceOf(HttpVrsClient::class, app(HttpVrsClient::class));
+    }
+
+    #[Test]
+    public function metadata_http_base_url_is_rejected(): void
+    {
+        config(['vrs.http.base_url' => 'http://169.254.169.254']);
+
+        $this->expectException(VrsConfigurationException::class);
+        $this->expectExceptionMessage('private or metadata host');
+
+        HttpVrsClient::assertConfigured();
+    }
+
+    #[Test]
+    public function localhost_http_base_url_is_rejected(): void
+    {
+        config(['vrs.http.base_url' => 'http://localhost:8080']);
+
+        $this->expectException(VrsConfigurationException::class);
+        $this->expectExceptionMessage('private or metadata host');
+
+        HttpVrsClient::assertConfigured();
+    }
+
+    #[Test]
+    public function verify_does_not_follow_redirects(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response('', 302, [
+                'Location' => 'https://169.254.169.254/secret',
+            ]),
+            'https://169.254.169.254/*' => Http::response(['verified' => true], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        // withoutRedirecting returns the 302; Http::throw() only fails 4xx/5xx, so the
+        // empty redirect body is treated as a non-verdict transport outcome — never verified.
+        $this->assertNotSame('verified', $result['status']);
+        $this->assertSame(302, $result['http_status'] ?? null);
+        Http::assertSentCount(1);
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '169.254.169.254'));
     }
 }

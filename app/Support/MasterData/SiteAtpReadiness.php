@@ -3,26 +3,22 @@
 namespace App\Support\MasterData;
 
 use App\Enums\FacilityType;
+use App\Enums\PartnerType;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Models\AtpLicense;
 use App\Models\Site;
+use App\Models\TradingPartner;
+use App\Support\Fda\FdaTenantLink;
 use App\Support\Places\UsState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use WeakMap;
 
 final class SiteAtpReadiness
 {
     /**
-     * Summaries already computed for a site instance.
-     *
-     * A table row asks for the badge label, its colour and its description, which is
-     * three identical summaries — and three license queries when the relation is not
-     * eager-loaded. Keyed by instance rather than by id so a re-render, which reads
-     * fresh models, recomputes instead of showing a licence change that already
-     * happened as if it had not.
-     *
      * @var WeakMap<Site, array<string, mixed>>|null
      */
     private static ?WeakMap $summaries = null;
@@ -44,14 +40,9 @@ final class SiteAtpReadiness
     {
         $summaries = self::$summaries ??= new WeakMap;
 
-        /** @phpstan-ignore-next-line offsetAccess.notFound */
         return $summaries[$site] ??= self::computeSummary($site);
     }
 
-    /**
-     * Drop memoized summaries. Callers that change licences on a site they keep
-     * holding — and then read its readiness again — need the recomputation.
-     */
     public static function forget(?Site $site = null): void
     {
         if (self::$summaries === null) {
@@ -82,6 +73,8 @@ final class SiteAtpReadiness
      */
     private static function computeSummary(Site $site): array
     {
+        $tenantState = TenantReceivingState::resolve();
+
         if (ManufacturerDecrsAuthorization::matches($site)) {
             return [
                 'total' => 0,
@@ -90,14 +83,36 @@ final class SiteAtpReadiness
                 'relevant_expired' => 0,
                 'relevant_expiring_within_90_days' => 0,
                 'relevant_unknown_expiry' => 0,
-                'tenant_state' => TenantReceivingState::resolve(),
+                'tenant_state' => $tenantState,
                 'status' => SiteAtpReadinessStatus::FdaRegistered,
                 'facility_types' => collect(),
             ];
         }
 
+        if (AtpLicenseRelevance::isManufacturerHeadquarters($site)) {
+            $partner = $site->relationLoaded('tradingPartner')
+                ? $site->tradingPartner
+                : $site->tradingPartner()->first();
+
+            $status = $partner instanceof TradingPartner && FdaTenantLink::organizationId($partner) !== null
+                ? SiteAtpReadinessStatus::FdaRegistered
+                : SiteAtpReadinessStatus::NotMonitored;
+
+            return [
+                'total' => 0,
+                'expired_total' => 0,
+                'relevant_total' => 0,
+                'relevant_expired' => 0,
+                'relevant_expiring_within_90_days' => 0,
+                'relevant_unknown_expiry' => 0,
+                'tenant_state' => $tenantState,
+                'status' => $status,
+                'facility_types' => collect(),
+            ];
+        }
+
         $licenses = self::licenses($site);
-        $tenantState = TenantReceivingState::resolve();
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
 
         $today = AtpLicenseExpiry::today();
         $in90Days = $today->copy()->addDays(AtpLicenseExpiry::EXPIRING_WINDOW_DAYS);
@@ -106,9 +121,7 @@ final class SiteAtpReadiness
             ->filter(fn (AtpLicense $license): bool => self::isExpired($license, $today))
             ->count();
 
-        $relevantLicenses = $tenantState !== null
-            ? $licenses->filter(fn (AtpLicense $license): bool => self::licenseMatchesState($license, $tenantState))
-            : collect();
+        $relevantLicenses = AtpLicenseRelevance::filterToFootprint($licenses, $footprint);
 
         $relevantExpired = $relevantLicenses
             ->filter(fn (AtpLicense $license): bool => self::isExpired($license, $today))
@@ -123,14 +136,14 @@ final class SiteAtpReadiness
             ->count();
 
         $status = self::resolveStatus(
-            $tenantState,
+            $footprint,
             $relevantLicenses->count(),
             $relevantExpired,
             $relevantExpiringWithin90Days,
             $relevantUnknownExpiry,
         );
 
-        $facilityTypesSource = $tenantState !== null ? $relevantLicenses : $licenses;
+        $facilityTypesSource = $footprint !== [] ? $relevantLicenses : $licenses;
 
         return [
             'total' => $licenses->count(),
@@ -157,11 +170,21 @@ final class SiteAtpReadiness
             return 'Ready';
         }
 
-        if ($stats['tenant_state'] === null) {
+        if ($stats['status'] === SiteAtpReadinessStatus::NotMonitored) {
+            return 'N/A';
+        }
+
+        if ($stats['status'] === SiteAtpReadinessStatus::NeedsReceivingState) {
             return (string) $stats['total'];
         }
 
-        return $stats['relevant_total'].' · '.$stats['tenant_state'];
+        $labelState = AtpLicenseRelevance::evaluationJurisdictionsLabel(2);
+
+        if ($labelState === 'organization jurisdictions') {
+            return (string) $stats['relevant_total'];
+        }
+
+        return $stats['relevant_total'].' · '.$labelState;
     }
 
     public static function badgeDescription(Site $site): ?string
@@ -172,7 +195,11 @@ final class SiteAtpReadiness
             return 'FDA registered · all states';
         }
 
-        if ($stats['tenant_state'] !== null || $stats['expired_total'] === 0) {
+        if ($stats['status'] === SiteAtpReadinessStatus::NotMonitored) {
+            return 'Manufacturer HQ · ATP expiry not monitored';
+        }
+
+        if ($stats['status'] !== SiteAtpReadinessStatus::NeedsReceivingState || $stats['expired_total'] === 0) {
             return null;
         }
 
@@ -180,47 +207,37 @@ final class SiteAtpReadiness
     }
 
     /**
-     * Licenses matching the tenant receiving state. Empty when receiving state is unset.
-     *
      * @return Collection<int, AtpLicense>
      */
     public static function relevantLicenses(Site $site): Collection
     {
-        $tenantState = TenantReceivingState::resolve();
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
 
-        if ($tenantState === null) {
+        if ($footprint === []) {
             return collect();
         }
 
-        return self::licenses($site)
-            ->filter(fn (AtpLicense $license): bool => self::licenseMatchesState($license, $tenantState))
-            ->values();
+        return AtpLicenseRelevance::filterToFootprint(self::licenses($site), $footprint);
     }
 
     /**
-     * Licenses that do not match the tenant receiving state.
-     * When receiving state is unset, returns all licenses.
-     *
      * @return Collection<int, AtpLicense>
      */
     public static function otherStateLicenses(Site $site): Collection
     {
-        $tenantState = TenantReceivingState::resolve();
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
         $licenses = self::licenses($site);
 
-        if ($tenantState === null) {
+        if ($footprint === []) {
             return $licenses->values();
         }
 
         return $licenses
-            ->reject(fn (AtpLicense $license): bool => self::licenseMatchesState($license, $tenantState))
+            ->reject(fn (AtpLicense $license): bool => AtpLicenseRelevance::licenseMatchesFootprint($license, $footprint))
             ->values();
     }
 
     /**
-     * Active licenses only: licenses deactivated by catalog sync no longer
-     * authorize anything.
-     *
      * @return Collection<int, AtpLicense>
      */
     private static function licenses(Site $site): Collection
@@ -241,36 +258,51 @@ final class SiteAtpReadiness
     public static function applyStatusFilter(Builder $query, SiteAtpReadinessStatus $status): Builder
     {
         if ($status === SiteAtpReadinessStatus::FdaRegistered) {
-            $ids = ManufacturerDecrsAuthorization::siteIds($query);
+            $ids = array_values(array_unique(array_merge(
+                ManufacturerDecrsAuthorization::siteIds($query),
+                self::manufacturerHeadquartersWithFdaOrgIds($query),
+            )));
 
             return $ids === []
                 ? $query->whereRaw('0 = 1')
                 : $query->whereIn('id', $ids);
         }
 
-        $tenantState = TenantReceivingState::resolve();
-
-        if ($status === SiteAtpReadinessStatus::NeedsReceivingState) {
-            return $tenantState === null ? $query : $query->whereRaw('0 = 1');
+        if ($status === SiteAtpReadinessStatus::NotMonitored) {
+            return $query
+                ->where('is_headquarters', true)
+                ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
+                    ->where('partner_type', PartnerType::Manufacturer->value))
+                ->whereNotIn('id', ManufacturerDecrsAuthorization::siteIds($query) ?: [0])
+                ->whereNotIn('id', self::manufacturerHeadquartersWithFdaOrgIds($query) ?: [0]);
         }
 
-        if ($tenantState === null) {
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
+
+        if ($status === SiteAtpReadinessStatus::NeedsReceivingState) {
+            return $footprint === [] ? $query : $query->whereRaw('0 = 1');
+        }
+
+        if ($footprint === []) {
             return $query->whereRaw('0 = 1');
         }
 
-        $hasRelevant = fn (Builder $licenseQuery): Builder => self::applyRelevantMatch($licenseQuery, $tenantState);
+        $hasRelevant = fn (Builder $licenseQuery): Builder => self::applyFootprintMatch($licenseQuery, $footprint);
         $hasExpired = fn (Builder $licenseQuery): Builder => AtpLicenseExpiry::expired(
-            self::applyRelevantMatch($licenseQuery, $tenantState),
+            self::applyFootprintMatch($licenseQuery, $footprint),
         );
         $hasExpiring = fn (Builder $licenseQuery): Builder => AtpLicenseExpiry::expiringSoon(
-            self::applyRelevantMatch($licenseQuery, $tenantState),
+            self::applyFootprintMatch($licenseQuery, $footprint),
         );
         $hasUnknownExpiry = fn (Builder $licenseQuery): Builder => AtpLicenseExpiry::unknownExpiry(
-            self::applyRelevantMatch($licenseQuery, $tenantState),
+            self::applyFootprintMatch($licenseQuery, $footprint),
         );
 
         $deemedIds = $status === SiteAtpReadinessStatus::NoLicenses
-            ? ManufacturerDecrsAuthorization::siteIds($query)
+            ? array_values(array_unique(array_merge(
+                ManufacturerDecrsAuthorization::siteIds($query),
+                self::manufacturerHeadquartersIds($query),
+            )))
             : [];
 
         return match ($status) {
@@ -297,12 +329,52 @@ final class SiteAtpReadiness
                 ->whereDoesntHave('atpLicenses', $hasUnknownExpiry),
             SiteAtpReadinessStatus::NeedsReceivingState => $query->whereRaw('0 = 1'),
             SiteAtpReadinessStatus::FdaRegistered => $query->whereRaw('0 = 1'),
+            SiteAtpReadinessStatus::NotMonitored => $query->whereRaw('0 = 1'),
         };
     }
 
     /**
-     * The single predicate for "this license is for the receiving state", so
-     * table badges, tab filters, and readiness filters never disagree.
+     * Licenses in the tenant org footprint (active).
+     *
+     * @param  Builder<AtpLicense>  $query
+     * @return Builder<AtpLicense>
+     */
+    public static function applyFootprintRelevantMatch(Builder $query): Builder
+    {
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
+
+        if ($footprint === []) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return self::applyFootprintMatch($query->where('is_active', true), $footprint);
+    }
+
+    /**
+     * Active licenses outside the tenant evaluation jurisdictions.
+     *
+     * @param  Builder<AtpLicense>  $query
+     * @return Builder<AtpLicense>
+     */
+    public static function applyOutsideFootprintMatch(Builder $query): Builder
+    {
+        $footprint = AtpLicenseRelevance::evaluationJurisdictionKeys();
+
+        if ($footprint === []) {
+            return $query->where('is_active', true);
+        }
+
+        return $query
+            ->where('is_active', true)
+            ->where(function (Builder $outer) use ($footprint): void {
+                $outer->whereNot(function (Builder $notIn) use ($footprint): void {
+                    self::applyFootprintMatch($notIn, $footprint);
+                });
+            });
+    }
+
+    /**
+     * @deprecated Prefer applyFootprintRelevantMatch — single-state US-only helper.
      *
      * @param  Builder<AtpLicense>  $query
      * @return Builder<AtpLicense>
@@ -313,6 +385,8 @@ final class SiteAtpReadiness
     }
 
     /**
+     * @deprecated Prefer applyOutsideFootprintMatch.
+     *
      * @param  Builder<AtpLicense>  $query
      * @return Builder<AtpLicense>
      */
@@ -322,35 +396,75 @@ final class SiteAtpReadiness
     }
 
     /**
-     * Licenses that count towards readiness: in effect, for the receiving state.
-     *
      * @param  Builder<AtpLicense>  $query
+     * @param  list<string>  $footprintKeys
      * @return Builder<AtpLicense>
      */
-    private static function applyRelevantMatch(Builder $query, string $tenantState): Builder
+    private static function applyFootprintMatch(Builder $query, array $footprintKeys): Builder
     {
-        return self::applyStateMatch($query->where('is_active', true), $tenantState);
+        $query->where('is_active', true);
+
+        $hasCountry = Schema::hasColumn('atp_licenses', 'license_country');
+
+        return $query->where(function (Builder $outer) use ($footprintKeys, $hasCountry): void {
+            foreach ($footprintKeys as $key) {
+                [$country, $state] = array_pad(explode('|', $key, 2), 2, null);
+
+                if (! is_string($country) || ! is_string($state) || $state === '') {
+                    continue;
+                }
+
+                $outer->orWhere(function (Builder $inner) use ($country, $state, $hasCountry): void {
+                    if ($hasCountry) {
+                        $inner->whereRaw('UPPER(TRIM(COALESCE(license_country, ?))) = ?', ['US', $country]);
+                    } elseif ($country !== 'US') {
+                        $inner->whereRaw('0 = 1');
+
+                        return;
+                    }
+
+                    $inner->whereRaw('UPPER(TRIM(license_state)) = ?', [$state]);
+                });
+            }
+        });
     }
 
-    private static function licenseMatchesState(AtpLicense $license, string $tenantState): bool
+    /**
+     * @param  Builder<Site>  $query
+     * @return list<int>
+     */
+    private static function manufacturerHeadquartersIds(Builder $query): array
     {
-        $licenseState = self::normalizeLicenseState($license->license_state);
+        return (clone $query)
+            ->where('is_headquarters', true)
+            ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
+                ->where('partner_type', PartnerType::Manufacturer->value))
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+    }
 
-        return $licenseState !== null && $licenseState === self::normalizeState($tenantState);
+    /**
+     * Manufacturer HQ sites linked to an FDA organization (national authorization).
+     *
+     * @param  Builder<Site>  $query
+     * @return list<int>
+     */
+    private static function manufacturerHeadquartersWithFdaOrgIds(Builder $query): array
+    {
+        return (clone $query)
+            ->where('is_headquarters', true)
+            ->whereHas('tradingPartner', fn (Builder $partner): Builder => $partner
+                ->where('partner_type', PartnerType::Manufacturer->value)
+                ->whereNotNull('fda_organization_id'))
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
     }
 
     private static function normalizeState(string $state): string
     {
         return UsState::normalize($state) ?? strtoupper(trim($state));
-    }
-
-    private static function normalizeLicenseState(?string $state): ?string
-    {
-        if (blank($state)) {
-            return null;
-        }
-
-        return self::normalizeState((string) $state) ?: null;
     }
 
     private static function isExpired(AtpLicense $license, Carbon $today): bool
@@ -372,14 +486,17 @@ final class SiteAtpReadiness
             && $license->license_expiration_date->lte($in90Days);
     }
 
+    /**
+     * @param  list<string>  $footprint
+     */
     private static function resolveStatus(
-        ?string $tenantState,
+        array $footprint,
         int $relevantTotal,
         int $relevantExpired,
         int $relevantExpiringWithin90Days,
         int $relevantUnknownExpiry,
     ): SiteAtpReadinessStatus {
-        if ($tenantState === null) {
+        if ($footprint === []) {
             return SiteAtpReadinessStatus::NeedsReceivingState;
         }
 
@@ -395,7 +512,6 @@ final class SiteAtpReadiness
             return SiteAtpReadinessStatus::Expiring;
         }
 
-        // No expiration date means the license cannot be shown to be in force.
         if ($relevantUnknownExpiry > 0) {
             return SiteAtpReadinessStatus::UnknownExpiry;
         }

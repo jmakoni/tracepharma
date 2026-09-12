@@ -3,6 +3,7 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\ConfirmRemainingExpectedReceivingLines;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
@@ -141,6 +142,101 @@ class ReceiveModeAcceptRemainingTest extends TestCase
             $this->assertNotNull($child);
             $this->assertSame('child', $child->line_role);
             $this->assertSame('expected', $child->status);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function open_count_accept_remaining_confirms_children_and_completes(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setEdgeMode($tenant, ReceivingEdgeMode::OpenCount);
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+            $siteId = $this->resolveEligibleReceiveSiteId();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
+            $this->sessionId = (int) $session->getKey();
+
+            $this->assertFalse(ReceivingPolicy::forTenant($tenant)->defaultAutoConfirmChildren());
+
+            $result = app(ConfirmRemainingExpectedReceivingLines::class)->handle($session->fresh());
+
+            $this->assertGreaterThanOrEqual(2, $result['confirmed']);
+            $this->assertSame([], $result['blockers'], implode(' | ', $result['blockers']));
+
+            $child = ReceivingScanLine::query()
+                ->where('receiving_session_id', $this->sessionId)
+                ->where('epc_id', Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id'))
+                ->first();
+
+            $this->assertNotNull($child);
+            $this->assertSame('child', $child->line_role);
+            $this->assertSame('confirmed', $child->status);
+
+            $session = $session->fresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
+            $this->assertSame('completed', $session->status);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function open_count_accept_remaining_confirms_leftover_children_after_parent_scan(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setEdgeMode($tenant, ReceivingEdgeMode::OpenCount);
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+            $siteId = $this->resolveEligibleReceiveSiteId();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
+            $this->sessionId = (int) $session->getKey();
+
+            $policy = ReceivingPolicy::forTenant($tenant);
+            $parentScan = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                self::SSCC_URI,
+                null,
+                $policy->defaultAutoConfirmChildren(),
+            );
+            $this->assertTrue($parentScan['ok'], $parentScan['message'] ?? 'parent confirm failed');
+
+            $childId = Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id');
+            $this->assertSame(
+                'expected',
+                ReceivingScanLine::query()
+                    ->where('receiving_session_id', $this->sessionId)
+                    ->where('epc_id', $childId)
+                    ->value('status'),
+            );
+
+            $result = app(ConfirmRemainingExpectedReceivingLines::class)->handle($session->fresh());
+
+            $this->assertGreaterThanOrEqual(1, $result['confirmed']);
+            $this->assertSame(
+                'confirmed',
+                ReceivingScanLine::query()
+                    ->where('receiving_session_id', $this->sessionId)
+                    ->where('epc_id', $childId)
+                    ->value('status'),
+            );
+
+            $session = $session->fresh();
+            $this->assertSame('completed', $session->status);
+
+            $secondPass = app(ConfirmRemainingExpectedReceivingLines::class)->handle($session->fresh());
+            $this->assertSame(0, $secondPass['confirmed']);
         } finally {
             $this->cleanup($tenant);
         }

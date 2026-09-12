@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tenants;
 
+use App\Enums\TenantProfile;
 use App\Models\Tenant;
 use App\Support\TenantHostname;
 use App\Support\TenantPairAvailability;
@@ -20,7 +21,7 @@ class ProvisionTenantPair
     /**
      * @param  array{
      *     name: string,
-     *     profile?: \App\Enums\TenantProfile|string,
+     *     profile?: TenantProfile|string,
      *     status?: string,
      *     gln?: ?string,
      *     company_prefix?: ?string,

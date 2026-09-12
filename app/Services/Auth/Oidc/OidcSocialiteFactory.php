@@ -1,0 +1,102 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Auth\Oidc;
+
+use App\Support\Auth\OidcConnectionConfig;
+use App\Support\Auth\OidcProvider;
+use Illuminate\Support\Facades\Config;
+use Laravel\Socialite\Contracts\Provider as SocialiteProviderContract;
+use Laravel\Socialite\Facades\Socialite;
+use SocialiteProviders\Manager\Config as SocialiteConfig;
+
+final class OidcSocialiteFactory
+{
+    public function make(OidcConnectionConfig $config, ?string $nonce = null): SocialiteProviderContract
+    {
+        $this->bindRuntimeConfig($config);
+
+        $driver = Socialite::driver($config->socialiteDriver);
+
+        if (method_exists($driver, 'setConfig')) {
+            $driver->setConfig($this->socialiteConfig($config));
+        }
+
+        if ($nonce !== null) {
+            $driver = $driver->with(['nonce' => $nonce]);
+        }
+
+        return $driver->scopes($this->scopes($config->provider));
+    }
+
+    public function bindRuntimeConfig(OidcConnectionConfig $config): void
+    {
+        $payload = match ($config->provider) {
+            OidcProvider::Entra => [
+                'client_id' => $config->clientId,
+                'client_secret' => $config->clientSecret,
+                'redirect' => $config->redirectUri,
+                'tenant' => $this->requirePinnedEntraTenant($config),
+            ],
+            OidcProvider::Okta => [
+                'client_id' => $config->clientId,
+                'client_secret' => $config->clientSecret,
+                'redirect' => $config->redirectUri,
+                'base_url' => rtrim($config->issuer, '/'),
+            ],
+            OidcProvider::Oidc => [
+                'client_id' => $config->clientId,
+                'client_secret' => $config->clientSecret,
+                'redirect' => $config->redirectUri,
+                'issuer' => rtrim($config->issuer, '/'),
+            ],
+        };
+
+        Config::set('services.'.$config->socialiteDriver, $payload);
+    }
+
+    private function socialiteConfig(OidcConnectionConfig $config): SocialiteConfig
+    {
+        $additional = match ($config->provider) {
+            OidcProvider::Entra => ['tenant' => $this->requirePinnedEntraTenant($config)],
+            OidcProvider::Okta => ['base_url' => rtrim($config->issuer, '/')],
+            OidcProvider::Oidc => ['issuer' => rtrim($config->issuer, '/')],
+        };
+
+        return new SocialiteConfig(
+            $config->clientId,
+            $config->clientSecret,
+            $config->redirectUri,
+            $additional,
+        );
+    }
+
+    /**
+     * Entra must target one directory. Falling back to "common" accepts any Entra tenant.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function requirePinnedEntraTenant(OidcConnectionConfig $config): string
+    {
+        $tenantId = $config->pinnedEntraTenantId();
+        if ($tenantId === null) {
+            throw new \InvalidArgumentException(
+                'Microsoft Entra SSO requires a specific directory (tenant) ID; multi-tenant aliases such as common are not allowed.',
+            );
+        }
+
+        return $tenantId;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function scopes(OidcProvider $provider): array
+    {
+        return match ($provider) {
+            OidcProvider::Entra => ['openid', 'profile', 'email', 'User.Read'],
+            OidcProvider::Okta, OidcProvider::Oidc => ['openid', 'profile', 'email'],
+        };
+    }
+}

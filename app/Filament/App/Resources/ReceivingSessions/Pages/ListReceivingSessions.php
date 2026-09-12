@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\ReceivingSessions\Pages;
 
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Support\ShowsPrincipalsHonestyBanner;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Component;
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListReceivingSessions extends ListRecords
 {
+    use ShowsPrincipalsHonestyBanner;
+
     protected static string $resource = ReceivingSessionResource::class;
 
     public function getDefaultActiveTab(): string|int|null

@@ -1,0 +1,26 @@
+- generic [ref=f91e1]:
+  - main [ref=f91e4]:
+    - generic [ref=f91e6]:
+      - generic [ref=f91e7]:
+        - img "TracePharma Admin Help logo" [ref=f91e8]
+        - heading "Sign in" [level=1] [ref=f91e9]
+      - generic [ref=f91e13]:
+        - generic [ref=f91e17]:
+          - generic [ref=f91e20]:
+            - generic [ref=f91e24]:
+              - text: Email address
+              - superscript [ref=f91e25]: "*"
+            - textbox "Email address*" [active] [ref=f91e29]
+          - generic [ref=f91e32]:
+            - generic [ref=f91e36]:
+              - text: Password
+              - superscript [ref=f91e37]: "*"
+            - generic [ref=f91e39]:
+              - textbox "Password*" [ref=f91e41]
+              - button "Show Password" [ref=f91e44] [cursor=pointer]
+          - generic [ref=f91e53]:
+            - checkbox "Remember me" [ref=f91e54]
+            - generic [ref=f91e55]: Remember me
+        - button "Sign In" [ref=f91e61] [cursor=pointer]
+  - generic:
+    - status

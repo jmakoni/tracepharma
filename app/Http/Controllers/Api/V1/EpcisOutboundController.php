@@ -17,6 +17,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Epcis\EpcisApiSiteAccess;
+use App\Support\Epcis\EpcisTempFile;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Tenancy\TenantKillSwitches;
@@ -53,7 +54,7 @@ final class EpcisOutboundController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
-        $path = $this->writeTempFile($resolved['content']);
+        $path = EpcisTempFile::write($resolved['content'], $resolved['originalName'] ?? $originalName, 'epcis_api_out_');
 
         try {
             $user = $request->user();
@@ -85,6 +86,7 @@ final class EpcisOutboundController extends Controller
                     'received_via' => EpcisReceivedVia::Api,
                     'original_filename' => $this->normalizeFilename(
                         $resolved['originalName'] ?? $originalName,
+                        $resolved['content'],
                     ),
                     'trading_partner_id' => $request->input('trading_partner_id'),
                     'outbound_connection_id' => $request->input('outbound_connection_id'),
@@ -216,25 +218,13 @@ final class EpcisOutboundController extends Controller
         ];
     }
 
-    private function writeTempFile(string $content): string
+    private function normalizeFilename(?string $originalFilename, string $content): string
     {
-        $tmp = tempnam(sys_get_temp_dir(), 'epcis_api_out_');
-        if ($tmp === false) {
-            throw new \RuntimeException('Unable to create temporary EPCIS file.');
-        }
+        $fallbackExt = EpcisTempFile::guessExtension($content, $originalFilename);
 
-        $path = $tmp.'.xml';
-        rename($tmp, $path);
-        file_put_contents($path, $content);
-
-        return $path;
-    }
-
-    private function normalizeFilename(?string $originalFilename): string
-    {
         return SafeFilename::forUpload(
             $originalFilename,
-            'outbound-api-'.now()->format('YmdHis').'.xml',
+            'outbound-api-'.now()->format('YmdHis').'.'.$fallbackExt,
         );
     }
 }

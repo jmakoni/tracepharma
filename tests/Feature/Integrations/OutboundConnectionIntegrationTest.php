@@ -9,7 +9,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\OutboundConnection;
 use App\Models\Tenant;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
-use App\Support\Integrations\OutboundTransportAvailability;
+use App\Services\Epcis\Outbound\SftpOutboundSender;
 use App\Support\TenantFeatures;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -65,7 +65,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionId = (int) $connection->getKey();
 
             $path = 'epcis/outbound/test-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -84,6 +84,7 @@ class OutboundConnectionIntegrationTest extends TestCase
                 'event_count' => 1,
                 'epc_count' => 0,
                 'received_at' => now(),
+                'outbound_connection_id' => $connection->getKey(),
             ]);
             $this->documentId = (int) $document->getKey();
 
@@ -141,7 +142,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionIds[] = (int) $explicitConnection->getKey();
 
             $path = 'epcis/outbound/test-explicit-transmit-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -215,7 +216,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $this->connectionIds[] = (int) $inactiveConnection->getKey();
 
             $path = 'epcis/outbound/test-inactive-pin-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -252,24 +253,33 @@ class OutboundConnectionIntegrationTest extends TestCase
     }
 
     #[Test]
-    public function legacy_sftp_connection_cannot_be_created(): void
+    public function sftp_connection_can_be_created(): void
     {
         $this->initializeDemo2Tenant();
 
         try {
-            $this->expectException(\Illuminate\Validation\ValidationException::class);
-
-            OutboundConnection::query()->create([
-                'name' => 'Blocked SFTP',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Partner SFTP',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
+                    'port' => 22,
                     'outbound_path' => '/outbound/epcis',
+                    'root' => '/',
                 ],
-                'credentials' => ['username' => 'legacy'],
+                'credentials' => ['username' => 'sftp-user'],
             ]);
+            $this->connectionId = (int) $connection->getKey();
+
+            $connection->refresh();
+
+            $this->assertTrue($connection->exists);
+            $this->assertSame(OutboundTransport::Sftp, $connection->transport);
+            $this->assertSame(SerializationProvider::CustomSftp, $connection->serialization_provider);
+            $this->assertSame('sftp.example', $connection->settings['host'] ?? null);
+            $this->assertSame('sftp-user', $connection->credentials['username'] ?? null);
         } finally {
             $this->cleanup();
             tenancy()->end();
@@ -277,28 +287,28 @@ class OutboundConnectionIntegrationTest extends TestCase
     }
 
     #[Test]
-    public function legacy_sftp_transmit_fails_closed_with_clear_error(): void
+    public function sftp_transmit_marks_document_sent(): void
     {
         $this->initializeDemo2Tenant();
 
         try {
-            Http::fake();
+            $this->mock(SftpOutboundSender::class, fn ($m) => $m->shouldReceive('send')->once());
 
-            $connection = OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
-                'name' => 'Legacy SFTP',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            $connection = OutboundConnection::query()->create([
+                'name' => 'Partner SFTP',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-                'credentials' => ['username' => 'legacy'],
-            ]));
+                'credentials' => ['username' => 'sftp-user'],
+            ]);
             $this->connectionId = (int) $connection->getKey();
 
-            $path = 'epcis/outbound/test-legacy-sftp-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $path = 'epcis/outbound/test-sftp-transmit-'.Str::uuid().'.xml';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -307,7 +317,7 @@ class OutboundConnectionIntegrationTest extends TestCase
                 'creation_date' => now(),
                 'direction' => 'outbound',
                 'format' => 'xml',
-                'original_filename' => 'test-legacy-sftp.xml',
+                'original_filename' => 'test-sftp-transmit.xml',
                 'payload_disk' => 'local',
                 'payload_path' => $path,
                 'file_sha256' => hash('sha256', $xml),
@@ -326,12 +336,11 @@ class OutboundConnectionIntegrationTest extends TestCase
             $document->refresh();
             $connection->refresh();
 
-            $this->assertSame('failed', $document->transmission_status);
+            $this->assertSame('sent', $document->transmission_status);
+            $this->assertNotNull($document->sent_at);
             $this->assertSame($connection->getKey(), $document->outbound_connection_id);
-            $this->assertSame(OutboundTransportAvailability::sftpTransmitMessage(), $document->error_message);
-            $this->assertSame(OutboundTransportAvailability::sftpTransmitMessage(), $connection->last_error);
-
-            Http::assertNothingSent();
+            $this->assertNull($connection->last_error);
+            $this->assertNotNull($connection->last_sent_at);
         } finally {
             $this->cleanup();
             tenancy()->end();
@@ -339,14 +348,12 @@ class OutboundConnectionIntegrationTest extends TestCase
     }
 
     #[Test]
-    public function legacy_sftp_connection_is_not_selected_by_resolver(): void
+    public function sftp_connection_is_selected_by_resolver_when_only_active_transport(): void
     {
         $this->initializeDemo2Tenant();
 
         try {
-            Http::fake([
-                'https://https-fallback.example/epcis' => Http::response('OK', 202),
-            ]);
+            $this->mock(SftpOutboundSender::class, fn ($m) => $m->shouldReceive('send')->once());
 
             $this->deactivatedOutboundConnectionIds = OutboundConnection::query()
                 ->where('is_active', true)
@@ -356,29 +363,21 @@ class OutboundConnectionIntegrationTest extends TestCase
 
             OutboundConnection::query()->update(['is_active' => false]);
 
-            OutboundConnection::withoutEvents(fn () => OutboundConnection::query()->create([
-                'name' => 'Legacy SFTP only',
-                'serialization_provider' => SerializationProvider::TraceLink,
+            $sftpConnection = OutboundConnection::query()->create([
+                'name' => 'SFTP only',
+                'serialization_provider' => SerializationProvider::CustomSftp,
                 'transport' => OutboundTransport::Sftp,
                 'is_active' => true,
                 'settings' => [
                     'host' => 'sftp.example',
                     'outbound_path' => '/outbound/epcis',
                 ],
-            ]));
-            $this->connectionIds[] = (int) OutboundConnection::query()->where('name', 'Legacy SFTP only')->value('id');
-
-            $httpsConnection = OutboundConnection::query()->create([
-                'name' => 'HTTPS fallback',
-                'serialization_provider' => SerializationProvider::CustomHttps,
-                'transport' => OutboundTransport::Https,
-                'is_active' => true,
-                'settings' => ['endpoint_url' => 'https://https-fallback.example/epcis'],
+                'credentials' => ['username' => 'sftp-user'],
             ]);
-            $this->connectionIds[] = (int) $httpsConnection->getKey();
+            $this->connectionIds[] = (int) $sftpConnection->getKey();
 
-            $path = 'epcis/outbound/test-resolver-skip-sftp-'.Str::uuid().'.xml';
-            $xml = '<?xml version="1.0"?><epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"></epcis:EPCISDocument>';
+            $path = 'epcis/outbound/test-resolver-sftp-'.Str::uuid().'.xml';
+            $xml = $this->schemaValidOutboundXml();
             Storage::disk('local')->put($path, $xml);
 
             $document = EpcisDocument::query()->create([
@@ -387,7 +386,7 @@ class OutboundConnectionIntegrationTest extends TestCase
                 'creation_date' => now(),
                 'direction' => 'outbound',
                 'format' => 'xml',
-                'original_filename' => 'test-resolver-skip-sftp.xml',
+                'original_filename' => 'test-resolver-sftp.xml',
                 'payload_disk' => 'local',
                 'payload_path' => $path,
                 'file_sha256' => hash('sha256', $xml),
@@ -405,9 +404,7 @@ class OutboundConnectionIntegrationTest extends TestCase
             $document->refresh();
 
             $this->assertSame('sent', $document->transmission_status);
-            $this->assertSame($httpsConnection->getKey(), $document->outbound_connection_id);
-
-            Http::assertSent(fn ($request): bool => $request->url() === 'https://https-fallback.example/epcis');
+            $this->assertSame($sftpConnection->getKey(), $document->outbound_connection_id);
         } finally {
             $this->cleanup();
             tenancy()->end();
@@ -507,6 +504,18 @@ class OutboundConnectionIntegrationTest extends TestCase
         tenancy()->initialize($tenant);
 
         return $tenant;
+    }
+
+    private function schemaValidOutboundXml(): string
+    {
+        $xml = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($xml);
+
+        return str_replace(
+            '11111111-2222-3333-4444-555555555555',
+            (string) Str::uuid(),
+            $xml,
+        );
     }
 
     private function cleanup(): void

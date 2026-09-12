@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -30,6 +31,9 @@ final class OpenOutboundShippingSession
         bool $isCorrective = false,
         ?string $correctiveReason = null,
         ?int $correctsEpcisDocumentId = null,
+        bool $isDropShipment = false,
+        ?int $principalId = null,
+        ?int $expectedCount = null,
     ): OutboundShippingSession {
         if (! TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             throw new DomainException('Outbound shipping is not available for this tenant profile.');
@@ -52,16 +56,29 @@ final class OpenOutboundShippingSession
             SiteAccess::assertCanAccessSite($user, $siteId);
         }
 
+        $features = TenantFeatures::forTenant(tenant());
+        $principalId = PrincipalCustody::forTenant()->resolveSessionPrincipalId(
+            $siteId,
+            $principalId,
+            'ship',
+        );
+
         $attributes = [
             'site_id' => $siteId,
             'status' => 'open',
-            'expected_count' => 0,
+            'expected_count' => max(0, (int) ($expectedCount ?? 0)),
             'confirmed_count' => 0,
+            'split_declared' => false,
             // TI/TS is the seller's affirmation, so the operator makes it on the send step.
             'dscsa_affirm' => false,
+            'is_drop_shipment' => $isDropShipment,
             'opened_by' => $openedBy,
             'opened_at' => now(),
         ];
+
+        if ($principalId !== null && $features->supportsPrincipals()) {
+            $attributes['principal_id'] = $principalId;
+        }
 
         if ($isCorrective) {
             $attributes['is_corrective'] = true;

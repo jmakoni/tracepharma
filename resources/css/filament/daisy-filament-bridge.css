@@ -66,9 +66,18 @@ html.dark .fi-topbar {
         transform: translateX(0) !important;
     }
 
-    .fi-body-has-topbar .fi-sidebar {
-        top: 0;
-        height: 100dvh;
+    /*
+     * Full-bleed topbar overlays the sidebar column. inset-block:0 above
+     * forces top:0 with higher specificity — override inset-block-start so
+     * nav clears the brand/header row.
+     */
+    .fi-body-has-topbar:not(.fi-body-has-top-navigation) .fi-sidebar.fi-sidebar-open,
+    .fi-body-has-topbar:not(.fi-body-has-top-navigation):not(.fi-body-has-sidebar-collapsible-on-desktop):not(
+            .fi-body-has-sidebar-fully-collapsible-on-desktop
+        )
+        .fi-sidebar:not(.fi-sidebar-open) {
+        inset-block-start: 4rem; /* matches .fi-topbar min-height (64px) */
+        height: calc(100dvh - 4rem);
     }
 
     .fi-body-has-navigation:not(.fi-body-has-top-navigation) .fi-main-ctn {
@@ -80,12 +89,12 @@ html.dark .fi-topbar {
 
 /* Nav density (Flowbite ergonomics) */
 .fi-sidebar-nav {
-    padding: 1rem 0.75rem; /* py-4 px-3 */
-    row-gap: 1rem;
+    padding: 0.75rem;
+    row-gap: 0.75rem;
 }
 
 .fi-sidebar-nav-groups {
-    row-gap: 1rem;
+    row-gap: 0.75rem;
 }
 
 .fi-sidebar-group,
@@ -97,7 +106,11 @@ html.dark .fi-topbar {
 
 .fi-sidebar-item-btn {
     border-radius: 0.5rem; /* rounded-lg */
-    padding: 0.5rem 0.75rem; /* py-2 px-3 */
+    padding: 0.25rem 0.75rem; /* py-1 px-3 */
+}
+
+.fi-sidebar-group-btn {
+    padding: 0.125rem 0.5rem; /* tighter than item rows */
 }
 
 .fi-sidebar-item-btn > .fi-icon,
@@ -224,3 +237,89 @@ html.dark .fi-topbar {
 .tp-equal-height-sections .fi-section-content-ctn {
     flex: 1 1 auto;
 }
+
+/* Tenant App panel footer (Menu Manager location: footer) */
+.tp-tenant-footer {
+    border-block-start: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    background-color: color-mix(in oklab, var(--color-base-200) 55%, var(--color-base-100));
+    margin-block-start: 1.5rem;
+    padding-block: 1rem 1.25rem;
+    padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.tp-tenant-footer__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+    max-width: 80rem;
+    margin-inline: auto;
+}
+
+.tp-tenant-footer__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+}
+
+.tp-tenant-footer__nav--primary {
+    column-gap: 0.15rem;
+    row-gap: 0.25rem;
+}
+
+.tp-tenant-footer__nav--legal {
+    column-gap: 0.35rem;
+    row-gap: 0.25rem;
+    padding-block-start: 0.15rem;
+}
+
+.tp-tenant-footer__link {
+    color: color-mix(in oklab, var(--color-base-content) 78%, transparent);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.5rem;
+    transition:
+        color 140ms ease,
+        background-color 140ms ease;
+}
+
+.tp-tenant-footer__link--muted {
+    color: color-mix(in oklab, var(--color-base-content) 58%, transparent);
+    font-weight: 400;
+    font-size: 0.75rem;
+    padding-inline: 0.35rem;
+}
+
+.tp-tenant-footer__link:hover,
+.tp-tenant-footer__link:focus-visible {
+    color: var(--color-base-content);
+    background-color: color-mix(in oklab, var(--color-base-content) 7%, transparent);
+    outline: none;
+}
+
+.tp-tenant-footer__sep {
+    color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+    font-size: 0.75rem;
+    user-select: none;
+    line-height: 1;
+}
+
+.tp-tenant-footer__copy {
+    margin: 0;
+    color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    text-align: center;
+}
+
+.dark .tp-tenant-footer,
+html.dark .tp-tenant-footer {
+    background-color: color-mix(in oklab, var(--color-base-300) 35%, var(--color-base-200));
+    border-block-start-color: color-mix(in oklab, var(--color-base-content) 14%, transparent);
+}
+

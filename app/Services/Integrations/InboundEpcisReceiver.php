@@ -9,6 +9,7 @@ use App\Models\InboundConnection;
 use App\Models\TradingPartner;
 use App\Rules\ValidGln;
 use App\Support\Epcis\SbdhHeaderExtractor;
+use App\Support\Epcis\EpcisTempFile;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Gs1\Sgln;
 
@@ -35,16 +36,9 @@ class InboundEpcisReceiver
         array $metadata = [],
     ): array {
         $tradingPartnerId = $this->resolveTradingPartnerId($connection, $content);
-        $filename = $this->normalizeFilename($originalFilename);
+        $filename = $this->normalizeFilename($originalFilename, $content);
 
-        $tmp = tempnam(sys_get_temp_dir(), 'epcis_inbound_');
-        if ($tmp === false) {
-            throw new \RuntimeException('Unable to create temporary EPCIS file.');
-        }
-
-        $path = $tmp.'.xml';
-        rename($tmp, $path);
-        file_put_contents($path, $content);
+        $path = EpcisTempFile::write($content, $filename, 'epcis_inbound_');
 
         try {
             $channel = EpcisReceivedVia::tryFrom($receivedVia) ?? EpcisReceivedVia::HttpsWebhook;
@@ -129,10 +123,13 @@ class InboundEpcisReceiver
             ?? ValidGln::normalize(Sgln::fromUrn((string) $header['sender_identifier'])['gln'] ?? null);
     }
 
-    private function normalizeFilename(?string $originalFilename): string
+    private function normalizeFilename(?string $originalFilename, string $content): string
     {
-        $fallback = 'inbound-'.now()->format('YmdHis').'.xml';
+        $fallbackExt = EpcisTempFile::guessExtension($content, $originalFilename);
 
-        return SafeFilename::forUpload($originalFilename, $fallback);
+        return SafeFilename::forUpload(
+            $originalFilename,
+            'inbound-'.now()->format('YmdHis').'.'.$fallbackExt,
+        );
     }
 }

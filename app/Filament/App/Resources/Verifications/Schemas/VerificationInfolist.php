@@ -3,7 +3,9 @@
 namespace App\Filament\App\Resources\Verifications\Schemas;
 
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Models\Epcis\Epc;
 use App\Models\Verification;
+use App\Support\TenantFeatures;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
@@ -50,6 +52,11 @@ class VerificationInfolist
                         ->placeholder('—'),
                     TextEntry::make('lot')
                         ->placeholder('—'),
+                    TextEntry::make('principal_display')
+                        ->label('Principal')
+                        ->state(fn (Verification $record): ?string => self::principalName($record))
+                        ->placeholder('—')
+                        ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
                     TextEntry::make('scanned_barcode')
                         ->label('Scanned barcode')
                         ->fontFamily(FontFamily::Mono)
@@ -86,5 +93,40 @@ class VerificationInfolist
                 ])
                 ->visible(fn (Verification $record): bool => filled($record->response_payload)),
         ]);
+    }
+
+    private static function principalName(Verification $record): ?string
+    {
+        $epcId = data_get($record->request_payload, 'l4.epc_id')
+            ?? data_get($record->response_payload, 'epc_id');
+
+        if ($epcId !== null) {
+            $name = Epc::query()
+                ->whereKey((int) $epcId)
+                ->with('principal:id,name')
+                ->first()
+                ?->principal
+                ?->name;
+
+            if (filled($name)) {
+                return (string) $name;
+            }
+        }
+
+        if (filled($record->gtin14) && filled($record->serial)) {
+            $name = Epc::query()
+                ->where('gtin14', $record->gtin14)
+                ->where('serial_number', $record->serial)
+                ->with('principal:id,name')
+                ->first()
+                ?->principal
+                ?->name;
+
+            if (filled($name)) {
+                return (string) $name;
+            }
+        }
+
+        return null;
     }
 }

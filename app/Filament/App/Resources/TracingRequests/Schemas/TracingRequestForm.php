@@ -6,9 +6,9 @@ use App\Enums\TracingRequestorType;
 use App\Enums\TracingRequestScope;
 use App\Enums\TracingRequestStatus;
 use App\Support\Auth\SiteAccess;
+use App\Support\Filament\ProseEditor;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -72,9 +72,7 @@ class TracingRequestForm
                             ->nullable(),
                         Toggle::make('is_recall')
                             ->label('Recall request'),
-                        Textarea::make('notes')
-                            ->rows(3)
-                            ->columnSpanFull(),
+                        ProseEditor::make('notes'),
                     ])
                     ->columns(2),
             ]);

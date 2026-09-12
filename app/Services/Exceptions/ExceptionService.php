@@ -13,10 +13,14 @@ use App\Models\Exceptions\ExceptionAction;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionSlaRule;
 use App\Models\Exceptions\ExceptionType;
+use App\Models\Site;
 use App\Models\User;
 use App\Services\Quarantine\QuarantineService;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
+use App\Support\Filament\ProseContent;
+use App\Support\TenantFeatures;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -34,6 +38,7 @@ final class ExceptionService
         'event_id',
         'trading_partner_id',
         'site_id',
+        'principal_id',
         'compensating_document_id',
         'title',
         'description',
@@ -443,6 +448,8 @@ final class ExceptionService
             }
         }
 
+        $attributes = $this->resolvePrincipalIdOnCreate($attributes, $epcIds);
+
         $case = ExceptionCase::query()->create([
             ...$attributes,
             'exception_type_id' => $type->getKey(),
@@ -472,10 +479,69 @@ final class ExceptionService
         return $fresh;
     }
 
+    /**
+     * Soft-stamp principal for Logistics3pl: explicit → site default → homogeneous linked EPCs.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  list<int>  $epcIds
+     * @return array<string, mixed>
+     */
+    private function resolvePrincipalIdOnCreate(array $attributes, array $epcIds): array
+    {
+        if (! TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+            unset($attributes['principal_id']);
+
+            return $attributes;
+        }
+
+        $explicit = isset($attributes['principal_id']) ? (int) $attributes['principal_id'] : null;
+        if ($explicit !== null && $explicit > 0) {
+            $attributes['principal_id'] = $explicit;
+
+            return $attributes;
+        }
+
+        $siteId = isset($attributes['site_id']) ? (int) $attributes['site_id'] : null;
+        if ($siteId !== null && $siteId > 0) {
+            $fromSite = Site::query()->whereKey($siteId)->value('principal_id');
+            if ($fromSite !== null) {
+                $attributes['principal_id'] = (int) $fromSite;
+
+                return $attributes;
+            }
+        }
+
+        if ($epcIds !== []) {
+            $principalIds = Epc::query()
+                ->whereIn('id', $epcIds)
+                ->whereNotNull('principal_id')
+                ->distinct()
+                ->pluck('principal_id')
+                ->map(fn ($id): int => (int) $id)
+                ->values()
+                ->all();
+
+            if (count($principalIds) === 1) {
+                $attributes['principal_id'] = $principalIds[0];
+
+                return $attributes;
+            }
+        }
+
+        unset($attributes['principal_id']);
+
+        if (PrincipalCustody::forTenant()->isEnforced()) {
+            // Soft null is allowed for ingest-only cases with no site/EPC principal yet.
+            // Floor session callers should pass principal_id explicitly when enforced.
+        }
+
+        return $attributes;
+    }
+
     public function transition(
         ExceptionCase $case,
         ExceptionStatus $to,
-        User $actor,
+        ?User $actor = null,
         ?string $notes = null,
     ): ExceptionCase {
         $from = $case->status;
@@ -903,7 +969,7 @@ final class ExceptionService
         string $body,
         ExceptionActivityVisibility $visibility = ExceptionActivityVisibility::Internal,
     ): ExceptionCase {
-        if (blank($body)) {
+        if (ProseContent::isBlank($body)) {
             throw ValidationException::withMessages([
                 'body' => 'Comment cannot be empty.',
             ]);

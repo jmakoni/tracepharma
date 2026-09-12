@@ -84,8 +84,8 @@
         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
         class="flex flex-col gap-3"
     >
-        <div class="form-control w-full gap-1.5">
-            <label for="{{ $inputId }}" class="label-text text-sm font-medium">{{ $label }}</label>
+        <div class="flex w-full flex-col gap-3">
+            <label for="{{ $inputId }}" class="text-sm font-medium">{{ $label }}</label>
             <div class="flex w-full items-stretch gap-2">
                 <input
                     id="{{ $inputId }}"

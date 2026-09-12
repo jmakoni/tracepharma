@@ -2,8 +2,16 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Admin\Pages\Auth\Login;
 use App\Filament\Admin\Pages\Dashboard;
+use App\Http\Middleware\EnsureAccountIsUsable;
+use App\Http\Middleware\EnsurePasswordChangeRequired;
+use App\Models\Admin;
 use App\Support\Auth\TracepharmaBreezyCore;
+use App\Support\Filament\OptionalFilamentPlugins;
+use Bityukov\CommandCenter\Filament\CommandCenterPlugin;
+use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
+use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -12,24 +20,34 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
+use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
+use Guava\FilamentKnowledgeBase\Plugins\KnowledgeBaseCompanionPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use MKWebDesign\FilamentWatchdog\FilamentWatchdogPlugin;
+use NoteBrainsLab\FilamentMenuManager\FilamentMenuManagerPlugin;
+use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
+use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
+use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->default()
             ->id('admin')
             ->domain(config('tracepharma.admin_domain'))
             ->path('')
-            ->login()
+            ->login(Login::class)
+            ->passwordReset()
+            ->authPasswordBroker('admins')
             ->authGuard('admin')
             ->brandName('TracePharma')
             ->brandLogo(asset('images/brand/logo.svg'))
@@ -46,6 +64,14 @@ class AdminPanelProvider extends PanelProvider
                 'gray' => Color::hex('#676C73'),
             ])
             ->topNavigation()
+            ->navigationGroups([
+                'Tenants / Hub',
+                'FDA Registry',
+                'Platform',
+                'Settings',
+                'Audit',
+            ])
+            ->globalSearch(false)
             ->sidebarWidth('16rem')
             ->maxContentWidth(Width::Full)
             ->viteTheme('resources/css/filament/admin/theme.css')
@@ -54,6 +80,9 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
+            ->routes(function (): void {
+                Route::redirect('epcis-hub-settings', 'platform-connections');
+            })
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\\Filament\\Admin\\Widgets')
             ->widgets([])
             ->plugin(
@@ -66,6 +95,81 @@ class AdminPanelProvider extends PanelProvider
                         scopeToPanel: true,
                     )
             )
+            ->plugin(
+                FilamentUiExtrasPlugin::make()
+                    ->stickyTableActions(true)
+            )
+            ->plugin(
+                StickyTableHeaderPlugin::make()
+                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
+            );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            KnowledgeBaseCompanionPlugin::class,
+            fn () => KnowledgeBaseCompanionPlugin::make()
+                ->knowledgeBasePanelId('admin-knowledge-base')
+                ->modalPreviews()
+                ->slideOverPreviews(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            CommandCenterPlugin::class,
+            fn () => CommandCenterPlugin::make(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            ActivityTimelinePlugin::class,
+            fn () => ActivityTimelinePlugin::make()
+                ->registerNavigation(false)
+                ->navigationGroup('Audit')
+                ->causerIcons([
+                    Admin::class => 'heroicon-m-user',
+                ]),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            FilamentNotificationsTabsPlugin::class,
+            fn () => FilamentNotificationsTabsPlugin::make()->confirmDelete(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            'MKWebDesign\\FilamentWatchdog\\FilamentWatchdogPlugin',
+            fn () => FilamentWatchdogPlugin::make(),
+        );
+
+        $panel = OptionalFilamentPlugins::register(
+            $panel,
+            FilamentMenuManagerPlugin::class,
+            fn () => FilamentMenuManagerPlugin::make()
+                ->locations([
+                    'primary' => 'Primary',
+                    'sidebar' => 'Sidebar',
+                    'footer' => 'Footer',
+                ])
+                ->modelSources([
+                    \App\Models\AppMenuLink::class,
+                ])
+                ->navigationGroup('Settings')
+                ->navigationLabel('Menus')
+                ->navigationIcon('heroicon-o-bars-3')
+                ->navigationSort(90),
+        );
+
+        return $panel
+            ->databaseNotifications()
+            ->userMenuItems([
+                Action::make('adminHelp')
+                    ->label('Admin help')
+                    ->icon(Heroicon::OutlinedBookOpen)
+                    ->url(fn (): string => filament()->getPanel('admin-knowledge-base')->getUrl())
+                    ->openUrlInNewTab()
+                    ->sort(20),
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -79,6 +183,8 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureAccountIsUsable::class.':admin',
+                EnsurePasswordChangeRequired::class,
             ])
             ->renderHook(
                 PanelsRenderHook::SIMPLE_PAGE_END,

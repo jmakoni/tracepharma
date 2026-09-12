@@ -23,13 +23,15 @@ use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Shipping\OutboundPortalPickupNotice;
 use App\Support\Shipping\OutboundShippingSessionStatus;
+use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -38,7 +40,7 @@ use InvalidArgumentException;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
-class PharmacyOutboundDesk extends Page
+class PharmacyOutboundDesk extends Page implements HasKnowledgeBase
 {
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
 
@@ -393,6 +395,19 @@ class PharmacyOutboundDesk extends Page
     }
 
     /**
+     * @return list<array{key: string, label: string, status: string, detail: string}>
+     */
+    public function readinessBadges(): array
+    {
+        $session = $this->session();
+        if ($session === null || ! in_array($session->status, ['open', 'in_progress'], true)) {
+            return [];
+        }
+
+        return app(OutboundShipReadiness::class)->badges($session);
+    }
+
+    /**
      * @return list<string>
      */
     public function sendBlockers(): array
@@ -524,5 +539,10 @@ class PharmacyOutboundDesk extends Page
         $this->lastScanMessage = $message;
         $this->dispatch('focus-scan');
         $this->dispatch('scan-result', tone: $tone);
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'workflows.pharmacy-outbound';
     }
 }

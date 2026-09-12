@@ -1,0 +1,188 @@
+- generic [active] [ref=f97e1]:
+  - link "Skip to content" [ref=f97e2] [cursor=pointer]:
+    - /url: "#fi-main-content"
+  - navigation "Topbar" [ref=f97e4]:
+    - link [ref=f97e6] [cursor=pointer]:
+      - /url: https://demo2.internal.vatengi.com/help
+      - img "TracePharma Help logo" [ref=f97e7]
+    - generic [ref=f97e8]:
+      - generic [ref=f97e11]:
+        - generic [ref=f97e12]: Global search
+        - searchbox "Global search" [ref=f97e18]
+      - button "User menu" [ref=f97e21] [cursor=pointer]:
+        - img "Avatar of Demo Owner" [ref=f97e22]
+  - generic [ref=f97e23]:
+    - generic [ref=f97e24]:
+      - navigation "Sidebar navigation" [ref=f97e25]:
+        - list [ref=f97e26]:
+          - listitem [ref=f97e27]:
+            - list [ref=f97e28]:
+              - listitem [ref=f97e29]:
+                - link "Welcome" [ref=f97e30] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/intro
+              - listitem [ref=f97e34]:
+                - link "CBV biz steps" [ref=f97e35] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/cbv-biz-steps
+              - listitem [ref=f97e39]:
+                - link "Operator workflows" [ref=f97e40] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/workflows
+              - listitem [ref=f97e44]:
+                - link "Operations extras" [ref=f97e45] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/operations
+              - listitem [ref=f97e49]:
+                - link "Exceptions and EPCIS" [ref=f97e50] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/exceptions
+              - listitem [ref=f97e54]:
+                - link "Compliance" [ref=f97e55] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/compliance
+                - list [ref=f97e59]:
+                  - listitem [ref=f97e60]:
+                    - link "Atp Readiness" [ref=f97e61] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/atp-readiness
+                  - listitem [ref=f97e66]:
+                    - link "Compliance Alerts" [ref=f97e67] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/compliance-alerts
+                  - listitem [ref=f97e73]:
+                    - link "Compliance Reports" [ref=f97e74] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/compliance-reports
+                  - listitem [ref=f97e80]:
+                    - link "Expiry Worklist" [ref=f97e81] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/expiry-worklist
+                  - listitem [ref=f97e87]:
+                    - link "L3 Forward Log" [ref=f97e88] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/l3-forward-log
+                  - listitem [ref=f97e94]:
+                    - link "Leadership Dscsa Pack" [ref=f97e95] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/leadership-dscsa-pack
+                  - listitem [ref=f97e101]:
+                    - link "Partner Ingest Quality" [ref=f97e102] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/partner-ingest-quality
+                  - listitem [ref=f97e108]:
+                    - link "Quarantine" [ref=f97e109] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/quarantine
+                  - listitem [ref=f97e115]:
+                    - link "Recall And Inspection" [ref=f97e116] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/recall-and-inspection
+                  - listitem [ref=f97e122]:
+                    - link "Tracing And Fda3911" [ref=f97e123] [cursor=pointer]:
+                      - /url: https://demo2.internal.vatengi.com/help/compliance/tracing-and-fda3911
+              - listitem [ref=f97e128]:
+                - link "Integrations" [ref=f97e129] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/integrations
+              - listitem [ref=f97e133]:
+                - link "Master data" [ref=f97e134] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/master-data
+              - listitem [ref=f97e138]:
+                - link "Settings" [ref=f97e139] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/settings
+              - listitem [ref=f97e144]:
+                - link "Capture findings" [ref=f97e145] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/findings
+      - listitem [ref=f97e149]:
+        - list [ref=f97e150]:
+          - listitem [ref=f97e151]:
+            - link "Back" [ref=f97e152] [cursor=pointer]:
+              - /url: https://demo2.internal.vatengi.com
+    - main [ref=f97e157]:
+      - generic [ref=f97e159]:
+        - generic [ref=f97e161]:
+          - navigation "Breadcrumb" [ref=f97e162]:
+            - list [ref=f97e163]:
+              - listitem [ref=f97e164]:
+                - link "Documentation" [ref=f97e165] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help
+              - listitem [ref=f97e166]:
+                - link "Compliance" [ref=f97e169] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/compliance
+              - listitem [ref=f97e170]:
+                - link "Quarantine" [ref=f97e173] [cursor=pointer]:
+                  - /url: https://demo2.internal.vatengi.com/help/compliance/quarantine
+          - heading "Quarantine" [level=1] [ref=f97e174]
+        - generic [ref=f97e175]:
+          - article [ref=f97e177]:
+            - heading "Quarantine" [level=1] [ref=f97e178]:
+              - link [ref=f97e179] [cursor=pointer]:
+                - /url: "#quarantine"
+                - text: "#"
+              - text: Quarantine
+            - paragraph [ref=f97e180]: "Filament classes:"
+            - list [ref=f97e181]:
+              - listitem [ref=f97e182]:
+                - code [ref=f97e183]: App\Filament\App\Pages\Quarantine
+            - heading "When to use" [level=2] [ref=f97e184]:
+              - link [ref=f97e185] [cursor=pointer]:
+                - /url: "#when-to-use"
+                - text: "#"
+              - text: When to use
+            - paragraph [ref=f97e186]: Hold suspect, recalled, or investigation-bound inventory so it cannot ship or transfer while investigators resolve the issue.
+            - heading "Prerequisites" [level=2] [ref=f97e187]:
+              - link [ref=f97e188] [cursor=pointer]:
+                - /url: "#prerequisites"
+                - text: "#"
+              - text: Prerequisites
+            - list [ref=f97e189]:
+              - listitem [ref=f97e190]: Site context selected.
+              - listitem [ref=f97e191]: EPCs on hand (or already on a quarantine hold) at that site.
+              - listitem [ref=f97e192]: Permission to open and release quarantine holds.
+            - heading "Steps" [level=2] [ref=f97e193]:
+              - link [ref=f97e194] [cursor=pointer]:
+                - /url: "#steps"
+                - text: "#"
+              - text: Steps
+            - list [ref=f97e195]:
+              - listitem [ref=f97e196]:
+                - text: Open
+                - strong [ref=f97e197]: Quarantine
+                - text: from Compliance (or Operations) nav. Open the page and use Help for live UI.
+              - listitem [ref=f97e198]: Scan or enter EPCs to place on hold; record reason and notes.
+              - listitem [ref=f97e199]: Confirm the hold — inventory is blocked from salable outbound flows.
+              - listitem [ref=f97e200]: When cleared, release or escalate per your SOP (link to exceptions / recall pages as needed).
+            - heading "Related pages" [level=2] [ref=f97e201]:
+              - link [ref=f97e202] [cursor=pointer]:
+                - /url: "#related-pages"
+                - text: "#"
+              - text: Related pages
+            - list [ref=f97e203]:
+              - listitem [ref=f97e204]:
+                - link "recall-and-inspection.md" [ref=f97e205] [cursor=pointer]:
+                  - /url: ../compliance/recall-and-inspection
+                - text: — recall closure and site reconciliation
+              - listitem [ref=f97e206]:
+                - link "compliance-alerts.md" [ref=f97e207] [cursor=pointer]:
+                  - /url: ../compliance/compliance-alerts
+                - text: — open compliance signals
+              - listitem [ref=f97e208]:
+                - link "../exceptions/exceptions.md" [ref=f97e209] [cursor=pointer]:
+                  - /url: ../exceptions/exceptions
+                - text: — exception investigation queue
+            - heading "Notes" [level=2] [ref=f97e210]:
+              - link [ref=f97e211] [cursor=pointer]:
+                - /url: "#notes"
+                - text: "#"
+              - text: Notes
+            - list [ref=f97e212]:
+              - listitem [ref=f97e213]: Quarantine is a custody control, not a decommission; disposition changes follow separate workflows.
+              - listitem [ref=f97e214]: Mass holds may require second-person review depending on tenant policy.
+          - list [ref=f97e216]:
+            - listitem [ref=f97e217]:
+              - list [ref=f97e218]:
+                - listitem [ref=f97e219]:
+                  - link "Quarantine" [ref=f97e220] [cursor=pointer]:
+                    - /url: "#quarantine"
+                - listitem [ref=f97e222]:
+                  - link "When to use" [ref=f97e223] [cursor=pointer]:
+                    - /url: "#when-to-use"
+                - listitem [ref=f97e225]:
+                  - link "Prerequisites" [ref=f97e226] [cursor=pointer]:
+                    - /url: "#prerequisites"
+                - listitem [ref=f97e228]:
+                  - link "Steps" [ref=f97e229] [cursor=pointer]:
+                    - /url: "#steps"
+                - listitem [ref=f97e231]:
+                  - link "Related pages" [ref=f97e232] [cursor=pointer]:
+                    - /url: "#related-pages"
+                - listitem [ref=f97e234]:
+                  - link "Notes" [ref=f97e235] [cursor=pointer]:
+                    - /url: "#notes"
+  - generic:
+    - status

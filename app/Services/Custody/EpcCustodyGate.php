@@ -10,6 +10,7 @@ use App\Models\SsccLabel;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Custody\InTransitInsideOpenParent;
 use App\Support\Custody\OutboundShipmentInTransit;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TenantGlnSet;
 use App\Support\Custody\TerminalEpcDisposition;
@@ -182,10 +183,11 @@ final class EpcCustodyGate
     /**
      * @param  Epc|iterable<Epc|int>  $epcs
      * @param  string  $operation  gerund used in the operator message, e.g. "shipping"
+     * @param  int|null  $principalId  active principal context (required when principal custody is enforced)
      *
      * @throws InvalidArgumentException on the first EPC not in tenant custody
      */
-    public function assertInCustody(Epc|iterable $epcs, string $operation): void
+    public function assertInCustody(Epc|iterable $epcs, string $operation, ?int $principalId = null): void
     {
         $epcs = $this->normalizeEpcs($epcs);
 
@@ -264,16 +266,53 @@ final class EpcCustodyGate
                 '. Receive at a tenant site before '.$operation.'.',
             );
         }
+
+        $custody = PrincipalCustody::forTenant();
+        if ($custody->isEnforced()) {
+            $activePrincipalId = ($principalId !== null && $principalId > 0)
+                ? $principalId
+                : $this->homogeneousPrincipalId($epcs);
+            $custody->assertMatches($activePrincipalId, $epcs);
+        }
+    }
+
+    /**
+     * When a caller has no session principal, require every EPC to already share one owner.
+     *
+     * @param  list<Epc>  $epcs
+     */
+    private function homogeneousPrincipalId(array $epcs): ?int
+    {
+        $found = null;
+
+        foreach ($epcs as $epc) {
+            $ownedBy = $epc->principal_id !== null ? (int) $epc->principal_id : null;
+
+            if ($ownedBy === null) {
+                return null;
+            }
+
+            if ($found === null) {
+                $found = $ownedBy;
+            } elseif ($found !== $ownedBy) {
+                throw new InvalidArgumentException(
+                    'This serial belongs to another principal.',
+                );
+            }
+        }
+
+        return $found;
     }
 
     /**
      * Custody plus quarantine: the full precondition for moving an EPC.
      *
      * @param  Epc|iterable<Epc|int>  $epcs
+     * @param  int|null  $principalId  active principal context (required when principal custody is enforced)
      *
      * @throws InvalidArgumentException when out of custody or under an open hold
      */
-    public function assertOperableFor(Epc|iterable $epcs, string $operation): void
+    public function assertOperableFor(Epc|iterable $epcs, string $operation, ?int $principalId = null): void
     {
         $epcs = $this->normalizeEpcs($epcs);
 
@@ -281,7 +320,7 @@ final class EpcCustodyGate
             return;
         }
 
-        $this->assertInCustody($epcs, $operation);
+        $this->assertInCustody($epcs, $operation, $principalId);
         $this->assertNotQuarantined($epcs, $operation);
     }
 

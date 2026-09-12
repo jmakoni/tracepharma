@@ -16,9 +16,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class LabelPrinterResource extends Resource
+class LabelPrinterResource extends Resource implements HasKnowledgeBase
 {
     protected static ?string $model = LabelPrinter::class;
 
@@ -36,7 +38,7 @@ class LabelPrinterResource extends Resource
 
     public static function canAccess(): bool
     {
-        return (TenantFeatures::forTenant(tenant())->supportsSsccLabeling())
+        return TenantFeatures::forTenant(tenant())->supportsSsccLabeling()
             && JobRoleAccess::allows(Permissions::NavIntegrations);
     }
 
@@ -45,12 +47,12 @@ class LabelPrinterResource extends Resource
         return auth()->user()?->can('create', static::getModel()) ?? false;
     }
 
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
         return auth()->user()?->can('update', $record) ?? false;
     }
 
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
         return auth()->user()?->can('delete', $record) ?? false;
     }
@@ -72,5 +74,10 @@ class LabelPrinterResource extends Resource
             'create' => CreateLabelPrinter::route('/create'),
             'edit' => EditLabelPrinter::route('/{record}/edit'),
         ];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'settings.labeling';
     }
 }

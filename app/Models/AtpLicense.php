@@ -20,17 +20,26 @@ class AtpLicense extends Model
 
     use LogsActivity;
 
+    public const VERIFICATION_VERIFIED = 'verified';
+
+    public const VERIFICATION_PENDING = 'pending_verification';
+
     protected $fillable = [
         'site_id',
+        'trading_partner_id',
         'fda_wdd_license_id',
         'facility_type',
         'license_number',
+        'license_country',
         'license_state',
         'license_expiration_date',
         'reporting_year',
         'facility_contact_person',
         'facility_contact_email',
         'facility_contact_phone',
+        'document_path',
+        'document_original_name',
+        'verification_status',
         'is_active',
     ];
 
@@ -41,6 +50,7 @@ class AtpLicense extends Model
             'license_expiration_date' => 'date',
             'reporting_year' => 'integer',
             'fda_wdd_license_id' => 'integer',
+            'trading_partner_id' => 'integer',
             'is_active' => 'boolean',
         ];
     }
@@ -58,6 +68,7 @@ class AtpLicense extends Model
                 'site_id',
                 'facility_type',
                 'license_number',
+                'license_country',
                 'license_state',
                 'license_expiration_date',
                 'is_active',
@@ -69,6 +80,16 @@ class AtpLicense extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
+    }
+
+    public function tradingPartner(): BelongsTo
+    {
+        return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function isPendingVerification(): bool
+    {
+        return $this->verification_status === self::VERIFICATION_PENDING;
     }
 
     public function fdaWddLicense(): BelongsTo

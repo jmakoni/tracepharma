@@ -8,8 +8,8 @@ use App\Domain\Epcis\Validation\ValidationContext;
 use App\Domain\Epcis\Validation\ValidationPipeline;
 use App\Domain\Epcis\Validation\ValidationResult;
 use App\Models\Epcis\EpcisDocument;
-use App\Models\Epcis\EventEpc;
 use App\Models\Epcis\EventQuantity;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Thin adapter: load persisted event/EPC graph into Domain ValidationPipeline.
@@ -17,6 +17,8 @@ use App\Models\Epcis\EventQuantity;
  */
 final class RunDomainEpcisHardGate
 {
+    private const EVENT_CHUNK = 500;
+
     public function __construct(
         private readonly ValidationPipeline $pipeline,
     ) {}
@@ -30,7 +32,14 @@ final class RunDomainEpcisHardGate
     {
         $events = $document->activeEvents()
             ->orderBy('id')
-            ->get();
+            ->get([
+                'id',
+                'event_type',
+                'action',
+                'event_time',
+                'biz_step',
+                'disposition',
+            ]);
 
         $eventIds = $events->modelKeys();
 
@@ -38,31 +47,54 @@ final class RunDomainEpcisHardGate
             return $this->pipeline->validate(new ValidationContext([]));
         }
 
-        $epcRowsByEvent = EventEpc::query()
-            ->whereIn('event_id', $eventIds)
-            ->with('epc')
-            ->get()
-            ->groupBy('event_id');
+        /** @var array<int, list<array{role: string, epc_uri: string}>> $epcRowsByEvent */
+        $epcRowsByEvent = [];
+        /** @var array<int, list<EventQuantity>> $quantitiesByEvent */
+        $quantitiesByEvent = [];
 
-        $quantitiesByEvent = EventQuantity::query()
-            ->whereIn('event_id', $eventIds)
-            ->get()
-            ->groupBy('event_id');
+        foreach (array_chunk($eventIds, self::EVENT_CHUNK) as $chunkIds) {
+            $epcRows = DB::table('event_epcs')
+                ->join('epcs', 'epcs.id', '=', 'event_epcs.epc_id')
+                ->whereIn('event_epcs.event_id', $chunkIds)
+                ->select([
+                    'event_epcs.event_id',
+                    'event_epcs.role',
+                    'epcs.epc_uri',
+                ])
+                ->get();
+
+            foreach ($epcRows as $row) {
+                $eventId = (int) $row->event_id;
+                $epcRowsByEvent[$eventId][] = [
+                    'role' => (string) ($row->role ?? 'epclist'),
+                    'epc_uri' => (string) ($row->epc_uri ?? ''),
+                ];
+            }
+
+            $quantities = EventQuantity::query()
+                ->whereIn('event_id', $chunkIds)
+                ->get(['event_id', 'role', 'epc_class', 'quantity', 'uom']);
+
+            foreach ($quantities as $qty) {
+                $quantitiesByEvent[(int) $qty->event_id][] = $qty;
+            }
+        }
 
         $shapes = [];
 
         foreach ($events as $event) {
+            $eventKey = (int) $event->getKey();
             $epcList = [];
             $childEpcs = [];
             $parentId = null;
 
-            foreach ($epcRowsByEvent->get($event->getKey(), collect()) as $row) {
-                $uri = (string) ($row->epc?->epc_uri ?? '');
+            foreach ($epcRowsByEvent[$eventKey] ?? [] as $row) {
+                $uri = $row['epc_uri'];
                 if ($uri === '') {
                     continue;
                 }
 
-                $role = strtolower((string) ($row->role ?? 'epclist'));
+                $role = strtolower($row['role']);
 
                 if (in_array($role, ['parentid', 'parent_id', 'parent'], true)) {
                     $parentId = $uri;
@@ -76,7 +108,10 @@ final class RunDomainEpcisHardGate
             $quantityList = [];
             $childQuantityList = [];
 
-            foreach ($quantitiesByEvent->get($event->getKey(), collect()) as $qty) {
+            /** @var list<EventQuantity> $qtyRows */
+            $qtyRows = $quantitiesByEvent[$eventKey] ?? [];
+
+            foreach ($qtyRows as $qty) {
                 $role = strtolower((string) ($qty->role ?? ''));
                 $epcClass = (string) ($qty->epc_class ?? '');
                 if ($epcClass === '') {

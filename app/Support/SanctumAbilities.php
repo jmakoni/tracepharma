@@ -16,9 +16,13 @@ class SanctumAbilities
 
     public const EPCIS_TRANSMIT = 'epcis:transmit';
 
+    public const EPCIS_SUBSCRIPTIONS = 'epcis:subscriptions';
+
     public const VRS_DISPENSE_CHECK = 'vrs:dispense-check';
 
     public const WMS_SHIP_CONFIRM = 'wms:ship-confirm';
+
+    public const BUYING_GROUP_NETWORK = 'buying-group:network';
 
     /**
      * @return array<string, string>
@@ -26,11 +30,13 @@ class SanctumAbilities
     public static function options(): array
     {
         return [
-            self::EPCIS_UPLOAD => 'Upload inbound EPCIS XML',
-            self::EPCIS_VIEW => 'List inbound EPCIS documents',
-            self::EPCIS_TRANSMIT => 'Transmit outbound EPCIS XML',
+            self::EPCIS_UPLOAD => 'Upload / GS1 Capture inbound EPCIS (XML 1.2/1.3 or JSON-LD 2.0 when enabled)',
+            self::EPCIS_VIEW => 'List, query-as-2.0, and GS1 SimpleEventQuery for inbound EPCIS',
+            self::EPCIS_TRANSMIT => 'Transmit outbound EPCIS',
+            self::EPCIS_SUBSCRIPTIONS => 'Manage GS1-shaped EPCIS subscriptions (subscribe/unsubscribe)',
             self::VRS_DISPENSE_CHECK => 'Dispense-check (VRS verification gate)',
             self::WMS_SHIP_CONFIRM => 'WMS ship-confirm (Connector)',
+            self::BUYING_GROUP_NETWORK => 'Buying-group member roster, readiness, network summary, partner matrix (no EPC payloads)',
         ];
     }
 

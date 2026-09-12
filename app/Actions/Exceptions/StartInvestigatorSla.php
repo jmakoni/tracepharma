@@ -7,8 +7,9 @@ use App\Models\User;
 use App\Support\Exceptions\InvestigatorSlaClock;
 
 /**
- * Send the existing portal email. Display uses the 72h overlay; due_at is
- * written only after a successful send, and never shortened.
+ * Send the existing portal email. Display uses due_at as the 72h overlay
+ * once a send succeeds. due_at is never pulled earlier than an existing
+ * future deadline.
  */
 final class StartInvestigatorSla
 {
@@ -29,7 +30,7 @@ final class StartInvestigatorSla
 
         $deadline = now()->addHours(InvestigatorSlaClock::HOURS);
 
-        if ($case->due_at === null) {
+        if ($case->due_at === null || $case->due_at->isPast()) {
             $case->forceFill(['due_at' => $deadline])->save();
         }
 

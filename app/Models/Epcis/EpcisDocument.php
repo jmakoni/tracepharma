@@ -5,11 +5,14 @@ namespace App\Models\Epcis;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\EpcisReceivedVia;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
-use App\Models\Concerns\TenantSearchable;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
+use App\Models\Concerns\TenantSearchable;
+use App\Models\Fda\FdaOrganization;
+use App\Models\Fda\FdaProduct;
 use App\Models\Fda\FdaProductPackaging;
 use App\Models\OutboundConnection;
 use App\Models\Product;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
@@ -18,6 +21,7 @@ use App\Models\TradingPartner;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Epcis\EpcisXmlReader;
+use App\Support\Epcis\ExtractPriorPedigreeXml;
 use App\Support\Gs1\Ndc;
 use App\Support\Gs1\Sgtin;
 use App\Support\Shipping\CorrectiveShipmentDocument;
@@ -51,6 +55,7 @@ class EpcisDocument extends Model
         'authored_kind',
         'corrects_epcis_document_id',
         'trading_partner_id',
+        'inbound_shipment_id',
         'sender_gln',
         'receiver_gln',
         'customer_po',
@@ -74,6 +79,12 @@ class EpcisDocument extends Model
         'payload_path',
         'dscsa_affirm',
         'legal_notice',
+        'direct_purchase_qualifier',
+        'direct_purchase_statement',
+        'direct_purchase_indirect_epc_uris',
+        'received_prev_wholesaler_qualifier',
+        'received_prev_wholesaler_statement',
+        'received_prev_wholesaler_indirect_epc_uris',
         'header_json',
         'status',
         'error_message',
@@ -98,6 +109,8 @@ class EpcisDocument extends Model
             'ingest_generation' => 'integer',
             'document_uuid_synthesized' => 'boolean',
             'dscsa_affirm' => 'boolean',
+            'direct_purchase_indirect_epc_uris' => 'array',
+            'received_prev_wholesaler_indirect_epc_uris' => 'array',
             'header_json' => 'array',
             'reprocess_count' => 'integer',
             'event_count' => 'integer',
@@ -208,6 +221,11 @@ class EpcisDocument extends Model
     public function tradingPartner(): BelongsTo
     {
         return $this->belongsTo(TradingPartner::class);
+    }
+
+    public function inboundShipment(): BelongsTo
+    {
+        return $this->belongsTo(InboundShipment::class, 'inbound_shipment_id');
     }
 
     public function outboundConnection(): BelongsTo
@@ -391,8 +409,14 @@ class EpcisDocument extends Model
      */
     public function activeEvents(): HasMany
     {
-        return $this->hasMany(EpcisEvent::class, 'document_id')
+        $relation = $this->hasMany(EpcisEvent::class, 'document_id')
             ->where('ingest_generation', $this->ingest_generation ?? 1);
+
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            $relation->whereNull('epcis_events.superseded_at');
+        }
+
+        return $relation;
     }
 
     public function documentEpcs(): HasMany
@@ -603,7 +627,30 @@ class EpcisDocument extends Model
                 ->get()
                 ->keyBy('id');
 
-        $ndc11s = $fileByGtin->pluck('ndc11')->filter()->unique()->values()->all();
+        $packageIds = $productsByGtin->pluck('fda_product_packaging_id')
+            ->merge($productsById->pluck('fda_product_packaging_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $fdaPackagesById = $packageIds === []
+            ? collect()
+            : FdaProductPackaging::query()
+                ->with('product:id,brand_name,generic_name')
+                ->whereIn('id', $packageIds)
+                ->get()
+                ->keyBy('id');
+
+        // Vocabulary-less docs (SSCC commissioning/shipping TI) still resolve NDCs
+        // through the linked assortment product or its FDA package.
+        $ndc11s = $fileByGtin->pluck('ndc11')
+            ->merge($productsByGtin->pluck('ndc11'))
+            ->merge($productsById->pluck('ndc11'))
+            ->merge($fdaPackagesById->pluck('ndc11'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
         $productsByNdc11 = $ndc11s === []
             ? collect()
             : Product::query()
@@ -614,28 +661,65 @@ class EpcisDocument extends Model
 
         $fdaPackagesByNdc11 = $this->fdaPackagesByNdc11($ndc11s);
 
+        $fdaProductIds = $fdaPackagesByNdc11->pluck('fda_product_id')
+            ->merge($fdaPackagesById->pluck('fda_product_id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $fdaProductsById = $fdaProductIds === []
+            ? collect()
+            : FdaProduct::query()
+                ->whereIn('id', $fdaProductIds)
+                ->get(['id', 'fda_organization_id', 'dosage_form', 'strength'])
+                ->keyBy('id');
+        $fdaOrgIds = $fdaProductsById->pluck('fda_organization_id')->filter()->unique()->values()->all();
+        $fdaOrgNames = $fdaOrgIds === []
+            ? collect()
+            : FdaOrganization::query()->whereIn('id', $fdaOrgIds)->pluck('name', 'id');
+
         /** @var array<string, array<string, mixed>> $groups */
         $groups = [];
 
         foreach ($gtinStats as $gtin => $stats) {
             $file = $fileByGtin->get($gtin);
+
+            $product = null;
+            if (filled($stats['product_id'])) {
+                $product = $productsById->get((int) $stats['product_id']);
+            }
+            $product ??= $productsByGtin->get($gtin);
+
             $ndc11 = filled($file['ndc11'] ?? null) ? (string) $file['ndc11'] : null;
+            if ($ndc11 === null && $product !== null) {
+                $ndc11 = filled($product->ndc11) ? (string) $product->ndc11 : null;
+                if ($ndc11 === null && filled($product->fda_product_packaging_id)) {
+                    $packageNdc11 = $fdaPackagesById->get((int) $product->fda_product_packaging_id)?->ndc11;
+                    $ndc11 = filled($packageNdc11) ? (string) $packageNdc11 : null;
+                }
+            }
+            if ($product === null && $ndc11 !== null) {
+                $product = $productsByNdc11->get($ndc11);
+            }
+
             $groupKey = $ndc11 ?? 'gtin:'.$gtin;
 
             if (! isset($groups[$groupKey])) {
-                $product = null;
-                if (filled($stats['product_id'])) {
-                    $product = $productsById->get((int) $stats['product_id']);
-                }
-                $product ??= $productsByGtin->get($gtin);
-                if ($product === null && $ndc11 !== null) {
-                    $product = $productsByNdc11->get($ndc11);
+                $fdaPackage = $ndc11 !== null ? $fdaPackagesByNdc11->get($ndc11) : null;
+                if ($fdaPackage === null && $product !== null && filled($product->fda_product_packaging_id)) {
+                    $fdaPackage = $fdaPackagesById->get((int) $product->fda_product_packaging_id);
                 }
 
-                $fdaPackage = $ndc11 !== null ? $fdaPackagesByNdc11->get($ndc11) : null;
+                $fdaProductRow = $fdaPackage !== null
+                    ? $fdaProductsById->get((int) $fdaPackage->fda_product_id)
+                    : null;
+                $fdaManufacturer = $fdaProductRow !== null && filled($fdaProductRow->fda_organization_id)
+                    ? ($fdaOrgNames[(int) $fdaProductRow->fda_organization_id] ?? null)
+                    : null;
 
                 // Display columns come from EPCIS XML vocabulary.
-                // Name falls back to FDA brand/generic only when the file has no name.
+                // Name falls back to FDA brand/generic, then the linked assortment
+                // product, when the file has no name (e.g. SSCC commissioning TI).
                 // Master-data badge uses FDA catalog first, then tenant assortment.
                 $sourceNdc = filled($file['ndc_raw'] ?? null)
                     ? (string) $file['ndc_raw']
@@ -657,12 +741,12 @@ class EpcisDocument extends Model
                 $groups[$groupKey] = [
                     'key' => $groupKey,
                     'gtins' => [],
-                    'name' => $fileName ?? ($fdaProductName ?? 'Unknown product'),
+                    'name' => $fileName ?? ($fdaProductName ?? (filled($product?->name) ? (string) $product->name : 'Unknown product')),
                     'ndc' => Ndc::formatPackageDisplay($sourceNdc),
-                    'dosage_form' => $file['dosage_form'] ?? null,
-                    'strength' => $file['strength'] ?? null,
-                    'manufacturer' => $file['manufacturer'] ?? null,
-                    'net_content' => $file['net_content'] ?? null,
+                    'dosage_form' => $file['dosage_form'] ?? (filled($product?->dosage_form) ? (string) $product->dosage_form : $fdaProductRow?->dosage_form),
+                    'strength' => $file['strength'] ?? (filled($product?->strength) ? (string) $product->strength : $fdaProductRow?->strength),
+                    'manufacturer' => $file['manufacturer'] ?? $fdaManufacturer,
+                    'net_content' => $file['net_content'] ?? $fdaPackage?->net_content_description,
                     'document_epc_count' => 0,
                     'case_count' => 0,
                     'unit_count' => 0,
@@ -680,19 +764,20 @@ class EpcisDocument extends Model
             $groups[$groupKey]['case_count'] += (int) $stats['cases'];
             $groups[$groupKey]['unit_count'] += (int) $stats['units'];
 
-            if ($groups[$groupKey]['product_id'] === null && filled($stats['product_id'])) {
-                $product = $productsById->get((int) $stats['product_id']) ?? $productsByGtin->get($gtin);
-                if ($product !== null) {
-                    $groups[$groupKey]['product_id'] = (int) $product->getKey();
-                    $groups[$groupKey]['linked'] = true;
-                    if ($groups[$groupKey]['catalog_status'] === 'none') {
-                        $groups[$groupKey]['catalog_status'] = 'assortment';
-                    }
+            if ($groups[$groupKey]['product_id'] === null && $product !== null) {
+                $groups[$groupKey]['product_id'] = (int) $product->getKey();
+                $groups[$groupKey]['linked'] = true;
+                if ($groups[$groupKey]['catalog_status'] === 'none') {
+                    $groups[$groupKey]['catalog_status'] = 'assortment';
                 }
             }
 
-            if (($groups[$groupKey]['name'] === 'Unknown product') && filled($file['name'] ?? null)) {
-                $groups[$groupKey]['name'] = (string) $file['name'];
+            if ($groups[$groupKey]['name'] === 'Unknown product') {
+                if (filled($file['name'] ?? null)) {
+                    $groups[$groupKey]['name'] = (string) $file['name'];
+                } elseif (filled($product?->name)) {
+                    $groups[$groupKey]['name'] = (string) $product->name;
+                }
             }
             foreach (['dosage_form', 'strength', 'manufacturer', 'net_content'] as $field) {
                 if (($groups[$groupKey][$field] ?? null) === null && filled($file[$field] ?? null)) {
@@ -744,6 +829,7 @@ class EpcisDocument extends Model
      *     lot_count: int,
      *     lots: list<string>,
      *     item_count: int,
+     *     sscc_count: int,
      *     case_count: int,
      *     unit_count: int,
      *     case_unit_label: string,
@@ -763,6 +849,7 @@ class EpcisDocument extends Model
         if ($caseCount === 0 && $unitCount === 0) {
             $unitCount = (int) $products->sum('document_epc_count');
         }
+        $ssccCount = $this->ssccCountForCurrentGeneration();
 
         $productNdcs = $products
             ->pluck('ndc')
@@ -772,15 +859,22 @@ class EpcisDocument extends Model
             ->values()
             ->all();
 
+        $itemCount = (int) ($this->epc_count ?? 0);
+        $openTreeIds = $this->shippingOpenTreeEpcIds();
+        if ($openTreeIds !== [] && $this->usesShippingOpenTreeSummary()) {
+            $itemCount = max($itemCount, count($openTreeIds));
+        }
+
         return [
             'product_count' => $products->count(),
             'product_ndcs' => $productNdcs,
             'lot_count' => count($lots),
             'lots' => $lots,
-            'item_count' => (int) ($this->epc_count ?? 0),
+            'item_count' => $itemCount,
+            'sscc_count' => $ssccCount,
             'case_count' => $caseCount,
             'unit_count' => $unitCount,
-            'case_unit_label' => $this->formatCaseUnitLabel($caseCount, $unitCount),
+            'case_unit_label' => $this->formatCaseUnitLabel($ssccCount, $caseCount, $unitCount),
             'asn_number' => filled($this->asn_number) ? (string) $this->asn_number : null,
             'customer_po' => filled($this->customer_po) ? (string) $this->customer_po : null,
             'legal_notice' => filled($this->legal_notice) ? (string) $this->legal_notice : null,
@@ -948,27 +1042,53 @@ class EpcisDocument extends Model
             }
         }
 
-        if (Schema::hasTable('epc_ilmd') && Schema::hasTable('document_epcs')) {
-            return DB::table('document_epcs as de')
-                ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'de.epc_id')
-                ->where('de.document_id', $documentId)
-                ->where('de.ingest_generation', $generation)
-                ->whereNotNull('epc_ilmd.lot_number')
-                ->where('epc_ilmd.lot_number', '!=', '')
-                ->distinct()
-                ->orderBy('epc_ilmd.lot_number')
-                ->pluck('epc_ilmd.lot_number')
-                ->map(fn ($lot) => (string) $lot)
-                ->values()
-                ->all();
+        $epcIdsForIlmd = null;
+        if ($this->usesShippingOpenTreeSummary()) {
+            $openTreeIds = $this->shippingOpenTreeEpcIds();
+            if ($openTreeIds !== []) {
+                $epcIdsForIlmd = $openTreeIds;
+            }
+        }
+
+        if (Schema::hasTable('epc_ilmd')) {
+            if ($epcIdsForIlmd !== null) {
+                return DB::table('epc_ilmd')
+                    ->whereIn('epc_id', $epcIdsForIlmd)
+                    ->whereNotNull('lot_number')
+                    ->where('lot_number', '!=', '')
+                    ->distinct()
+                    ->orderBy('lot_number')
+                    ->pluck('lot_number')
+                    ->map(fn ($lot) => (string) $lot)
+                    ->values()
+                    ->all();
+            }
+
+            if (Schema::hasTable('document_epcs')) {
+                return DB::table('document_epcs as de')
+                    ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'de.epc_id')
+                    ->where('de.document_id', $documentId)
+                    ->where('de.ingest_generation', $generation)
+                    ->whereNotNull('epc_ilmd.lot_number')
+                    ->where('epc_ilmd.lot_number', '!=', '')
+                    ->distinct()
+                    ->orderBy('epc_ilmd.lot_number')
+                    ->pluck('epc_ilmd.lot_number')
+                    ->map(fn ($lot) => (string) $lot)
+                    ->values()
+                    ->all();
+            }
         }
 
         return [];
     }
 
-    private function formatCaseUnitLabel(int $cases, int $units): string
+    private function formatCaseUnitLabel(int $ssccs, int $cases, int $units): string
     {
         $parts = [];
+        if ($ssccs > 0) {
+            $parts[] = number_format($ssccs).' '.($ssccs === 1 ? 'SSCC' : 'SSCCs');
+        }
         if ($cases > 0) {
             $parts[] = number_format($cases).' '.($cases === 1 ? 'case' : 'cases');
         }
@@ -977,6 +1097,20 @@ class EpcisDocument extends Model
         }
 
         return $parts === [] ? '—' : implode(' · ', $parts);
+    }
+
+    private function ssccCountForCurrentGeneration(): int
+    {
+        if (! Schema::hasTable('document_epcs') || ! Schema::hasTable('epcs')) {
+            return 0;
+        }
+
+        return (int) DB::table('document_epcs as de')
+            ->join('epcs', 'epcs.id', '=', 'de.epc_id')
+            ->where('de.document_id', (int) $this->getKey())
+            ->where('de.ingest_generation', (int) ($this->ingest_generation ?? 1))
+            ->where('epcs.epc_type', 'sscc')
+            ->count();
     }
 
     /**
@@ -1020,6 +1154,24 @@ class EpcisDocument extends Model
             ]);
         }
 
+        // Authored shipping docs project only outermost SSCCs onto document_epcs.
+        // Expand open aggregation children so Summary shows products/cases/units in the TI.
+        if ($epcRows->isEmpty() && $this->usesShippingOpenTreeSummary()) {
+            $openTreeIds = $this->shippingOpenTreeEpcIds();
+            if ($openTreeIds !== []) {
+                $epcRows = DB::table('epcs')
+                    ->whereIn('id', $openTreeIds)
+                    ->where('epc_type', 'sgtin')
+                    ->whereNotNull('gtin14')
+                    ->where('gtin14', '!=', '')
+                    ->get([
+                        'id as epc_id',
+                        'gtin14 as gtin',
+                        'product_id',
+                    ]);
+            }
+        }
+
         if ($epcRows->isEmpty()) {
             return collect();
         }
@@ -1028,42 +1180,31 @@ class EpcisDocument extends Model
         $caseEpcIds = [];
         $unitEpcIds = [];
 
-        if (Schema::hasTable('aggregation_links') && Schema::hasTable('epcis_events')) {
-            $eventIds = DB::table('epcis_events')
-                ->where('document_id', $documentId)
-                ->when(
-                    Schema::hasColumn('epcis_events', 'ingest_generation'),
-                    fn ($q) => $q->where('ingest_generation', $generation),
-                )
-                ->pluck('id');
+        if (Schema::hasTable('aggregation_links')) {
+            // Prefer live open hierarchy (not only links established by this document's events).
+            $caseEpcIds = DB::table('aggregation_links as al')
+                ->join('epcs as child', 'child.id', '=', 'al.child_epc_id')
+                ->whereNull('al.valid_to')
+                ->where('child.epc_type', 'sgtin')
+                ->whereIn('al.parent_epc_id', $epcIds)
+                ->distinct()
+                ->pluck('al.parent_epc_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
 
-            if ($eventIds->isNotEmpty()) {
-                $caseEpcIds = DB::table('aggregation_links as al')
-                    ->join('epcs as child', 'child.id', '=', 'al.child_epc_id')
-                    ->whereIn('al.established_by_event_id', $eventIds)
-                    ->whereNull('al.valid_to')
-                    ->where('child.epc_type', 'sgtin')
-                    ->whereIn('al.parent_epc_id', $epcIds)
-                    ->distinct()
-                    ->pluck('al.parent_epc_id')
-                    ->map(fn ($id) => (int) $id)
-                    ->all();
+            $caseEpcIdLookup = array_fill_keys($caseEpcIds, true);
 
-                $caseEpcIdLookup = array_fill_keys($caseEpcIds, true);
-
-                $unitEpcIds = DB::table('aggregation_links as al')
-                    ->join('epcs as parent', 'parent.id', '=', 'al.parent_epc_id')
-                    ->whereIn('al.established_by_event_id', $eventIds)
-                    ->whereNull('al.valid_to')
-                    ->where('parent.epc_type', 'sgtin')
-                    ->whereIn('al.child_epc_id', $epcIds)
-                    ->distinct()
-                    ->pluck('al.child_epc_id')
-                    ->map(fn ($id) => (int) $id)
-                    ->reject(fn (int $id) => isset($caseEpcIdLookup[$id]))
-                    ->values()
-                    ->all();
-            }
+            $unitEpcIds = DB::table('aggregation_links as al')
+                ->join('epcs as parent', 'parent.id', '=', 'al.parent_epc_id')
+                ->whereNull('al.valid_to')
+                ->where('parent.epc_type', 'sgtin')
+                ->whereIn('al.child_epc_id', $epcIds)
+                ->distinct()
+                ->pluck('al.child_epc_id')
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn (int $id) => isset($caseEpcIdLookup[$id]))
+                ->values()
+                ->all();
         }
 
         $caseLookup = array_fill_keys($caseEpcIds, true);
@@ -1090,6 +1231,63 @@ class EpcisDocument extends Model
                     'product_id' => $rows->pluck('product_id')->filter()->first(),
                 ];
             });
+    }
+
+    /**
+     * Outbound shipping TI projects only outermost parents onto document_epcs;
+     * SSCC commissioning likewise projects only the SSCC itself. Summary should
+     * expand the open aggregation tree under those parents.
+     */
+    private function usesShippingOpenTreeSummary(): bool
+    {
+        if ($this->direction !== 'outbound') {
+            return false;
+        }
+
+        $kind = $this->authored_kind instanceof EpcisAuthoredKind
+            ? $this->authored_kind->value
+            : $this->authored_kind;
+
+        return in_array($kind, [
+            EpcisAuthoredKind::Shipping->value,
+            EpcisAuthoredKind::SsccCommissioning->value,
+        ], true);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function shippingOpenTreeEpcIds(): array
+    {
+        if (! $this->usesShippingOpenTreeSummary() || ! Schema::hasTable('document_epcs') || ! Schema::hasTable('epcs')) {
+            return [];
+        }
+
+        $rootIds = DB::table('document_epcs as de')
+            ->join('epcs', 'epcs.id', '=', 'de.epc_id')
+            ->where('de.document_id', (int) $this->getKey())
+            ->where('de.ingest_generation', (int) ($this->ingest_generation ?? 1))
+            ->where('epcs.epc_type', 'sscc')
+            ->pluck('epcs.id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if ($rootIds === []) {
+            $rootIds = DB::table('document_epcs')
+                ->where('document_id', (int) $this->getKey())
+                ->where('ingest_generation', (int) ($this->ingest_generation ?? 1))
+                ->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        if ($rootIds === []) {
+            return [];
+        }
+
+        return app(ExtractPriorPedigreeXml::class)->collectOpenTreeEpcIds($rootIds);
     }
 
     private function formatEpcBreakdown(int $cases, int $units): string

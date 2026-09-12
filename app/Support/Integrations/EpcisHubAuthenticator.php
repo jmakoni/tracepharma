@@ -6,6 +6,7 @@ namespace App\Support\Integrations;
 
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 class EpcisHubAuthenticator
@@ -37,10 +38,27 @@ class EpcisHubAuthenticator
             $provided = $request->header('X-Inbound-Token');
         }
 
-        if (! is_string($provided) || $provided === '' || ! hash_equals($configured, $provided)) {
+        if (! is_string($provided) || $provided === '') {
             throw new UnauthorizedHttpException('', 'Invalid EPCIS hub token.');
         }
 
-        return $environment;
+        if (hash_equals($configured, $provided)) {
+            return $environment;
+        }
+
+        // Zero-downtime rotation: the previous token stays accepted inside its
+        // grace window so partners can cut over without dropped deliveries.
+        $previous = $this->platformConfig->previousHubToken($environment);
+
+        if (is_string($previous) && $previous !== '' && hash_equals($previous, $provided)) {
+            Log::info('EPCIS hub request authenticated with previous (rotating) token.', [
+                'environment' => $environment,
+                'grace_expires_at' => $this->platformConfig->previousHubTokenExpiresAt($environment)?->toIso8601String(),
+            ]);
+
+            return $environment;
+        }
+
+        throw new UnauthorizedHttpException('', 'Invalid EPCIS hub token.');
     }
 }

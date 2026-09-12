@@ -32,15 +32,14 @@ Schedule::call(function (): void {
  * snapshot can authorize a shipment against a license that already lapsed.
  * Triage resolved in the unmatched queue is picked up by the next run.
  *
- * Successful promote dispatches per-tenant ATP sync from ImportFdaDatasetJob so
- * tenants always read promoted catalog data (no fixed follow-up slot).
+ * Successful WDD import dispatches per-tenant ATP sync from ImportFdaDatasetJob so
+ * tenants always read refreshed FDA registry licenses (no fixed follow-up slot).
  *
  * Manual `tracepharma:import-fda-wdd-3pl` shares the same overlap lock as the job.
  */
 Schedule::call(function (): void {
     if (! ImportFdaDatasetJob::dispatchIfIdle(ImportFdaDatasetJob::WDD_COMMAND, [
         '--fresh-download' => true,
-        '--promote' => true,
     ])) {
         Log::warning('FDA WDD/3PL scheduled import skipped: another import is already running.');
     }
@@ -68,15 +67,35 @@ Schedule::command('epcis:poll-sftp')
     ->withoutOverlapping()
     ->name('epcis-poll-sftp-inbound');
 
+Schedule::command('epcis:poll-platform-sftp')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->name('epcis-poll-platform-sftp-inbound');
+
 Schedule::command('epcis:fail-stale-jobs')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->name('epcis-fail-stale-jobs');
 
+Schedule::command('exports:fail-stale')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->name('exports-fail-stale');
+
+Schedule::command('exports:purge-expired')
+    ->dailyAt('04:30')
+    ->withoutOverlapping()
+    ->name('exports-purge-expired');
+
 Schedule::command('sscc:check-pool-levels')
     ->daily()
     ->withoutOverlapping()
     ->name('sscc-check-pool-levels');
+
+Schedule::command('sscc:reconcile-l3-l4')
+    ->daily()
+    ->withoutOverlapping()
+    ->name('sscc-reconcile-l3-l4');
 
 Schedule::command('sscc:fail-stale-client-print-jobs')
     ->everyFiveMinutes()
@@ -98,10 +117,40 @@ Schedule::command('compliance:alert-license-expiry')
     ->withoutOverlapping()
     ->name('atp-license-expiry-alert');
 
+Schedule::command('connections:credential-expiry-report')
+    ->dailyAt('07:15')
+    ->withoutOverlapping()
+    ->name('connection-credential-expiry-report');
+
+Schedule::command('connections:health-sweep')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->name('connection-health-sweep');
+
+Schedule::command('compliance:alert-center-digest')
+    ->dailyAt('07:30')
+    ->withoutOverlapping()
+    ->name('compliance-alert-center-digest');
+
+Schedule::command('tracepharma:buying-group-rollup')
+    ->dailyAt('05:45')
+    ->withoutOverlapping()
+    ->name('buying-group-member-rollup');
+
 Schedule::command('tracepharma:exception-digest')
     ->dailyAt('08:00')
     ->withoutOverlapping()
     ->name('epcis-validation-digest');
+
+Schedule::command('exceptions:notify-aging-suppliers')
+    ->dailyAt('08:30')
+    ->withoutOverlapping()
+    ->name('aging-supplier-exception-notify');
+
+Schedule::command('epcis:emit-pending-mdn-signals')
+    ->hourly()
+    ->withoutOverlapping()
+    ->name('epcis-emit-pending-mdn-signals');
 
 Schedule::command('tracepharma:tenant-health-alert')
     ->hourly()
@@ -122,3 +171,29 @@ Schedule::command('tracepharma:doctor-aggregation-link-fk --alert')
     ->dailyAt('05:00')
     ->withoutOverlapping()
     ->name('aggregation-link-fk-doctor');
+
+/**
+ * Printed-never-shipped auto-decommission. System actor (no tenant user);
+ * chunks under the TP-406 remaining mass-SoD window per site.
+ */
+Schedule::command('disposition:decommission-never-shipped')
+    ->dailyAt('02:30')
+    ->withoutOverlapping()
+    ->name('decommission-never-shipped');
+
+/**
+ * MOVE aged epcis_events into archive tables (retention_years). Dry-run stays a CLI flag.
+ * Payloads are never deleted here — TI pedigree rebuild needs them.
+ */
+Schedule::command('tracepharma:epcis-archive-events')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->name('epcis-archive-events');
+
+/**
+ * Fail the schedule tick when commission/pack source documents lack on-disk payloads.
+ */
+Schedule::command('tracepharma:epcis-retention-report --check-pedigree-payloads')
+    ->weeklyOn(1, '03:15')
+    ->withoutOverlapping()
+    ->name('epcis-pedigree-payload-audit');

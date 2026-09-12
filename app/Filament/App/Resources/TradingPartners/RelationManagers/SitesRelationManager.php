@@ -11,16 +11,19 @@ use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Site;
 use App\Models\TradingPartner;
+use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\FdaTenantLink;
 use App\Support\Gs1\GlnRules;
+use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\PartnerSiteCreate;
 use App\Support\MasterData\SiteAtpReadiness;
-use App\Support\MasterData\TenantReceivingState;
+use App\Support\Places\UsState;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -99,7 +102,7 @@ class SitesRelationManager extends RelationManager
                     ->options(function (): array {
                         return collect(SiteAtpReadinessStatus::cases())
                             ->reject(fn (SiteAtpReadinessStatus $status): bool => $status === SiteAtpReadinessStatus::NeedsReceivingState
-                                && TenantReceivingState::resolve() !== null)
+                                && AtpLicenseRelevance::evaluationJurisdictionKeys() !== [])
                             ->mapWithKeys(fn (SiteAtpReadinessStatus $status): array => [
                                 $status->value => $status->label(),
                             ])
@@ -232,7 +235,12 @@ class SitesRelationManager extends RelationManager
                     TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
                     GlnRules::input()
                         ->unique(ignoreRecord: true)
-                        ->rule(new RejectTenantGln),
+                        ->rule(new RejectTenantGln)
+                        ->rule(new RejectPartnerGlnUnderOrgPrefix),
+                    TextInput::make('duns_number')->label('DUNS')->maxLength(14),
+                    TextInput::make('dea_number')->label('DEA')->maxLength(20),
+                    TextInput::make('hin_number')->label('HIN')->maxLength(20),
+                    TextInput::make('chemical_reg_number')->label('Chemical Reg')->maxLength(30),
                     Toggle::make('is_headquarters')->default(false),
                     Toggle::make('is_active')->default(true),
                 ]),
@@ -247,7 +255,13 @@ class SitesRelationManager extends RelationManager
                     TextInput::make('street_address')->maxLength(255)->columnSpanFull(),
                     TextInput::make('street_address_2')->maxLength(255)->columnSpanFull(),
                     TextInput::make('city')->maxLength(255),
-                    TextInput::make('state')->maxLength(100),
+                    Select::make('state')
+                        ->label('State')
+                        ->options(UsState::selectOptions())
+                        ->searchable()
+                        ->native(false)
+                        ->nullable()
+                        ->dehydrateStateUsing(fn (?string $state): ?string => UsState::normalize($state)),
                     TextInput::make('zipcode')->maxLength(20),
                     TextInput::make('country_code')->default('US')->maxLength(3),
                     TextInput::make('timezone')->maxLength(64)->placeholder('America/New_York')->columnSpanFull(),
@@ -256,7 +270,7 @@ class SitesRelationManager extends RelationManager
     }
 
     /**
-     * @return array<int, TextInput|Toggle>
+     * @return array<int, TextInput|Toggle|Select>
      */
     private function manualSiteFormComponents(): array
     {
@@ -265,10 +279,21 @@ class SitesRelationManager extends RelationManager
             TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
             GlnRules::input()
                 ->unique(ignoreRecord: true)
-                ->rule(new RejectTenantGln),
+                ->rule(new RejectTenantGln)
+                ->rule(new RejectPartnerGlnUnderOrgPrefix),
+            TextInput::make('duns_number')->label('DUNS')->maxLength(14),
+            TextInput::make('dea_number')->label('DEA')->maxLength(20),
+            TextInput::make('hin_number')->label('HIN')->maxLength(20),
+            TextInput::make('chemical_reg_number')->label('Chemical Reg')->maxLength(30),
             Toggle::make('is_headquarters')->default(false),
             TextInput::make('city')->maxLength(255),
-            TextInput::make('state')->maxLength(100),
+            Select::make('state')
+                ->label('State')
+                ->options(UsState::selectOptions())
+                ->searchable()
+                ->native(false)
+                ->nullable()
+                ->dehydrateStateUsing(fn (?string $state): ?string => UsState::normalize($state)),
             Toggle::make('is_active')->default(true),
         ];
     }

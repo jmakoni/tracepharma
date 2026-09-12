@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\TradingPartners\Tables;
 use App\Enums\PartnerType;
 use App\Filament\App\Resources\TradingPartners\Actions\RecordAtpVerificationAction;
 use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Filament\Support\TradingPartnerModalActions;
@@ -22,7 +23,6 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
@@ -194,7 +194,7 @@ class TradingPartnersTable
             ->icon(Heroicon::OutlinedRectangleStack)
             ->authorize('managePortalLink')
             ->visible(fn (TradingPartner $record): bool => (bool) $record->is_active)
-            ->action(function (TradingPartner $record, HasActions & HasSchemas $livewire): void {
+            ->action(function (TradingPartner $record, HasActions&HasSchemas $livewire): void {
                 if (! $record->is_active) {
                     Notification::make()
                         ->title('Trading partner is inactive')

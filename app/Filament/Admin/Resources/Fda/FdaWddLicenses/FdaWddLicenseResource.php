@@ -12,9 +12,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
-class FdaWddLicenseResource extends Resource
+class FdaWddLicenseResource extends Resource implements HasKnowledgeBase
 {
     use ViewOnlyFdaRegistryResource;
 
@@ -22,7 +24,7 @@ class FdaWddLicenseResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Registry';
+    protected static string|UnitEnum|null $navigationGroup = 'FDA Registry';
 
     protected static ?int $navigationSort = 40;
 
@@ -31,6 +33,11 @@ class FdaWddLicenseResource extends Resource
     protected static ?string $modelLabel = 'License';
 
     protected static ?string $recordTitleAttribute = 'license_number';
+
+    public static function canEdit(Model $record): bool
+    {
+        return false;
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -55,5 +62,10 @@ class FdaWddLicenseResource extends Resource
     public static function getGloballySearchableAttributes(): array
     {
         return ['license_number'];
+    }
+
+    public static function getDocumentation(): array|string
+    {
+        return 'registry.fda-wdd';
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class EpcisEvent extends Model
 {
@@ -19,6 +20,8 @@ class EpcisEvent extends Model
     protected $fillable = [
         'document_id',
         'ingest_generation',
+        'superseded_at',
+        'superseded_by_generation',
         'event_id',
         'event_type',
         'event_time',
@@ -42,6 +45,8 @@ class EpcisEvent extends Model
     {
         return [
             'ingest_generation' => 'integer',
+            'superseded_by_generation' => 'integer',
+            'superseded_at' => 'datetime',
             'event_time' => 'datetime',
             'record_time' => 'datetime',
             'error_declaration' => 'array',
@@ -74,6 +79,19 @@ class EpcisEvent extends Model
     public function scopeForGeneration(Builder $query, int $generation): Builder
     {
         return $query->where('ingest_generation', $generation);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeNotSuperseded(Builder $query): Builder
+    {
+        if (Schema::hasColumn('epcis_events', 'superseded_at')) {
+            return $query->whereNull('epcis_events.superseded_at');
+        }
+
+        return $query;
     }
 
     public function document(): BelongsTo

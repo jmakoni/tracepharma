@@ -6,6 +6,8 @@ enum TenantRole: string
 {
     case Owner = 'owner';
 
+    case SupportEngineer = 'support_engineer';
+
     // Manufacturer / CMO / Prepackager
     case PackagingLineOperator = 'packaging_line_operator';
     case SerializationSystemsEngineer = 'serialization_systems_engineer';
@@ -30,10 +32,16 @@ enum TenantRole: string
     case PharmacyInventoryManager = 'pharmacy_inventory_manager';
     case PharmacySystemAdministrator = 'pharmacy_system_administrator';
 
+    // Buying group — least-privilege SSO JIT (not Owner / Support Engineer)
+    case BuyingGroupMember = 'buying_group_member';
+    case BuyingGroupNetworkAdmin = 'buying_group_network_admin';
+    case BuyingGroupAnalyst = 'buying_group_analyst';
+
     public function label(): string
     {
         return match ($this) {
             self::Owner => 'Owner',
+            self::SupportEngineer => 'Support Engineer',
             self::PackagingLineOperator => 'Packaging Line Operator',
             self::SerializationSystemsEngineer => 'Serialization Systems Engineer',
             self::MasterDataAdministrator => 'Master Data Administrator',
@@ -50,7 +58,18 @@ enum TenantRole: string
             self::DispensingPharmacist => 'Dispensing Pharmacist',
             self::PharmacyInventoryManager => 'Pharmacy Inventory Manager',
             self::PharmacySystemAdministrator => 'Pharmacy System Administrator',
+            self::BuyingGroupMember => 'Buying Group Member',
+            self::BuyingGroupNetworkAdmin => 'Buying Group Network Admin',
+            self::BuyingGroupAnalyst => 'Buying Group Analyst',
         };
+    }
+
+    /**
+     * Roles that SSO JIT may assign (never Owner or Support Engineer).
+     */
+    public function isJitAssignable(): bool
+    {
+        return ! in_array($this, [self::Owner, self::SupportEngineer], true);
     }
 
     /**
@@ -59,33 +78,58 @@ enum TenantRole: string
     public static function forProfile(TenantProfile $profile): array
     {
         $personas = match ($profile) {
-            TenantProfile::Manufacturer,
-            TenantProfile::Prepackager => [
+            TenantProfile::Manufacturer => [
+                self::SupportEngineer,
                 self::PackagingLineOperator,
                 self::SerializationSystemsEngineer,
                 self::MasterDataAdministrator,
                 self::CmoIntegrationManager,
             ],
-            TenantProfile::Logistics3pl => [
-                self::InboundExceptionCoordinator,
-                self::WmsIntegrationSpecialist,
+            // Union: Manufacturer commission/plant personas + DrugWholesaler receive/ship floor.
+            TenantProfile::Prepackager => [
+                self::SupportEngineer,
+                self::PackagingLineOperator,
+                self::SerializationSystemsEngineer,
+                self::MasterDataAdministrator,
+                self::CmoIntegrationManager,
+                self::ReceivingTechnician,
                 self::OutboundPickAndPackLead,
+                self::InboundExceptionCoordinator,
+            ],
+            TenantProfile::Logistics3pl => [
+                self::SupportEngineer,
+                self::ReceivingTechnician,
+                self::OutboundPickAndPackLead,
+                self::InboundExceptionCoordinator,
+                self::AtpVerificationManager,
+                self::VrsAnalyst,
+                self::WmsIntegrationSpecialist,
                 self::QuarantineAndReturnsSpecialist,
             ],
             TenantProfile::DrugWholesaler,
             TenantProfile::DentalMedicalSupply => [
+                self::SupportEngineer,
+                self::ReceivingTechnician,
+                self::OutboundPickAndPackLead,
+                self::InboundExceptionCoordinator,
                 self::AtpVerificationManager,
                 self::VrsAnalyst,
                 self::CorporateComplianceAuditor,
                 self::BulkExceptionsManager,
             ],
             TenantProfile::Pharmacy => [
+                self::SupportEngineer,
                 self::ReceivingTechnician,
                 self::DispensingPharmacist,
                 self::PharmacyInventoryManager,
                 self::PharmacySystemAdministrator,
             ],
-            TenantProfile::BuyingGroup => [],
+            TenantProfile::BuyingGroup => [
+                self::SupportEngineer,
+                self::BuyingGroupNetworkAdmin,
+                self::BuyingGroupAnalyst,
+                self::BuyingGroupMember,
+            ],
         };
 
         return [self::Owner, ...$personas];
@@ -99,5 +143,48 @@ enum TenantRole: string
         return collect(self::forProfile($profile))
             ->mapWithKeys(fn (self $role): array => [$role->value => $role->label()])
             ->all();
+    }
+
+    /**
+     * JIT-selectable roles for a profile (excludes Owner and Support Engineer).
+     *
+     * @return array<string, string>
+     */
+    public static function jitOptionsForProfile(TenantProfile $profile): array
+    {
+        return collect(self::forProfile($profile))
+            ->filter(fn (self $role): bool => $role->isJitAssignable())
+            ->mapWithKeys(fn (self $role): array => [$role->value => $role->label()])
+            ->all();
+    }
+
+    /**
+     * Least-privilege JIT default for SSO-created users (never Owner or Support Engineer).
+     */
+    public static function jitDefaultForProfile(TenantProfile $profile): self
+    {
+        $roles = array_values(array_filter(
+            self::forProfile($profile),
+            static fn (self $role): bool => $role->isJitAssignable(),
+        ));
+
+        foreach ([
+            self::ReceivingTechnician,
+            self::PackagingLineOperator,
+            self::OutboundPickAndPackLead,
+            self::MasterDataAdministrator,
+            self::BuyingGroupMember,
+        ] as $candidate) {
+            if (in_array($candidate, $roles, true)) {
+                return $candidate;
+            }
+        }
+
+        if ($roles !== []) {
+            return $roles[0];
+        }
+
+        // Profiles always include at least one JIT-assignable persona after BuyingGroupMember.
+        return self::BuyingGroupMember;
     }
 }

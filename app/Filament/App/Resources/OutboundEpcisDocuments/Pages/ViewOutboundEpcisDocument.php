@@ -7,11 +7,11 @@ use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResou
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
@@ -64,8 +64,11 @@ class ViewOutboundEpcisDocument extends ViewRecord
         }
         $events = number_format((int) $record->event_count);
         $epcs = number_format((int) $record->epc_count);
+        $payloadNote = filled($record->payload_path)
+            ? ' · Download = partner TI payload'
+            : '';
 
-        return "{$status}{$transmit} · {$events} events · {$epcs} EPCs · ".$record->directionDisplayLabel();
+        return "{$status}{$transmit} · {$events} events · {$epcs} EPCs · ".$record->directionDisplayLabel().$payloadNote;
     }
 
     protected function getHeaderActions(): array

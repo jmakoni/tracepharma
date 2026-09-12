@@ -8,6 +8,7 @@ use App\Models\Epcis\Epc;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Services\Custody\EpcCustodyGate;
+use App\Support\Custody\PrincipalCustody;
 use InvalidArgumentException;
 
 /**
@@ -45,7 +46,7 @@ final class SsccChildCustodyGuard
             $urns = $this->splitLines((string) $input['child_epcs']);
         }
 
-        $this->assertUrnsOperable($urns, $operation);
+        $this->assertUrnsOperable($urns, $operation, $this->siteIdFromInput($input));
     }
 
     /**
@@ -53,9 +54,12 @@ final class SsccChildCustodyGuard
      *
      * @throws InvalidArgumentException
      */
-    public function assertMultilineOperable(string $multilineEpcs, string $operation = 'packing'): void
-    {
-        $this->assertUrnsOperable($this->splitLines($multilineEpcs), $operation);
+    public function assertMultilineOperable(
+        string $multilineEpcs,
+        string $operation = 'packing',
+        ?int $siteId = null,
+    ): void {
+        $this->assertUrnsOperable($this->splitLines($multilineEpcs), $operation, $siteId);
     }
 
     /**
@@ -72,7 +76,9 @@ final class SsccChildCustodyGuard
             ->map(fn ($child): string => (string) $child->child_epc)
             ->all();
 
-        $this->assertUrnsOperable($urns, $operation);
+        $siteId = $batch->commission_site_id !== null ? (int) $batch->commission_site_id : null;
+
+        $this->assertUrnsOperable($urns, $operation, $siteId);
     }
 
     /**
@@ -80,8 +86,11 @@ final class SsccChildCustodyGuard
      *
      * @throws InvalidArgumentException when a URN is unknown, out of custody, or held
      */
-    public function assertUrnsOperable(iterable $urns, string $operation = 'packing'): void
-    {
+    public function assertUrnsOperable(
+        iterable $urns,
+        string $operation = 'packing',
+        ?int $siteId = null,
+    ): void {
         $urns = $this->normalize($urns);
 
         if ($urns === []) {
@@ -97,7 +106,21 @@ final class SsccChildCustodyGuard
             throw new InvalidArgumentException($this->unknownUrnMessage($unknown, $operation));
         }
 
-        $this->custodyGate->assertOperableFor($children->all(), $operation);
+        $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
+        $this->custodyGate->assertOperableFor($children->all(), $operation, $principalId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function siteIdFromInput(array $input): ?int
+    {
+        if (! isset($input['site_id']) || $input['site_id'] === '' || $input['site_id'] === null) {
+            return null;
+        }
+
+        return (int) $input['site_id'];
     }
 
     /**

@@ -8,20 +8,23 @@ final class EpcisInboundStorageConfig
 {
     public static function bucket(): ?string
     {
-        $bucket = env('EPCIS_INBOUND_BUCKET');
+        $bucket = config('tracepharma.epcis.inbound_bucket');
 
-        if (filled($bucket)) {
-            return (string) $bucket;
+        // filesystems.php may resolve this while configs are still loading.
+        if (blank($bucket)) {
+            $bucket = env('EPCIS_INBOUND_BUCKET') ?: env('AWS_BUCKET');
         }
 
-        $fallback = env('AWS_BUCKET');
-
-        return filled($fallback) ? (string) $fallback : null;
+        return filled($bucket) ? (string) $bucket : null;
     }
 
     public static function url(): ?string
     {
-        $explicit = env('EPCIS_INBOUND_URL') ?: env('AWS_URL');
+        $explicit = config('tracepharma.epcis.inbound_url');
+
+        if (blank($explicit)) {
+            $explicit = env('EPCIS_INBOUND_URL') ?: env('AWS_URL');
+        }
 
         if (filled($explicit)) {
             return (string) $explicit;
@@ -33,7 +36,8 @@ final class EpcisInboundStorageConfig
             return null;
         }
 
-        $region = (string) env('AWS_DEFAULT_REGION', 'us-east-1');
+        $region = (string) (config('filesystems.disks.s3.region')
+            ?: env('AWS_DEFAULT_REGION', 'us-east-1'));
 
         return "https://{$bucket}.s3.{$region}.amazonaws.com";
     }
