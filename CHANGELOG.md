@@ -4,10 +4,32 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+### Added
+
+- **Wave F6 (partial)** — BuyingGroup personas (`BuyingGroupNetworkAdmin`, `BuyingGroupAnalyst`) with `NavCompliance` / roster `UsersManage`; KB + marketing GTM freeze: member health, partner matrix, and member APIs claimed as GA (control-plane only; not ATP warehouse compliance for the group).
+- **Wave F5 (partial)** — BuyingGroup tenant program `affiliation_code` (`TenantSettings` / Organization Settings when `supportsBuyingGroupNetwork()`); Member roster enrollment stub (soft vs hard-linked counts, % with roster affiliation code).
+- **Wave F4** — Sanctum `/api/v1/buying-group/*` (members, readiness, network summary, partner-matrix) with ability `buying-group:network`; Postman + integrations note.
+- **Wave F3** — `tracepharma:buying-group-rollup`, Member network health, Authorized partner matrix, BG network alerts from member snapshots (hard-linked consented pharmacies only).
+- **Wave F2** — Hard membership invite/consent (`buying_group_memberships`) between BuyingGroup roster and Pharmacy tenants.
+- **Wave F1** — Member roster identity enrichment + CSV export.
+
 ### Changed
 
+- **Wave F0→F6 GTM (buying groups)** — Marketing/home/features/compare and solutions copy: Member roster, member health, authorized partner matrix, and member APIs are GA with Partner ATP readiness + Alert center; still control-plane (no floor ops); do not claim the buying group is DSCSA-compliant as an ATP. Product doc gates: roster `UsersManage`; health/matrix `NavCompliance`.
 - **Wave E GTM honesty (3PL custody)** — Marketing and compare copy: soft principal registry/filters GA (including scorecards); optional EPC custody enforcement as tenant ops setting (**default off**); do not claim serial isolation as the default product promise; not positioned as LSPedia Edge / ATP DB. In-app `PrincipalsHonesty` shows an enforced sentence when custody is on.
 - **Organization Settings** — Logistics 3PL tenants can toggle **Enforce principal custody (EPC isolation)** (`features.principal_custody_enforced`; default off).
+
+### Buying-group network waves F0–F5 (summary)
+
+| Wave | Outcome |
+|---|---|
+| **F0** | Honesty freeze: claim only shipped control-plane surfaces |
+| **F1** | Roster enrichment + CSV |
+| **F2** | Hard membership invite / pharmacy consent |
+| **F3** | Daily rollup + member health + partner matrix + BG alerts |
+| **F4** | Sanctum member/network APIs (no EPC payloads) |
+| **F5** | Program affiliation code + enrollment stub |
+| **F6** | Personas + KB + GTM freeze promoting F3–F5 as GA |
 
 ## [1.6.0] — 2026-09-07
 

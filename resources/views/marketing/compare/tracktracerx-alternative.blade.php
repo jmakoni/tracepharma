@@ -1,7 +1,7 @@
 @php
     $tracktracerxFaqs = [
         ['question' => 'Is TrackTraceRx a good fit for pharmacy networks?', 'answer' => 'Yes, when you need rapid dispenser rollout with partner location directory scale and onboarding economics. TrackTraceRx emphasizes network enrollment and pharmacy-first workflows.'],
-        ['question' => 'When should a pharmacy network choose TracePharma over TrackTraceRx?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exceptions, buying-group control-plane visibility (partner ATP readiness / alert center), or wholesaler-grade receiving—not just verify-only network enrollment.'],
+        ['question' => 'When should a pharmacy network choose TracePharma over TrackTraceRx?', 'answer' => 'Consider TracePharma when you need event-store investigation (EPCIS 1.2 GA; 2.0 capture + query-as-2.0), structured exceptions, buying-group control-plane visibility (member roster, health, partner matrix, ATP readiness / alerts, member APIs), or wholesaler-grade receiving—not just verify-only network enrollment.'],
         ['question' => 'Does TracePharma interoperate with TrackTraceRx paths?', 'answer' => 'Yes. TracePharma supports HTTPS webhook preset (tracktracerx) for inbound scenarios while you run full L4 workflows on TracePharma.'],
     ];
 @endphp
@@ -47,7 +47,7 @@
                     ['capability' => 'Pharmacy workflows', 'them' => 'Strong — network rollout focus', 'us' => 'Pharmacy profile + POST /api/v1/dispense-check'],
                     ['capability' => 'VRS verification', 'them' => 'Yes', 'us' => 'Yes — workstation + API audit trail'],
                     ['capability' => 'EPCIS 1.2 / 2.0 repository', 'them' => 'Limited public detail', 'us' => '1.2 GA default outbound; 2.0 JSON-LD capture + query-as-2.0 + HTTPS subscriptions; read-only trace for pharmacy'],
-                    ['capability' => 'Buying group reporting', 'them' => 'Limited', 'us' => 'Network dashboard + partner authorization matrix'],
+                    ['capability' => 'Buying group reporting', 'them' => 'Limited', 'us' => 'Member roster + health + partner matrix + ATP readiness / alerts + member APIs'],
                     ['capability' => 'Wholesaler / manufacturer L4', 'them' => 'Thin', 'us' => 'Full multi-profile platform'],
                     ['capability' => 'Typical buyer', 'them' => 'Pharmacy networks, rapid deployment', 'us' => 'Networks needing L4 depth beyond enrollment'],
                 ]"
@@ -69,7 +69,7 @@
                 <h2 class="text-lg font-semibold text-tp-ink">Choose TracePharma when</h2>
                 <ul class="mt-5 space-y-3 text-sm leading-relaxed text-tp-muted">
                     <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You need EPCIS event-store trace search and structured exception workflows—so serial history is one query, not a folder of PDFs</li>
-                    <li class="flex gap-3"><span class="text-tp-teal-400">→</span> Buying groups or multi-site ops need member health dashboards—so at-risk stores surface before a wholesaler escalation</li>
+                    <li class="flex gap-3"><span class="text-tp-teal-400">→</span> Buying groups need a member roster plus health, partner matrix, and ATP readiness / alerts—so network visibility does not require floor ops</li>
                     <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You want one platform if the organization grows beyond pharmacy-only scope—so adding a DC does not mean a second vendor</li>
                 </ul>
             </div>

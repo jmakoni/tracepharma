@@ -1,0 +1,91 @@
+{
+  "info": {
+    "name": "TracePharma Buying Group Network",
+    "description": "Wave F4 Sanctum APIs for BuyingGroup tenants — roster, readiness, network summary, partner matrix (no EPC payloads).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://your-buying-group.example.com"
+    },
+    {
+      "key": "api_token",
+      "value": "your-sanctum-token-with-buying-group-network"
+    },
+    {
+      "key": "member_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "List members",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/buying-group/members?per_page=25"
+      }
+    },
+    {
+      "name": "Member readiness",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/buying-group/members/{{member_id}}/readiness"
+      }
+    },
+    {
+      "name": "Network summary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/buying-group/network/summary"
+      }
+    },
+    {
+      "name": "Partner matrix",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/buying-group/partner-matrix?per_page=25"
+      }
+    }
+  ]
+}

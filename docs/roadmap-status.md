@@ -86,7 +86,7 @@ Living gap summary vs the greenfield build plan and the selective port from the 
 | GTM (Feature Gap v4) | PDG/HDA-aligned exception notify (structured email + JSON attach); Inspection day readiness checklist; saleable returns scorecard; recall closure dashboard (ack % / unreconciled); expiry worklist quarantine shortcuts |
 | GTM (Wave 1 mid-market) | Outbound SFTP GA; MDN catalog emitters (`MISSING_MDN` / `LATE_MDN` / `PARTNER_REJECTED_FILE`); partner apply-form; drop-shipment EPCIS indicator; PMS vendor runbooks on unified dispense-check |
 | GTM (Wave 2 trust) | Internal EPCIS scenario evidence export; VRS readiness checklist/export; manual Pulse/OCI ATP evidence sources; partner ingest quality rollup (honest — not TraceReady/Pulse-listed) |
-| GTM (Wave 3 role) | BG member roster; 3PL principal soft-tag; L3 forward log; prepack TransformationEvent + Asset Trace edges |
+| GTM (Wave 3 role) | BG member roster **GA** (health/matrix/APIs deferred); 3PL principal soft-tag; L3 forward log; prepack TransformationEvent + Asset Trace edges |
 
 Wholesaler inbound critical path is live: master data → EPCIS → receive → last-seen → SSCC labels → exceptions. Inter-site transfer and scan-in/ASN reconciliation are live.
 
@@ -145,7 +145,7 @@ Source of truth for scope and exit criteria: [Vatengi feature port phases](/home
 | **5** | **Returns / pack / hierarchy** | ICP shipped (Return / Pack / Unpack / Break-pack); not a greenfield port |
 | **6** | **Integration ops** | **Shipped** — AS2 S/MIME + async MDN, multi-partner `is_default` routing, WMS `complete:false` + Idempotency-Key, PMS scorecard buckets, L3 forward job, AS2 inbound webhook; remaining: partner MIME quirks, AS2 inbound operator UI, full WMS bidir, L3 reconcile UI |
 
-**ICP default:** pharmacy + wholesaler inbound/outbound (demo2). Manufacturer/L3 depth and buying-group **network product** (member roster / matrix / APIs) follow Wave 3 of the tenant-type gap plan. Buying group **control-plane shell** (Partner ATP readiness + Alert center) is unlocked in Wave 0 — floor ops stay off.
+**ICP default:** pharmacy + wholesaler inbound/outbound (demo2). Manufacturer/L3 depth continues on the tenant-type gap plan. Buying group **control-plane** (Partner ATP readiness + Alert center + **Member roster CRUD**) is GA — floor ops stay off. **Deferred:** member health dashboards, partner authorization matrix, and member compliance APIs.
 
 ### Out of product scope (not a lean “do not port” of buying groups)
 

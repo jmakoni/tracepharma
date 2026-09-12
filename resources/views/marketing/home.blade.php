@@ -116,7 +116,7 @@
                 ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Soft principal filters GA; optional EPC custody enforcement (default off) when serials must be gated per client.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
                 ['label' => 'Dispenser', 'title' => 'Pharmacies', 'description' => 'Receive, verify, dispense, and file FDA 3911.', 'href' => route('marketing.solutions.pharmacies')],
                 ['label' => 'Repack', 'title' => 'Prepackagers', 'description' => 'Bulk receive, repack lineage, and outbound EPCIS with new serials.', 'href' => route('marketing.solutions.prepackagers')],
-                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member health, exception trends, and partner authorization.', 'href' => route('marketing.solutions.buying-groups')],
+                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member roster, member health, exception trends, and partner authorization — plus ATP readiness and compliance alerts.', 'href' => route('marketing.solutions.buying-groups')],
                 ['label' => 'Supply', 'title' => 'Dental & medical', 'description' => 'Mixed Rx/non-Rx catalog with practice ship-to GLNs.', 'href' => route('marketing.solutions.dental-medical')],
             ]"
         />

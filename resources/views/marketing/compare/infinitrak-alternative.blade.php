@@ -32,7 +32,7 @@
                 Pharmacy owners often hear "use InfiniTrak" from wholesalers or buying groups. That advice fits teams who want <strong class="text-tp-ink">guided dispenser cutover</strong> with minimal IT involvement. Teams look at TracePharma when they also run—or plan to run—<strong class="text-tp-ink">EPCIS receiving, exception investigation, and multi-site compliance reporting</strong> at wholesaler depth.
             </p>
             <p>
-                This page is intentionally honest. InfiniTrak wins on pharmacy market familiarity and turnkey onboarding. TracePharma wins on EPCIS 1.2 GA with opt-in 2.0 repository (read-only event-store trace for dispensers), structured exceptions, buying-group control-plane visibility (partner ATP readiness / alert center; member network product on the roadmap), and a single L4 platform if you outgrow verify-only workflows.
+                This page is intentionally honest. InfiniTrak wins on pharmacy market familiarity and turnkey onboarding. TracePharma wins on EPCIS 1.2 GA with opt-in 2.0 repository (read-only event-store trace for dispensers), structured exceptions, buying-group control-plane visibility (member roster, health, partner matrix, ATP readiness, alert center, member APIs), and a single L4 platform if you outgrow verify-only workflows.
             </p>
         </div>
     </section>
@@ -53,7 +53,7 @@
                     ['capability' => 'EPCIS 1.2 / 2.0 repository', 'them' => 'Limited public positioning', 'us' => '1.2 GA default outbound; 2.0 JSON-LD capture + query-as-2.0 + HTTPS subscriptions; read-only trace for pharmacy'],
                     ['capability' => 'Exception investigation', 'them' => 'Basic workflows', 'us' => 'Structured exceptions + supplier correction loop'],
                     ['capability' => 'Wholesaler / 3PL depth', 'them' => 'Partial L4 — not primary ICP', 'us' => 'Full profiles for wholesaler, 3PL, manufacturer'],
-                    ['capability' => 'Buying group reporting', 'them' => 'Per-member tools', 'us' => 'Network dashboard + partner authorization matrix'],
+                    ['capability' => 'Buying group reporting', 'them' => 'Per-member tools', 'us' => 'Member roster + health + partner matrix + ATP readiness / alerts + member APIs'],
                     ['capability' => 'Partner connectivity', 'them' => 'Assisted wholesaler onboarding', 'us' => 'Direct AS2, SFTP, HTTPS per tenant'],
                     ['capability' => 'Typical buyer', 'them' => 'Independent pharmacies', 'us' => 'Pharmacies, buying groups, regional wholesalers'],
                 ]"
@@ -95,7 +95,7 @@
                 </div>
                 <div class="tp-card p-6">
                     <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Buying group</p>
-                    <p class="mt-2 text-sm leading-relaxed text-tp-muted">Member health dashboards, exception trends, and authorized partner matrix across your network.</p>
+                    <p class="mt-2 text-sm leading-relaxed text-tp-muted">Member roster (CRUD), member health, authorized partner matrix, partner ATP readiness, compliance alerts, and member APIs — control-plane only, not a warehouse hub.</p>
                     <a href="{{ route('marketing.solutions.buying-groups') }}" class="mt-4 inline-flex text-sm font-semibold text-tp-link hover:text-tp-primary-600 dark:hover:text-tp-primary-200">Buying group solution →</a>
                 </div>
             </div>

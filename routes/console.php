@@ -132,6 +132,11 @@ Schedule::command('compliance:alert-center-digest')
     ->withoutOverlapping()
     ->name('compliance-alert-center-digest');
 
+Schedule::command('tracepharma:buying-group-rollup')
+    ->dailyAt('05:45')
+    ->withoutOverlapping()
+    ->name('buying-group-member-rollup');
+
 Schedule::command('tracepharma:exception-digest')
     ->dailyAt('08:00')
     ->withoutOverlapping()

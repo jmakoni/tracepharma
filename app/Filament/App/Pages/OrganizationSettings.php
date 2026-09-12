@@ -2,12 +2,15 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Actions\BuyingGroup\AcceptBuyingGroupMembership;
+use App\Actions\BuyingGroup\RevokeBuyingGroupMembership;
 use App\Enums\ClientPrintBridge;
 use App\Enums\SsccAllocationMode;
 use App\Enums\TenantProfile;
 use App\Exceptions\OrganizationIdentityConflictException;
 use App\Filament\App\Resources\SsccNumberRanges\SsccNumberRangeResource;
 use App\Filament\Notifications\Notification;
+use App\Models\BuyingGroupMembership;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
@@ -26,6 +29,7 @@ use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -39,7 +43,9 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use UnitEnum;
@@ -68,7 +74,9 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
-        if (! TenantFeatures::forTenant(tenant())->supportsMasterData()) {
+        $features = TenantFeatures::forTenant(tenant());
+
+        if (! $features->supportsMasterData() && ! $features->supportsBuyingGroupNetwork()) {
             return false;
         }
 
@@ -138,6 +146,8 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'manufacturer_verification_portal' => $settings->manufacturerVerificationPortalEnabled(),
             'client_portal_v2' => $settings->clientPortalV2Enabled(),
             'principal_custody_enforced' => $settings->principalCustodyEnforced(),
+            'buying_group_network_consent' => $settings->buyingGroupNetworkConsent(),
+            'affiliation_code' => $settings->affiliationCode(),
         ], $settings->organizationAddress()));
     }
 
@@ -316,6 +326,38 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->default(true)
                             ->columnSpanFull(),
                     ]),
+                Section::make('Buying group network')
+                    ->compact()
+                    ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy
+                        && JobRoleAccess::isOwner())
+                    ->description('Accept buying-group hard-link invites so network readiness rollups can include this pharmacy. Soft roster rows without consent stay separate.')
+                    ->schema([
+                        Placeholder::make('buying_group_pending_invites')
+                            ->label('Pending invites')
+                            ->content(fn (): string => $this->buyingGroupPendingInvitesSummary())
+                            ->columnSpanFull(),
+                        Placeholder::make('buying_group_active_links')
+                            ->label('Active links')
+                            ->content(fn (): string => $this->buyingGroupActiveLinksSummary())
+                            ->columnSpanFull(),
+                        Toggle::make('buying_group_network_consent')
+                            ->label('Allow buying-group network links')
+                            ->helperText('On when you accept an invite. Turn off to revoke all active hard links for this pharmacy.')
+                            ->live()
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Buying group program')
+                    ->compact()
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsBuyingGroupNetwork())
+                    ->description('Program affiliation code for channel enrollment. Distinct from per-member affiliation codes on the roster.')
+                    ->schema([
+                        TextInput::make('affiliation_code')
+                            ->label('Affiliation code')
+                            ->maxLength(64)
+                            ->nullable()
+                            ->helperText('Shared program / GPO code members use when joining your network.')
+                            ->columnSpanFull(),
+                    ]),
                 Section::make('Notifications')
                     ->compact()
                     ->description('Compliance Alert Center digests and customer portal ship notices.')
@@ -388,7 +430,8 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                     ->description('Choose which widgets users may show on home, and the defaults for people who have not customized yet. Home shows at most '
                         .DashboardWidgetCatalog::HOME_CAP
                         .' widgets.')
-                    ->visible(fn (): bool => JobRoleAccess::isOwner())
+                    ->visible(fn (): bool => JobRoleAccess::isOwner()
+                        && TenantFeatures::forTenant(tenant())->supportsMasterData())
                     ->schema([
                         Toggle::make('dashboard_allow_user_customize')
                             ->label('Allow users to customize their dashboard')
@@ -629,7 +672,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             $organization['wms_receive_confirm_url'] = $data['wms_receive_confirm_url'] ?? null;
         }
 
-        if (JobRoleAccess::isOwner()) {
+        if (JobRoleAccess::isOwner() && TenantFeatures::forTenant(tenant())->supportsMasterData()) {
             $organization['dashboard_allow_user_customize'] = (bool) ($data['dashboard_allow_user_customize'] ?? true);
             $organization['dashboard_allowed'] = $this->dashboardCheckboxListToFlags($data['dashboard_allowed'] ?? []);
             $organization['dashboard_defaults'] = $this->dashboardCheckboxListToFlags($data['dashboard_defaults'] ?? []);
@@ -637,6 +680,21 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
 
         if (tenant()?->profile === TenantProfile::Pharmacy) {
             $organization['pharmacy_simplified_nav'] = (bool) ($data['pharmacy_simplified_nav'] ?? true);
+
+            if (JobRoleAccess::isOwner()) {
+                $wantsConsent = (bool) ($data['buying_group_network_consent'] ?? false);
+                $hadConsent = TenantSettings::forTenant(tenant())->buyingGroupNetworkConsent();
+
+                if (! $wantsConsent && $hadConsent) {
+                    $this->revokeAllActiveBuyingGroupMemberships();
+                }
+
+                $organization['buying_group_network_consent'] = $wantsConsent
+                    && BuyingGroupMembership::query()
+                        ->where('member_tenant_id', tenant()->getKey())
+                        ->active()
+                        ->exists();
+            }
         }
 
         $organization['alert_digest_enabled'] = (bool) ($data['alert_digest_enabled'] ?? true);
@@ -658,6 +716,12 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
 
         if (TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
             $organization['principal_custody_enforced'] = (bool) ($data['principal_custody_enforced'] ?? false);
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsBuyingGroupNetwork()) {
+            $organization['affiliation_code'] = is_string($data['affiliation_code'] ?? null)
+                ? $data['affiliation_code']
+                : null;
         }
 
         if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
@@ -746,7 +810,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
      */
     protected function getHeaderActions(): array
     {
-        return [
+        $actions = [
             Action::make('ssccNumberRanges')
                 ->label('SSCC Number Ranges')
                 ->icon(Heroicon::OutlinedHashtag)
@@ -761,6 +825,162 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                 ->tooltip('Download company and site GLNs as CSV for partner onboarding and EPCIS location setup.')
                 ->action(fn (): StreamedResponse => $this->exportGlnsCsv()),
         ];
+
+        foreach ($this->pendingBuyingGroupMemberships() as $membership) {
+            $bgName = (string) ($membership->buyingGroupTenant?->name ?? 'Buying group');
+            $membershipId = (int) $membership->getKey();
+
+            $actions[] = Action::make('acceptBuyingGroupInvite'.$membershipId)
+                ->label('Accept invite: '.$bgName)
+                ->icon(Heroicon::OutlinedCheckCircle)
+                ->color('success')
+                ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy
+                    && JobRoleAccess::isOwner())
+                ->requiresConfirmation()
+                ->modalHeading('Accept buying-group invite')
+                ->modalDescription('Link this pharmacy to '.$bgName.' for network readiness rollups. You can revoke later.')
+                ->action(function () use ($membershipId): void {
+                    $membership = BuyingGroupMembership::query()->find($membershipId);
+                    $user = auth()->user();
+
+                    if ($membership === null || ! $user instanceof User) {
+                        Notification::make()->title('Invite not found')->danger()->send();
+
+                        return;
+                    }
+
+                    try {
+                        app(AcceptBuyingGroupMembership::class)->accept($membership, $user);
+                    } catch (RuntimeException $e) {
+                        Notification::make()->title($e->getMessage())->danger()->send();
+
+                        return;
+                    }
+
+                    Notification::make()
+                        ->title('Buying-group invite accepted')
+                        ->success()
+                        ->send();
+                    $this->fillForm();
+                });
+
+            $actions[] = Action::make('declineBuyingGroupInvite'.$membershipId)
+                ->label('Decline: '.$bgName)
+                ->icon(Heroicon::OutlinedXCircle)
+                ->color('gray')
+                ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy
+                    && JobRoleAccess::isOwner())
+                ->requiresConfirmation()
+                ->action(function () use ($membershipId): void {
+                    $membership = BuyingGroupMembership::query()->find($membershipId);
+                    $user = auth()->user();
+
+                    if ($membership === null || ! $user instanceof User) {
+                        return;
+                    }
+
+                    try {
+                        app(RevokeBuyingGroupMembership::class)->revoke(
+                            $membership,
+                            $user,
+                            'Declined by pharmacy owner',
+                        );
+                    } catch (RuntimeException $e) {
+                        Notification::make()->title($e->getMessage())->danger()->send();
+
+                        return;
+                    }
+
+                    Notification::make()->title('Invite declined')->success()->send();
+                    $this->fillForm();
+                });
+        }
+
+        return $actions;
+    }
+
+    private function buyingGroupPendingInvitesSummary(): string
+    {
+        $pending = $this->pendingBuyingGroupMemberships();
+
+        if ($pending->isEmpty()) {
+            return 'No pending buying-group invites.';
+        }
+
+        return $pending
+            ->map(fn (BuyingGroupMembership $m): string => sprintf(
+                '%s (invited %s) — use Accept invite in the page header',
+                $m->buyingGroupTenant?->name ?? 'Buying group',
+                $m->invited_at?->toDayDateTimeString() ?? 'recently',
+            ))
+            ->implode("\n");
+    }
+
+    private function buyingGroupActiveLinksSummary(): string
+    {
+        $active = BuyingGroupMembership::query()
+            ->with('buyingGroupTenant')
+            ->where('member_tenant_id', tenant()?->getKey())
+            ->active()
+            ->orderByDesc('accepted_at')
+            ->get();
+
+        if ($active->isEmpty()) {
+            return 'No active hard links.';
+        }
+
+        return $active
+            ->map(fn (BuyingGroupMembership $m): string => sprintf(
+                '%s (consent v%s, accepted %s)',
+                $m->buyingGroupTenant?->name ?? 'Buying group',
+                $m->consent_version ?? '—',
+                $m->accepted_at?->toDayDateTimeString() ?? '—',
+            ))
+            ->implode("\n");
+    }
+
+    /**
+     * @return Collection<int, BuyingGroupMembership>
+     */
+    private function pendingBuyingGroupMemberships(): Collection
+    {
+        $tenantId = tenant()?->getKey();
+
+        if ($tenantId === null || tenant()?->profile !== TenantProfile::Pharmacy) {
+            return collect();
+        }
+
+        return BuyingGroupMembership::query()
+            ->with('buyingGroupTenant')
+            ->where('member_tenant_id', $tenantId)
+            ->pending()
+            ->orderByDesc('invited_at')
+            ->get();
+    }
+
+    private function revokeAllActiveBuyingGroupMemberships(): void
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        BuyingGroupMembership::query()
+            ->where('member_tenant_id', tenant()?->getKey())
+            ->whereIn('status', ['pending', 'active'])
+            ->get()
+            ->each(function (BuyingGroupMembership $membership) use ($user): void {
+                try {
+                    app(RevokeBuyingGroupMembership::class)->revoke(
+                        $membership,
+                        $user,
+                        'Pharmacy withdrew buying-group network consent',
+                    );
+                } catch (RuntimeException) {
+                    // Continue revoking remaining links.
+                }
+            });
     }
 
     private function exportGlnsCsv(): StreamedResponse

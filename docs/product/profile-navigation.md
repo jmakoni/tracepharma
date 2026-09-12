@@ -77,9 +77,10 @@ Buying Group is **not** a Distributor floor tenant. Display type is **Buying gro
 | Compliance cases / 3911 (`supportsComplianceCases()`) | **Off** |
 | Partner ATP readiness (`supportsPartnerReadiness()`) | **On** (explicit exception) |
 | Compliance alert center shell (`supportsComplianceAlertCenter()`) | **On** (integration/ATP signals without quarantine/3911) |
-| Member roster (`supportsBuyingGroupNetwork()`) | **On** (roster CRUD only — no health scorecards / matrix / member compliance APIs) |
+| Member roster (`supportsBuyingGroupNetwork()`) | **On** (roster CRUD + member health + partner matrix + member compliance APIs) |
+| Member health / partner matrix | **On** (snapshot pages; `features.buying_group_member_rollups` default true) |
 
-Buying groups see network control-plane surfaces without operational workflows. Member scorecards, authorized-partner matrix, and member compliance APIs remain out of scope.
+Buying groups see network control-plane surfaces without operational workflows. Member compliance APIs (`/api/v1/buying-group/*`) are GA for BuyingGroup tenants with ability `buying-group:network`.
 
 ## Navigation gating stack
 
@@ -97,7 +98,7 @@ Filament visibility is evaluated in layers:
 5. HidesForPharmacySimplifiedNav trait   ← requires showsWholesaleOperationsNav()
 ```
 
-**Job roles (opt-in):** When `access.job_roles_enabled` is off, `JobRoleAccess` passes through (capabilities unrestricted). When on, pages also require matching `nav.*` permissions. **Owner** always retains Organization Settings access when `supportsMasterData()` is true.
+**Job roles (opt-in):** When `access.job_roles_enabled` is off, `JobRoleAccess` passes through (capabilities unrestricted). When on, pages also require matching `nav.*` permissions. **Owner** always retains Organization Settings access when `supportsMasterData()` **or** `supportsBuyingGroupNetwork()` is true.
 
 ### Reference: key page gates
 
@@ -105,8 +106,10 @@ Filament visibility is evaluated in layers:
 |---|---|---|
 | **ATP readiness** (`AtpPartnerReadiness`) | `supportsPartnerReadiness()` | `JobRoleAccess::allows(NavCompliance)` |
 | **Member roster** (`BuyingGroupMemberResource`) | `supportsBuyingGroupNetwork()` | Owner **or** `UsersManage` |
+| **Member health** (`MemberNetworkHealth`) | `supportsBuyingGroupNetwork()` + rollups enabled | `allows(NavCompliance)` |
+| **Partner matrix** (`AuthorizedPartnerMatrix`) | `supportsBuyingGroupNetwork()` + rollups enabled | `allows(NavCompliance)` |
 | **Alert center** (`ComplianceAlertCenter`) | `supportsComplianceAlertCenter()` | `allowsAny(NavExceptions, NavCompliance)` |
-| **Organization** (`OrganizationSettings`) | `supportsMasterData()` | `JobRoleAccess::canAccessOrganizationSettings()` |
+| **Organization** (`OrganizationSettings`) | `supportsMasterData()` **or** `supportsBuyingGroupNetwork()` | `JobRoleAccess::canAccessOrganizationSettings()` |
 | **Operations Hub** (`OperationsHub`) | `hasAnyOperations()` | `allowsAny(NavReceive, NavShip, NavExceptions, NavVerify)`; nav may use `HidesForPharmacySimplifiedNav` |
 | **Analytics** (`Analytics`) | `hasAnyOperations()` **or** `supportsComplianceCases()` | Owner **or** `allowsAny(NavCompliance, NavReceive, NavShip, NavIntegrations)`; nav uses `HidesForPharmacySimplifiedNav` |
 | **HQ rollup** (`HqRollup`) | `supportsComplianceCases()` **and** `hasAnyOperations()` | `allows(NavCompliance)` **and** `SitesAccessAll`; nav also requires `showsWholesaleOperationsNav()` |

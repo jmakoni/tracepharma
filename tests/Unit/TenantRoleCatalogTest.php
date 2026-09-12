@@ -138,4 +138,35 @@ class TenantRoleCatalogTest extends TestCase
             TenantRole::jitOptionsForProfile(TenantProfile::BuyingGroup),
         );
     }
+
+    #[Test]
+    public function buying_group_includes_network_admin_and_analyst_personas(): void
+    {
+        $roles = TenantRole::forProfile(TenantProfile::BuyingGroup);
+
+        $this->assertContains(TenantRole::Owner, $roles);
+        $this->assertContains(TenantRole::SupportEngineer, $roles);
+        $this->assertContains(TenantRole::BuyingGroupNetworkAdmin, $roles);
+        $this->assertContains(TenantRole::BuyingGroupAnalyst, $roles);
+        $this->assertContains(TenantRole::BuyingGroupMember, $roles);
+
+        $this->assertSame(
+            [Permissions::NavCompliance, Permissions::UsersManage],
+            TenantRoleSeeder::permissionNamesFor(TenantRole::BuyingGroupNetworkAdmin),
+        );
+        $this->assertSame(
+            [Permissions::NavCompliance],
+            TenantRoleSeeder::permissionNamesFor(TenantRole::BuyingGroupAnalyst),
+        );
+        $this->assertSame('Buying Group Network Admin', TenantRole::BuyingGroupNetworkAdmin->label());
+        $this->assertSame('Buying Group Analyst', TenantRole::BuyingGroupAnalyst->label());
+        $this->assertArrayHasKey(
+            TenantRole::BuyingGroupNetworkAdmin->value,
+            TenantRole::jitOptionsForProfile(TenantProfile::BuyingGroup),
+        );
+        $this->assertArrayHasKey(
+            TenantRole::BuyingGroupAnalyst->value,
+            TenantRole::jitOptionsForProfile(TenantProfile::BuyingGroup),
+        );
+    }
 }

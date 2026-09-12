@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\BuyingGroupNetworkController;
 use App\Http\Controllers\Api\V1\DataExportController;
 use App\Http\Controllers\Api\V1\DispenseCheckController;
 use App\Http\Controllers\Api\V1\EpcisCaptureController;
@@ -114,6 +115,18 @@ Route::middleware(['auth:sanctum', EnsureAccountIsUsable::class.':sanctum', 'ten
     Route::get('exports/{export}', [DataExportController::class, 'show'])
         ->middleware('abilities:epcis:view')
         ->name('api.v1.exports.show');
+
+    Route::prefix('buying-group')->middleware('abilities:buying-group:network')->group(function (): void {
+        Route::get('members', [BuyingGroupNetworkController::class, 'members'])
+            ->name('api.v1.buying-group.members');
+        Route::get('members/{id}/readiness', [BuyingGroupNetworkController::class, 'readiness'])
+            ->whereNumber('id')
+            ->name('api.v1.buying-group.members.readiness');
+        Route::get('network/summary', [BuyingGroupNetworkController::class, 'networkSummary'])
+            ->name('api.v1.buying-group.network.summary');
+        Route::get('partner-matrix', [BuyingGroupNetworkController::class, 'partnerMatrix'])
+            ->name('api.v1.buying-group.partner-matrix');
+    });
 });
 
 // Guardian (Systech) lot-close inbound: L3 API key auth (not Sanctum). Tenant

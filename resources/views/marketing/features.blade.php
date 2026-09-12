@@ -207,7 +207,7 @@
                     [
                         'label' => 'Network',
                         'title' => 'Buying groups',
-                        'description' => 'Member health, exception trends, and partner authorization—so group admins see network compliance without per-store exports.',
+                        'description' => 'Member roster (CRUD), member health, exception trends, and partner authorization—plus ATP readiness, alerts, and member APIs—so group admins manage the network without floor ops.',
                         'href' => route('marketing.solutions.buying-groups'),
                     ],
                     [

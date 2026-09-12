@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace App\Support\Compliance;
 
 use App\Actions\Epcis\RecordAtpSoftWarning;
+use App\Enums\BuyingGroupMembershipStatus;
 use App\Enums\SiteAtpReadinessStatus;
 use App\Filament\App\Pages\AtpPartnerReadiness;
+use App\Filament\App\Pages\AuthorizedPartnerMatrix;
 use App\Filament\App\Pages\ExpiryWorklist;
 use App\Filament\App\Pages\IntegrationHealth;
+use App\Filament\App\Pages\MemberNetworkHealth;
 use App\Filament\App\Pages\OrganizationSettings;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\App\Resources\InboundConnections\InboundConnectionResource;
 use App\Filament\App\Resources\OutboundConnections\OutboundConnectionResource;
 use App\Filament\App\Resources\Sites\SiteResource;
+use App\Models\BuyingGroupMemberMetric;
+use App\Models\BuyingGroupMembership;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
 use App\Models\Exceptions\ExceptionCase;
@@ -26,6 +31,8 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Integrations\IntegrationHealthMetrics;
 use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
+use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Throwable;
@@ -58,6 +65,7 @@ final class ComplianceAlertMetrics
             $this->atpAlerts(),
             $this->inboundQueueAlerts($user),
             $this->expiryAlerts(),
+            $this->buyingGroupNetworkAlerts(),
         );
 
         usort($alerts, fn (array $a, array $b): int => strcmp($a['severity'], $b['severity']));
@@ -387,6 +395,89 @@ final class ComplianceAlertMetrics
                 (string) $counts['soon_90'].' on-hand SGTIN(s) expire within 90 days.',
                 self::AUDIENCE_COMPLIANCE,
                 $href,
+            );
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Buying-group network signals from snapshot tables + central memberships.
+     * Low-cost: no live fan-out into member tenant DBs.
+     *
+     * @return list<array{severity: string, title: string, detail: string, audience: string, href?: string}>
+     */
+    private function buyingGroupNetworkAlerts(): array
+    {
+        $tenant = tenant();
+
+        if ($tenant === null || ! TenantFeatures::forTenant($tenant)->supportsBuyingGroupNetwork()) {
+            return [];
+        }
+
+        if (! TenantSettings::forTenant($tenant)->buyingGroupMemberRollupsEnabled()) {
+            return [];
+        }
+
+        $alerts = [];
+        $healthHref = $this->pageUrl(MemberNetworkHealth::class);
+        $matrixHref = $this->pageUrl(AuthorizedPartnerMatrix::class);
+
+        $asOf = BuyingGroupMemberMetric::query()->max('as_of');
+
+        if (filled($asOf)) {
+            $metrics = BuyingGroupMemberMetric::query()
+                ->whereDate('as_of', (string) $asOf)
+                ->get(['atp_gap_count', 'exceptions_aging_7d', 'connection_unhealthy', 'member_tenant_id']);
+
+            $atpGaps = $metrics->sum(fn (BuyingGroupMemberMetric $m): int => (int) $m->atp_gap_count);
+            $aging = $metrics->sum(fn (BuyingGroupMemberMetric $m): int => (int) $m->exceptions_aging_7d);
+            $unhealthy = $metrics->where('connection_unhealthy', true)->count();
+
+            if ($atpGaps > 0) {
+                $alerts[] = $this->alert(
+                    'warning',
+                    'Member ATP licence gaps',
+                    "{$atpGaps} ATP gap signal(s) across linked members (snapshot {$asOf}).",
+                    self::AUDIENCE_COMPLIANCE,
+                    $matrixHref ?? $healthHref,
+                );
+            }
+
+            if ($aging > 0) {
+                $alerts[] = $this->alert(
+                    'critical',
+                    'Member exception aging',
+                    "{$aging} exception case(s) open 7+ days across linked members.",
+                    self::AUDIENCE_COMPLIANCE,
+                    $healthHref,
+                );
+            }
+
+            if ($unhealthy > 0) {
+                $alerts[] = $this->alert(
+                    'warning',
+                    'Member connection health',
+                    "{$unhealthy} linked member(s) report unhealthy inbound connections.",
+                    self::AUDIENCE_INTEGRATION,
+                    $healthHref,
+                );
+            }
+        }
+
+        $stalledInvites = BuyingGroupMembership::query()
+            ->where('buying_group_tenant_id', $tenant->getKey())
+            ->where('status', BuyingGroupMembershipStatus::Pending)
+            ->where('invited_at', '<', now()->subDays(7))
+            ->count();
+
+        if ($stalledInvites > 0) {
+            $alerts[] = $this->alert(
+                'warning',
+                'Enrollment invite stalled',
+                "{$stalledInvites} membership invite(s) pending for 7+ days.",
+                self::AUDIENCE_COMPLIANCE,
+                $healthHref,
             );
         }
 

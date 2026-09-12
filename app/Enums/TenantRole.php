@@ -34,6 +34,8 @@ enum TenantRole: string
 
     // Buying group — least-privilege SSO JIT (not Owner / Support Engineer)
     case BuyingGroupMember = 'buying_group_member';
+    case BuyingGroupNetworkAdmin = 'buying_group_network_admin';
+    case BuyingGroupAnalyst = 'buying_group_analyst';
 
     public function label(): string
     {
@@ -57,6 +59,8 @@ enum TenantRole: string
             self::PharmacyInventoryManager => 'Pharmacy Inventory Manager',
             self::PharmacySystemAdministrator => 'Pharmacy System Administrator',
             self::BuyingGroupMember => 'Buying Group Member',
+            self::BuyingGroupNetworkAdmin => 'Buying Group Network Admin',
+            self::BuyingGroupAnalyst => 'Buying Group Analyst',
         };
     }
 
@@ -112,6 +116,8 @@ enum TenantRole: string
             ],
             TenantProfile::BuyingGroup => [
                 self::SupportEngineer,
+                self::BuyingGroupNetworkAdmin,
+                self::BuyingGroupAnalyst,
                 self::BuyingGroupMember,
             ],
         };

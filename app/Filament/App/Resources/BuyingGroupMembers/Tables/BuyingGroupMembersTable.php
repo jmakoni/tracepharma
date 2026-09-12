@@ -3,8 +3,10 @@
 namespace App\Filament\App\Resources\BuyingGroupMembers\Tables;
 
 use App\Enums\BuyingGroupMemberStatus;
+use App\Filament\App\Resources\BuyingGroupMembers\Actions\BuyingGroupMembershipActions;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
+use App\Models\BuyingGroupMember;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -26,9 +28,38 @@ class BuyingGroupMembersTable
                     ->label('External ref')
                     ->toggleable()
                     ->searchable(),
+                TextColumn::make('dea_number')
+                    ->label('DEA')
+                    ->toggleable()
+                    ->searchable()
+                    ->fontFamily(FontFamily::Mono),
+                TextColumn::make('npi')
+                    ->label('NPI')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable()
+                    ->fontFamily(FontFamily::Mono),
+                TextColumn::make('primary_gln')
+                    ->label('Primary GLN')
+                    ->toggleable()
+                    ->searchable()
+                    ->copyable()
+                    ->fontFamily(FontFamily::Mono),
+                TextColumn::make('affiliation_code')
+                    ->label('Affiliation')
+                    ->toggleable()
+                    ->searchable(),
+                TextColumn::make('program_sku')
+                    ->label('Program SKU')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable(),
+                TextColumn::make('sites_count')
+                    ->label('Sites')
+                    ->numeric()
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('member_tenant_id')
                     ->label('Tenant ID')
-                    ->toggleable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->copyable()
                     ->fontFamily(FontFamily::Mono),
                 TextColumn::make('status')
@@ -53,12 +84,32 @@ class BuyingGroupMembersTable
                     ->options(collect(BuyingGroupMemberStatus::cases())->mapWithKeys(
                         fn (BuyingGroupMemberStatus $status): array => [$status->value => $status->label()]
                     )),
+                SelectFilter::make('affiliation_code')
+                    ->label('Affiliation')
+                    ->options(fn (): array => BuyingGroupMember::query()
+                        ->whereNotNull('affiliation_code')
+                        ->where('affiliation_code', '!=', '')
+                        ->distinct()
+                        ->orderBy('affiliation_code')
+                        ->pluck('affiliation_code', 'affiliation_code')
+                        ->all()),
+                SelectFilter::make('program_sku')
+                    ->label('Program SKU')
+                    ->options(fn (): array => BuyingGroupMember::query()
+                        ->whereNotNull('program_sku')
+                        ->where('program_sku', '!=', '')
+                        ->distinct()
+                        ->orderBy('program_sku')
+                        ->pluck('program_sku', 'program_sku')
+                        ->all()),
             ])
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)
             ->extremePaginationLinks()
             ->recordActions(RecordActionGroup::make([
                 EditAction::make(),
+                BuyingGroupMembershipActions::invite(),
+                BuyingGroupMembershipActions::revoke(),
             ]))
             ->toolbarActions([
                 BulkActionGroup::make([

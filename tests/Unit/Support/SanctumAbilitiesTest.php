@@ -73,12 +73,13 @@ class SanctumAbilitiesTest extends TestCase
     }
 
     #[Test]
-    public function validate_for_token_creation_accepts_wms_ship_confirm(): void
+    public function validate_for_token_creation_accepts_buying_group_network(): void
     {
         $abilities = SanctumAbilities::validateForTokenCreation([
-            SanctumAbilities::WMS_SHIP_CONFIRM,
+            SanctumAbilities::BUYING_GROUP_NETWORK,
         ]);
 
-        $this->assertSame([SanctumAbilities::WMS_SHIP_CONFIRM], $abilities);
+        $this->assertSame([SanctumAbilities::BUYING_GROUP_NETWORK], $abilities);
+        $this->assertArrayHasKey(SanctumAbilities::BUYING_GROUP_NETWORK, SanctumAbilities::options());
     }
 }

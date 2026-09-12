@@ -403,6 +403,31 @@ class TenantSettingsTest extends TestCase
         }
     }
 
+    #[Test]
+    public function affiliation_code_defaults_null_and_persists_via_save_organization(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $settings = TenantSettings::forTenant($tenant);
+            $this->assertNull($settings->affiliationCode());
+
+            $settings->saveOrganization(['affiliation_code' => '  GPO-NORTH-01  ']);
+
+            $fresh = TenantSettings::forTenant($tenant->fresh());
+            $this->assertSame('GPO-NORTH-01', $fresh->affiliationCode());
+            $this->assertSame(
+                'GPO-NORTH-01',
+                data_get($tenant->fresh()->getAttribute('settings'), 'buying_group.affiliation_code'),
+            );
+
+            $fresh->saveOrganization(['affiliation_code' => '']);
+            $this->assertNull(TenantSettings::forTenant($tenant->fresh())->affiliationCode());
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
     private function createCentralTenant(): Tenant
     {
         $id = (string) Str::uuid();

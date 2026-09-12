@@ -115,6 +115,15 @@ final class TenantRoleSeeder
                 Permissions::NavMasterData,
             ],
 
+            // Roster + compliance control-plane (ATP readiness, health, matrix, alerts, affiliation settings).
+            TenantRole::BuyingGroupNetworkAdmin => [
+                Permissions::NavCompliance,
+                Permissions::UsersManage,
+            ],
+            // Read-only network visibility — same NavCompliance gate as AtpPartnerReadiness / health / matrix.
+            TenantRole::BuyingGroupAnalyst => [
+                Permissions::NavCompliance,
+            ],
             // Dashboard-only: buying-group tenants have no floor ops; Owners assign access later.
             TenantRole::BuyingGroupMember => [],
         };

@@ -22,6 +22,8 @@ class SanctumAbilities
 
     public const WMS_SHIP_CONFIRM = 'wms:ship-confirm';
 
+    public const BUYING_GROUP_NETWORK = 'buying-group:network';
+
     /**
      * @return array<string, string>
      */
@@ -34,6 +36,7 @@ class SanctumAbilities
             self::EPCIS_SUBSCRIPTIONS => 'Manage GS1-shaped EPCIS subscriptions (subscribe/unsubscribe)',
             self::VRS_DISPENSE_CHECK => 'Dispense-check (VRS verification gate)',
             self::WMS_SHIP_CONFIRM => 'WMS ship-confirm (Connector)',
+            self::BUYING_GROUP_NETWORK => 'Buying-group member roster, readiness, network summary, partner matrix (no EPC payloads)',
         ];
     }
 

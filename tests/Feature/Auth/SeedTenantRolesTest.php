@@ -98,6 +98,8 @@ class SeedTenantRolesTest extends TestCase
 
         $tenant->run(function (): void {
             $this->assertDatabaseHas('roles', ['name' => TenantRole::SupportEngineer->value]);
+            $this->assertDatabaseHas('roles', ['name' => TenantRole::BuyingGroupNetworkAdmin->value]);
+            $this->assertDatabaseHas('roles', ['name' => TenantRole::BuyingGroupAnalyst->value]);
             $this->assertDatabaseHas('roles', ['name' => TenantRole::BuyingGroupMember->value]);
             $this->assertDatabaseMissing('roles', ['name' => TenantRole::ReceivingTechnician->value]);
         });

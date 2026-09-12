@@ -49,7 +49,7 @@
                     ['capability' => 'EPCIS 1.2 / 2.0 repository', 'them' => 'Limited public detail', 'us' => '1.2 GA default outbound; 2.0 JSON-LD capture + query-as-2.0 + HTTPS subscriptions; read-only trace for pharmacy'],
                     ['capability' => 'Exception investigation', 'them' => 'Basic workflows', 'us' => 'Structured exceptions + supplier correction loop'],
                     ['capability' => 'Wholesaler / 3PL depth', 'them' => 'Light wholesaler only', 'us' => 'Full regional wholesaler and 3PL profiles'],
-                    ['capability' => 'Buying group reporting', 'them' => 'Limited', 'us' => 'Network dashboard + partner authorization matrix'],
+                    ['capability' => 'Buying group reporting', 'them' => 'Limited', 'us' => 'Member roster + health + partner matrix + ATP readiness / alerts + member APIs'],
                     ['capability' => 'Typical buyer', 'them' => 'Pharmacies, small distributors', 'us' => 'Pharmacies scaling to multi-site or group ops'],
                 ]"
             />
@@ -70,7 +70,7 @@
                 <h2 class="text-lg font-semibold text-tp-ink">Choose TracePharma when</h2>
                 <ul class="mt-5 space-y-3 text-sm leading-relaxed text-tp-muted">
                     <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You need EPCIS event-store investigation and serial-level audit trails—so trace search replaces spreadsheet reconstruction</li>
-                    <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You operate or support multiple sites or a buying group—so member health is visible before an inspection call</li>
+                    <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You operate or support multiple sites or a buying group—so member roster, health, partner matrix, and control-plane alerts are available before an inspection call</li>
                     <li class="flex gap-3"><span class="text-tp-teal-400">→</span> You may add wholesaler-grade workflows without switching vendors again—so growth to a secondary DC does not force re-platforming</li>
                 </ul>
             </div>

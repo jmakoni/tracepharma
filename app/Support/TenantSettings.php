@@ -1302,6 +1302,65 @@ class TenantSettings
         return $this->putNestedSetting('features.principal_custody_enforced', $enabled);
     }
 
+    /**
+     * Pharmacy members: consent to hard-link with buying-group network rollups.
+     * Source of truth for links remains central buying_group_memberships; this flag mirrors UX.
+     */
+    public function buyingGroupNetworkConsent(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.buying_group_network_consent', false);
+    }
+
+    public function setBuyingGroupNetworkConsent(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.buying_group_network_consent', $enabled);
+    }
+
+    /**
+     * BuyingGroup: run member metric rollups into BG snapshot tables.
+     * Default true when unset (profile also gates pages/command).
+     */
+    public function buyingGroupMemberRollupsEnabled(): bool
+    {
+        $value = data_get($this->settingsBag(), 'features.buying_group_member_rollups');
+
+        if ($value === null) {
+            return true;
+        }
+
+        return (bool) $value;
+    }
+
+    public function setBuyingGroupMemberRollupsEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.buying_group_member_rollups', $enabled);
+    }
+
+    /**
+     * BuyingGroup program / affiliation code for channel enrollment (Wave F5).
+     * Distinct from per-roster-row `buying_group_members.affiliation_code`.
+     */
+    public function affiliationCode(): ?string
+    {
+        $value = data_get($this->settingsBag(), 'buying_group.affiliation_code');
+
+        return is_string($value) && filled($value) ? trim($value) : null;
+    }
+
+    public function setAffiliationCode(?string $code): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $normalized = is_string($code) ? trim($code) : null;
+
+        return $this->putNestedSetting(
+            'buying_group.affiliation_code',
+            filled($normalized) ? $normalized : null,
+        );
+    }
+
     public function stateLicenseNumber(): ?string
     {
         $value = data_get($this->settingsBag(), 'compliance.state_license_number');
@@ -1979,6 +2038,8 @@ class TenantSettings
             'manufacturer_verification_portal',
             'client_portal_v2',
             'principal_custody_enforced',
+            'buying_group_network_consent',
+            'affiliation_code',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -2073,6 +2134,10 @@ class TenantSettings
                 'manufacturer_verification_portal' => $this->setManufacturerVerificationPortalEnabled((bool) $data[$key]),
                 'client_portal_v2' => $this->setClientPortalV2Enabled((bool) $data[$key]),
                 'principal_custody_enforced' => $this->setPrincipalCustodyEnforced((bool) $data[$key]),
+                'buying_group_network_consent' => $this->setBuyingGroupNetworkConsent((bool) $data[$key]),
+                'affiliation_code' => $this->setAffiliationCode(
+                    is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,
+                ),
             };
         }
 
