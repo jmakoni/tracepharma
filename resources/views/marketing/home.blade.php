@@ -116,7 +116,7 @@
                 ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Soft principal filters GA; optional EPC custody enforcement (default off) when serials must be gated per client.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
                 ['label' => 'Dispenser', 'title' => 'Pharmacies', 'description' => 'Receive, verify, dispense, and file FDA 3911.', 'href' => route('marketing.solutions.pharmacies')],
                 ['label' => 'Repack', 'title' => 'Prepackagers', 'description' => 'Bulk receive, repack lineage, and outbound EPCIS with new serials.', 'href' => route('marketing.solutions.prepackagers')],
-                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member roster, member health, exception trends, and partner authorization — plus ATP readiness and compliance alerts.', 'href' => route('marketing.solutions.buying-groups')],
+                ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member roster with invite/consent, health scorecards, partner matrix, affiliation code, ATP readiness, alerts, and member APIs — control plane only, not an ATP warehouse.', 'href' => route('marketing.solutions.buying-groups')],
                 ['label' => 'Supply', 'title' => 'Dental & medical', 'description' => 'Mixed Rx/non-Rx catalog with practice ship-to GLNs.', 'href' => route('marketing.solutions.dental-medical')],
             ]"
         />
@@ -125,7 +125,7 @@
     <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 class="text-center text-2xl font-semibold tracking-tight text-tp-ink sm:text-3xl">How teams use TracePharma</h2>
         <p class="mx-auto mt-3 max-w-2xl text-center text-tp-muted">Same L4 platform—different entry points depending on your operating profile.</p>
-        <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Manufacturer</p>
                 <p class="mt-3 font-semibold text-tp-ink">Ship with attached 3T</p>
@@ -134,7 +134,7 @@
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Wholesaler</p>
                 <p class="mt-3 font-semibold text-tp-ink">Receive to ship</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Match inbound EPCIS, resolve exceptions before inventory, and ship downstream with SSCC labels and partner routing.</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Match inbound EPCIS, resolve exceptions before inventory, and ship downstream with SSCC labels and partner routing—no plant commission.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">3PL</p>
@@ -145,6 +145,11 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Dispenser</p>
                 <p class="mt-3 font-semibold text-tp-ink">Verify before dispense</p>
                 <p class="mt-2 text-sm leading-relaxed text-tp-muted">Receive from wholesalers, run VRS checks at the workstation or via API, and file FDA 3911 from failed verifications.</p>
+            </div>
+            <div class="tp-card p-6">
+                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Buying group</p>
+                <p class="mt-3 font-semibold text-tp-ink">Network control plane</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Member roster with invite/consent, daily health and partner-matrix snapshots, affiliation code, and Sanctum member APIs—no central receiving hub, and not an ATP substitute for members.</p>
             </div>
         </div>
     </section>

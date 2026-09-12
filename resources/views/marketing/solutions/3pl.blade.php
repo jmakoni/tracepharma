@@ -38,8 +38,10 @@
                     ['title' => 'Cross-dock transfer', 'description' => 'Move inventory between GLNs with staged scan verification—so facility transfers stay auditable.'],
                     ['title' => 'Lot-level shipping', 'description' => 'Ship non-serialized lines by GTIN + lot + quantity alongside serialized units on one outbound EPCIS drop.'],
                     ['title' => 'SSCC labeling', 'description' => 'Generate pallet labels with pool low-water alerts before serial pools run dry.'],
-                    ['title' => 'WMS ship-confirm bridge', 'description' => 'POST /api/webhooks/wms/{tenantId} or Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic, not a per-vendor URL path.', 'href' => route('marketing.features.show', 'integrations')],
+                    ['title' => 'WMS ship-confirm bridge', 'description' => 'POST /api/webhooks/wms/{tenantId} or Sanctum POST /api/v1/wms/ship-confirm — vendor-agnostic, not a per-vendor URL path. Ship-confirm can tag principal via principal_id, principal_external_ref, or principal_gln (or site default).', 'href' => route('marketing.features.show', 'integrations')],
                     ['title' => 'Principal registry & filters', 'description' => 'Name/GLN principals with soft filters on sites, ship orders, scorecards, expiry, and HQ (GA). Optional EPC custody enforcement (ops setting; default off) gates serials per principal when enabled—not claimed as the default product promise.'],
+                    ['title' => 'Agent TI when custody is on', 'description' => 'With EPC custody enforcement enabled, outbound seller / source owning party uses the principal GLN and ship-from uses the 3PL site GLN—agent TI, not a TraceLink-style full T2 drop-ship network (deferred).'],
+                    ['title' => 'Logistics3pl role pack', 'description' => 'Seeded least-privilege roles for multi-client 3PL ops alongside Owner—floor and principal surfaces without inventing a separate ATP DB product.'],
                 ]"
             />
         </div>
@@ -48,8 +50,8 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <x-marketing.compliance-pillars
             :pillars="[
-                ['title' => 'What ships today', 'description' => '3PL = Logistics3pl profile with wholesaler-class floor flags.', 'items' => ['Receive / transfer / ship / VRS / exceptions', 'Soft principal registry + site/ship/scorecard filters (GA)', 'Optional EPC custody enforcement (ops setting; default off)']],
-                ['title' => 'Honest product promise', 'description' => 'Default remains soft filters; isolation only when enforcement is on.', 'items' => ['Default: soft filters without claiming serial isolation', 'When enforced: pick/ship/receive walls + agent TI per principal', 'Not an LSPedia Edge / enterprise Edge suite / ATP DB product']],
+                ['title' => 'What ships today', 'description' => '3PL = Logistics3pl profile with wholesaler-class floor flags.', 'items' => ['Receive / transfer / ship / VRS / exceptions (no plant commission)', 'Soft principal registry + site/ship/scorecard filters (GA)', 'Optional EPC custody enforcement (ops setting; default off)', 'WMS ship-confirm with principal map fields', 'Agent TI + Logistics3pl role pack when custody / roles apply']],
+                ['title' => 'Honest product promise', 'description' => 'Default remains soft filters; isolation only when enforcement is on.', 'items' => ['Default: soft filters without claiming serial isolation', 'When enforced: pick/ship/receive walls + agent TI per principal', 'Not an LSPedia Edge / enterprise Edge suite / ATP DB product', 'Not a separate DB or MariaDB partition per principal', 'Full T2 drop-ship / TraceLink-style principal network stays deferred']],
                 ['title' => 'DSCSA distributor obligations', 'description' => 'Receive serialized product, verify transaction data, and ship with attached TI/TH/TS.', 'items' => ['EPCIS 1.2 GA + 2.0 capture/query/subscriptions', 'Transaction search at scale', 'In-app operations scorecards (compliance Sanctum APIs not GA)']],
             ]"
         />

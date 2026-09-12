@@ -54,6 +54,11 @@
                 <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">Middleware &amp; transport</h3>
                 <p class="mt-2 text-sm text-tp-muted">AS2, SFTP, Axway patterns</p>
             </a>
+            <a href="{{ route('marketing.features.show', 'integrations') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
+                <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Hub connectivity</p>
+                <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">Approval · GLN routes · platform edges</h3>
+                <p class="mt-2 text-sm text-tp-muted">Connection approval + hub GLN routing · not Pulse certified</p>
+            </a>
             <a href="{{ route('marketing.integrations.erp.index') }}" class="tp-card group p-6 transition hover:border-tp-teal-500/40">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">ERP</p>
                 <h3 class="mt-3 font-semibold text-tp-ink group-hover:text-tp-link">SAP &amp; ERP adjacency</h3>

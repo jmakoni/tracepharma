@@ -6,6 +6,7 @@ All notable releases of TracePharma are documented here.
 
 ### Added
 
+- **Marketing GTM alignment** — Sell shipped depth: manufacturer verification portal (settings-gated ≠ VRS alone), 3PL WMS principal map / agent TI / Logistics3pl roles, buying-group home/demo parity, hub connectivity (connection approval, hub GLN routes, platform AS2/SFTP). Provider checklist covers BG control plane and not-GA fences.
 - **Wave F6 (partial)** — BuyingGroup personas (`BuyingGroupNetworkAdmin`, `BuyingGroupAnalyst`) with `NavCompliance` / roster `UsersManage`; KB + marketing GTM freeze: member health, partner matrix, and member APIs claimed as GA (control-plane only; not ATP warehouse compliance for the group).
 - **Wave F5 (partial)** — BuyingGroup tenant program `affiliation_code` (`TenantSettings` / Organization Settings when `supportsBuyingGroupNetwork()`); Member roster enrollment stub (soft vs hard-linked counts, % with roster affiliation code).
 - **Wave F4** — Sanctum `/api/v1/buying-group/*` (members, readiness, network summary, partner-matrix) with ability `buying-group:network`; Postman + integrations note.
@@ -15,6 +16,8 @@ All notable releases of TracePharma are documented here.
 
 ### Changed
 
+- **G-P2-03 / G-P2-04** — Align `docs/product/profile-navigation.md` and tenant-type-links skill to `TenantFeatures`: commission **M+R only**; `supportsManufacturerVerificationPortal()` ≠ `supportsVrs()`; real inbound/outbound / `canAuthorOutboundShipments` gates (no phantom `supportsOutboundShipping` etc.).
+- **Marketing honesty fences** — Align intentionally-not-claimed language across solutions/features/demo/checklist: named PMS adapters not GA; compliance Sanctum scorecard APIs not GA; Pulse not certified; 3PL ≠ Edge/ATP DB / per-principal DB / full T2 network; plant commission M+R only; BG not ATP warehouse; enrollment analytics deferred.
 - **Wave F0→F6 GTM (buying groups)** — Marketing/home/features/compare and solutions copy: Member roster, member health, authorized partner matrix, and member APIs are GA with Partner ATP readiness + Alert center; still control-plane (no floor ops); do not claim the buying group is DSCSA-compliant as an ATP. Product doc gates: roster `UsersManage`; health/matrix `NavCompliance`.
 - **Wave E GTM honesty (3PL custody)** — Marketing and compare copy: soft principal registry/filters GA (including scorecards); optional EPC custody enforcement as tenant ops setting (**default off**); do not claim serial isolation as the default product promise; not positioned as LSPedia Edge / ATP DB. In-app `PrincipalsHonesty` shows an enforced sentence when custody is on.
 - **Organization Settings** — Logistics 3PL tenants can toggle **Enforce principal custody (EPC isolation)** (`features.principal_custody_enforced`; default off).

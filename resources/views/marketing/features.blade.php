@@ -52,7 +52,7 @@
                 [
                     'phase' => 'Verify',
                     'title' => 'VRS & dispense',
-                    'description' => 'Dispenser profiles: workstation and POST /api/v1/dispense-check—so verify outcomes land in an audit log auditors can review.',
+                    'description' => 'Dispenser profiles: workstation and POST /api/v1/dispense-check (named PMS adapters not GA). Optional manufacturer verification portal is settings-gated.',
                     'href' => route('marketing.features.show', 'verification'),
                 ],
                 [
@@ -103,7 +103,7 @@
                         ['title' => 'L3 commissioning forward', 'description' => 'Organization settings L3 URL plus ForwardCommissioningToL3—so manufacturer and prepackager lines stay connected without a public allocation API.'],
                         ['title' => 'Exception management', 'description' => 'Structured reason codes, assignment, resolution notes, and playbook guidance—so operators know the next step on every failure.'],
                         ['title' => 'Supplier correction loop', 'description' => 'Send correction requests to trading partners and optionally auto-send on new exceptions—so supplier accountability is tracked in-system, not in email.'],
-                        ['title' => 'VRS verification', 'description' => 'Workstation and API checks with full audit log—so pharmacy, wholesaler, and dental/medical profiles prove verify outcomes at inspection.'],
+                        ['title' => 'VRS verification', 'description' => 'Workstation and API checks with full audit log—so pharmacy, wholesaler, and dental/medical profiles prove verify outcomes at inspection. Optional manufacturer verification portal is settings-gated (≠ VRS alone).'],
                         ['title' => 'Partner risk scoring', 'description' => 'Failure-rate trends per trading partner—so compliance leads prioritize wholesaler conversations before exceptions spike.'],
                         ['title' => 'Operations Hub', 'description' => 'Scan a barcode and route to receive, verify, ship, or trace—so floor staff start from one entry point instead of hunting menus.'],
                         ['title' => 'Strict EPCIS profile enforcement', 'description' => 'Reject non-conforming inbound files and hold shipments for compliance review—so bad partner data never silently lands in inventory.'],
@@ -111,6 +111,7 @@
                         ['title' => 'Receiving acceptance metrics', 'description' => 'Dashboard for receipt pass rates, validation failures, and SLA trends—so receiving managers see dock health before exceptions spike.'],
                         ['title' => 'Saleable return outbound', 'description' => 'Reverse logistics scorecard and outbound return EPCIS—so manufacturer and wholesaler profiles document saleable return custody (profile-gated).'],
                         ['title' => 'Compliance case management', 'description' => 'Tracing requests, recall management, and investigation cases—so compliance leads close regulatory workflows with linked event evidence.'],
+                        ['title' => 'Hub connectivity', 'description' => 'Connection approval, hub GLN routes, and optional platform AS2/SFTP edges—tenant L4 routing today; NABP Pulse certification remains roadmap.'],
                     ]"
                 />
             </div>

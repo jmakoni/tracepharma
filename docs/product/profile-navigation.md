@@ -36,10 +36,12 @@ All values come from `App\Support\TenantFeatures` `supports*` methods.
 | `supportsTransferring()` | ✓ | | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsUnpacking()` | | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsPacking()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
-| `supportsCommissioning()` | | ✓ | | ✓ | | | | Greenfield commission/decommission ObjectEvents only |
+| `supportsCommissioning()` | | ✓ | | ✓ | | | | **M + R only.** Plant ObjectEvent commission/decommission. Wholesaler, 3PL, and dental do **not** commission. |
 | `supportsReturning()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsMasterData()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | B excluded |
 | `supportsPrincipals()` | | | | | ✓ | | | Soft 3PL principal registry + FK filters only |
+| `supportsRepackTransform()` | | | | ✓ | | | | Prepackager TransformationEvent authoring |
+| `supportsBuyingGroupNetwork()` | | | | | | | ✓ | BG member roster + network pages/APIs |
 | `supportsInboundIntegrations()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | B excluded |
 | `supportsOutboundIntegrations()` | | ✓ | ✓ | ✓ | ✓ | ✓ | | Pharmacy stays inbound-focused |
 | `supportsPharmacyOutboundDesk()` | ✓ | | | | | | | Low-volume pharmacy TI desk only |
@@ -50,7 +52,13 @@ All values come from `App\Support\TenantFeatures` `supports*` methods.
 | `supportsComplianceReports()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | Same as inbound integrations |
 | `supportsComplianceCases()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | FDA 3911 / quarantine; B excluded |
 
-Related helpers (not `supports*`, but used in nav):
+Related helpers (not static profile columns, or used in nav):
+
+| Method | Notes |
+|---|---|
+| `supportsManufacturerVerificationPortal()` | **≠ `supportsVrs()`.** Settings-gated (`TenantSettings::manufacturerVerificationPortalEnabled()`). When enabled: Manufacturer **or** any `supportsVrs()` profile. Do **not** gate the portal on `supportsVrs()` alone — that blocked Manufacturer (G-P0-01). |
+| `supportsClientPortalV2()` | Settings-gated client portal; not a profile matrix column |
+| `supportsTrackAndTraceExport()` | Pharmacy, Manufacturer, distribution-ops profiles |
 
 | Method | P | M | W | R | 3 | D | B |
 |---|---|---|---|---|---|---|---|
@@ -62,7 +70,7 @@ Related helpers (not `supports*`, but used in nav):
 
 ### Dental / Medical Supply = wholesaler-lite
 
-Dental / Medical Supply = distributor ops (receive/ship/VRS/pack/SSCC); no plant commission. Wholesaler-lite — use `isFullWholesalerFamilyProfile()` for future W-only flags so dental does not inherit by copy-paste. Do not map dental → Pharmacy.
+Dental / Medical Supply = distributor ops (receive/ship/VRS/pack/SSCC); **no plant commission** (`supportsCommissioning()` is false). Wholesaler-lite — use `isFullWholesalerFamilyProfile()` for future W-only flags so dental does not inherit by copy-paste. Do not map dental → Pharmacy.
 
 ### Buying Group = control-plane only
 

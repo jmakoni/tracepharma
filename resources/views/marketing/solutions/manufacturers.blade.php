@@ -1,7 +1,7 @@
 @extends('marketing.layout')
 
 @section('title', 'Drug manufacturers — TracePharma')
-@section('meta_description', 'Level 4 traceability for drug manufacturers: L3 commissioning forward, outbound EPCIS, wholesaler ACK monitoring, saleable returns, and operations scorecards.')
+@section('meta_description', 'Level 4 traceability for drug manufacturers: L3 commissioning forward, outbound EPCIS, wholesaler ACK monitoring, optional manufacturer verification portal, saleable returns, and in-app operations scorecards.')
 
 @section('content')
     <x-marketing.page-hero
@@ -86,7 +86,13 @@
                     [
                         'icon' => 'OPS',
                         'title' => 'Operations scorecards',
-                        'description' => 'Outbound volume, ACK health, and commissioning forward status—so serialization IT sees partner and handoff health without a line-heartbeat API.',
+                        'description' => 'Outbound volume, ACK health, and commissioning forward status in-app—so serialization IT sees partner and handoff health (dedicated compliance Sanctum scorecard routes are not GA).',
+                    ],
+                    [
+                        'icon' => 'VRF',
+                        'title' => 'Manufacturer verification portal',
+                        'description' => 'Optional settings-gated portal so your team can respond to verification requests from trading partners—not the same as dispenser VRS workstation, and not gated on VRS alone.',
+                        'href' => route('marketing.features.show', 'verification'),
                     ],
                     [
                         'icon' => 'TRC',
@@ -131,9 +137,10 @@
                     'title' => 'Audit-ready evidence',
                     'description' => 'Immutable activity log, trace search, and compliance export when FDA or a customer asks for proof.',
                     'items' => [
-                        'Operations scorecard API',
-                        'Compliance export JSON/CSV',
+                        'In-app operations scorecards (compliance Sanctum scorecard APIs not GA)',
+                        'Compliance export JSON/CSV when entitled',
                         'Commissioning gap visibility on scorecard',
+                        'Optional manufacturer verification portal (settings-gated)',
                     ],
                 ],
             ]"

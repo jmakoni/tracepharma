@@ -48,9 +48,9 @@
     <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <x-marketing.compliance-pillars
             :pillars="[
-                ['title' => 'What ships today (GA)', 'description' => 'Control-plane surfaces for buying group tenants.', 'items' => ['Buying group profile (no floor ops)', 'Member roster (CRUD)', 'Member health scorecards', 'Authorized partner matrix', 'Member compliance APIs', 'Partner ATP readiness', 'Compliance alert center', 'Program affiliation code']],
-                ['title' => 'What stays off', 'description' => 'The group is not a warehouse.', 'items' => ['Inbound EPCIS receiving', 'Outbound ship / WMS', 'Site/device master-data CRUD', 'BG as ATP substitute for members']],
-                ['title' => 'Honest scope', 'description' => 'Control plane — not channel enablement theater alone.', 'items' => ['Soft roster + hard link with consent', 'Snapshot rollups (not live EPC fan-out)', 'Members remain DSCSA trading partners']],
+                ['title' => 'What ships today (GA)', 'description' => 'Control-plane surfaces for buying group tenants.', 'items' => ['Buying group profile (no floor ops)', 'Member roster (CRUD) + invite/consent', 'Member health scorecards', 'Authorized partner matrix', 'Member compliance APIs', 'Partner ATP readiness', 'Compliance alert center', 'Program affiliation code']],
+                ['title' => 'What stays off', 'description' => 'The group is not a warehouse.', 'items' => ['Inbound EPCIS receiving', 'Outbound ship / WMS', 'Site/device master-data CRUD', 'BG as ATP substitute for members', 'Live EPC fan-out from member tenancy']],
+                ['title' => 'Honest scope / not claimed', 'description' => 'Control plane — not channel enablement theater alone.', 'items' => ['Soft roster + hard link with consent', 'Snapshot rollups (not live EPC fan-out)', 'Members remain DSCSA trading partners', 'Full enrollment analytics / white-label CTA copy stay deferred']],
             ]"
         />
     </section>

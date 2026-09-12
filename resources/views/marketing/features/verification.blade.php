@@ -1,13 +1,13 @@
 @extends('marketing.layout')
 
 @section('title', 'VRS verification — TracePharma features')
-@section('meta_description', 'DSCSA VRS verification with audit logs and dispense eligibility for pharmacy, wholesaler, and dental/medical dispenser profiles.')
+@section('meta_description', 'DSCSA VRS verification with audit logs, dispense eligibility, and optional manufacturer verification portal—honest about profile gates and what is not GA.')
 
 @section('content')
     <x-marketing.page-hero
         eyebrow="Feature deep dive"
         title="VRS verification & dispense eligibility"
-        description="Every verification is logged with full context—GTIN, serial, lot, expiry, outcome, and timestamp. Operators and auditors see the same evidence. Available on dispenser and select distributor profiles; manufacturers and 3PLs focus on outbound traceability."
+        description="Every verification is logged with full context—GTIN, serial, lot, expiry, outcome, and timestamp. Operators and auditors see the same evidence. Workstation VRS ships on dispenser and select distributor profiles. Manufacturers use an optional settings-gated verification portal—not a plant VRS floor—and 3PLs stay on the wholesaler-class receive/ship spine (no plant commission)."
     >
         <x-slot:breadcrumb>
             <a href="{{ route('marketing.features') }}">Features</a> / Verification
@@ -31,7 +31,7 @@
                 title="API & automation"
                 :items="[
                     'POST /api/v1/verify for POS, robotics, or middleware integrations.',
-                    'Dispense-check endpoint gates dispensing on verification and quarantine state.',
+                    'POST /api/v1/dispense-check gates dispensing on verification and quarantine state—named per-vendor PMS adapter routes are not GA.',
                     'Tenant-scoped Sanctum tokens with permission controls.',
                 ]"
             />
@@ -44,11 +44,20 @@
                 ]"
             />
             <x-marketing.detail-section
+                title="Manufacturer verification portal"
+                :items="[
+                    'Optional Organization settings toggle—not enabled by default for every tenant.',
+                    'When enabled: Manufacturer profile, or any profile that supports VRS requestor workflows—do not treat “portal requires VRS alone” as the gate (that blocked manufacturers).',
+                    'Partners receive a secure link to respond to verification requests; this is not a dispenser VRS workstation and not plant commissioning.',
+                ]"
+            />
+            <x-marketing.detail-section
                 title="Reporting"
                 :items="[
                     'Verification summary reports by date range for compliance packages.',
                     'Period statistics exported alongside exception artifacts.',
                     'Supports management review and inspection requests.',
+                    'Dedicated GET /api/v1/compliance/* scorecard routes are not GA—use in-app verification history and scorecards today.',
                 ]"
             />
         </div>
