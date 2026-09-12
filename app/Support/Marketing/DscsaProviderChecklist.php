@@ -29,10 +29,11 @@ class DscsaProviderChecklist
                 'Which handoff methods are shipped today: commissioning forward, custom cutover, or both?',
             ],
             '3PL & principal operations' => [
-                'Can inventory and outbound be scoped per principal brand owner?',
+                'Can sites and outbound ship orders be filtered by principal (soft principal registry + filters are GA)?',
                 'Is cross-dock transfer between facilities auditable with scan verification?',
                 'Can lot-level and serialized lines ship on the same outbound order?',
-                'Are principal filters available on operations scorecards and dashboards (soft site/ship filters today; custody-isolated scorecards roadmap)?',
+                'Are principal filters available on operations scorecards, expiry, and HQ dashboards (soft filters GA)?',
+                'Is optional EPC custody enforcement available (tenant ops setting; default off) so serials can be gated per principal when enabled—without claiming isolation as the default product promise?',
             ],
             'Verification & dispensing' => [
                 'Do you log every VRS request with GTIN, serial, lot, expiry, outcome, and timestamp?',

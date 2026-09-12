@@ -1,6 +1,17 @@
 <x-filament-panels::page>
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body gap-4">
+            @if ($this->supportsPrincipalFilter())
+                <label class="form-control gap-1 max-w-xl">
+                    <span class="label-text text-sm font-medium">Principal</span>
+                    <select wire:model.live="principalId" class="select select-bordered">
+                        <option value="">All principals</option>
+                        @foreach ($this->principalOptions() as $id => $label)
+                            <option value="{{ $id }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            @endif
             <div class="overflow-x-auto">
                 <table class="table">
                     <thead>

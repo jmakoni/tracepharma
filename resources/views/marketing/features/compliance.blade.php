@@ -47,7 +47,7 @@
                 title="Operations scorecards"
                 :items="[
                     'Manufacturer and wholesaler scorecards with ACK health and blocked-reason trends.',
-                    '3PL soft principal registry and site/ship-order filters are GA for Logistics3pl; custody-isolated operations views remain on the roadmap.',
+                    '3PL soft principal registry and filters on sites, ship orders, scorecards, expiry, and HQ are GA for Logistics3pl; optional EPC custody enforcement (tenant ops; default off) gates serials per principal when enabled—not the default product promise.',
                     'Dispenser scorecard with PMS blocked-reason trends for pharmacy profiles.',
                 ]"
             />

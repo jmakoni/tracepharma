@@ -604,6 +604,11 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         return Epc::query()->find($this->parentEpcId);
     }
 
+    public function commissionSiteLabel(): string
+    {
+        return $this->commissionSite()?->name ?? 'No site selected';
+    }
+
     private function commissionSite(): ?Site
     {
         $siteId = CurrentSite::preferredId(

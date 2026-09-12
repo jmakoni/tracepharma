@@ -10,6 +10,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
@@ -21,8 +22,12 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class OpenScanFirstReceivingSession
 {
-    public function handle(?int $siteId = null, ?int $openedBy = null, ?string $notes = null): ReceivingSession
-    {
+    public function handle(
+        ?int $siteId = null,
+        ?int $openedBy = null,
+        ?string $notes = null,
+        ?int $principalId = null,
+    ): ReceivingSession {
         if (! TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             throw new DomainException('Receiving is not available for this tenant profile.');
         }
@@ -32,8 +37,10 @@ final class OpenScanFirstReceivingSession
         }
 
         $resolvedSiteId = $this->resolveSiteId($siteId);
+        $features = TenantFeatures::forTenant(tenant());
+        $resolvedPrincipalId = $this->resolvePrincipalId($features, $resolvedSiteId, $principalId);
 
-        return ReceivingSession::query()->create([
+        $attributes = [
             'session_kind' => ReceivingSessionKind::ScanFirst,
             'epcis_document_id' => null,
             'transferring_session_id' => null,
@@ -47,7 +54,34 @@ final class OpenScanFirstReceivingSession
             'confirmed_child_count' => 0,
             'opened_by' => $openedBy,
             'opened_at' => now(),
-        ]);
+        ];
+
+        if ($resolvedPrincipalId !== null && $features->supportsPrincipals()) {
+            $attributes['principal_id'] = $resolvedPrincipalId;
+        }
+
+        return ReceivingSession::query()->create($attributes);
+    }
+
+    private function resolvePrincipalId(TenantFeatures $features, int $siteId, ?int $principalId): ?int
+    {
+        if (! $features->supportsPrincipals()) {
+            return null;
+        }
+
+        if ($principalId === null || $principalId <= 0) {
+            $fromSite = Site::query()->whereKey($siteId)->value('principal_id');
+            $principalId = $fromSite !== null ? (int) $fromSite : null;
+        }
+
+        if (PrincipalCustody::forTenant()->isEnforced()
+            && ($principalId === null || $principalId <= 0)) {
+            throw new DomainException(
+                'Principal custody is enforced — select a principal (or set the site default) before opening receive.',
+            );
+        }
+
+        return $principalId !== null && $principalId > 0 ? $principalId : null;
     }
 
     private function resolveSiteId(?int $explicitSiteId): int

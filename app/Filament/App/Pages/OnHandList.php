@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Models\Epcis\Epc;
+use App\Models\Principal;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
@@ -35,6 +36,8 @@ class OnHandList extends Page implements HasKnowledgeBase
     protected string $view = 'filament.app.pages.on-hand-list';
 
     public ?int $siteId = null;
+
+    public ?int $principalId = null;
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -72,6 +75,24 @@ class OnHandList extends Page implements HasKnowledgeBase
         return EligibleReceiveSites::options($this->authUser());
     }
 
+    public function supportsPrincipalFilter(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsPrincipals();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function principalOptions(): array
+    {
+        return Principal::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id): array => [(int) $id => (string) $name])
+            ->all();
+    }
+
     /**
      * @return Collection<int, Epc>
      */
@@ -82,7 +103,13 @@ class OnHandList extends Page implements HasKnowledgeBase
             return collect();
         }
 
-        return app(ShippableEpcsAtSite::class)->query($siteId)
+        $query = app(ShippableEpcsAtSite::class)->query($siteId);
+        $principalId = $this->resolvedPrincipalId();
+        if ($principalId !== null) {
+            $query->where('epcs.principal_id', $principalId);
+        }
+
+        return $query
             ->with('ilmd')
             ->orderBy('epcs.id')
             ->limit(200)
@@ -106,6 +133,19 @@ class OnHandList extends Page implements HasKnowledgeBase
         }
 
         return $this->siteId;
+    }
+
+    private function resolvedPrincipalId(): ?int
+    {
+        if (! $this->supportsPrincipalFilter()) {
+            return null;
+        }
+
+        if ($this->principalId === null || $this->principalId <= 0) {
+            return null;
+        }
+
+        return $this->principalId;
     }
 
     private function authUser(): ?User

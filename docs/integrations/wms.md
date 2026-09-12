@@ -35,6 +35,10 @@ Create a token from **Settings → API tokens** in the App panel and include **W
 | `site_id` | No | Ship-from site when job roles limit site access |
 | `scans` | Yes | Array of GS1 element strings (at least one) |
 | `complete` | No | `false` to confirm scans without closing the session; omit or `true` to complete |
+| `expected_count` / `quantity` | No | Expected scan count for the ship order (`quantity` is an alias) |
+| `principal_id` | No* | Logistics3pl: TracePharma principal id |
+| `principal_external_ref` | No* | Logistics3pl: WMS client code → `principals.external_ref` (active) |
+| `principal_gln` | No* | Logistics3pl: client ATP GLN → `principals.gln` (active, 13 digits) |
 | `trading_partner_id` | No | Downstream customer / trading partner |
 | `customer_id` | No | Alias for trading partner |
 | `ship_to_site_id` | No | Destination site |
@@ -45,7 +49,13 @@ Create a token from **Settings → API tokens** in the App panel and include **W
 | `shipment_reference` | No | Free-text shipment reference |
 | `dscsa_affirm` | No | Affirm DSCSA TI/TS for the shipment |
 
-**Idempotency-Key** header is required in production. Replays with the same key return the original result; conflicting payloads return HTTP 409.
+\*Ignored unless the tenant profile supports principals (`Logistics3pl`). Provide any one of `principal_id`, `principal_external_ref`, or `principal_gln` (conflicting values → HTTP 422). When `principalCustodyEnforced` is on and the payload omits all principal hints **and** the ship-from site has no default principal, TracePharma **rejects** the request (HTTP 422 / `DomainException`). Soft mode may open with null principal or the site default. Full soft vs enforced semantics: [3pl-principals.md](3pl-principals.md).
+
+**Idempotency-Key** header is required in production. Replays with the same key return the original result; conflicting payloads (including a different principal) return HTTP 409.
+
+### Logistics3pl principals (cross-link)
+
+For multi-client 3PL tenants, ship-confirm can tag the outbound session with a principal via `principal_id`, `principal_external_ref`, or `principal_gln` (or rely on the site default). Tenant/hub GLNs (sites, own org) stay distinct from principal GLNs (TI seller / owning party when enforcement is on). See **[3PL principals](3pl-principals.md)** for hub vs principal identity, soft filters vs `principalCustodyEnforced`, role pack, and Wave D5 non-goals.
 
 ## Response
 
@@ -124,3 +134,4 @@ Platform admins can block WMS ship-confirm webhooks per tenant (**Block WMS ship
 
 - In-app: **Wholesaler / WMS pack**, **Integration health**, **API tokens**, **Organization settings**
 - Operations: Scan Out workstation, outbound shipping sessions, outbound EPCIS documents
+- Logistics3pl: [3PL principals](3pl-principals.md) (WMS principal map, soft vs enforced custody, hub vs principal GLNs)

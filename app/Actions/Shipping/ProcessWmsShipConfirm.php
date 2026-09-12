@@ -5,6 +5,7 @@ namespace App\Actions\Shipping;
 use App\Exceptions\WmsIdempotencyConflictException;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Support\Epcis\EpcisCacheLock;
+use App\Support\Shipping\ResolveWmsShipPrincipal;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Database\QueryException;
@@ -24,6 +25,7 @@ final class ProcessWmsShipConfirm
         private readonly UpdateOutboundShippingParty $updateParty,
         private readonly ValidateOutboundShippingSend $validateSend,
         private readonly CompleteOutboundShippingSession $completeSession,
+        private readonly ResolveWmsShipPrincipal $resolveWmsShipPrincipal,
     ) {}
 
     /**
@@ -130,10 +132,12 @@ final class ProcessWmsShipConfirm
             : null;
 
         $expectedCount = $this->payloadExpectedCount($payload);
+        $principalId = $this->resolveWmsShipPrincipal->handle($payload, $siteId);
 
         $session = $this->openSession->handle(
             $siteId,
             expectedCount: $expectedCount,
+            principalId: $principalId,
         );
 
         if ($idempotencyKey !== null) {
@@ -390,6 +394,32 @@ final class ProcessWmsShipConfirm
                     );
                 }
             }
+        }
+
+        $this->assertPrincipalMatchesSession($payload, $session);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function assertPrincipalMatchesSession(array $payload, OutboundShippingSession $session): void
+    {
+        $hasPrincipalHint = filled($payload['principal_external_ref'] ?? null)
+            || filled($payload['principal_gln'] ?? null)
+            || (isset($payload['principal_id']) && $payload['principal_id'] !== null && $payload['principal_id'] !== '');
+
+        if (! $hasPrincipalHint) {
+            return;
+        }
+
+        $siteId = $session->site_id !== null ? (int) $session->site_id : null;
+        $resolved = $this->resolveWmsShipPrincipal->handle($payload, $siteId);
+        $sessionPrincipal = $session->principal_id !== null ? (int) $session->principal_id : null;
+
+        if ($resolved !== $sessionPrincipal) {
+            throw new WmsIdempotencyConflictException(
+                'Idempotency key replay rejected: principal differs from the original request.',
+            );
         }
     }
 

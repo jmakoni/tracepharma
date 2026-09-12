@@ -10,6 +10,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Portal\PortalShipmentDisplay;
 use DomainException;
 use Illuminate\Database\Query\Builder;
@@ -191,7 +192,7 @@ final class TrackTraceExportQuery
 
         $generation = (int) ($document->ingest_generation ?? 1);
 
-        return DB::table('document_epcs as de')
+        $query = DB::table('document_epcs as de')
             ->join('epcs', 'epcs.id', '=', 'de.epc_id')
             ->leftJoin('epc_ilmd', 'epc_ilmd.epc_id', '=', 'epcs.id')
             ->where('de.document_id', $documentId)
@@ -207,6 +208,8 @@ final class TrackTraceExportQuery
                 DB::raw('de.document_id as document_id'),
             ])
             ->orderBy('epcs.id');
+
+        return PrincipalCustody::forTenant()->constrainEpcQueryForActor($query, $actor);
     }
 
     private function assertDocumentAccess(int $documentId, ?User $actor, ?DataExport $export = null): void

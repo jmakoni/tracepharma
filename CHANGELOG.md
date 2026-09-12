@@ -4,6 +4,11 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+### Changed
+
+- **Wave E GTM honesty (3PL custody)** — Marketing and compare copy: soft principal registry/filters GA (including scorecards); optional EPC custody enforcement as tenant ops setting (**default off**); do not claim serial isolation as the default product promise; not positioned as LSPedia Edge / ATP DB. In-app `PrincipalsHonesty` shows an enforced sentence when custody is on.
+- **Organization Settings** — Logistics 3PL tenants can toggle **Enforce principal custody (EPC isolation)** (`features.principal_custody_enforced`; default off).
+
 ## [1.6.0] — 2026-09-07
 
 ATTP-grade connections and tenant authorization: outbound network profiles, a central connection approval queue, hub GLN route directory, TracePharma-owned platform edges (AS2/SFTP), credential and connection-health lifecycle, go-live evidence, ATP depth, tenant lifecycle audit, an ops command center catalogue, and an admin menu manager.

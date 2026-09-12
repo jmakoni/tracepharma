@@ -6,6 +6,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\EpcisQueryFieldRegistry;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
@@ -122,7 +123,7 @@ final class SearchEpcisSchema
             $query = SiteAccess::constrainEpcsViaInboundDocuments($query, $actor);
         }
 
-        return $query;
+        return PrincipalCustody::forTenant()->constrainEpcQueryForActor($query, $actor);
     }
 
     /**

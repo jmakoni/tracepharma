@@ -6,6 +6,7 @@ use App\Actions\Disposition\EmitReturningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -17,6 +18,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Disposition\SaleableReturnScorecardMetrics;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -26,7 +28,6 @@ use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -212,7 +213,10 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $custodyGate->assertInCustody($epc, 'returning');
+            $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite(
+                $this->siteId ?? ($site->getKey() !== null ? (int) $site->getKey() : null),
+            );
+            $custodyGate->assertInCustody($epc, 'returning', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -396,7 +400,8 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
             }
 
             try {
-                $custodyGate->assertInCustody($epc, 'returning');
+                $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+                $custodyGate->assertInCustody($epc, 'returning', $principalId);
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();
             }

@@ -14,7 +14,7 @@ TracePharma gates Filament App navigation and page access from **tenant profile*
 | Prepackager | Distributor | Prepackager |
 | Logistics (3PL) | ThreePl | 3PL / Logistics |
 | Dental / Medical Supply | Distributor | Dental / Medical Supply |
-| Buying Group | Distributor | Buying Group |
+| Buying Group | Buying group | Buying Group |
 
 Resolution path:
 
@@ -36,7 +36,7 @@ All values come from `App\Support\TenantFeatures` `supports*` methods.
 | `supportsTransferring()` | ✓ | | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsUnpacking()` | | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsPacking()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
-| `supportsCommissioning()` | | ✓ | ✓ | ✓ | ✓ | ✓ | | |
+| `supportsCommissioning()` | | ✓ | | ✓ | | | | Greenfield commission/decommission ObjectEvents only |
 | `supportsReturning()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsMasterData()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | B excluded |
 | `supportsPrincipals()` | | | | | ✓ | | | Soft 3PL principal registry + FK filters only |
@@ -60,9 +60,13 @@ Related helpers (not `supports*`, but used in nav):
 
 \* Pharmacy only: `false` when tenant setting `pharmacySimplifiedNavEnabled()` is on (`TenantSettings`); otherwise `true`.
 
+### Dental / Medical Supply = wholesaler-lite
+
+Dental / Medical Supply = distributor ops (receive/ship/VRS/pack/SSCC); no plant commission. Wholesaler-lite — use `isFullWholesalerFamilyProfile()` for future W-only flags so dental does not inherit by copy-paste. Do not map dental → Pharmacy.
+
 ### Buying Group = control-plane only
 
-Buying Group is the special case: **Distributor** type in UI, but **no floor or master-data tenant**.
+Buying Group is **not** a Distributor floor tenant. Display type is **Buying group**. Capabilities: member roster + ATP readiness + alert center only — no receive/ship floor, master-data CRUD, or inbound integrations.
 
 | Area | Buying Group |
 |---|---|
@@ -73,9 +77,9 @@ Buying Group is the special case: **Distributor** type in UI, but **no floor or 
 | Compliance cases / 3911 (`supportsComplianceCases()`) | **Off** |
 | Partner ATP readiness (`supportsPartnerReadiness()`) | **On** (explicit exception) |
 | Compliance alert center shell (`supportsComplianceAlertCenter()`) | **On** (integration/ATP signals without quarantine/3911) |
-| Member roster (`supportsBuyingGroupNetwork()`) | **On** (roster CRUD only — health/matrix/APIs deferred) |
+| Member roster (`supportsBuyingGroupNetwork()`) | **On** (roster CRUD only — no health scorecards / matrix / member compliance APIs) |
 
-Buying groups see network control-plane surfaces (partner licence visibility, alert center, member roster) without operational workflows. Authorized-partner matrix and member compliance APIs remain deferred.
+Buying groups see network control-plane surfaces without operational workflows. Member scorecards, authorized-partner matrix, and member compliance APIs remain out of scope.
 
 ## Navigation gating stack
 
@@ -100,7 +104,7 @@ Filament visibility is evaluated in layers:
 | Surface | Profile gate | Additional gates |
 |---|---|---|
 | **ATP readiness** (`AtpPartnerReadiness`) | `supportsPartnerReadiness()` | `JobRoleAccess::allows(NavCompliance)` |
-| **Member roster** (`BuyingGroupMemberResource`) | `supportsBuyingGroupNetwork()` | `JobRoleAccess::allows(NavCompliance)` |
+| **Member roster** (`BuyingGroupMemberResource`) | `supportsBuyingGroupNetwork()` | Owner **or** `UsersManage` |
 | **Alert center** (`ComplianceAlertCenter`) | `supportsComplianceAlertCenter()` | `allowsAny(NavExceptions, NavCompliance)` |
 | **Organization** (`OrganizationSettings`) | `supportsMasterData()` | `JobRoleAccess::canAccessOrganizationSettings()` |
 | **Operations Hub** (`OperationsHub`) | `hasAnyOperations()` | `allowsAny(NavReceive, NavShip, NavExceptions, NavVerify)`; nav may use `HidesForPharmacySimplifiedNav` |

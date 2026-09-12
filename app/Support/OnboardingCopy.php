@@ -24,6 +24,11 @@ class OnboardingCopy
 
     public function subheading(): string
     {
+        if ($this->features->profile() === TenantProfile::Logistics3pl) {
+            return 'Set up your 3PL for DSCSA receive and ship — company GLN, sites, partners, and inbound path. '
+                .PrincipalsHonesty::SENTENCE;
+        }
+
         if ($this->usesWholesalerChecklist()) {
             return 'Set up your drug wholesaler for DSCSA receive and ship — company GLN, sites, partners, and inbound path.';
         }
@@ -33,6 +38,11 @@ class OnboardingCopy
 
     public function banner(): string
     {
+        if ($this->features->profile() === TenantProfile::Logistics3pl) {
+            return '3PL setup: receive and ship on behalf of clients with the right GLNs and sites. '
+                .PrincipalsHonesty::SENTENCE;
+        }
+
         if ($this->usesWholesalerChecklist()) {
             return 'Drug wholesaler setup: receive from manufacturers/upstream partners and ship to pharmacies with the right GLNs and sites.';
         }

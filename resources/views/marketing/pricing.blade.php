@@ -42,7 +42,7 @@
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Sites &amp; GLNs</p>
-                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Facility count, ship-from and receive-at GLNs, and whether you need multi-principal 3PL custody isolation (roadmap) across locations.</p>
+                <p class="mt-3 text-sm leading-relaxed text-tp-muted">Facility count, ship-from and receive-at GLNs, and whether soft principal filters are enough or you need optional EPC custody enforcement (ops setting; default off) across locations.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Partner connections</p>
@@ -50,7 +50,7 @@
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Optional modules</p>
-                <p class="mt-3 text-sm leading-relaxed text-tp-muted">VRS verification, POST /api/v1/dispense-check, L3 commissioning forward, compliance export API, and (roadmap) multi-principal 3PL custody reporting.</p>
+                <p class="mt-3 text-sm leading-relaxed text-tp-muted">VRS verification, POST /api/v1/dispense-check, L3 commissioning forward, compliance export API, and optional 3PL EPC custody enforcement (ops setting; default off—soft filters remain the default promise).</p>
             </div>
         </div>
     </section>

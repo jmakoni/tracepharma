@@ -29,7 +29,7 @@ class TenantProfileTenantTypeTest extends TestCase
             'drug_wholesaler' => [TenantProfile::DrugWholesaler, TenantType::Distributor],
             'prepackager' => [TenantProfile::Prepackager, TenantType::Distributor],
             'dental_medical_supply' => [TenantProfile::DentalMedicalSupply, TenantType::Distributor],
-            'buying_group' => [TenantProfile::BuyingGroup, TenantType::Distributor],
+            'buying_group' => [TenantProfile::BuyingGroup, TenantType::BuyingGroup],
         ];
     }
 
@@ -39,5 +39,6 @@ class TenantProfileTenantTypeTest extends TestCase
         $this->assertSame('Pharmacy', TenantType::Pharmacy->label());
         $this->assertSame('Distributor', TenantType::Distributor->label());
         $this->assertSame('3PL / Logistics', TenantType::ThreePl->label());
+        $this->assertSame('Buying group', TenantType::BuyingGroup->label());
     }
 }

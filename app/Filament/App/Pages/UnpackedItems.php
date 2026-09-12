@@ -84,7 +84,7 @@ class UnpackedItems extends Page implements HasKnowledgeBase, HasTable
             ->columns([
                 TextColumn::make('identifier')
                     ->label('Identifier')
-                    ->state(fn (Epc $record): string => Gs1DualDisplay::forEpc($record)['primary'])
+                    ->state(fn (Epc $record): string => Gs1DualDisplay::forEpc($record)['gs1_barcode'])
                     ->searchable(query: function (Builder $query, string $search): Builder {
                         $like = '%'.$search.'%';
 

@@ -27,7 +27,7 @@ final class HqRollupMetrics
      *     vrs_fail_pct: ?float
      * }>
      */
-    public function bySite(): array
+    public function bySite(?int $principalId = null): array
     {
         $sites = Site::query()
             ->ownedByOrganization()
@@ -40,9 +40,10 @@ final class HqRollupMetrics
             return [];
         }
 
-        $receive = $this->receiveFill();
-        $exceptions = $this->exceptionAging();
-        $vrs = $this->vrsFail();
+        $principalId = $this->normalizedPrincipalId($principalId);
+        $receive = $this->receiveFill($principalId);
+        $exceptions = $this->exceptionAging($principalId);
+        $vrs = $this->vrsFail($principalId);
 
         $rows = [];
         foreach ($sites as $site) {
@@ -72,12 +73,18 @@ final class HqRollupMetrics
     /**
      * @return array<int, array{expected: int, confirmed: int}>
      */
-    private function receiveFill(): array
+    private function receiveFill(?int $principalId = null): array
     {
-        $rows = ReceivingSession::query()
+        $query = ReceivingSession::query()
             ->where('status', 'completed')
             ->where('completed_at', '>=', now()->subDays(30))
-            ->whereNotNull('site_id')
+            ->whereNotNull('site_id');
+
+        if ($principalId !== null) {
+            $query->where('principal_id', $principalId);
+        }
+
+        $rows = $query
             ->toBase()
             ->selectRaw('site_id, COALESCE(SUM(expected_child_count), 0) as expected, COALESCE(SUM(confirmed_child_count), 0) as confirmed')
             ->groupBy('site_id')
@@ -97,10 +104,14 @@ final class HqRollupMetrics
     /**
      * @return array<int, array{open: int, old: int}>
      */
-    private function exceptionAging(): array
+    private function exceptionAging(?int $principalId = null): array
     {
         $query = ExceptionCase::query()->open()->whereNotNull('site_id');
         SiteAccess::constrainExceptionCases($query);
+
+        if ($principalId !== null) {
+            $query->where('principal_id', $principalId);
+        }
 
         $cutoff = now()->subDays(7);
         $rows = (clone $query)
@@ -123,15 +134,20 @@ final class HqRollupMetrics
     /**
      * @return array<int, array{total: int, blocked: int}>
      */
-    private function vrsFail(): array
+    private function vrsFail(?int $principalId = null): array
     {
         $query = Verification::query()
             ->where('verifications.created_at', '>=', now()->subDays(30));
 
         SiteAccess::constrainVerifications($query, 'exception', 'verified_by');
 
+        $query->leftJoin('exceptions', 'exceptions.id', '=', 'verifications.exception_id');
+
+        if ($principalId !== null) {
+            $query->where('exceptions.principal_id', $principalId);
+        }
+
         $rows = $query
-            ->leftJoin('exceptions', 'exceptions.id', '=', 'verifications.exception_id')
             ->toBase()
             ->selectRaw('COALESCE(exceptions.site_id, CAST(JSON_UNQUOTE(JSON_EXTRACT(verifications.request_payload, \'$.site_id\')) AS UNSIGNED)) as site_id')
             ->selectRaw('COUNT(*) as total')
@@ -149,5 +165,14 @@ final class HqRollupMetrics
         }
 
         return $out;
+    }
+
+    private function normalizedPrincipalId(?int $principalId): ?int
+    {
+        if ($principalId === null || $principalId <= 0) {
+            return null;
+        }
+
+        return $principalId;
     }
 }

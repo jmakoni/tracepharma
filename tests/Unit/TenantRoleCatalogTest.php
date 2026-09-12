@@ -48,17 +48,30 @@ class TenantRoleCatalogTest extends TestCase
     }
 
     #[Test]
-    public function three_pl_personas_are_distinct_from_pharmacy(): void
+    public function three_pl_includes_floor_wms_and_verify_roles(): void
+    {
+        $roles = TenantRole::forProfile(TenantProfile::Logistics3pl);
+
+        $this->assertContains(TenantRole::ReceivingTechnician, $roles);
+        $this->assertContains(TenantRole::OutboundPickAndPackLead, $roles);
+        $this->assertContains(TenantRole::InboundExceptionCoordinator, $roles);
+        $this->assertContains(TenantRole::AtpVerificationManager, $roles);
+        $this->assertContains(TenantRole::VrsAnalyst, $roles);
+        $this->assertContains(TenantRole::WmsIntegrationSpecialist, $roles);
+        $this->assertContains(TenantRole::QuarantineAndReturnsSpecialist, $roles);
+        $this->assertNotContains(TenantRole::DispensingPharmacist, $roles);
+        $this->assertNotContains(TenantRole::PharmacyInventoryManager, $roles);
+    }
+
+    #[Test]
+    public function three_pl_keeps_wms_specialist_absent_from_pharmacy(): void
     {
         $threePl = collect(TenantRole::forProfile(TenantProfile::Logistics3pl))->map->value->all();
         $pharmacy = collect(TenantRole::forProfile(TenantProfile::Pharmacy))->map->value->all();
 
         $this->assertContains(TenantRole::WmsIntegrationSpecialist->value, $threePl);
-        $sharedNonOwner = array_intersect(
-            array_diff($threePl, [TenantRole::Owner->value, TenantRole::SupportEngineer->value]),
-            array_diff($pharmacy, [TenantRole::Owner->value, TenantRole::SupportEngineer->value]),
-        );
-        $this->assertEmpty($sharedNonOwner);
+        $this->assertNotContains(TenantRole::WmsIntegrationSpecialist->value, $pharmacy);
+        $this->assertNotContains(TenantRole::DispensingPharmacist->value, $threePl);
     }
 
     #[Test]

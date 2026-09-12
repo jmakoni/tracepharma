@@ -1,14 +1,13 @@
-# Products and principals
+# Products
 
 Filament classes:
 
 - `App\Filament\App\Resources\Products\ProductResource`
 - `App\Filament\App\Resources\FdaProducts\FdaProductResource`
-- `App\Filament\App\Resources\Principals\PrincipalResource`
 
 ## When to use
 
-Maintain tenant product catalog, link FDA product reference data, and manage principals (brand owners / responsible parties) used in labeling and EPCIS.
+Maintain tenant product catalog and link FDA product reference data.
 
 ## Prerequisites
 
@@ -19,13 +18,14 @@ Maintain tenant product catalog, link FDA product reference data, and manage pri
 
 1. Open **Product directory** from Operations Hub Directories (`/products`), or **Products** in nav; create or edit tenant products. Open the page and use Help for live UI.
 2. Open **FDA Products** from Hub Directories (`/fda-products`) to browse registry-backed reference rows and associate where supported (partner-first authorize path).
-3. Maintain **Principals** for ownership / labeling attribution.
-4. Verify GTINs appear correctly on commission and outbound flows.
+3. See [../operations/principals.md](../operations/principals.md) for Logistics 3PL principals.
+4. Verify GTINs appear correctly on commission and outbound flows (commission is manufacturer/prepackager only).
 
 ## Related pages
 
 - [trading-partners.md](trading-partners.md) — partner master
 - [sites-and-devices.md](sites-and-devices.md) — sites that stock products
+- [../operations/principals.md](../operations/principals.md) — Logistics 3PL principals
 - [../settings/labeling.md](../settings/labeling.md) — SSCC / label ranges
 - [../compliance/expiry-worklist.md](../compliance/expiry-worklist.md) — expiry by product/lot
 

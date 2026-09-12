@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Models\Principal;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -27,6 +28,8 @@ class HqRollup extends Page implements HasKnowledgeBase
     protected static string|UnitEnum|null $navigationGroup = 'Compliance';
 
     protected string $view = 'filament.app.pages.hq-rollup';
+
+    public ?int $principalId = null;
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -55,12 +58,43 @@ class HqRollup extends Page implements HasKnowledgeBase
         return 'Receive fill, exception aging, and VRS fail rate by site. Dashboard and Analytics stay as they are.';
     }
 
+    public function supportsPrincipalFilter(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsPrincipals();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function principalOptions(): array
+    {
+        return Principal::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id): array => [(int) $id => (string) $name])
+            ->all();
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
     public function rows(): array
     {
-        return app(HqRollupMetrics::class)->bySite();
+        return app(HqRollupMetrics::class)->bySite($this->resolvedPrincipalId());
+    }
+
+    private function resolvedPrincipalId(): ?int
+    {
+        if (! $this->supportsPrincipalFilter()) {
+            return null;
+        }
+
+        if ($this->principalId === null || $this->principalId <= 0) {
+            return null;
+        }
+
+        return $this->principalId;
     }
 
     public static function getDocumentation(): array|string

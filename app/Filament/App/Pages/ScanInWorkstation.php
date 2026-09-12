@@ -164,6 +164,15 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             ->count();
     }
 
+    public function contextSiteLabel(): string
+    {
+        $session = $this->session();
+
+        return $session?->site?->name
+            ?? $session?->tradingPartner?->name
+            ?? 'No site selected';
+    }
+
     public function promptCopy(): array
     {
         return ReceivingPolicy::forTenant(tenant())->promptCopy($this->session());
@@ -279,7 +288,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                 Action::make('completeReceiving')
                     ->label('Complete receive')
                     ->icon(Heroicon::OutlinedCheckCircle)
-                    ->color('success')
+                    ->color('primary')
                     ->visible(fn (): bool => $this->canCompleteManually())
                     ->requiresConfirmation()
                     ->modalHeading('Complete scan-first receive?')
@@ -387,7 +396,42 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
     }
 
     /**
-     * @return Collection<int, array{line_id: int, serial: string, label: string, confirmed: bool}>
+     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool}>
+     */
+    public function confirmedScanRows(): Collection
+    {
+        if ($this->sessionId === null) {
+            return collect();
+        }
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->sessionId)
+            ->where('status', 'confirmed')
+            ->with([
+                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
+                'epc.ilmd',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->map(function (ReceivingScanLine $line): array {
+                $epc = $line->epc;
+                $display = $epc instanceof Epc
+                    ? Gs1DualDisplay::forEpc($epc)
+                    : ['gs1_barcode' => (string) ($line->scan_raw ?? '—'), 'urn' => ''];
+
+                return [
+                    'line_id' => (int) $line->getKey(),
+                    'identifier' => $display['gs1_barcode'] !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s') ?? '—',
+                    'urn' => $display['urn'] !== '' ? $display['urn'] : '—',
+                    'present' => true,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool, serial: string, label: string, confirmed: bool}>
      */
     public function caseRows(): Collection
     {
@@ -411,21 +455,71 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             ->where('receiving_session_id', $this->sessionId)
             ->where('line_role', 'child')
             ->whereIn('parent_epc_id', $parentIds)
-            ->with('epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21')
+            ->with([
+                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
+                'epc.ilmd',
+            ])
             ->orderBy('id')
             ->get()
             ->map(function (ReceivingScanLine $line): array {
                 $epc = $line->epc;
                 $serial = $epc?->serial_number ?? '';
+                $display = $epc instanceof Epc
+                    ? Gs1DualDisplay::forEpc($epc)
+                    : ['gs1_barcode' => $serial, 'urn' => '', 'primary' => $serial];
+                $confirmed = $line->status === 'confirmed';
 
                 return [
                     'line_id' => (int) $line->getKey(),
                     'serial' => $serial,
-                    'label' => $epc instanceof Epc ? Gs1DualDisplay::forEpc($epc)['primary'] : $serial,
-                    'confirmed' => $line->status === 'confirmed',
+                    'label' => $display['primary'] ?? $serial,
+                    'identifier' => ($display['gs1_barcode'] ?? '') !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => $confirmed
+                        ? ($line->confirmed_at?->format('Y-m-d H:i:s') ?? '—')
+                        : '—',
+                    'urn' => ($display['urn'] ?? '') !== '' ? $display['urn'] : '—',
+                    'present' => $confirmed,
+                    'confirmed' => $confirmed,
                 ];
             })
             ->values();
+    }
+
+    public function removeConfirmed(int $lineId): void
+    {
+        $session = $this->session();
+        if ($session === null || $session->status === 'completed') {
+            return;
+        }
+
+        $line = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null) {
+            $this->flashScan('error', 'Scan not found on this session.');
+
+            return;
+        }
+
+        if ($line->status !== 'confirmed') {
+            return;
+        }
+
+        try {
+            app(UnconfirmReceivingScanLine::class)->handle(
+                $line,
+                auth()->id(),
+                allowChildUnderConfirmedParent: $line->line_role === 'child',
+            );
+        } catch (DomainException $e) {
+            $this->flashScan('error', $e->getMessage());
+
+            return;
+        }
+
+        $this->flashScan('ok', 'Removed from this receive.');
     }
 
     public function removeCase(int $lineId): void
@@ -447,23 +541,10 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if ($line->status !== 'confirmed') {
-            return;
+        $this->removeConfirmed($lineId);
+        if ($this->lastScanTone === 'ok') {
+            $this->flashScan('ok', 'Case removed from this receive.');
         }
-
-        try {
-            app(UnconfirmReceivingScanLine::class)->handle(
-                $line,
-                auth()->id(),
-                allowChildUnderConfirmedParent: true,
-            );
-        } catch (DomainException $e) {
-            $this->flashScan('error', $e->getMessage());
-
-            return;
-        }
-
-        $this->flashScan('ok', 'Case removed from this receive.');
     }
 
     private function loadSession(int $sessionId): void

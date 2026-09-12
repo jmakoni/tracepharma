@@ -7,33 +7,42 @@ group: Operations
 
 # Buying Group
 
+---
+title: Buying Group
+parent: operations
+order: 25
+group: Operations
+---
+
+# Buying Group
+
 Filament classes:
 
 - `App\Filament\App\Resources\BuyingGroupMembers\BuyingGroupMemberResource`
 
 ## When to use
 
-Maintain buying-group membership for tenants that participate in GPO / buying-group limited workflows.
+Maintain the buying-group **member roster** on a control-plane tenant (roster + ATP readiness + alerts). There is no warehouse floor, master-data CRUD, or member health scorecards on this profile.
 
 ## Prerequisites
 
-- Buying-group features enabled for the tenant profile.
-- Member identifiers and eligibility known.
+- Tenant profile is Buying Group.
+- Member identifiers and contact status known.
 
 ## Steps
 
-1. Open **Buying group members**. Open the page and use Help for live UI.
+1. Open **Member roster**. Use Help for live UI.
 2. Create or edit members with required identifiers and status.
-3. Deactivate members who leave the group.
-4. Confirm limited banners / gates behave correctly for non-members.
+3. Suspend or remove members who leave the group.
+4. Use **ATP readiness** and **Alert center** for network visibility — not receive/ship ops.
 
 ## Related pages
 
-- [../master-data/trading-partners.md](../master-data/trading-partners) — related partner records
-- [../settings/settings-hub.md](../settings/settings-hub) — organization context
-- [on-hand-and-unpacked.md](../operations/on-hand-and-unpacked) — inventory still site-scoped
+- ATP readiness and Compliance alert center (control-plane)
+- [../settings/settings-hub.md](../settings/settings-hub) — not available for buying-group profiles
 
 ## Notes
 
-- Membership changes can immediately affect UI gates — communicate to warehouse users.
-- Not all tenant types show this resource.
+- Display organization type is **Buying group**, not Distributor.
+- Membership changes affect roster visibility only — there is no floor ops surface for this profile.
+- Member health scorecards and compliance APIs are not part of this resource.

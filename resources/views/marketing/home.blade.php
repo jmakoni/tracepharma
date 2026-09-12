@@ -113,7 +113,7 @@
             :industries="[
                 ['label' => 'Manufacturer', 'title' => 'Drug manufacturers', 'description' => 'L3 commissioning forward, outbound EPCIS, and customer ACK health.', 'href' => route('marketing.solutions.manufacturers'), 'highlight' => true],
                 ['label' => 'Distributor', 'title' => 'Drug wholesalers', 'description' => 'Receive-to-ship L4 with ACK monitoring and exceptions.', 'href' => route('marketing.solutions.wholesalers'), 'highlight' => true],
-                ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Principal-scoped receiving, cross-dock, and lot-level ship.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
+                ['label' => '3PL', 'title' => 'Logistics & 3PL', 'description' => 'Soft principal filters GA; optional EPC custody enforcement (default off) when serials must be gated per client.', 'href' => route('marketing.solutions.3pl'), 'highlight' => true],
                 ['label' => 'Dispenser', 'title' => 'Pharmacies', 'description' => 'Receive, verify, dispense, and file FDA 3911.', 'href' => route('marketing.solutions.pharmacies')],
                 ['label' => 'Repack', 'title' => 'Prepackagers', 'description' => 'Bulk receive, repack lineage, and outbound EPCIS with new serials.', 'href' => route('marketing.solutions.prepackagers')],
                 ['label' => 'Network', 'title' => 'Buying groups', 'description' => 'Member health, exception trends, and partner authorization.', 'href' => route('marketing.solutions.buying-groups')],
@@ -138,8 +138,8 @@
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">3PL</p>
-                <p class="mt-3 font-semibold text-tp-ink">3PL floor + soft principal tags</p>
-                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Same receive → ship spine as wholesalers, with optional principal labels on sites and ship orders for filtering — not custody-isolated inventory partitions.</p>
+                <p class="mt-3 font-semibold text-tp-ink">3PL floor + soft principal filters</p>
+                <p class="mt-2 text-sm leading-relaxed text-tp-muted">Same receive → ship spine as wholesalers, with soft principal filters on sites, ship orders, and scorecards (GA). Optional EPC custody enforcement (tenant ops; default off) gates serials per principal when enabled—not the default product promise.</p>
             </div>
             <div class="tp-card p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-tp-teal-400">Dispenser</p>

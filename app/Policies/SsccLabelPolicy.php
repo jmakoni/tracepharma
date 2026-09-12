@@ -17,7 +17,7 @@ class SsccLabelPolicy
     {
         $features = TenantFeatures::forTenant(tenant());
 
-        return ($features->supportsPacking() || $features->supportsSsccLabeling())
+        return $features->supportsSsccLabeling()
             && JobRoleAccess::allows(Permissions::NavMasterData, $user);
     }
 

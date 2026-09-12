@@ -230,6 +230,61 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function save_persists_principal_custody_enforced_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $prior = TenantSettings::forTenant($tenant)->principalCustodyEnforced();
+
+        try {
+            $site = Site::query()->create([
+                'name' => 'Principal Custody Toggle Site',
+                'gln' => '0366159000097',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+
+            $this->setProfile($tenant, TenantProfile::Logistics3pl);
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsPrincipals());
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('principal_custody_enforced')
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'principal_custody_enforced' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->principalCustodyEnforced());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'principal_custody_enforced' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->principalCustodyEnforced());
+        } finally {
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced($prior);
+            $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function save_persists_block_send_on_atp_gap_toggle(): void
     {
         $tenant = $this->initializeDemo2Tenant();

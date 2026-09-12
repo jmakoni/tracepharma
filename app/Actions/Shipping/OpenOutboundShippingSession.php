@@ -3,10 +3,12 @@
 namespace App\Actions\Shipping;
 
 use App\Models\Shipping\OutboundShippingSession;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -55,6 +57,9 @@ final class OpenOutboundShippingSession
             SiteAccess::assertCanAccessSite($user, $siteId);
         }
 
+        $features = TenantFeatures::forTenant(tenant());
+        $principalId = $this->resolvePrincipalId($features, $siteId, $principalId);
+
         $attributes = [
             'site_id' => $siteId,
             'status' => 'open',
@@ -68,10 +73,7 @@ final class OpenOutboundShippingSession
             'opened_at' => now(),
         ];
 
-        if (
-            $principalId !== null
-            && TenantFeatures::forTenant(tenant())->supportsPrincipals()
-        ) {
+        if ($principalId !== null && $features->supportsPrincipals()) {
             $attributes['principal_id'] = $principalId;
         }
 
@@ -82,5 +84,26 @@ final class OpenOutboundShippingSession
         }
 
         return OutboundShippingSession::query()->create($attributes);
+    }
+
+    private function resolvePrincipalId(TenantFeatures $features, int $siteId, ?int $principalId): ?int
+    {
+        if (! $features->supportsPrincipals()) {
+            return null;
+        }
+
+        if ($principalId === null || $principalId <= 0) {
+            $fromSite = Site::query()->whereKey($siteId)->value('principal_id');
+            $principalId = $fromSite !== null ? (int) $fromSite : null;
+        }
+
+        if (PrincipalCustody::forTenant()->isEnforced()
+            && ($principalId === null || $principalId <= 0)) {
+            throw new DomainException(
+                'Principal custody is enforced — select a principal (or set the site default) before opening a ship order.',
+            );
+        }
+
+        return $principalId !== null && $principalId > 0 ? $principalId : null;
     }
 }

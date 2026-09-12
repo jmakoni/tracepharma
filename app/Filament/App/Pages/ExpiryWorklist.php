@@ -2,7 +2,9 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
+use App\Models\Principal;
 use App\Models\User;
 use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\CurrentSite;
@@ -14,7 +16,6 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\Gs1DualDisplay;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -38,6 +39,8 @@ class ExpiryWorklist extends Page implements HasKnowledgeBase
     protected string $view = 'filament.app.pages.expiry-worklist';
 
     public ?int $siteId = null;
+
+    public ?int $principalId = null;
 
     public int $windowDays = 90;
 
@@ -113,6 +116,24 @@ class ExpiryWorklist extends Page implements HasKnowledgeBase
         return EligibleReceiveSites::options($this->authUser());
     }
 
+    public function supportsPrincipalFilter(): bool
+    {
+        return TenantFeatures::forTenant(tenant())->supportsPrincipals();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function principalOptions(): array
+    {
+        return Principal::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn ($name, $id): array => [(int) $id => (string) $name])
+            ->all();
+    }
+
     /**
      * @return Collection<int, Epc>
      */
@@ -127,15 +148,22 @@ class ExpiryWorklist extends Page implements HasKnowledgeBase
 
         $today = now()->toDateString();
         $until = now()->addDays($window)->toDateString();
+        $principalId = $this->resolvedPrincipalId();
 
-        return Epc::query()
+        $query = Epc::query()
             ->where('epcs.epc_type', 'sgtin')
             ->whereHas('ilmd', function ($query) use ($today, $until): void {
                 $query->whereNotNull('expiry_date')
                     ->whereDate('expiry_date', '>=', $today)
                     ->whereDate('expiry_date', '<=', $until);
             })
-            ->whereIn('epcs.id', app(ShippableEpcsAtSite::class)->query($siteId)->select('epcs.id'))
+            ->whereIn('epcs.id', app(ShippableEpcsAtSite::class)->query($siteId)->select('epcs.id'));
+
+        if ($principalId !== null) {
+            $query->where('epcs.principal_id', $principalId);
+        }
+
+        return $query
             ->with('ilmd')
             ->join('epc_ilmd', 'epc_ilmd.epc_id', '=', 'epcs.id')
             ->orderBy('epc_ilmd.expiry_date')
@@ -172,6 +200,19 @@ class ExpiryWorklist extends Page implements HasKnowledgeBase
         }
 
         return $this->siteId;
+    }
+
+    private function resolvedPrincipalId(): ?int
+    {
+        if (! $this->supportsPrincipalFilter()) {
+            return null;
+        }
+
+        if ($this->principalId === null || $this->principalId <= 0) {
+            return null;
+        }
+
+        return $this->principalId;
     }
 
     private function authUser(): ?User

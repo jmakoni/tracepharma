@@ -7,14 +7,18 @@ namespace Tests\Feature\Auth;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Pages\Analytics;
+use App\Filament\App\Pages\BreakPackWorkstation;
 use App\Filament\App\Pages\OperationsHub;
 use App\Filament\App\Pages\PackWorkstation;
+use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
+use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -27,11 +31,11 @@ class PharmacySimplifiedNavTest extends TestCase
     #[Test]
     public function simplified_nav_hides_wholesaler_floor_pages_for_pharmacy(): void
     {
-        $tenant = $this->initializeTenant();
+        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
-            TenantSettings::forTenant($tenant)->setPharmacySimplifiedNavEnabled(true);
-            $tenant->save();
+            TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(true);
+            tenant()?->save();
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
@@ -41,6 +45,8 @@ class PharmacySimplifiedNavTest extends TestCase
 
             $this->assertFalse(OperationsHub::shouldRegisterNavigation());
             $this->assertFalse(PackWorkstation::shouldRegisterNavigation());
+            $this->assertFalse(BreakPackWorkstation::shouldRegisterNavigation());
+            $this->assertFalse(SsccLabelResource::canAccess());
             $this->assertFalse(Analytics::shouldRegisterNavigation());
             $this->assertFalse(TransferringSessionResource::shouldRegisterNavigation());
         } finally {
@@ -49,13 +55,13 @@ class PharmacySimplifiedNavTest extends TestCase
     }
 
     #[Test]
-    public function disabling_simplified_nav_restores_wholesaler_pages(): void
+    public function pharmacy_keeps_pack_off_sidebar_when_simplified_nav_disabled(): void
     {
-        $tenant = $this->initializeTenant();
+        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
-            TenantSettings::forTenant($tenant)->setPharmacySimplifiedNavEnabled(false);
-            $tenant->save();
+            TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(false);
+            tenant()?->save();
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
@@ -63,14 +69,72 @@ class PharmacySimplifiedNavTest extends TestCase
             $user->assignRole(TenantRole::Owner->value);
             $this->actingAs($user);
 
+            $features = TenantFeatures::forTenant(tenant());
+            $this->assertTrue($features->supportsPacking());
+            $this->assertTrue($features->showsWholesaleOperationsNav());
             $this->assertTrue(OperationsHub::shouldRegisterNavigation());
-            $this->assertTrue(PackWorkstation::shouldRegisterNavigation());
+            $this->assertFalse(PackWorkstation::shouldRegisterNavigation());
+            $this->assertFalse(BreakPackWorkstation::shouldRegisterNavigation());
+            $this->assertFalse(SsccLabelResource::canAccess());
+
+            $hub = Livewire::test(OperationsHub::class)->instance();
+            $labels = collect($hub->directories())->pluck('label')->all();
+            $this->assertContains('Packing', $labels);
+            $this->assertContains('Break & pack', $labels);
+            $this->assertTrue($hub->featureMap()['Packing'] ?? false);
         } finally {
             tenancy()->end();
         }
     }
 
-    private function initializeTenant(): Tenant
+    #[Test]
+    public function pharmacy_simplified_hides_pack_from_hub_feature_map(): void
+    {
+        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
+
+        try {
+            TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(true);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            // Hub page itself is not in nav; feature map still must not advertise Packing.
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav());
+            $this->assertFalse(
+                (new OperationsHub)->featureMap()['Packing'] ?? true,
+            );
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function wholesaler_pack_stays_in_sidebar(): void
+    {
+        $tenant = $this->initializeTenant(TenantProfile::DrugWholesaler);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsPacking());
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsSsccLabeling());
+            $this->assertTrue(PackWorkstation::shouldRegisterNavigation());
+            $this->assertTrue(BreakPackWorkstation::shouldRegisterNavigation());
+            $this->assertTrue(SsccLabelResource::canAccess());
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    private function initializeTenant(TenantProfile $profile): Tenant
     {
         $tenant = Tenant::query()->find(self::TENANT_ID);
 
@@ -78,14 +142,14 @@ class PharmacySimplifiedNavTest extends TestCase
             $tenant = Tenant::withoutEvents(fn () => Tenant::query()->create([
                 'id' => self::TENANT_ID,
                 'name' => 'Demo Pharmacy',
-                'profile' => TenantProfile::Pharmacy,
+                'profile' => $profile->value,
                 'status' => 'active',
                 'tenancy_db_name' => 'tenant_demo2_internal_vatengi_com',
             ]));
             $tenant->domains()->create(['domain' => 'demo2.internal.vatengi.com']);
         }
 
-        $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+        $tenant->forceFill(['profile' => $profile])->save();
 
         if (! self::$tenantReady) {
             $this->artisan('tenants:migrate', [
@@ -95,8 +159,9 @@ class PharmacySimplifiedNavTest extends TestCase
             self::$tenantReady = true;
         }
 
-        tenancy()->initialize($tenant);
+        tenancy()->end();
+        tenancy()->initialize($tenant->fresh());
 
-        return $tenant;
+        return $tenant->fresh();
     }
 }

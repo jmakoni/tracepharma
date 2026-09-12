@@ -1288,6 +1288,20 @@ class TenantSettings
         return $this->putNestedSetting('features.client_portal_v2', $enabled);
     }
 
+    /**
+     * Logistics3pl only (with supportsPrincipals): hard-gate EPC principal ownership.
+     * Default off — soft site/ship filters remain available without blocking scans.
+     */
+    public function principalCustodyEnforced(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.principal_custody_enforced', false);
+    }
+
+    public function setPrincipalCustodyEnforced(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.principal_custody_enforced', $enabled);
+    }
+
     public function stateLicenseNumber(): ?string
     {
         $value = data_get($this->settingsBag(), 'compliance.state_license_number');
@@ -1964,6 +1978,7 @@ class TenantSettings
             'allow_assign_partner_glns_from_prefix',
             'manufacturer_verification_portal',
             'client_portal_v2',
+            'principal_custody_enforced',
         ] as $key) {
             if (! array_key_exists($key, $data)) {
                 continue;
@@ -2057,6 +2072,7 @@ class TenantSettings
                 'allow_assign_partner_glns_from_prefix' => $this->setAllowAssignPartnerGlnsFromPrefix((bool) $data[$key]),
                 'manufacturer_verification_portal' => $this->setManufacturerVerificationPortalEnabled((bool) $data[$key]),
                 'client_portal_v2' => $this->setClientPortalV2Enabled((bool) $data[$key]),
+                'principal_custody_enforced' => $this->setPrincipalCustodyEnforced((bool) $data[$key]),
             };
         }
 

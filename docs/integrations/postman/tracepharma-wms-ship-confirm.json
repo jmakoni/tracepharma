@@ -47,7 +47,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": false,\n  \"trading_partner_id\": 1,\n  \"ship_to_gln\": \"0860000000003\",\n  \"asn\": \"ASN-1001\",\n  \"po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
+          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": false,\n  \"expected_count\": 1,\n  \"principal_external_ref\": \"WMS-CLIENT-001\",\n  \"principal_gln\": null,\n  \"principal_id\": null,\n  \"trading_partner_id\": 1,\n  \"ship_to_gln\": \"0860000000003\",\n  \"asn\": \"ASN-1001\",\n  \"po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
         },
         "url": "{{base_url}}/api/v1/wms/ship-confirm"
       }
@@ -76,7 +76,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": true,\n  \"asn_number\": \"ASN-1001\",\n  \"customer_po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
+          "raw": "{\n  \"site_id\": 1,\n  \"scans\": [\n    \"(01)30301164005162(21)WMS-SERIAL-001\"\n  ],\n  \"complete\": true,\n  \"expected_count\": 1,\n  \"principal_external_ref\": \"WMS-CLIENT-001\",\n  \"asn_number\": \"ASN-1001\",\n  \"customer_po\": \"PO-2002\",\n  \"invoice_number\": \"INV-3003\"\n}"
         },
         "url": "{{base_url}}/api/webhooks/wms/{{tenant_id}}"
       }

@@ -137,6 +137,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'email_portal_on_ship' => $settings->emailPortalOnShipEnabled(),
             'manufacturer_verification_portal' => $settings->manufacturerVerificationPortalEnabled(),
             'client_portal_v2' => $settings->clientPortalV2Enabled(),
+            'principal_custody_enforced' => $settings->principalCustodyEnforced(),
         ], $settings->organizationAddress()));
     }
 
@@ -349,12 +350,15 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                 Section::make('VRS / verification')
                     ->compact()
                     ->description('Verification Router Service fallbacks when automated verify does not confirm a product.')
-                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs())
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs()
+                        || TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Manufacturer)
                     ->schema([
                         Toggle::make('manufacturer_verification_portal')
                             ->label('Manufacturer verification portal')
                             ->helperText('When on, Verification history shows “Request manufacturer verification” for non-verified scans. Manufacturers get an emailed secure link to respond. Requires a manufacturer notify email on the trading partner.')
                             ->default(false)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs()
+                                || TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Manufacturer)
                             ->columnSpanFull(),
                     ]),
                 Section::make('Customer portal')
@@ -365,6 +369,17 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                         Toggle::make('client_portal_v2')
                             ->label('Client portal v2 (OTP login)')
                             ->helperText('When on, buyers can use /client-portal/login with emailed one-time codes. Activate the Client portal outbound connection and invite partners from Master Data → Customer portal.')
+                            ->default(false)
+                            ->columnSpanFull(),
+                    ]),
+                Section::make('Principals')
+                    ->compact()
+                    ->description('Optional EPC isolation by client principal for Logistics 3PL tenants.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals())
+                    ->schema([
+                        Toggle::make('principal_custody_enforced')
+                            ->label('Enforce principal custody (EPC isolation)')
+                            ->helperText('Default off. When on, receive / ship / pick are gated by principal; outbound agent TI uses the principal GLN. Not an LSPedia Edge product mode — enable only after principal paths and EPC backfill are verified.')
                             ->default(false)
                             ->columnSpanFull(),
                     ]),
@@ -639,6 +654,10 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
 
         if (TenantFeatures::forTenant(tenant())->supportsMasterData()) {
             $organization['client_portal_v2'] = (bool) ($data['client_portal_v2'] ?? false);
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+            $organization['principal_custody_enforced'] = (bool) ($data['principal_custody_enforced'] ?? false);
         }
 
         if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {

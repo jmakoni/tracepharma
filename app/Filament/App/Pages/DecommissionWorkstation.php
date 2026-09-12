@@ -499,6 +499,11 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
         return true;
     }
 
+    public function contextSiteLabel(): string
+    {
+        return $this->selectedSite()?->name ?? 'No site selected';
+    }
+
     private function selectedSite(): ?Site
     {
         $siteId = CurrentSite::preferredId(

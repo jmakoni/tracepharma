@@ -1484,12 +1484,14 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertFalse($mass->requiresSecondApprover(8, null));
 
             Filament::setCurrentPanel(Filament::getPanel('app'));
-            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
             $user = User::factory()->create();
             $userId = (int) $user->getKey();
             $user->assignRole(TenantRole::Owner->value);
             $this->actingAs($user);
             CurrentSite::set($siteId);
+
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
 
             $component = Livewire::test(DecommissionWorkstation::class);
             foreach ($secondBatch as $epc) {
@@ -1537,6 +1539,13 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertTrue(ReturnWorkstation::canAccess());
 
             $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            $this->assertFalse(TenantFeatures::forTenant($tenant)->supportsCommissioning());
+            $this->assertFalse(CommissionAllWorkstation::canAccess());
+            $this->assertFalse(DecommissionWorkstation::canAccess());
+            $this->assertTrue(ReturnWorkstation::canAccess());
+
+            $this->setProfile($tenant, TenantProfile::Prepackager);
+            $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsCommissioning());
             $this->assertTrue(CommissionAllWorkstation::canAccess());
             $this->assertTrue(DecommissionWorkstation::canAccess());
             $this->assertTrue(ReturnWorkstation::canAccess());

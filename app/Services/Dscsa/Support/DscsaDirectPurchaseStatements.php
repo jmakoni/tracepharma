@@ -31,6 +31,8 @@ final class DscsaDirectPurchaseStatements
         return match ($partnerType) {
             PartnerType::Manufacturer => sprintf(self::MANUFACTURER_TEMPLATE, $name, $name),
             PartnerType::Wholesaler => sprintf(self::WHOLESALER_DIRECT_PURCHASE_TEMPLATE, $name),
+            // 3PL is a custody agent without title — DP/TS statement stays with the
+            // principal (seller). Agent TI still emits principal as source owning party.
             PartnerType::Logistics3pl => null,
             PartnerType::Pharmacy, PartnerType::Other => sprintf(self::WHOLESALER_DIRECT_PURCHASE_TEMPLATE, $name),
         };

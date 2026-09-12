@@ -8,10 +8,12 @@ use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccLabelBatchStatus;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
 use App\Models\SsccLabel;
+use App\Models\SsccLabelBatch;
 use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
@@ -20,6 +22,7 @@ use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Labeling\PreviewNextSsccLabels;
@@ -29,7 +32,6 @@ use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -407,6 +409,8 @@ class PackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
+
         $this->children = [];
         $this->lockedCommissionSiteId = null;
 
@@ -536,6 +540,8 @@ class PackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
+
         $this->children = [];
 
         if ($batch->hasErrors()) {
@@ -610,6 +616,11 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         return implode("\n", $lines);
     }
 
+    public function commissionSiteLabel(): string
+    {
+        return $this->commissionSite()?->name ?? 'No site selected';
+    }
+
     private function commissionSiteName(): ?string
     {
         return $this->commissionSite()?->name;
@@ -677,6 +688,48 @@ class PackWorkstation extends Page implements HasKnowledgeBase
             fn (array $row): int => (int) $row['epc_id'],
             $this->children,
         ));
+    }
+
+    /**
+     * Stamp parent SSCC + children with a homogeneous child principal when present.
+     *
+     * @param  list<int>  $childIds
+     */
+    private function inheritPrincipalOntoPackedBatch(SsccLabelBatch $batch, array $childIds): void
+    {
+        if ($childIds === []) {
+            return;
+        }
+
+        $principalIds = Epc::query()
+            ->whereIn('id', $childIds)
+            ->whereNotNull('principal_id')
+            ->distinct()
+            ->pluck('principal_id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if (count($principalIds) !== 1) {
+            return;
+        }
+
+        $principalId = $principalIds[0];
+        $stampIds = $childIds;
+
+        $batch->loadMissing('labels');
+        foreach ($batch->labels as $label) {
+            if (! filled($label->sscc_urn)) {
+                continue;
+            }
+
+            $parentEpcId = Epc::query()->where('epc_uri', (string) $label->sscc_urn)->value('id');
+            if ($parentEpcId !== null) {
+                $stampIds[] = (int) $parentEpcId;
+            }
+        }
+
+        PrincipalCustody::forTenant()->stamp($stampIds, $principalId);
     }
 
     /**

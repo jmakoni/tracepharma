@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Enums\TenantProfile;
+use App\Enums\TenantType;
 use App\Support\TenantFeatures;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -88,7 +89,7 @@ class ProfileNavigationMatrixTest extends TestCase
                 'supportsTransferring' => true,
                 'supportsUnpacking' => true,
                 'supportsPacking' => true,
-                'supportsCommissioning' => true,
+                'supportsCommissioning' => false,
                 'supportsReturning' => true,
                 'supportsMasterData' => true,
                 'supportsPrincipals' => false,
@@ -132,7 +133,7 @@ class ProfileNavigationMatrixTest extends TestCase
                 'supportsTransferring' => true,
                 'supportsUnpacking' => true,
                 'supportsPacking' => true,
-                'supportsCommissioning' => true,
+                'supportsCommissioning' => false,
                 'supportsReturning' => true,
                 'supportsMasterData' => true,
                 'supportsPrincipals' => true,
@@ -149,12 +150,13 @@ class ProfileNavigationMatrixTest extends TestCase
                 'supportsBuyingGroupNetwork' => false,
             ],
             TenantProfile::DentalMedicalSupply->value => [
+                // Wholesaler-lite: same distributor floor as W for these flags; commission stays off (G-P1-07).
                 'supportsReceiving' => true,
                 'supportsVrs' => true,
                 'supportsTransferring' => true,
                 'supportsUnpacking' => true,
                 'supportsPacking' => true,
-                'supportsCommissioning' => true,
+                'supportsCommissioning' => false,
                 'supportsReturning' => true,
                 'supportsMasterData' => true,
                 'supportsPrincipals' => false,
@@ -237,5 +239,8 @@ class ProfileNavigationMatrixTest extends TestCase
         $this->assertTrue($features->supportsPartnerReadiness());
         $this->assertTrue($features->supportsComplianceAlertCenter());
         $this->assertTrue($features->supportsBuyingGroupNetwork());
+
+        $this->assertSame(TenantType::BuyingGroup, TenantProfile::BuyingGroup->tenantType());
+        $this->assertSame('Buying group', TenantProfile::BuyingGroup->tenantType()->label());
     }
 }

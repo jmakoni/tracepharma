@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\Principals\Schemas;
 
 use App\Support\Gs1\GlnRules;
+use App\Support\TenantFeatures;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -23,6 +24,12 @@ class PrincipalForm
                             ->required()
                             ->maxLength(255)
                             ->columnSpanFull(),
+                        TextInput::make('external_ref')
+                            ->label('External reference')
+                            ->maxLength(128)
+                            ->helperText('Optional WMS / host system id. Must be unique when set.')
+                            ->unique(ignoreRecord: true)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
                         GlnRules::input()
                             ->nullable()
                             ->helperText('Optional principal GLN when known.'),

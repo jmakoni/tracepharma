@@ -243,7 +243,11 @@ final class CompleteOutboundShippingSession
 
         try {
             if (! $session->is_corrective) {
-                $this->custodyGate->assertOperableFor($epcIds, 'sending this shipment');
+                $this->custodyGate->assertOperableFor(
+                    $epcIds,
+                    'sending this shipment',
+                    $session->principal_id !== null ? (int) $session->principal_id : null,
+                );
 
                 return;
             }

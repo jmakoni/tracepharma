@@ -5,6 +5,7 @@ namespace App\Models\Receiving;
 use App\Enums\ReceivingSessionKind;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Principal;
 use App\Models\Site;
 use App\Models\TradingPartner;
 use App\Models\Transferring\TransferringSession;
@@ -29,6 +30,7 @@ class ReceivingSession extends Model
         'matched_epcis_document_id',
         'trading_partner_id',
         'site_id',
+        'principal_id',
         'status',
         'expected_parent_count',
         'confirmed_parent_count',
@@ -100,6 +102,11 @@ class ReceivingSession extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
+    }
+
+    public function principal(): BelongsTo
+    {
+        return $this->belongsTo(Principal::class);
     }
 
     public function activeParentEpc(): BelongsTo

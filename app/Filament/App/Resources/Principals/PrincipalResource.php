@@ -64,6 +64,6 @@ class PrincipalResource extends Resource implements HasKnowledgeBase
 
     public static function getDocumentation(): array|string
     {
-        return 'master-data.products';
+        return 'operations.principals';
     }
 }

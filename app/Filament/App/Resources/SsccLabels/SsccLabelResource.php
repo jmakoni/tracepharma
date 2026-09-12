@@ -45,7 +45,7 @@ class SsccLabelResource extends Resource implements HasKnowledgeBase
     {
         $features = TenantFeatures::forTenant(tenant());
 
-        return ($features->supportsPacking() || $features->supportsSsccLabeling())
+        return $features->supportsSsccLabeling()
             && JobRoleAccess::allows(Permissions::NavMasterData);
     }
 

@@ -17,6 +17,7 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\UnreceivedPartnerShipment;
 use App\Support\Gs1\ElementString;
@@ -524,6 +525,11 @@ final class ConfirmReceivingScan
         $sessionSiteId = (int) $sessionSiteId;
         $epcId = (int) $epc->getKey();
 
+        $principalBlock = $this->principalCustodyBlock($session, $epc, $hasTi, $tiWarning, $context);
+        if ($principalBlock !== null) {
+            return $principalBlock;
+        }
+
         $transferId = $context['in_transit_transferring_session_id'] ?? null;
         if ($transferId !== null) {
             $transfer = TransferringSession::query()->find($transferId);
@@ -563,6 +569,64 @@ final class ConfirmReceivingScan
         }
 
         return null;
+    }
+
+    /**
+     * When principal custody is enforced, refuse scans that would mix clients.
+     * First-time receive (EPC not yet stamped) is allowed — stamp happens on complete.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>|null
+     */
+    private function principalCustodyBlock(
+        ReceivingSession $session,
+        Epc $epc,
+        bool $hasTi = false,
+        ?string $tiWarning = null,
+        array $context = [],
+    ): ?array {
+        if (! PrincipalCustody::forTenant()->isEnforced()) {
+            return null;
+        }
+
+        $sessionPrincipalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        $epcPrincipalId = $epc->principal_id !== null ? (int) $epc->principal_id : null;
+
+        if ($sessionPrincipalId === null || $sessionPrincipalId <= 0) {
+            return [
+                'ok' => false,
+                'message' => 'Principal custody is enforced — select a principal before operating on serials.',
+                'line' => null,
+                'epc' => $epc,
+                'effect' => 'principal_required',
+                'has_ti' => $hasTi,
+                'matched_asn_document_id' => $context['matched_inbound_document_id'] ?? null,
+                'matched_transfer_session_id' => $context['in_transit_transferring_session_id'] ?? null,
+                'ti_warning' => $tiWarning,
+                'reconciled_asn_session_id' => null,
+            ];
+        }
+
+        if ($epcPrincipalId === null) {
+            return null;
+        }
+
+        if ($epcPrincipalId === $sessionPrincipalId) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'message' => 'This serial belongs to another principal.',
+            'line' => null,
+            'epc' => $epc,
+            'effect' => 'wrong_principal',
+            'has_ti' => $hasTi,
+            'matched_asn_document_id' => $context['matched_inbound_document_id'] ?? null,
+            'matched_transfer_session_id' => $context['in_transit_transferring_session_id'] ?? null,
+            'ti_warning' => $tiWarning,
+            'reconciled_asn_session_id' => null,
+        ];
     }
 
     /**
@@ -1214,6 +1278,11 @@ final class ConfirmReceivingScan
                     'epc' => $epc,
                     'effect' => 'quarantined',
                 ];
+            }
+
+            $principalBlock = $this->principalCustodyBlock($session, $epc);
+            if ($principalBlock !== null) {
+                return $principalBlock;
             }
 
             if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {

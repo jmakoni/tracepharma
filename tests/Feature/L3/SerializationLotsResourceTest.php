@@ -100,7 +100,7 @@ class SerializationLotsResourceTest extends TestCase
     }
 
     #[Test]
-    public function drug_wholesaler_cannot_access_serialization_lots_even_with_commissioning(): void
+    public function drug_wholesaler_cannot_access_serialization_lots_and_lacks_commissioning(): void
     {
         $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
 
@@ -108,7 +108,7 @@ class SerializationLotsResourceTest extends TestCase
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwner(TenantProfile::DrugWholesaler));
 
-            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsCommissioning());
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsCommissioning());
             $this->assertFalse(SerializationLotResource::canAccess());
 
             Livewire::test(ListSerializationLots::class)->assertForbidden();

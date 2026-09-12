@@ -15,6 +15,7 @@ use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Rules\ValidGln;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
@@ -171,6 +172,7 @@ final class GenerateReceivingEpcisEvents
             ]);
 
             $this->attachEpcs($event, $epcIds, 'epcList');
+            $this->stampPrincipalOwnership($session, $epcIds);
             $bizTransactions = $this->copyInboundBizTransactions($session, $event);
 
             $eventCount = 1;
@@ -525,6 +527,27 @@ final class GenerateReceivingEpcisEvents
 
         foreach (array_chunk($rows, 1000) as $chunk) {
             DB::table('event_epcs')->insertOrIgnore($chunk);
+        }
+    }
+
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function stampPrincipalOwnership(ReceivingSession $session, array $epcIds): void
+    {
+        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        $custody = PrincipalCustody::forTenant();
+
+        if ($principalId !== null && $principalId > 0) {
+            $custody->stamp($epcIds, $principalId);
+
+            return;
+        }
+
+        if ($custody->isEnforced()) {
+            throw new DomainException(
+                'Principal custody is enforced — this receive session has no principal; cannot stamp serial ownership.',
+            );
         }
     }
 

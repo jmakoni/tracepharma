@@ -565,6 +565,7 @@ class ViewSsccLabelBatch extends Page
             Action::make('commissionNow')
                 ->label('Commission now')
                 ->icon('heroicon-o-check-badge')
+                ->color('primary')
                 ->visible(fn (): bool => $this->batch->commissioned_at === null)
                 ->form([
                     Select::make('site_id')
@@ -580,17 +581,20 @@ class ViewSsccLabelBatch extends Page
             Action::make('emitDisaggregation')
                 ->label('Emit disaggregation EPCIS')
                 ->icon('heroicon-o-scissors')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null
                     && $this->batch->source_parent_sscc_urn !== null)
                 ->action('emitDisaggregation'),
             Action::make('emitEpcis')
                 ->label('Emit aggregation EPCIS')
                 ->icon('heroicon-o-paper-airplane')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null)
                 ->action('emitEpcis'),
             Action::make('downloadAll')
                 ->label('Download all PDFs')
                 ->icon('heroicon-o-archive-box-arrow-down')
+                ->color('gray')
                 ->visible(fn (): bool => $this->batch->commissioned_at !== null)
                 ->action(fn (): ?BinaryFileResponse => $this->downloadAllLabels()),
         ];

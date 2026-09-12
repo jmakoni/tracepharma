@@ -3,6 +3,7 @@
 namespace App\Support\Epcis;
 
 use App\Models\Epcis\Epc;
+use App\Models\Principal;
 use App\Models\Product;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
@@ -10,12 +11,13 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Ndc;
 use App\Support\Gs1\Sgln;
 use App\Support\Gs1\SglnResolution;
-use App\Support\Gs1\Sgtin;
 use App\Support\Shipping\ResolveOwningPartySite;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Carbon\Carbon;
 use DomainException;
@@ -45,7 +47,7 @@ final class BuildFullHistoryShippingEpcisXml
      */
     public function handle(OutboundShippingSession $session): array
     {
-        $session->loadMissing(['site', 'tradingPartner', 'shipToSite', 'epcisDocument']);
+        $session->loadMissing(['site', 'tradingPartner', 'shipToSite', 'epcisDocument', 'principal']);
 
         $tenant = tenant();
         if (! $tenant instanceof Tenant) {
@@ -143,10 +145,11 @@ final class BuildFullHistoryShippingEpcisXml
             throw new DomainException('Ship-from site GLN is required.');
         }
 
-        $sourceOwning = $this->partyFromSite(
-            $this->resolveOwningPartySite->handle($shipFrom),
-            'Ship-from owning party',
-        );
+        if (PrincipalCustody::forTenant()->isEnforced()) {
+            $this->assertAgentPrincipalReady($session);
+        }
+
+        $sourceOwning = $this->resolveSourceOwningParty($session, $shipFrom);
         $sourceLocation = $this->partyFromSite($shipFrom, 'Ship-from location');
 
         $partner = $session->tradingPartner;
@@ -180,6 +183,91 @@ final class BuildFullHistoryShippingEpcisXml
             'source_location' => $sourceLocation,
             'dest_owning' => $destOwning,
             'dest_location' => $destLocation,
+        ];
+    }
+
+    /**
+     * @return array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string}
+     */
+    private function resolveSourceOwningParty(OutboundShippingSession $session, Site $shipFrom): array
+    {
+        if (TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            && $session->principal_id !== null) {
+            $principal = $session->principal instanceof Principal
+                ? $session->principal
+                : Principal::query()->find((int) $session->principal_id);
+
+            if ($principal instanceof Principal && filled($principal->gln)) {
+                return $this->partyFromPrincipal($principal, 'Principal owning party');
+            }
+        }
+
+        return $this->partyFromSite(
+            $this->resolveOwningPartySite->handle($shipFrom),
+            'Ship-from owning party',
+        );
+    }
+
+    private function assertAgentPrincipalReady(OutboundShippingSession $session): void
+    {
+        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        if ($principalId === null || $principalId <= 0) {
+            throw new DomainException(
+                'Principal custody is enforced — select a principal before authoring this shipment.',
+            );
+        }
+
+        $principal = $session->principal instanceof Principal
+            ? $session->principal
+            : Principal::query()->find($principalId);
+
+        if (! $principal instanceof Principal || ! $principal->is_active) {
+            throw new DomainException(
+                'Principal custody is enforced — the ship order principal is missing or inactive.',
+            );
+        }
+
+        if (Sgln::normalizeGln($principal->gln) === null) {
+            throw new DomainException(
+                'Principal custody is enforced — set a GLN on the principal before authoring agent TI/TS.',
+            );
+        }
+    }
+
+    /**
+     * @return array{gln: string, sgln: string, name: string, street: string, city: string, state: string, postal: string, country: string}
+     */
+    private function partyFromPrincipal(Principal $principal, string $fallbackName): array
+    {
+        $gln = Sgln::normalizeGln((string) $principal->gln);
+        if ($gln === null || $gln === '') {
+            throw new DomainException('Principal GLN is required for agent ownership.');
+        }
+
+        $sgln = $this->resolveSglnUrnForGln($gln, [], partnerLocation: true);
+        if ($sgln === null) {
+            foreach ([6, 7, 8, 9, 10, 11, 12] as $prefixLength) {
+                $sgln = Sgln::toUrn($gln, $prefixLength, '0');
+                if ($sgln !== null) {
+                    break;
+                }
+            }
+        }
+        if ($sgln === null) {
+            throw new DomainException(
+                'No SGLN could be built for '.$fallbackName.' (GLN '.$gln.').',
+            );
+        }
+
+        return [
+            'gln' => $gln,
+            'sgln' => $sgln,
+            'name' => (string) ($principal->name ?: $fallbackName),
+            'street' => '100 Distribution Way',
+            'city' => 'Unknown',
+            'state' => 'XX',
+            'postal' => '00000',
+            'country' => 'US',
         ];
     }
 

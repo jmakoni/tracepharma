@@ -25,10 +25,13 @@ class TenantFeatures
         return $this->profile;
     }
 
-    public function supportsReceiving(): bool
+    /**
+     * Drug wholesaler / prepackager / 3PL / dental — distributor floor ops (receive/ship/VRS/pack).
+     * DentalMedicalSupply is wholesaler-lite (included here; no plant commission).
+     */
+    private function isDistributionOpsProfile(): bool
     {
         return match ($this->profile) {
-            TenantProfile::Pharmacy,
             TenantProfile::DrugWholesaler,
             TenantProfile::Prepackager,
             TenantProfile::Logistics3pl,
@@ -37,78 +40,76 @@ class TenantFeatures
         };
     }
 
-    public function supportsVrs(): bool
+    /**
+     * Full wholesaler family only — excludes DentalMedicalSupply (wholesaler-lite).
+     * Use this for any NEW wholesaler-only capability so dental does not inherit by copy-paste.
+     * Intentionally unused by current flags; covered via TenantFeaturesTest reflection.
+     *
+     * @phpstan-ignore method.unused
+     */
+    private function isFullWholesalerFamilyProfile(): bool
     {
         return match ($this->profile) {
-            TenantProfile::Pharmacy,
             TenantProfile::DrugWholesaler,
             TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
+            TenantProfile::Logistics3pl => true,
             default => false,
         };
+    }
+
+    public function supportsReceiving(): bool
+    {
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->isDistributionOpsProfile();
+    }
+
+    /**
+     * VRS requestor UI (Verify Product, verification history, VRS directory).
+     * Not the manufacturer verification portal — use supportsManufacturerVerificationPortal().
+     */
+    public function supportsVrs(): bool
+    {
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->isDistributionOpsProfile();
     }
 
     public function supportsTransferring(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Pharmacy,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->isDistributionOpsProfile();
     }
 
     public function supportsUnpacking(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 
     public function supportsPacking(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Pharmacy,
-            TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 
+    /**
+     * Greenfield commission / plant decommission ObjectEvents only (Manufacturer, Prepackager).
+     * Not packing, SSCC labeling, break-pack, or return workflows.
+     */
     public function supportsCommissioning(): bool
     {
         return match ($this->profile) {
             TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
+            TenantProfile::Prepackager => true,
             default => false,
         };
     }
 
     public function supportsReturning(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Pharmacy,
-            TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 
     public function supportsMasterData(): bool
@@ -153,14 +154,8 @@ class TenantFeatures
      */
     public function supportsOutboundIntegrations(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 
     /**
@@ -260,12 +255,8 @@ class TenantFeatures
         return match ($this->profile) {
             TenantProfile::BuyingGroup => false,
             TenantProfile::Pharmacy,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Logistics3pl,
-            TenantProfile::Manufacturer,
-            TenantProfile::Prepackager,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
+            TenantProfile::Manufacturer => true,
+            default => $this->isDistributionOpsProfile(),
         };
     }
 
@@ -283,20 +274,23 @@ class TenantFeatures
     }
 
     /**
-     * Manufacturer verification request portal (VRS fallback). Default off.
+     * Manufacturer verification fallback portal (settings-gated).
+     * True for Manufacturer when enabled, or for VRS requestor profiles (supportsVrs) when enabled.
+     * Do not require supportsVrs() alone — that blocked Manufacturer (G-P0-01).
      */
     public function supportsManufacturerVerificationPortal(): bool
     {
-        if (! $this->supportsVrs()) {
-            return false;
-        }
-
         $tenant = tenant();
         if ($tenant === null) {
             return false;
         }
 
-        return TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
+        if (! TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled()) {
+            return false;
+        }
+
+        return $this->profile === TenantProfile::Manufacturer
+            || $this->supportsVrs();
     }
 
     /**
@@ -304,14 +298,8 @@ class TenantFeatures
      */
     public function supportsTrackAndTraceExport(): bool
     {
-        return match ($this->profile) {
-            TenantProfile::Pharmacy,
-            TenantProfile::Manufacturer,
-            TenantProfile::DrugWholesaler,
-            TenantProfile::Prepackager,
-            TenantProfile::Logistics3pl,
-            TenantProfile::DentalMedicalSupply => true,
-            default => false,
-        };
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 }

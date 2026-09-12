@@ -2,14 +2,27 @@
     <div class="flex flex-col gap-4">
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body gap-4">
-                <label class="form-control gap-1 max-w-xl">
-                    <span class="label-text text-sm font-medium">Site</span>
-                    <select wire:model.live="siteId" class="select select-bordered">
-                        @foreach ($this->siteOptions() as $id => $label)
-                            <option value="{{ $id }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </label>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label class="form-control gap-1 flex-1 max-w-xl">
+                        <span class="label-text text-sm font-medium">Site</span>
+                        <select wire:model.live="siteId" class="select select-bordered">
+                            @foreach ($this->siteOptions() as $id => $label)
+                                <option value="{{ $id }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    @if ($this->supportsPrincipalFilter())
+                        <label class="form-control gap-1 flex-1 max-w-xl">
+                            <span class="label-text text-sm font-medium">Principal</span>
+                            <select wire:model.live="principalId" class="select select-bordered">
+                                <option value="">All principals</option>
+                                @foreach ($this->principalOptions() as $id => $label)
+                                    <option value="{{ $id }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                    @endif
+                </div>
 
                 <div class="overflow-x-auto">
                     <table class="table">

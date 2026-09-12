@@ -76,7 +76,7 @@ class ScanOutWorkstationTest extends TestCase
             $this->assertTrue(ScanOutWorkstation::canAccess());
             $this->assertTrue(ScanOutWorkstation::shouldRegisterNavigation());
             $this->assertSame('Scan Out', ScanOutWorkstation::getNavigationLabel());
-            $this->assertSame('Ship', ScanOutWorkstation::getNavigationGroup());
+            $this->assertSame('Shipping', ScanOutWorkstation::getNavigationGroup());
             $this->assertSame('scan-out', ScanOutWorkstation::getSlug());
             $this->assertSame(11, ScanOutWorkstation::getNavigationSort());
         } finally {

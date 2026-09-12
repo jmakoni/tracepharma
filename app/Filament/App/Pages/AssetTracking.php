@@ -7,6 +7,7 @@ use App\Filament\App\Pages\AssetTracking\Schemas\AssetTrackingInfolist;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\SerializationLots\SerializationLotResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\L3\SerializationLotContainerField;
@@ -15,6 +16,7 @@ use App\Services\Tracing\BuildAssetTrace;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -25,7 +27,6 @@ use App\Support\Tracing\EpcContextLinks;
 use App\Support\Tracing\Gs1DualDisplay;
 use App\Support\Tracing\LocationDisplayResolver;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\Group;
@@ -223,12 +224,36 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         $siteId = SiteAccess::organizationSiteIdForGln($gln);
 
         if ($siteId !== null) {
-            return SiteAccess::canAccessShipToSite($user, $siteId);
+            if (! SiteAccess::canAccessShipToSite($user, $siteId)) {
+                return false;
+            }
+
+            $custody = PrincipalCustody::forTenant();
+            if ($custody->isEnforced()) {
+                return $custody->allowsRead(
+                    $custody->activePrincipalIdForSite($siteId),
+                    $epc,
+                );
+            }
+
+            return true;
         }
 
         // Unmapped last-seen site: only SitesAccessAll (Owners) — never fail-open to
         // any user who merely has ≥1 site assignment.
-        return SiteAccess::canAccessShipToSite($user, null);
+        if (! SiteAccess::canAccessShipToSite($user, null)) {
+            return false;
+        }
+
+        $custody = PrincipalCustody::forTenant();
+        if ($custody->isEnforced()) {
+            // No site context for principal default — require the EPC already stamped and
+            // refuse unstamped serials under enforcement.
+            return $epc->principal_id !== null
+                && $custody->allowsRead((int) $epc->principal_id, $epc);
+        }
+
+        return true;
     }
 
     public function setResultsTab(string $tab): void

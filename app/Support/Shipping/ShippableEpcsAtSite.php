@@ -6,6 +6,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Site;
 use App\Support\Custody\InTransitInsideOpenParent;
 use App\Support\Custody\OutboundShipmentInTransit;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Custody\UnreceivedPartnerShipment;
@@ -44,7 +45,7 @@ final class ShippableEpcsAtSite
     ) {}
 
     /** @return Builder<Epc> */
-    public function query(int $siteId): Builder
+    public function query(int $siteId, ?int $principalId = null): Builder
     {
         $site = Site::query()->find($siteId);
         $gln = Sgln::normalizeGln($site?->gln);
@@ -61,7 +62,7 @@ final class ShippableEpcsAtSite
         [$coLocatedSql, $coLocatedBindings] = self::openParentAtGlnCondition($gln);
         [$parentElsewhereSql, $parentElsewhereBindings] = self::openParentElsewhereCondition($gln);
 
-        return Epc::query()
+        $query = Epc::query()
             ->where(function ($location) use (
                 $gln,
                 $latestEventSql,
@@ -121,6 +122,8 @@ final class ShippableEpcsAtSite
             // at the dock as their own latest. Asked after the location filter, so only
             // stock that reads as on hand here pays for the climb.
             ->whereRaw("NOT {$inContainerSql}", $inContainerBindings);
+
+        return $this->constrainPrincipal($query, $principalId);
     }
 
     /**
@@ -129,13 +132,13 @@ final class ShippableEpcsAtSite
      * Uses effective last-known (open-parent co-location) so packed children follow
      * an SSCC received at another site — the same gate break-pack / pack / unpack use.
      */
-    public function contains(int $siteId, int $epcId): bool
+    public function contains(int $siteId, int $epcId, ?int $principalId = null): bool
     {
         if ($epcId <= 0) {
             return false;
         }
 
-        return $this->filter($siteId, [$epcId]) !== [];
+        return $this->filter($siteId, [$epcId], $principalId) !== [];
     }
 
     /**
@@ -148,7 +151,7 @@ final class ShippableEpcsAtSite
      * @param  iterable<int>  $epcIds
      * @return list<int>
      */
-    public function filter(int $siteId, iterable $epcIds): array
+    public function filter(int $siteId, iterable $epcIds, ?int $principalId = null): array
     {
         $candidateIds = [];
 
@@ -174,6 +177,7 @@ final class ShippableEpcsAtSite
         $ids = array_keys($candidateIds);
         $metas = $this->lastKnownGln->latestEventMetaForEpcIds($ids);
         $inTransitAncestors = $this->inTransitInsideOpenParent->inTransitAncestorByEpcId($ids);
+        $principalByEpcId = $this->principalIdsByEpcId($ids);
 
         $matched = [];
 
@@ -191,9 +195,15 @@ final class ShippableEpcsAtSite
                 continue;
             }
 
-            if (($meta['gln'] ?? null) === $gln) {
-                $matched[] = $epcId;
+            if (($meta['gln'] ?? null) !== $gln) {
+                continue;
             }
+
+            if (! $this->principalAllows($principalId, $principalByEpcId[$epcId] ?? null)) {
+                continue;
+            }
+
+            $matched[] = $epcId;
         }
 
         sort($matched);
@@ -202,12 +212,58 @@ final class ShippableEpcsAtSite
     }
 
     /** @return list<int> */
-    public function epcIds(int $siteId): array
+    public function epcIds(int $siteId, ?int $principalId = null): array
     {
-        return $this->query($siteId)
+        return $this->query($siteId, $principalId)
             ->orderBy('id')
             ->pluck('id')
             ->map(fn ($id): int => (int) $id)
+            ->all();
+    }
+
+    /** @return Builder<Epc> */
+    private function constrainPrincipal(Builder $query, ?int $principalId): Builder
+    {
+        if (! PrincipalCustody::forTenant()->isEnforced()) {
+            return $query;
+        }
+
+        if ($principalId === null || $principalId <= 0) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return $query->where('principal_id', $principalId);
+    }
+
+    private function principalAllows(?int $activePrincipalId, ?int $epcPrincipalId): bool
+    {
+        if (! PrincipalCustody::forTenant()->isEnforced()) {
+            return true;
+        }
+
+        if ($activePrincipalId === null || $activePrincipalId <= 0) {
+            return false;
+        }
+
+        return $epcPrincipalId !== null && $epcPrincipalId === $activePrincipalId;
+    }
+
+    /**
+     * @param  list<int>  $epcIds
+     * @return array<int, int|null>
+     */
+    private function principalIdsByEpcId(array $epcIds): array
+    {
+        if ($epcIds === [] || ! PrincipalCustody::forTenant()->isEnforced()) {
+            return [];
+        }
+
+        return Epc::query()
+            ->whereIn('id', $epcIds)
+            ->get(['id', 'principal_id'])
+            ->mapWithKeys(fn (Epc $epc): array => [
+                (int) $epc->getKey() => $epc->principal_id !== null ? (int) $epc->principal_id : null,
+            ])
             ->all();
     }
 

@@ -1,5 +1,5 @@
 <x-filament-panels::page>
-    <div class="flex flex-col gap-4">
+    <x-scanner-desk>
         @if ($this->sessionId === null)
             @if ($this->showSitePicker)
                 <div class="card bg-base-100 shadow-xl">
@@ -80,54 +80,37 @@
                 @include('filament.app.partials.outbound-ship-wizard-nav')
             @endif
 
-            <div
-                x-data="{ flashTone: null }"
-                x-on:scan-result.window="
-                    flashTone = $event.detail.tone;
-                    setTimeout(() => { flashTone = null }, 700)
-                "
-                :class="{
-                    'ring-4 ring-success/40': flashTone === 'ok',
-                    'ring-4 ring-warning/40': flashTone === 'warn',
-                    'ring-4 ring-error/40': flashTone === 'error',
-                }"
-                class="card bg-base-100 shadow-xl transition-shadow"
-            >
-                <div class="card-body gap-4">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="badge badge-outline">Ship order #{{ $session?->getKey() }}</span>
-                            <span class="font-medium">{{ $session?->site?->name ?? 'Ship from' }}</span>
-                            @if ($session?->tradingPartner)
-                                <span aria-hidden="true">→</span>
-                                <span class="font-medium">{{ $session->tradingPartner->name }}</span>
-                            @endif
-                        </div>
-                        <span @class([
-                            'badge badge-lg',
-                            'badge-success' => $this->statusBadgeColor() === 'success',
-                            'badge-info' => $this->statusBadgeColor() === 'info',
-                            'badge-warning' => $this->statusBadgeColor() === 'warning',
-                            'badge-outline' => $this->statusBadgeColor() === 'outline',
-                            'badge-ghost' => $this->statusBadgeColor() === 'gray',
-                        ])>
-                            {{ $this->statusLabel() }}
-                        </span>
-                    </div>
+            <x-scanner-desk-header>
+                <x-slot:context>
+                    <span class="badge badge-lg badge-outline font-semibold">
+                        Site: {{ $session?->site?->name ?? 'No site selected' }}
+                    </span>
+                    <span class="badge badge-outline">Ship order #{{ $session?->getKey() }}</span>
+                    @if ($session?->tradingPartner)
+                        <span class="badge badge-outline">→ {{ $session->tradingPartner->name }}</span>
+                    @endif
+                    <span @class([
+                        'badge badge-lg',
+                        'badge-success' => $this->statusBadgeColor() === 'success',
+                        'badge-info' => $this->statusBadgeColor() === 'info',
+                        'badge-warning' => $this->statusBadgeColor() === 'warning',
+                        'badge-outline' => $this->statusBadgeColor() === 'outline',
+                        'badge-ghost' => $this->statusBadgeColor() === 'gray',
+                    ])>
+                        {{ $this->statusLabel() }}
+                    </span>
+                </x-slot:context>
 
-                    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
-                        <div class="stat">
-                            <div class="stat-title">Confirmed</div>
-                            <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
-                        </div>
+                <x-slot:qty>
+                    <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
+                        Confirmed {{ $this->confirmedCount() }}
                         @if ($session && (int) $session->expected_count > 0)
-                            <div class="stat">
-                                <div class="stat-title">Expected</div>
-                                <div class="stat-value text-2xl">{{ (int) $session->expected_count }}</div>
-                            </div>
+                            / {{ (int) $session->expected_count }}
                         @endif
-                    </div>
+                    </span>
+                </x-slot:qty>
 
+                <x-slot:scan>
                     @if ($session && $this->isCompleted())
                         <div class="{{ $this->shipCompletePanelClass() }}">
                             <div class="text-lg font-semibold">{{ $this->shipCompleteCopy()['title'] }}</div>
@@ -149,18 +132,28 @@
                             'showAtpGateNote' => true,
                         ])
                     @endif
+                </x-slot:scan>
+            </x-scanner-desk-header>
 
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm self-start"
-                        wire:click="selectSession(0)"
-                    >
-                        Change session
-                    </button>
-                </div>
-            </div>
+            @php($confirmedRows = $this->confirmedScanRows())
+            <x-scanner-confirmed-table
+                :rows="$confirmedRows"
+                :title="'Confirmed ('.$confirmedRows->count().')'"
+                empty="Scan barcodes to build the ship list."
+                :can-remove="$session && ! $this->isCompleted() && $session->status !== 'cancelled'"
+                remove-method="removeConfirmed"
+                id-key="line_id"
+            />
+
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm self-start"
+                wire:click="selectSession(0)"
+            >
+                Change session
+            </button>
         @endif
-    </div>
+    </x-scanner-desk>
 
     <x-filament-actions::modals />
 </x-filament-panels::page>

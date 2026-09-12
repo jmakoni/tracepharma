@@ -7,7 +7,7 @@
     <x-marketing.page-hero
         eyebrow="Platform features"
         title="One L4 workspace — seven operating profiles"
-        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL soft principal tags, and dispenser verification."
+        description="TracePharma is multi-tenant DSCSA SaaS. Each customer gets an isolated database, subdomain app access, and profile-tuned workflows—from manufacturer outbound to wholesaler receive-to-ship, 3PL soft principal filters (optional custody enforcement default off), and dispenser verification."
     >
         <x-slot:actions>
             <a href="{{ route('marketing.demo') }}">Request a demo →</a>
@@ -188,7 +188,7 @@
                     [
                         'label' => '3PL',
                         'title' => 'Logistics & 3PL',
-                        'description' => 'Principal-scoped receiving, cross-dock, and lot-level ship—so 3PL staff keep each brand owner\'s inventory isolated.',
+                        'description' => 'Soft principal filters on sites, ship orders, and scorecards (GA). Optional EPC custody enforcement (ops setting; default off) gates serials per principal when enabled—not claimed as default isolation. Cross-dock and lot-level ship on a wholesaler-class floor.',
                         'href' => route('marketing.solutions.3pl'),
                         'highlight' => true,
                     ],

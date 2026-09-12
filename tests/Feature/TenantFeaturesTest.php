@@ -65,6 +65,7 @@ class TenantFeaturesTest extends TestCase
         $f = new TenantFeatures(TenantProfile::Manufacturer);
 
         $this->assertFalse($f->supportsReceiving());
+        $this->assertFalse($f->supportsVrs());
         $this->assertFalse($f->supportsTransferring());
         $this->assertTrue($f->supportsUnpacking());
         $this->assertTrue($f->supportsPacking());
@@ -106,8 +107,42 @@ class TenantFeaturesTest extends TestCase
         $this->assertTrue($f->supportsTransferring());
         $this->assertTrue($f->supportsUnpacking());
         $this->assertTrue($f->supportsPacking());
-        $this->assertTrue($f->supportsCommissioning());
         $this->assertTrue($f->supportsReturning());
+    }
+
+    public function test_commissioning_only_for_manufacturer_and_prepackager(): void
+    {
+        $this->assertTrue((new TenantFeatures(TenantProfile::Manufacturer))->supportsCommissioning());
+        $this->assertTrue((new TenantFeatures(TenantProfile::Prepackager))->supportsCommissioning());
+        $this->assertFalse((new TenantFeatures(TenantProfile::DrugWholesaler))->supportsCommissioning());
+        $this->assertFalse((new TenantFeatures(TenantProfile::Logistics3pl))->supportsCommissioning());
+        $this->assertFalse((new TenantFeatures(TenantProfile::DentalMedicalSupply))->supportsCommissioning());
+        $this->assertFalse((new TenantFeatures(TenantProfile::Pharmacy))->supportsCommissioning());
+        $this->assertFalse((new TenantFeatures(TenantProfile::BuyingGroup))->supportsCommissioning());
+    }
+
+    /**
+     * Dental = wholesaler-lite (distributor floor + SSCC ship path; no plant commission; not pharmacy desk).
+     */
+    public function test_dental_is_wholesaler_lite(): void
+    {
+        $f = new TenantFeatures(TenantProfile::DentalMedicalSupply);
+
+        $this->assertTrue($f->supportsReceiving());
+        $this->assertTrue($f->supportsVrs());
+        $this->assertTrue($f->supportsTransferring());
+        $this->assertTrue($f->supportsUnpacking());
+        $this->assertTrue($f->supportsPacking());
+        $this->assertTrue($f->supportsReturning());
+        $this->assertFalse($f->supportsCommissioning());
+        $this->assertTrue($f->supportsOutboundIntegrations());
+        $this->assertTrue($f->supportsSsccLabeling());
+        $this->assertFalse($f->supportsPharmacyOutboundDesk());
+
+        $fullWholesalerFamily = new \ReflectionMethod(TenantFeatures::class, 'isFullWholesalerFamilyProfile');
+        $this->assertFalse($fullWholesalerFamily->invoke($f));
+        $this->assertTrue($fullWholesalerFamily->invoke(new TenantFeatures(TenantProfile::DrugWholesaler)));
+        $this->assertFalse($fullWholesalerFamily->invoke(new TenantFeatures(TenantProfile::Pharmacy)));
     }
 
     /**

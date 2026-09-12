@@ -188,7 +188,7 @@ class ScanInWorkstationTest extends TestCase
             $session = app(OpenScanFirstReceivingSession::class)->handle();
             $this->sessionIds[] = (int) $session->getKey();
 
-            Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+            $component = Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
                 ->set('scan', $uri)
                 ->callAction('confirmScan')
                 ->assertHasNoActionErrors();
@@ -200,6 +200,17 @@ class ScanInWorkstationTest extends TestCase
 
             $this->assertNotNull($line);
             $this->assertSame('confirmed', $line->status);
+
+            $rows = $component->instance()->confirmedScanRows();
+            $this->assertCount(1, $rows);
+            $first = $rows->first();
+            $this->assertSame((int) $line->getKey(), $first['line_id']);
+            $this->assertSame($uri, $first['urn']);
+            $this->assertNotSame('—', $first['identifier']);
+            $this->assertNotSame('—', $first['scanned_at']);
+            $component->assertSee('Confirmed (1)', false);
+            $component->assertSee('Identifier', false);
+            $component->assertSee('Transcoded Value', false);
         } finally {
             $this->cleanup();
         }

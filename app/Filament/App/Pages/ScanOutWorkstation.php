@@ -3,9 +3,12 @@
 namespace App\Filament\App\Pages;
 
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Actions\Shipping\UnconfirmOutboundShippingScanLine;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingWizard;
 use App\Filament\Notifications\Notification;
+use App\Models\Epcis\Epc;
+use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\User;
 use App\Support\Auth\CurrentSite;
@@ -17,6 +20,7 @@ use App\Support\Shipping\AtpGateBypass;
 use App\Support\Shipping\OutboundShippingSessionStatus;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -150,6 +154,86 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
     protected function afterOutboundScanConfirmed(): void
     {
         $this->hydrateWizardFromRecord();
+    }
+
+    /**
+     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool}>
+     */
+    public function confirmedScanRows(): Collection
+    {
+        if ($this->sessionId === null) {
+            return collect();
+        }
+
+        return OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $this->sessionId)
+            ->where('status', 'confirmed')
+            ->with([
+                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
+                'epc.ilmd',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->map(function (OutboundShippingScanLine $line): array {
+                $epc = $line->epc;
+                $display = $epc instanceof Epc
+                    ? Gs1DualDisplay::forEpc($epc)
+                    : ['gs1_barcode' => (string) ($line->scan_raw ?? '—'), 'urn' => ''];
+
+                return [
+                    'line_id' => (int) $line->getKey(),
+                    'identifier' => $display['gs1_barcode'] !== '' ? $display['gs1_barcode'] : '—',
+                    'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s') ?? '—',
+                    'urn' => $display['urn'] !== '' ? $display['urn'] : '—',
+                    'present' => true,
+                ];
+            })
+            ->values();
+    }
+
+    public function removeConfirmed(int $lineId): void
+    {
+        $session = $this->session();
+        if ($session === null || ! $session->canUnconfirmScanLines()) {
+            return;
+        }
+
+        $line = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->whereKey($lineId)
+            ->first();
+
+        if ($line === null || $line->status !== 'confirmed') {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body('This scan cannot be removed.')
+                ->danger()
+                ->ephemeral()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(UnconfirmOutboundShippingScanLine::class)->handle($line, auth()->id());
+        } catch (DomainException $e) {
+            Notification::make()
+                ->title('Remove blocked')
+                ->body($e->getMessage())
+                ->danger()
+                ->ephemeral()
+                ->send();
+
+            return;
+        }
+
+        $this->refreshOutboundShippingSessionHud();
+
+        Notification::make()
+            ->title('Scan removed')
+            ->success()
+            ->ephemeral()
+            ->send();
     }
 
     public function statusLabel(): string

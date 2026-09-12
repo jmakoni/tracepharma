@@ -32,7 +32,7 @@ Register label printers, allocate SSCC number ranges, and review printed SSCC la
 ## Related pages
 
 - [../master-data/sites-and-devices.md](../master-data/sites-and-devices) — devices and sites
-- [../master-data/products.md](../master-data/products) — products/principals for labels
+- [../master-data/products.md](../master-data/products) — products for labels
 - [../compliance/l3-forward-log.md](../compliance/l3-forward-log) — L3 label/forward audits
 - [settings-hub.md](../settings/settings-hub) — settings entry
 

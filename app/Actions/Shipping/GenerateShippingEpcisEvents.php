@@ -10,6 +10,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\OutboundConnection;
+use App\Models\Principal;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
@@ -19,6 +20,7 @@ use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisDocumentWriter;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\BuildFullHistoryShippingEpcisXml;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\OutboundEpcisFilename;
@@ -34,6 +36,7 @@ use App\Support\Shipping\CorrectiveShipmentDocument;
 use App\Support\Shipping\ResolveOutboundShipToSgln;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\Shipping\ShippableEpcsAtSite;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DateTimeInterface;
 use DomainException;
@@ -154,6 +157,7 @@ final class GenerateShippingEpcisEvents
             $epcsById = Epc::query()->whereIn('id', $epcIds)->lockForUpdate()->get()->keyBy('id');
 
             $this->assertConfirmedLinesStillOperable($session, $epcIds);
+            $this->assertAgentPrincipalReady($session);
 
             $fromLocation = $this->resolveSiteLocation((int) $session->site_id);
             $shipTo = $this->resolveShipTo($session);
@@ -376,8 +380,9 @@ final class GenerateShippingEpcisEvents
             }
 
             $siteId = $session->site_id !== null ? (int) $session->site_id : null;
+            $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
             if ($siteId !== null) {
-                $shippable = $this->shippableEpcsAtSite->filter($siteId, $epcIds);
+                $shippable = $this->shippableEpcsAtSite->filter($siteId, $epcIds, $principalId);
                 if (count($shippable) !== count($epcIds)) {
                     throw new DomainException(
                         'Cannot author shipping EPCIS: one or more confirmed units are no longer shippable inventory at the ship-from site.',
@@ -385,7 +390,7 @@ final class GenerateShippingEpcisEvents
                 }
             }
 
-            $this->custodyGate->assertOperableFor($epcIds, 'authoring this shipment');
+            $this->custodyGate->assertOperableFor($epcIds, 'authoring this shipment', $principalId);
         } catch (InvalidArgumentException $e) {
             throw new DomainException($e->getMessage(), 0, $e);
         }
@@ -866,13 +871,20 @@ final class GenerateShippingEpcisEvents
         $partner = $session->tradingPartner;
         $shipToSite = $session->shipToSite;
 
-        // Seller / owning party: site's organization partner when present, else tenant org name.
-        $shipFromName = filled($shipFromSite?->tradingPartner?->name)
-            ? (string) $shipFromSite->tradingPartner->name
-            : (filled($tenant->name) ? (string) $tenant->name : null);
+        $agentSeller = $this->resolveAgentSeller($session);
 
-        $orgGln = TenantSettings::forTenant($tenant)->gln();
-        $senderGln = $orgGln ?? Sgln::normalizeGln($shipFromSite?->gln);
+        // Seller / owning party: principal (3PL agent) when tagged; else site org partner / tenant.
+        if ($agentSeller !== null) {
+            $shipFromName = $agentSeller['name'];
+            $senderGln = $agentSeller['gln'];
+        } else {
+            $shipFromName = filled($shipFromSite?->tradingPartner?->name)
+                ? (string) $shipFromSite->tradingPartner->name
+                : (filled($tenant->name) ? (string) $tenant->name : null);
+
+            $orgGln = TenantSettings::forTenant($tenant)->gln();
+            $senderGln = $orgGln ?? Sgln::normalizeGln($shipFromSite?->gln);
+        }
 
         $receiverGln = filled($partner?->gln)
             ? Sgln::normalizeGln((string) $partner->gln)
@@ -886,6 +898,68 @@ final class GenerateShippingEpcisEvents
             'sender_gln' => $senderGln,
             'receiver_gln' => $receiverGln,
         ];
+    }
+
+    /**
+     * Logistics3pl ships as custody agent: seller/owning = principal; dock = ship-from site.
+     *
+     * @return array{name: string, gln: string}|null
+     */
+    private function resolveAgentSeller(OutboundShippingSession $session): ?array
+    {
+        if (! TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+            return null;
+        }
+
+        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        if ($principalId === null || $principalId <= 0) {
+            return null;
+        }
+
+        $principal = Principal::query()->find($principalId);
+        if (! $principal instanceof Principal || ! $principal->is_active) {
+            return null;
+        }
+
+        $gln = Sgln::normalizeGln($principal->gln);
+        if ($gln === null) {
+            return null;
+        }
+
+        return [
+            'name' => filled($principal->name) ? (string) $principal->name : 'Principal',
+            'gln' => $gln,
+        ];
+    }
+
+    /**
+     * When principal custody is enforced, agent TI requires a principal with a GLN.
+     */
+    private function assertAgentPrincipalReady(OutboundShippingSession $session): void
+    {
+        if (! PrincipalCustody::forTenant()->isEnforced()) {
+            return;
+        }
+
+        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        if ($principalId === null || $principalId <= 0) {
+            throw new DomainException(
+                'Principal custody is enforced — select a principal before authoring this shipment.',
+            );
+        }
+
+        $principal = Principal::query()->find($principalId);
+        if (! $principal instanceof Principal || ! $principal->is_active) {
+            throw new DomainException(
+                'Principal custody is enforced — the ship order principal is missing or inactive.',
+            );
+        }
+
+        if (Sgln::normalizeGln($principal->gln) === null) {
+            throw new DomainException(
+                'Principal custody is enforced — set a GLN on the principal before authoring agent TI/TS.',
+            );
+        }
     }
 
     /**

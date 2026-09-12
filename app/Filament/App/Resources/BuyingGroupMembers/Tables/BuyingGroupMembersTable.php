@@ -46,6 +46,8 @@ class BuyingGroupMembersTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('name')
+            ->emptyStateHeading('No members yet')
+            ->emptyStateDescription('Member roster and ATP readiness views only — no member health scores or compliance APIs here.')
             ->filters([
                 SelectFilter::make('status')
                     ->options(collect(BuyingGroupMemberStatus::cases())->mapWithKeys(
