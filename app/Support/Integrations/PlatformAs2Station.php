@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Support\Integrations;
 
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
+use App\Support\Gs1\Sgln;
 use App\Support\Integrations\Concerns\ManagesPlatformEdgeSettings;
 use App\Support\PlatformSettings;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -58,7 +60,7 @@ class PlatformAs2Station
     }
 
     /**
-     * @return list<array{label: ?string, as2_id: string, signing_cert_pem: string}>
+     * @return list<array{label: ?string, as2_id: string, signing_cert_pem: string, sender_glns: list<string>}>
      */
     public function senders(string $environment): array
     {
@@ -97,6 +99,7 @@ class PlatformAs2Station
                 'label' => is_string($label) && trim($label) !== '' ? trim($label) : null,
                 'as2_id' => $as2Id,
                 'signing_cert_pem' => $cert,
+                'sender_glns' => $this->normalizeSenderGlns($entry['sender_glns'] ?? []),
             ];
         }
 
@@ -108,6 +111,14 @@ class PlatformAs2Station
      */
     public function senderCertificate(string $environment, string $as2Id): ?string
     {
+        return $this->senderEntry($environment, $as2Id)['signing_cert_pem'] ?? null;
+    }
+
+    /**
+     * @return array{label: ?string, as2_id: string, signing_cert_pem: string, sender_glns: list<string>}|null
+     */
+    public function senderEntry(string $environment, string $as2Id): ?array
+    {
         $as2Id = trim($as2Id);
 
         if ($as2Id === '') {
@@ -116,11 +127,52 @@ class PlatformAs2Station
 
         foreach ($this->senders($environment) as $sender) {
             if ($sender['as2_id'] === $as2Id) {
-                return $sender['signing_cert_pem'];
+                return $sender;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Bind verified AS2-From to the SBDH sender GLN used for hub routing.
+     * Fail closed when the registry entry has no allowed GLNs.
+     *
+     * @throws RuntimeException
+     */
+    public function assertAs2FromMayClaimSenderGln(string $environment, string $as2From, ?string $senderGln): void
+    {
+        $entry = $this->senderEntry($environment, $as2From);
+
+        if ($entry === null) {
+            throw new RuntimeException('Unknown AS2 sender.');
+        }
+
+        $allowed = $entry['sender_glns'];
+
+        if ($allowed === []) {
+            throw new RuntimeException(
+                'AS2 sender ['.$as2From.'] has no allowed sender GLNs configured; hub AS2 requires an AS2-From ↔ GLN binding.',
+            );
+        }
+
+        $normalized = Sgln::normalizeGln($senderGln);
+
+        if ($normalized === null) {
+            throw new RuntimeException(
+                'SBDH sender GLN is required to match AS2-From ['.$as2From.'].',
+            );
+        }
+
+        foreach ($allowed as $gln) {
+            if (hash_equals($gln, $normalized)) {
+                return;
+            }
+        }
+
+        throw new RuntimeException(
+            'AS2-From ['.$as2From.'] is not authorized for SBDH sender GLN ['.$normalized.'].',
+        );
     }
 
     public function isConfigured(string $environment): bool
@@ -158,7 +210,7 @@ class PlatformAs2Station
     }
 
     /**
-     * @param  list<array{label?: ?string, as2_id?: ?string, signing_cert_pem?: ?string}>  $senders
+     * @param  list<array{label?: ?string, as2_id?: ?string, signing_cert_pem?: ?string, sender_glns?: list<string>|string|null}>  $senders
      */
     public function setSenders(string $environment, array $senders): void
     {
@@ -177,6 +229,7 @@ class PlatformAs2Station
                 'label' => is_string($label) && trim($label) !== '' ? trim($label) : null,
                 'as2_id' => $as2Id,
                 'signing_cert_pem' => $cert,
+                'sender_glns' => $this->normalizeSenderGlns($entry['sender_glns'] ?? []),
             ];
         }
 
@@ -189,6 +242,32 @@ class PlatformAs2Station
         }
 
         PlatformSettings::put($key, json_encode($normalized, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  list<string>|string|null  $raw
+     * @return list<string>
+     */
+    private function normalizeSenderGlns(array|string|null $raw): array
+    {
+        if (is_string($raw)) {
+            $raw = preg_split('/[\s,;]+/', $raw) ?: [];
+        }
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $glns = [];
+
+        foreach ($raw as $value) {
+            $normalized = Sgln::normalizeGln(is_string($value) ? $value : null);
+            if ($normalized !== null) {
+                $glns[$normalized] = $normalized;
+            }
+        }
+
+        return array_values($glns);
     }
 
     protected function prefix(): string

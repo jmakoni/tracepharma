@@ -64,6 +64,15 @@ final class ResolveWmsShipPrincipal
         $matches = [];
 
         if ($explicitId !== null && $explicitId > 0) {
+            $exists = Principal::query()
+                ->whereKey($explicitId)
+                ->where('is_active', true)
+                ->exists();
+            if (! $exists) {
+                throw new DomainException(
+                    'Unknown or inactive principal_id: '.$explicitId,
+                );
+            }
             $matches[] = $explicitId;
         }
 

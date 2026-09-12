@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Enums\TenantProfile;
 use App\Models\BuyingGroupMemberMetric;
+use App\Models\BuyingGroupMembership;
 use App\Models\BuyingGroupPartnerFact;
 use App\Models\Tenant;
 use App\Support\BuyingGroup\BuyingGroupMemberMetricsCollector;
@@ -80,6 +81,21 @@ class BuyingGroupMemberRollupJob implements ShouldBeUnique, ShouldQueue
         }
 
         if ($member->profile !== TenantProfile::Pharmacy) {
+            return;
+        }
+
+        $membershipActive = BuyingGroupMembership::query()
+            ->where('buying_group_tenant_id', $this->buyingGroupTenantId)
+            ->where('member_tenant_id', $this->memberTenantId)
+            ->active()
+            ->exists();
+
+        if (! $membershipActive) {
+            Log::warning('Buying group rollup skipped: membership not active', [
+                'buying_group_tenant_id' => $this->buyingGroupTenantId,
+                'member_tenant_id' => $this->memberTenantId,
+            ]);
+
             return;
         }
 

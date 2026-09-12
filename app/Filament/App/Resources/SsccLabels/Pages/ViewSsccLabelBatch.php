@@ -127,7 +127,12 @@ class ViewSsccLabelBatch extends Page
         // list faces the same custody + quarantine gate as a scan at the pack workstation.
         // Removing an offending child still saves — it is no longer part of the claim.
         try {
-            app(SsccChildCustodyGuard::class)->assertMultilineOperable($this->childEpcsText);
+            app(SsccChildCustodyGuard::class)->assertMultilineOperable(
+                $this->childEpcsText,
+                siteId: $this->batch->commission_site_id !== null
+                    ? (int) $this->batch->commission_site_id
+                    : null,
+            );
         } catch (\InvalidArgumentException $exception) {
             Notification::make()
                 ->title('Child EPCs not saved')

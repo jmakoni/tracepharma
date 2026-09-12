@@ -10,7 +10,7 @@ Honest product status for pharmacy buying-group tenancy in TracePharma.
 | Partner ATP readiness | Control-plane licence visibility (BG-local) |
 | Compliance alert center | Integration/ATP signals without quarantine/3911 workstations; **BG network alerts** from member snapshots (ATP gaps, aging exceptions, unhealthy connections, stalled invites) |
 | **Member roster** | CRUD roster of member pharmacies (`name`, optional `external_ref`, optional hard-linked `member_tenant_id`, `status`, `contact_email`, plus optional DEA/NPI/state license/primary GLN/affiliation/program SKU/sites count/notes) under Compliance → Member roster; list page **Export CSV** + enrollment stub (soft vs hard-linked counts, % with roster `affiliation_code`) |
-| **Hard membership + consent** | Central `buying_group_memberships` (pending → active → revoked). BG Owner invites a Pharmacy tenant from the roster; pharmacy Owner accepts or declines from **Organization settings** (Pharmacy profile). Soft roster rows remain without a hard link. |
+| **Hard membership + consent** | Central `buying_group_memberships` (pending → active → revoked). BG Owner invites from a roster row by entering the pharmacy **tenant UUID or primary domain** (knowledge-based; not a platform pharmacy directory). Optional roster `primary_gln` must match the pharmacy tenant GLN when set. Pharmacy Owner accepts or declines from **Organization settings**. Soft roster rows remain without a hard link. |
 | **Member network health** | Compliance → Member health — ATP gaps, open/aging exceptions, connection health, last EPCIS success from daily rollup snapshots. Soft-only roster rows show **N/A / link tenant for live metrics**. **GA** |
 | **Authorized partner matrix** | Compliance → Partner matrix — member ↔ wholesaler licence status snapshots (`buying_group_partner_facts`). Soft roster = N/A. **GA** |
 | **Member rollup job** | `tracepharma:buying-group-rollup` (scheduled daily) reads active hard memberships, SELECT-only aggregates in member tenancy, writes idempotent `as_of` snapshots into the **BG tenant DB** only. Optional flag `features.buying_group_member_rollups` (default **true**). |
@@ -22,7 +22,7 @@ Gate (Member roster / health / matrix): `TenantFeatures::supportsBuyingGroupNetw
 
 Consent UI lives on the **member Pharmacy** Organization Settings page (`supportsMasterData()`). BuyingGroup tenants may open Organization Settings for the **Buying group program** affiliation code.
 
-Hard links are **not** free-text UUID edits on the roster form — use **Invite TracePharma tenant** / Accept invite / Revoke.
+Hard links are **not** free-text UUID edits on the roster form — use **Invite TracePharma tenant** (UUID/domain lookup) / Accept invite / Revoke.
 
 ## Deferred (not GA)
 

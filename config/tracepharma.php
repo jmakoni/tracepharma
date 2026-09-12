@@ -12,13 +12,13 @@ return [
     'tenant_environment' => env('TENANT_ENVIRONMENT', 'prod'),
     'pair_sibling_database' => env('PAIR_SIBLING_DB_DATABASE'),
     /*
-     | Master switch for role-based navigation/permission gates (admin panel
-     | permissions and tenant job-role nav.* capabilities). Off means every
-     | authenticated admin/tenant user sees all menu items. Re-enable per
-     | environment with TRACEPHARMA_ROLE_BASED_MENUS=true once role matrices
-     | are seeded.
+     | Role-based navigation/permission gates (admin Spatie abilities and
+     | tenant JobRoleAccess when access.job_roles_enabled is on). Default ON
+     | (fail-closed). Set TRACEPHARMA_ROLE_BASED_MENUS=false only as an
+     | emergency kill switch — every Admin then passes all gates. Seed admin
+     | roles with: php artisan tracepharma:seed-admin-roles
      */
-    'role_based_menus' => (bool) env('TRACEPHARMA_ROLE_BASED_MENUS', false),
+    'role_based_menus' => (bool) env('TRACEPHARMA_ROLE_BASED_MENUS', true),
     'stage_provisioning' => [
         'enabled' => (bool) env('STAGE_PROVISION_ENABLED', false),
         'ssh_host' => env('STAGE_SSH_HOST', '127.0.0.1'),

@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
@@ -174,6 +175,66 @@ class OrganizationSettingsPageTest extends TestCase
         } finally {
             TenantSettings::forTenant($tenant)->setManufacturerVerificationPortalEnabled($prior);
             $tenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function manufacturer_save_persists_verification_portal_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $priorProfile = $tenant->profile;
+        $prior = TenantSettings::forTenant($tenant)->manufacturerVerificationPortalEnabled();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+
+            $site = Site::query()->create([
+                'name' => 'Mfr Portal Save Site',
+                'gln' => '0366159000194',
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $this->siteId = (int) $site->getKey();
+
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsVrs());
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsVrsResponder());
+
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'gln' => '0366159000026',
+                'company_prefix' => '036615',
+                'dashboard_allowed' => [],
+            ]);
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->assertFormFieldExists('manufacturer_verification_portal')
+                ->fillForm([
+                    'gln' => '0366159000026',
+                    'company_prefix' => '036615',
+                    'default_receive_site_id' => $this->siteId,
+                    'default_ship_from_site_id' => $this->siteId,
+                    'dashboard_allowed' => [],
+                    'manufacturer_verification_portal' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
+            $this->assertTrue(TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
+        } finally {
+            TenantSettings::forTenant($tenant)->setManufacturerVerificationPortalEnabled($prior);
+            $tenant->save();
+            $this->setProfile($tenant, $priorProfile instanceof TenantProfile ? $priorProfile : TenantProfile::Pharmacy);
             $this->cleanup($tenant);
         }
     }
@@ -565,6 +626,145 @@ class OrganizationSettingsPageTest extends TestCase
                 '/site,'.$this->siteId.',"?Org Export GLN Site"?,0366159000033,/',
                 $content,
             );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_pharmacy_full_outbound(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setPharmacyFullOutboundEnabled(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-pharmacy-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::PharmacySystemAdministrator->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+            $this->assertTrue(\App\Support\Auth\JobRoleAccess::canAccessOrganizationSettings($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant(tenant()->fresh())->pharmacyFullOutboundEnabled());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setPharmacyFullOutboundEnabled(false);
+            tenant()?->save();
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_manufacturer_feature_flags(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(true);
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-mfr-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::MasterDataAdministrator->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $settings = TenantSettings::forTenant(tenant()->fresh());
+            $this->assertTrue($settings->manufacturerVrsRequestorEnabled());
+            $this->assertTrue($settings->autoReceiveFromCmo());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(false);
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(false);
+            tenant()?->save();
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function non_owner_save_does_not_clear_principal_custody_enforced(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Logistics3pl);
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(true);
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'default_receive_site_id' => null,
+                'default_ship_from_site_id' => null,
+            ]);
+            tenant()?->save();
+
+            $admin = User::factory()->create([
+                'email' => 'org-flag-3pl-'.uniqid('', true).'@example.test',
+            ]);
+            $admin->syncRoles([TenantRole::WmsIntegrationSpecialist->value]);
+            $admin->refresh();
+            $this->actingAs($admin);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+
+            Livewire::actingAs($admin)
+                ->test(OrganizationSettings::class)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant(tenant()->fresh())->principalCustodyEnforced());
+
+            $admin->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled(false);
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(false);
+            tenant()?->save();
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
         } finally {
             $this->cleanup($tenant);
         }

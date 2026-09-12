@@ -96,6 +96,32 @@ class TenantSettingsTest extends TestCase
     }
 
     #[Test]
+    public function integration_api_keys_reject_short_values(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('short-key');
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
+    public function vrs_responder_api_key_rejects_short_values(): void
+    {
+        $tenant = $this->createCentralTenant();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            TenantSettings::forTenant($tenant)->setVrsResponderApiKey('tooshort');
+        } finally {
+            $this->deleteCentralTenant($tenant);
+        }
+    }
+
+    #[Test]
     public function vrs_responder_api_key_is_encrypted_at_rest_and_round_trips(): void
     {
         $tenant = $this->createCentralTenant();

@@ -133,13 +133,14 @@ class GlossaryTerms
                 'summary' => 'GS1 location identifier in EPCIS events',
                 'definition' => [
                     'GLN (Global Location Number) is a GS1 identifier for a physical location or legal entity—warehouse, pharmacy, corporate HQ, or ship-to address.',
-                    'EPCIS ObjectEvents include readPoint and bizLocation GLNs to show where custody changed. Partner authorization and Pulse directory entries also reference GLNs.',
+                    'EPCIS ObjectEvents include readPoint and bizLocation GLNs to show where custody changed. Authorized trading-partner lists and (when used) external ATP directories also reference GLNs.',
                     'Mismatch between the GLN in EPCIS and your authorized trading partner list is a common source of receiving exceptions and ACK failures.',
                 ],
                 'in_tracepharma' => [
                     'Partner profiles map authorized GLNs to inbound connection presets.',
                     'Receiving validates ship-from GLN against tenant partner authorization.',
                     'Outbound EPCIS uses your tenant GLNs for wholesaler and manufacturer ship events.',
+                    'Hub connectivity can route by claimable receiver GLN—separate from NABP Pulse certification.',
                 ],
                 'related' => ['epcis', 'sscc', 'dscsa-3t'],
                 'learn_more_route' => 'marketing.features.show',
@@ -193,12 +194,12 @@ class GlossaryTerms
                 'definition' => [
                     'An Authorized Trading Partner (ATP) is a licensed entity authorized to distribute or dispense prescription drugs under DSCSA—manufacturers, repackagers, wholesalers, and dispensers with valid state and federal credentials.',
                     'Trading partners must transact only with other ATPs. Partner authorization workflows map authorized GLNs and license data to inbound EPCIS and outbound ship destinations.',
-                    'NABP Pulse provides a directory and API ecosystem for ATP verification and regulator communications. DSCSA compliance still requires interoperable EPCIS exchange with authorized partners.',
+                    'NABP Pulse is an industry directory/API ecosystem some vendors use for ATP verification. TracePharma is not Pulse certified; live Pulse/OCI directory APIs are not the GA ATP path.',
                 ],
                 'in_tracepharma' => [
-                    'Partner profiles map authorized GLNs and license metadata to inbound presets.',
+                    'Partner profiles map authorized GLNs and license metadata to inbound presets and ATP readiness.',
                     'Receiving validates ship-from GLN against tenant partner authorization.',
-                    'Pulse directory API integration is on the product roadmap; EPCIS-layer cutover works today.',
+                    'ATP diligence today: license fields plus manual Pulse/OCI partner evidence (optional OCI wallet seam on VRS responder). Pulse directory API certification remains roadmap.',
                 ],
                 'related' => ['gln', 'dscsa-3t', 'vrs'],
                 'learn_more_route' => 'marketing.integrations.nabp-pulse',

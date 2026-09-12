@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Custody;
 
+use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
+use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\OutboundShippingSessions\Pages\ViewOutboundShippingSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -19,6 +23,7 @@ use App\Models\Principal;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\TenantRoleSeeder;
@@ -28,8 +33,10 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
 use DomainException;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
@@ -111,6 +118,34 @@ class PrincipalCustodyEnforcementTest extends TestCase
     }
 
     #[Test]
+    public function flag_on_null_principal_still_sees_stamped_epc_at_site(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            $this->actingAs($this->createOwner());
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(true);
+            $tenant->save();
+
+            [$site] = $this->createSites($tenant, withPrincipal: false);
+            $epc = $this->createEpc();
+            $this->authorReceivingEvent($site, $epc);
+            $epc->forceFill(['principal_id' => $this->createPrincipal('Stamp')->getKey()])->save();
+
+            $this->assertTrue(
+                app(ShippableEpcsAtSite::class)->contains((int) $site->getKey(), (int) $epc->getKey()),
+                'Enforced custody with null session principal must still see stamped on-hand EPCs.',
+            );
+            $this->assertFalse(
+                app(ShippableEpcsAtSite::class)->contains((int) $site->getKey(), (int) $epc->getKey(), 999999),
+                'Wrong explicit principal must still deny.',
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function flag_on_requires_principal_to_open_ship_and_receive(): void
     {
         $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
@@ -135,6 +170,165 @@ class PrincipalCustodyEnforcementTest extends TestCase
             } catch (DomainException $e) {
                 $this->assertStringContainsString('Principal custody is enforced', $e->getMessage());
             }
+
+            $document = $this->ingestMinimalInboundDocument();
+            try {
+                app(OpenReceivingSessionFromDocument::class)->handle($document, siteId: (int) $site->getKey());
+                $this->fail('Expected ASN receive open to require a principal when custody is enforced.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('Principal custody is enforced', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function flag_on_assigns_principal_on_asn_and_transfer_receive_open(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            $this->actingAs($this->createOwner());
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(true);
+            $tenant->save();
+
+            $principal = $this->createPrincipal('ASN Client');
+            [$site] = $this->createSites($tenant, withPrincipal: true, principal: $principal);
+            $fromSite = Site::query()->create([
+                'name' => 'Transfer From '.Str::random(4),
+                'gln' => $this->uniqueGln(),
+                'is_active' => true,
+                'is_organization_facility' => true,
+                'trading_partner_id' => null,
+                'principal_id' => $principal->getKey(),
+            ]);
+            $this->siteIds[] = (int) $fromSite->getKey();
+
+            $document = $this->ingestMinimalInboundDocument();
+            $asn = app(OpenReceivingSessionFromDocument::class)->handle(
+                $document,
+                siteId: (int) $site->getKey(),
+            );
+            $this->receiveSessionIds[] = (int) $asn->getKey();
+            $this->assertSame((int) $principal->getKey(), (int) $asn->principal_id);
+
+            $transferDoc = EpcisDocument::query()->create([
+                'document_uuid' => (string) Str::uuid(),
+                'schema_version' => '1.2',
+                'creation_date' => now(),
+                'received_at' => now(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Transferring,
+                'status' => 'parsed',
+                'original_filename' => 'transfer-custody-'.Str::random(6).'.xml',
+            ]);
+            $this->documentIds[] = (int) $transferDoc->getKey();
+
+            $transfer = TransferringSession::query()->create([
+                'from_site_id' => $fromSite->getKey(),
+                'to_site_id' => $site->getKey(),
+                'status' => 'in_transit',
+                'confirmed_count' => 0,
+                'received_count' => 0,
+                'opened_at' => now()->subHour(),
+                'shipped_at' => now()->subMinutes(30),
+                'transfer_epcis_document_id' => $transferDoc->getKey(),
+                'transfer_events_generated_at' => now()->subMinutes(30),
+            ]);
+
+            $transferReceive = app(OpenTransferReceivingSession::class)->handle($transfer);
+            $this->receiveSessionIds[] = (int) $transferReceive->getKey();
+            $this->assertSame((int) $principal->getKey(), (int) $transferReceive->principal_id);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function flag_on_scan_first_still_blocks_epc_on_hand_at_another_site(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            $this->actingAs($this->createOwner());
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(true);
+            $tenant->save();
+
+            $principal = $this->createPrincipal('Cross-site Client');
+            [$siteA] = $this->createSites($tenant, withPrincipal: true, principal: $principal);
+            $siteB = Site::query()->create([
+                'name' => 'Principal Custody Site B '.Str::random(6),
+                'gln' => $this->uniqueGln(),
+                'is_active' => true,
+                'is_organization_facility' => true,
+                'trading_partner_id' => null,
+                'principal_id' => $principal->getKey(),
+            ]);
+            $this->siteIds[] = (int) $siteB->getKey();
+
+            $epc = $this->createEpc();
+            $this->authorReceivingEvent($siteA, $epc);
+            // Unstamped under enforcement: location check must not fail-open.
+            $this->assertNull($epc->fresh()->principal_id);
+
+            $this->assertTrue(
+                app(ShippableEpcsAtSite::class)->isOnHandAtSite((int) $siteA->getKey(), (int) $epc->getKey()),
+            );
+            $this->assertFalse(
+                app(ShippableEpcsAtSite::class)->contains((int) $siteA->getKey(), (int) $epc->getKey()),
+                'Unstamped EPC must not pass principal-filtered contains() under enforcement.',
+            );
+
+            $receive = app(OpenScanFirstReceivingSession::class)->handle(
+                siteId: (int) $siteB->getKey(),
+                openedBy: auth()->id(),
+            );
+            $this->receiveSessionIds[] = (int) $receive->getKey();
+
+            $confirm = app(ConfirmReceivingScan::class)->handle($receive, (string) $epc->epc_uri);
+            $this->assertFalse($confirm['ok']);
+            $this->assertSame('not_at_receive_site', $confirm['effect']);
+            $this->assertStringContainsString('on hand at another site', (string) $confirm['message']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function flag_on_floor_ops_see_stamped_on_hand_with_site_principal(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            $this->actingAs($this->createOwner());
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(true);
+            $tenant->save();
+
+            $principal = $this->createPrincipal('Floor Client');
+            [$site] = $this->createSites($tenant, withPrincipal: true, principal: $principal);
+
+            $epc = $this->createEpc();
+            $this->authorReceivingEvent($site, $epc);
+            $epc->forceFill(['principal_id' => $principal->getKey()])->save();
+
+            $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite((int) $site->getKey());
+            $this->assertSame((int) $principal->getKey(), $principalId);
+
+            $this->assertTrue(
+                app(ShippableEpcsAtSite::class)->contains(
+                    (int) $site->getKey(),
+                    (int) $epc->getKey(),
+                    $principalId,
+                ),
+                'Floor contains() with site principal must see stamped on-hand inventory.',
+            );
+
+            app(EpcCustodyGate::class)->assertOperableFor(
+                $epc->fresh(),
+                'decommissioning',
+                $principalId,
+            );
         } finally {
             $this->cleanup($tenant);
         }
@@ -205,6 +399,63 @@ class PrincipalCustodyEnforcementTest extends TestCase
         }
     }
 
+    #[Test]
+    public function filament_ship_view_blocks_cross_principal_scan_when_enforced(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwner());
+            $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(true);
+            $tenant->save();
+
+            $principalA = $this->createPrincipal('Client A');
+            $principalB = $this->createPrincipal('Client B');
+
+            $site = EligibleReceiveSites::forOrganization()->orderBy('id')->first();
+            $this->assertNotNull($site);
+            $this->priorSitePrincipalId = $site->principal_id !== null ? (int) $site->principal_id : null;
+            $this->touchedSiteId = (int) $site->getKey();
+            $site->forceFill(['principal_id' => $principalA->getKey()])->save();
+
+            $settings = TenantSettings::forTenant($tenant);
+            $this->priorDefaultShipFromSiteId = $settings->defaultShipFromSiteId();
+            $this->priorDefaultReceiveSiteId = $settings->defaultReceiveSiteId();
+            $settings->setDefaultShipFromSiteId((int) $site->getKey());
+            $settings->setDefaultReceiveSiteId((int) $site->getKey());
+            $tenant->save();
+
+            $receive = app(OpenScanFirstReceivingSession::class)->handle(
+                siteId: (int) $site->getKey(),
+                openedBy: auth()->id(),
+            );
+            $this->receiveSessionIds[] = (int) $receive->getKey();
+
+            $epc = $this->createEpc();
+            $scan = app(ConfirmReceivingScan::class)->handle($receive, (string) $epc->epc_uri);
+            $this->assertTrue($scan['ok'], $scan['message'] ?? 'scan failed');
+            app(CompleteReceivingSession::class)->handle($receive->fresh());
+            $this->assertSame((int) $principalA->getKey(), (int) $epc->fresh()->principal_id);
+
+            $shipWrong = app(OpenOutboundShippingSession::class)->handle(
+                siteId: (int) $site->getKey(),
+                principalId: (int) $principalB->getKey(),
+            );
+            $this->sessionIds[] = (int) $shipWrong->getKey();
+
+            $component = Livewire::test(ViewOutboundShippingSession::class, ['record' => $shipWrong->getKey()])
+                ->set('scan', (string) $epc->epc_uri)
+                ->callAction('confirmScan');
+
+            $this->assertSame('error', $component->get('lastScanTone'));
+            $this->assertStringContainsString('another principal', (string) $component->get('lastScanMessage'));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     private function createOwner(): User
     {
         app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
@@ -263,6 +514,31 @@ class PrincipalCustodyEnforcementTest extends TestCase
         $this->epcIds[] = (int) $epc->getKey();
 
         return $epc;
+    }
+
+    private function ingestMinimalInboundDocument(): EpcisDocument
+    {
+        $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_');
+        $this->assertNotFalse($tmp);
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) Str::uuid(), $xml);
+        file_put_contents($tmp, $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => basename($fixture),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            return $document;
+        } finally {
+            @unlink($tmp);
+        }
     }
 
     private function authorReceivingEvent(Site $site, Epc $epc): void
@@ -378,6 +654,13 @@ class PrincipalCustodyEnforcementTest extends TestCase
                     $this->deleteReceivingSessionForIsolation($id);
                 }
                 $this->receiveSessionIds = [];
+
+                TransferringSession::query()
+                    ->where(function ($q): void {
+                        $q->whereIn('to_site_id', $this->siteIds)
+                            ->orWhereIn('from_site_id', $this->siteIds);
+                    })
+                    ->delete();
 
                 if ($this->eventIds !== []) {
                     DB::table('event_epcs')->whereIn('event_id', $this->eventIds)->delete();

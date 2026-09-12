@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\Dscsa\TransactionReportGenerator;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Dscsa\DscsaTransactionStatementUi;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -168,7 +169,15 @@ class EpcisDocumentsTable
                     ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('dscsa_affirm')
                     ->label('DSCSA')
+                    ->getStateUsing(function (EpcisDocument $record): ?bool {
+                        if (! DscsaTransactionStatementUi::applies($record)) {
+                            return null;
+                        }
+
+                        return (bool) $record->dscsa_affirm;
+                    })
                     ->boolean()
+                    ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('received_at')
                     ->label('Received')

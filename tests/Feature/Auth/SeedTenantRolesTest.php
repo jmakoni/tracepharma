@@ -7,10 +7,15 @@ namespace Tests\Feature\Auth;
 use App\Actions\Tenants\ProvisionTenantPair;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Jobs\SeedTenantRoles;
 use App\Models\Tenant;
+use App\Models\User;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantHostname;
+use App\Support\TenantSettings;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -103,5 +108,73 @@ class SeedTenantRolesTest extends TestCase
             $this->assertDatabaseHas('roles', ['name' => TenantRole::BuyingGroupMember->value]);
             $this->assertDatabaseMissing('roles', ['name' => TenantRole::ReceivingTechnician->value]);
         });
+    }
+
+    #[Test]
+    public function seeded_prepackager_receiving_technician_can_access_receive(): void
+    {
+        $tenant = Tenant::query()->find('13fe9068-cb05-4bab-9e0e-a89f2a458832');
+        if ($tenant === null) {
+            $this->markTestSkipped('Demo2 tenant not provisioned.');
+        }
+
+        $priorJobRoles = null;
+        $userId = null;
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::Prepackager])->save();
+
+            (new SeedTenantRoles($tenant))->handle(app(TenantRoleSeeder::class));
+
+            $tenant->run(function () use ($tenant, &$priorJobRoles, &$userId): void {
+                $this->assertDatabaseHas('roles', [
+                    'name' => TenantRole::ReceivingTechnician->value,
+                    'guard_name' => 'web',
+                ]);
+                $this->assertDatabaseHas('roles', [
+                    'name' => TenantRole::PackagingLineOperator->value,
+                    'guard_name' => 'web',
+                ]);
+                $this->assertDatabaseHas('roles', [
+                    'name' => TenantRole::OutboundPickAndPackLead->value,
+                    'guard_name' => 'web',
+                ]);
+
+                $settings = TenantSettings::forTenant($tenant);
+                $priorJobRoles = $settings->jobRolesEnabled();
+                $settings->setJobRolesEnabled(true);
+                $tenant->save();
+                $tenant->refresh();
+
+                Filament::setCurrentPanel(Filament::getPanel('app'));
+
+                $user = User::factory()->create([
+                    'email' => 'prepack-recv-'.Str::uuid().'@example.test',
+                ]);
+                $userId = (int) $user->getKey();
+                $user->assignRole(TenantRole::ReceivingTechnician->value);
+                $this->actingAs($user);
+
+                $this->assertTrue($user->can(Permissions::NavReceive));
+                $this->assertTrue(ReceivingSessionResource::canAccess());
+            });
+        } finally {
+            if (tenancy()->initialized) {
+                $tenant->run(function () use ($tenant, $priorJobRoles, $userId): void {
+                    if ($userId !== null) {
+                        User::query()->whereKey($userId)->delete();
+                    }
+
+                    if ($priorJobRoles !== null) {
+                        TenantSettings::forTenant($tenant)->setJobRolesEnabled($priorJobRoles);
+                    }
+
+                    $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+                });
+                tenancy()->end();
+            } else {
+                $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+            }
+        }
     }
 }

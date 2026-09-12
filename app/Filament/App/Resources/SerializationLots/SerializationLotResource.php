@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\App\Resources\SerializationLots;
 
-use App\Enums\TenantProfile;
 use App\Filament\App\Resources\SerializationLots\Pages\ListSerializationLots;
 use App\Filament\App\Resources\SerializationLots\Pages\ViewSerializationLot;
 use App\Filament\App\Resources\SerializationLots\Schemas\SerializationLotInfolist;
@@ -13,6 +12,7 @@ use App\Models\L3\SerializationLot;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\TenantFeatures;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -25,8 +25,9 @@ use UnitEnum;
 
 /**
  * UniTrace-style lot master list/detail for Guardian L3 lot-close ingest
- * ({@see SerializationLot}). Manufacturer-only, read-only —
- * lot rows are written exclusively by ConvertAndAcceptGuardianLotJob.
+ * ({@see SerializationLot}). Commissioning profiles only (Manufacturer +
+ * Prepackager), read-only — lot rows are written exclusively by
+ * ConvertAndAcceptGuardianLotJob.
  */
 class SerializationLotResource extends Resource implements HasKnowledgeBase
 {
@@ -50,7 +51,7 @@ class SerializationLotResource extends Resource implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
-        return tenant()?->profile === TenantProfile::Manufacturer
+        return TenantFeatures::forTenant(tenant())->supportsCommissioning()
             && JobRoleAccess::allowsAny(
                 Permissions::NavShip,
                 Permissions::NavIntegrations,

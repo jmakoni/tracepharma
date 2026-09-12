@@ -7,6 +7,7 @@ use App\Actions\Labeling\AttachChildrenToExistingSscc;
 use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccLabelBatchStatus;
+use App\Enums\TenantProfile;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
 use App\Models\Epcis\AggregationLink;
@@ -18,11 +19,11 @@ use App\Models\SsccLabelChild;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\CurrentSite;
-use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\PrincipalCustody;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Labeling\PreviewNextSsccLabels;
@@ -44,7 +45,7 @@ use UnitEnum;
 
 class PackWorkstation extends Page implements HasKnowledgeBase
 {
-    use HidesForPharmacySimplifiedNav;
+    use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
@@ -87,6 +88,18 @@ class PackWorkstation extends Page implements HasKnowledgeBase
     {
         return TenantFeatures::forTenant(tenant())->supportsPacking()
             && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    /**
+     * Pharmacy packing stays Operations Hub–only (no sidebar), even with warehouse tools.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        if (TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Pharmacy) {
+            return false;
+        }
+
+        return parent::shouldRegisterNavigation();
     }
 
     public function getSubheading(): string|Htmlable|null
@@ -161,7 +174,9 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $custodyGate->assertOperableFor($epc, 'packing');
+            $siteId = (int) $site->getKey();
+            $principalId = $this->floorPrincipalId($siteId);
+            $custodyGate->assertOperableFor($epc, 'packing', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -173,7 +188,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
 
         $epcId = (int) $epc->getKey();
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -336,7 +351,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         try {
             // Re-check under the locks: another operator may have claimed these children,
             // or a hold may have been raised, between the scan and this confirmation.
-            $custodyGate->assertOperableFor($childIds, 'packing');
+            $custodyGate->assertOperableFor($childIds, 'packing', $this->floorPrincipalId($siteId));
 
             $onHandError = $this->assertChildrenOnHand($childIds, $siteId, $shippable);
             if ($onHandError !== null) {
@@ -477,7 +492,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $custodyGate->assertOperableFor($childIds, 'packing');
+            $custodyGate->assertOperableFor($childIds, 'packing', $this->floorPrincipalId($siteId));
 
             $onHandError = $this->assertChildrenOnHand($childIds, $siteId, $shippable);
             if ($onHandError !== null) {
@@ -646,7 +661,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
     private function assertChildrenOnHand(array $childIds, int $siteId, ShippableEpcsAtSite $shippable): ?string
     {
         foreach ($childIds as $childId) {
-            if (! $shippable->contains($siteId, $childId)) {
+            if (! $shippable->contains($siteId, $childId, $this->floorPrincipalId($siteId))) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
         }
@@ -1007,7 +1022,8 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         $parentEpc = $this->parentEpcForLabel($label);
         if ($parentEpc instanceof Epc) {
             try {
-                $custodyGate->assertOperableFor($parentEpc, 'packing');
+                $siteId = $site?->getKey() !== null ? (int) $site->getKey() : null;
+                $custodyGate->assertOperableFor($parentEpc, 'packing', $this->floorPrincipalId($siteId));
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();
             }

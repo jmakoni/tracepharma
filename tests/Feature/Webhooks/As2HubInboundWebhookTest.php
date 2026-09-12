@@ -41,6 +41,8 @@ class As2HubInboundWebhookTest extends TestCase
 
     private const SENDER_ID = 'PARTNER-AS2';
 
+    private const SENDER_GLN = '0301160000009';
+
     private static bool $demo2TenantReady = false;
 
     /** @var array{cert: string, key: string}|null */
@@ -75,7 +77,12 @@ class As2HubInboundWebhookTest extends TestCase
             'signing_key_pem' => $this->stationPems()['key'],
         ]);
         $station->setSenders('stage', [
-            ['label' => 'Partner', 'as2_id' => self::SENDER_ID, 'signing_cert_pem' => $this->senderPems()['cert']],
+            [
+                'label' => 'Partner',
+                'as2_id' => self::SENDER_ID,
+                'signing_cert_pem' => $this->senderPems()['cert'],
+                'sender_glns' => [self::SENDER_GLN],
+            ],
         ]);
     }
 
@@ -133,6 +140,116 @@ class As2HubInboundWebhookTest extends TestCase
                     'received_via' => EpcisReceivedVia::As2Hub->value,
                 ]);
             });
+        } finally {
+            $this->restoreTenant($tenant, $original);
+            $tenant->run(fn () => $this->cleanupTrackedEpcisArtifacts());
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function as2_from_cannot_impersonate_another_sbdh_sender_gln(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $original = $this->configureTenantForTracepharmaHub($tenant);
+
+        try {
+            // Register a second trading partner / connection for the spoofed GLN so
+            // hub routing would succeed if AS2-From were not bound to sender GLN.
+            $tenant->run(function (): void {
+                $partner = TradingPartner::query()->firstOrCreate(
+                    ['gln' => '0614141000012'],
+                    [
+                        'name' => 'Spoofed hub sender',
+                        'partner_type' => PartnerType::Wholesaler,
+                        'country_code' => 'US',
+                        'is_active' => true,
+                    ],
+                );
+
+                $connection = InboundConnection::query()->create([
+                    'name' => 'Spoofed TracePharma Hub',
+                    'serialization_provider' => SerializationProvider::TracePharma,
+                    'transport' => InboundTransport::Https,
+                    'trading_partner_id' => $partner->id,
+                    'is_active' => true,
+                ]);
+                $this->trackInboundConnectionId((int) $connection->id);
+                app(RegisterEpcisHubRoute::class)->register($connection);
+            });
+            $this->registerTracepharmaHubConnection($tenant);
+            $this->resetCacheStoreForTenancy();
+
+            $xml = $this->routedFixtureXml();
+            $xml = str_replace(self::SENDER_GLN, '0614141000012', $xml);
+
+            $envelope = app(As2SmimeEnvelope::class)->envelope(
+                payload: $xml,
+                signingCertPem: $this->senderPems()['cert'],
+                signingKeyPem: $this->senderPems()['key'],
+                partnerEncryptCertPem: $this->stationPems()['cert'],
+            );
+
+            $response = $this->call(
+                'POST',
+                'https://'.self::STAGE_HOST.'/api/webhooks/as2/hub',
+                [],
+                [],
+                [],
+                $this->as2Headers($envelope->contentType),
+                $envelope->body,
+            );
+
+            $response->assertOk();
+            $this->assertStringContainsString('failed/failure', $response->getContent());
+            $this->assertStringContainsString('not authorized for SBDH sender GLN', $response->getContent());
+            $this->assertNull($response->headers->get('X-Document-Id'));
+        } finally {
+            $this->restoreTenant($tenant, $original);
+            $tenant->run(fn () => $this->cleanupTrackedEpcisArtifacts());
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function as2_sender_without_allowed_glns_is_rejected(): void
+    {
+        app(PlatformAs2Station::class)->setSenders('stage', [
+            [
+                'label' => 'Partner unbound',
+                'as2_id' => self::SENDER_ID,
+                'signing_cert_pem' => $this->senderPems()['cert'],
+                'sender_glns' => [],
+            ],
+        ]);
+
+        $tenant = $this->initializeDemo2Tenant();
+        $original = $this->configureTenantForTracepharmaHub($tenant);
+
+        try {
+            $this->registerTracepharmaHubConnection($tenant);
+            $this->resetCacheStoreForTenancy();
+
+            $envelope = app(As2SmimeEnvelope::class)->envelope(
+                payload: $this->routedFixtureXml(),
+                signingCertPem: $this->senderPems()['cert'],
+                signingKeyPem: $this->senderPems()['key'],
+                partnerEncryptCertPem: $this->stationPems()['cert'],
+            );
+
+            $response = $this->call(
+                'POST',
+                'https://'.self::STAGE_HOST.'/api/webhooks/as2/hub',
+                [],
+                [],
+                [],
+                $this->as2Headers($envelope->contentType),
+                $envelope->body,
+            );
+
+            $response->assertOk();
+            $this->assertStringContainsString('failed/failure', $response->getContent());
+            $this->assertStringContainsString('no allowed sender GLNs', $response->getContent());
         } finally {
             $this->restoreTenant($tenant, $original);
             $tenant->run(fn () => $this->cleanupTrackedEpcisArtifacts());

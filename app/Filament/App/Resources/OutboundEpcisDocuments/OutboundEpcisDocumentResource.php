@@ -45,8 +45,30 @@ class OutboundEpcisDocumentResource extends Resource implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
-        return TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()
+        $features = TenantFeatures::forTenant(tenant());
+
+        return ($features->supportsOutboundIntegrations() || $features->supportsPharmacyFullOutbound())
             && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    public static function canViewAny(): bool
+    {
+        return static::canAccess();
+    }
+
+    public static function canView(Model $record): bool
+    {
+        if (! static::canAccess()) {
+            return false;
+        }
+
+        if (! $record instanceof EpcisDocument || $record->direction !== 'outbound') {
+            return false;
+        }
+
+        return static::getEloquentQuery()
+            ->whereKey($record->getKey())
+            ->exists();
     }
 
     public static function canCreate(): bool

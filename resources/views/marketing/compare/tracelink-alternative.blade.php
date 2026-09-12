@@ -1,6 +1,6 @@
 @php
     $tracelinkFaqs = [
-        ['question' => 'Can TracePharma replace TraceLink Opus entirely?', 'answer' => 'For US DSCSA L4 workflows—EPCIS receive, outbound, exceptions, VRS, and compliance—TracePharma can be your primary hub. Opus remains relevant when you need global regulation modules, automated onboarding of thousands of unknown partners, or you are already deeply embedded in Opus network economics.'],
+        ['question' => 'Can TracePharma replace TraceLink Opus entirely?', 'answer' => 'No—TracePharma is not a TraceLink network or Opus replacement. For US DSCSA L4, it is your operator workspace that interops via AS2, SFTP, HTTPS, and hub GLN routing / connection presets. Keep Opus when you need global regulation modules, automated onboarding of thousands of unknown partners, or you are already embedded in Opus network economics.'],
         ['question' => 'Do I lose partner connectivity if I leave Opus?', 'answer' => 'Known partners can re-point EPCIS to TracePharma via AS2 or SFTP using the tracelink preset. The hard part is re-connection and credential exchange—not the EPCIS standard itself.'],
         ['question' => 'Does TracePharma interoperate with TraceLink-connected partners?', 'answer' => 'Yes. TracePharma receives and sends standards-based EPCIS to TraceLink endpoints your partners configure, without requiring Opus network enrollment fees on your tenant.'],
     ];

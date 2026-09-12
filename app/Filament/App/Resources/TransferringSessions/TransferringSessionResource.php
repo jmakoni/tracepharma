@@ -49,12 +49,24 @@ class TransferringSessionResource extends Resource implements HasKnowledgeBase
     public static function canAccess(): bool
     {
         return TenantFeatures::forTenant(tenant())->supportsTransferring()
-            && JobRoleAccess::allows(Permissions::NavShip);
+            && JobRoleAccess::allowsAny(Permissions::NavShip, Permissions::NavReceive);
     }
 
     public static function canCreate(): bool
     {
-        return static::canAccess();
+        return TenantFeatures::forTenant(tenant())->supportsTransferring()
+            && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    public static function canView(Model $record): bool
+    {
+        if (! parent::canView($record)) {
+            return false;
+        }
+
+        return static::getEloquentQuery()
+            ->whereKey($record->getKey())
+            ->exists();
     }
 
     public static function canEdit(Model $record): bool
@@ -73,17 +85,6 @@ class TransferringSessionResource extends Resource implements HasKnowledgeBase
         return $record->canHardDelete()
             && $user !== null
             && $user->can('delete', $record);
-    }
-
-    public static function canView(Model $record): bool
-    {
-        if (! parent::canView($record)) {
-            return false;
-        }
-
-        return static::getEloquentQuery()
-            ->whereKey($record->getKey())
-            ->exists();
     }
 
     /**

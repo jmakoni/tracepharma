@@ -86,6 +86,18 @@ class AdminResourcePolicyTest extends TestCase
     }
 
     #[Test]
+    public function emergency_kill_switch_allows_support_admin_all_abilities(): void
+    {
+        config(['tracepharma.role_based_menus' => false]);
+
+        $support = $this->adminWithRole(AdminRole::Support);
+
+        $this->assertTrue($support->can(\App\Support\Auth\Permissions::TenantsManage));
+        $this->assertTrue((new TenantPolicy)->viewAny($support));
+        $this->assertTrue((new AdminPolicy)->viewAny($support));
+    }
+
+    #[Test]
     public function shared_role_and_activity_policies_accept_admin_actor(): void
     {
         $platform = $this->adminWithRole(AdminRole::PlatformAdmin);

@@ -241,7 +241,7 @@ class SettingsHub extends Page implements HasKnowledgeBase
         if ($features->supportsComplianceReports()) {
             $this->pushCard($complianceCards, [
                 'label' => 'Inspection day',
-                'description' => 'FDA walk-in checklist: ZIP pack, ATP, exceptions, SOPs, Alert Center.',
+                'description' => 'Competitive walk-in demo: ZIP pack → ATP → exceptions → SOPs → Alert Center. Not a live Pulse feed.',
                 'url' => $this->pageUrl(InspectionDayReadinessPage::class),
                 'icon' => 'heroicon-o-clipboard-document-check',
             ]);

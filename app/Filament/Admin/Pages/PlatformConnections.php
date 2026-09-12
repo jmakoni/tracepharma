@@ -17,6 +17,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
@@ -420,7 +421,7 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                 $this->pemField($environment, 'as2_signing_key_pem', 'Signing private key (PEM)', $station->signingKeyPem($environment) !== null),
                 Repeater::make("{$environment}.as2_senders")
                     ->label('Partner sender certificates')
-                    ->helperText('Inbound AS2 messages are only accepted from these AS2 IDs, verified against the registered certificate.')
+                    ->helperText('Inbound AS2 is accepted only from these AS2-From IDs. Each ID must list the SBDH sender GLNs that identity may claim (AS2-From ↔ GLN binding).')
                     ->schema([
                         TextInput::make('label')
                             ->label('Label')
@@ -430,6 +431,12 @@ class PlatformConnections extends Page implements HasKnowledgeBase
                             ->label('Partner AS2 ID (AS2-From)')
                             ->required()
                             ->maxLength(128),
+                        TagsInput::make('sender_glns')
+                            ->label('Allowed sender GLNs')
+                            ->helperText('SBDH Sender GLNs this AS2-From may present. Required — without them hub AS2 rejects the message.')
+                            ->placeholder('0301160000009')
+                            ->required()
+                            ->columnSpanFull(),
                         Textarea::make('signing_cert_pem')
                             ->label('Partner signing certificate (PEM)')
                             ->required()

@@ -17,6 +17,7 @@ use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Disposition\AcquireCommissionEpcLocks;
 use App\Support\Epcis\EpcHasCommissioningEvent;
 use App\Support\Shipping\ShippableEpcsAtSite;
+use App\Support\TenantFeatures;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -44,6 +45,10 @@ final class EmitCommissioningEpcisForEpcs
      */
     public function handle(array $epcIds, int $siteId, array $options = []): array
     {
+        if (! TenantFeatures::forTenant(tenant())->supportsCommissioning()) {
+            throw new InvalidArgumentException('Commissioning is not available for this tenant profile.');
+        }
+
         $epcIds = array_values(array_unique(array_filter(
             array_map(intval(...), $epcIds),
             fn (int $id): bool => $id > 0,

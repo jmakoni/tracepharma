@@ -99,12 +99,15 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('command-center:manage-commands', fn ($user) => $user instanceof Admin);
         Gate::define('command-center:prune-history', fn ($user) => $user instanceof Admin);
 
-        // Role-based menus disabled: every authenticated admin passes all
-        // permission checks (nav gates and admin policies). Temporary until
-        // the admin role matrix is seeded; see tracepharma.role_based_menus.
-        if (! config('tracepharma.role_based_menus', false)) {
-            Gate::before(fn ($user, string $ability) => $user instanceof Admin ? true : null);
-        }
+        // Emergency kill switch only: when role_based_menus is false, every
+        // authenticated Admin passes all abilities. Default is fail-closed.
+        Gate::before(function ($user, string $ability) {
+            if (config('tracepharma.role_based_menus', true)) {
+                return null;
+            }
+
+            return $user instanceof Admin ? true : null;
+        });
 
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(Activity::class, ActivityPolicy::class);

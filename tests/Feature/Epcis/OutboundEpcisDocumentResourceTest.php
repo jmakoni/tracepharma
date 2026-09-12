@@ -94,6 +94,44 @@ class OutboundEpcisDocumentResourceTest extends TestCase
     }
 
     #[Test]
+    public function ship_user_can_view_outbound_document_when_job_roles_enabled(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            $settings = \App\Support\TenantSettings::forTenant(tenant());
+            $priorJobRoles = $settings->jobRolesEnabled();
+            $settings->setJobRolesEnabled(true);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $shipUser = User::factory()->create([
+                'email' => 'ship-outbound-'.Str::uuid().'@example.test',
+            ]);
+            $shipUser->syncRoles([TenantRole::OutboundPickAndPackLead->value]);
+            $shipUser->givePermissionTo(\App\Support\Auth\Permissions::SitesAccessAll);
+            $shipUser->refresh();
+            $this->userIds[] = (int) $shipUser->getKey();
+            $this->actingAs($shipUser);
+
+            $outbound = $this->makeDocument('outbound');
+
+            $this->assertTrue(OutboundEpcisDocumentResource::canAccess());
+            $this->assertTrue(OutboundEpcisDocumentResource::canViewAny());
+            $this->assertTrue(OutboundEpcisDocumentResource::canView($outbound));
+
+            $settings->setJobRolesEnabled($priorJobRoles);
+            tenant()?->save();
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function view_url_uses_outbound_epcis_slug(): void
     {
         $tenant = $this->initializeWholesalerTenant();

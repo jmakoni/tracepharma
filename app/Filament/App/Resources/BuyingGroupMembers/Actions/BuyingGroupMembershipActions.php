@@ -7,15 +7,14 @@ namespace App\Filament\App\Resources\BuyingGroupMembers\Actions;
 use App\Actions\BuyingGroup\InviteBuyingGroupMembership;
 use App\Actions\BuyingGroup\RevokeBuyingGroupMembership;
 use App\Enums\BuyingGroupMembershipStatus;
-use App\Enums\TenantProfile;
 use App\Filament\Notifications\Notification;
 use App\Models\BuyingGroupMember;
 use App\Models\BuyingGroupMembership;
 use App\Models\Tenant;
 use App\Models\User;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Support\Icons\Heroicon;
 use RuntimeException;
 
@@ -35,18 +34,11 @@ final class BuyingGroupMembershipActions
                 return ! self::openMembershipFor($record)->exists();
             })
             ->form([
-                Select::make('member_tenant_id')
-                    ->label('Pharmacy tenant')
-                    ->options(fn (): array => Tenant::query()
-                        ->where('profile', TenantProfile::Pharmacy)
-                        ->where('status', 'active')
-                        ->orderBy('name')
-                        ->pluck('name', 'id')
-                        ->all())
-                    ->searchable()
+                TextInput::make('member_tenant_lookup')
+                    ->label('Pharmacy tenant ID or domain')
+                    ->placeholder('UUID or primary hostname')
                     ->required()
-                    ->native(false)
-                    ->helperText('Sends a pending invite to Owners of the selected pharmacy tenant.'),
+                    ->helperText('Enter the pharmacy’s tenant UUID or primary domain (out-of-band). This is not a platform pharmacy directory.'),
             ])
             ->requiresConfirmation()
             ->modalHeading('Invite pharmacy to hard-link')
@@ -54,16 +46,20 @@ final class BuyingGroupMembershipActions
             ->action(function (BuyingGroupMember $record, array $data): void {
                 $user = auth()->user();
                 $buyingGroup = tenant();
-                $memberTenant = Tenant::query()->find($data['member_tenant_id'] ?? null);
+                $invite = app(InviteBuyingGroupMembership::class);
 
-                if (! $user instanceof User || ! $buyingGroup instanceof Tenant || ! $memberTenant instanceof Tenant) {
+                if (! $user instanceof User || ! $buyingGroup instanceof Tenant) {
                     Notification::make()->title('Unable to send invite')->danger()->send();
 
                     return;
                 }
 
                 try {
-                    app(InviteBuyingGroupMembership::class)->invite(
+                    $lookup = is_string($data['member_tenant_lookup'] ?? null)
+                        ? $data['member_tenant_lookup']
+                        : '';
+                    $memberTenant = $invite->resolveMemberTenant($lookup);
+                    $invite->invite(
                         $buyingGroup,
                         $memberTenant,
                         $user,

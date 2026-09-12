@@ -93,6 +93,51 @@ class L3ForwardLogPageTest extends TestCase
     }
 
     #[Test]
+    public function drug_wholesaler_cannot_access_l3_forward_log(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $tenant = tenant();
+            $this->priorProfile = $tenant->profile instanceof TenantProfile
+                ? $tenant->profile
+                : TenantProfile::from((string) $tenant->profile);
+            $tenant->setAttribute('profile', TenantProfile::DrugWholesaler);
+
+            $this->assertFalse(L3ForwardLog::canAccess());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function prepackager_can_access_l3_forward_log_with_commissioning(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $tenant = tenant();
+            $this->priorProfile = $tenant->profile instanceof TenantProfile
+                ? $tenant->profile
+                : TenantProfile::from((string) $tenant->profile);
+            $tenant->setAttribute('profile', TenantProfile::Prepackager);
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Prepackager);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $this->assertTrue(L3ForwardLog::canAccess());
+
+            Livewire::test(L3ForwardLog::class)
+                ->assertSuccessful()
+                ->assertSee('L3 forward log');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function retry_dispatches_forward_commissioning_to_l3_job(): void
     {
         Bus::fake([ForwardCommissioningToL3::class]);

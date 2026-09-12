@@ -46,7 +46,7 @@ class WebhookTenantHostBindingTest extends TestCase
     public function wms_webhook_returns_404_when_host_tenant_differs_from_path(): void
     {
         $hostTenant = $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
-        TenantSettings::forTenant($hostTenant)->setWmsBridgeApiKey('host-wms-key');
+        TenantSettings::forTenant($hostTenant)->setWmsBridgeApiKey('host-wms-bridge-key');
         $hostTenant->save();
 
         $pathTenantId = $this->createExtraTenant();
@@ -56,7 +56,7 @@ class WebhookTenantHostBindingTest extends TestCase
         $this->postWebhookOnHost(
             '/api/webhooks/wms/'.$pathTenantId,
             ['scans' => ['(01)30301164005162(21)HOST-MISMATCH']],
-            ['HTTP_X_WMS_API_KEY' => 'host-wms-key'],
+            ['HTTP_X_WMS_API_KEY' => 'host-wms-bridge-key'],
         )->assertNotFound();
     }
 
@@ -64,7 +64,7 @@ class WebhookTenantHostBindingTest extends TestCase
     public function vrs_webhook_returns_404_when_host_tenant_differs_from_path(): void
     {
         $hostTenant = $this->initializeDemo2Tenant();
-        TenantSettings::forTenant($hostTenant)->setVrsResponderApiKey('host-vrs-key');
+        TenantSettings::forTenant($hostTenant)->setVrsResponderApiKey('host-vrs-responder-key');
         $hostTenant->save();
 
         $pathTenantId = $this->createExtraTenant();
@@ -77,7 +77,7 @@ class WebhookTenantHostBindingTest extends TestCase
                 'gtin14' => '00301164005162',
                 'serial' => 'HOST-MISMATCH',
             ],
-            ['HTTP_X_VRS_API_KEY' => 'host-vrs-key'],
+            ['HTTP_X_VRS_API_KEY' => 'host-vrs-responder-key'],
         )->assertNotFound();
     }
 
@@ -187,7 +187,7 @@ class WebhookTenantHostBindingTest extends TestCase
     public function wms_webhook_allows_matching_host_and_path_tenant(): void
     {
         $tenant = $this->initializeDemo2Tenant(TenantProfile::DrugWholesaler);
-        TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('match-wms-key');
+        TenantSettings::forTenant($tenant)->setWmsBridgeApiKey('match-wms-bridge-key');
         $tenant->save();
 
         tenancy()->end();
@@ -195,7 +195,7 @@ class WebhookTenantHostBindingTest extends TestCase
         $this->postWebhookOnHost(
             '/api/webhooks/wms/'.self::DEMO2_TENANT_ID,
             ['scans' => ['(01)30301164005162(21)HOST-MATCH']],
-            ['HTTP_X_WMS_API_KEY' => 'match-wms-key'],
+            ['HTTP_X_WMS_API_KEY' => 'match-wms-bridge-key'],
         )->assertStatus(422);
     }
 

@@ -36,6 +36,11 @@ final class ForwardCommissioningToL3 implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 3600;
 
+    public function __construct(
+        public string $tenantId,
+        public int $documentId,
+    ) {}
+
     public function uniqueId(): string
     {
         return $this->tenantId.':'.$this->documentId;

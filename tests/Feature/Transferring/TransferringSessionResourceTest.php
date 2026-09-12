@@ -102,6 +102,107 @@ class TransferringSessionResourceTest extends TestCase
     }
 
     #[Test]
+    public function manufacturer_can_access_transfer_and_receive(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        $tenant = tenant();
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::Manufacturer])->save();
+
+            $features = TenantFeatures::forTenant($tenant->fresh());
+            $this->assertTrue($features->supportsTransferring());
+            $this->assertTrue($features->supportsReceiving());
+            $this->assertFalse($features->supportsPharmacyOutboundDesk());
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
+
+            $user = User::factory()->create([
+                'email' => 'mfr-transfer-'.Str::uuid().'@example.test',
+            ]);
+            $user->assignRole(TenantRole::PackagingLineOperator->value);
+            $this->actingAs($user);
+
+            $this->assertTrue(TransferringSessionResource::canAccess());
+            $this->assertTrue(TransferringSessionResource::canCreate());
+            $this->assertTrue(ReceivingSessionResource::canAccess());
+
+            $user->delete();
+        } finally {
+            $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function buying_group_cannot_access_transferring_session_resource(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $tenant = tenant();
+            $tenant->setAttribute('profile', TenantProfile::BuyingGroup);
+
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsTransferring());
+            $this->assertFalse(TransferringSessionResource::canAccess());
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function receiving_technician_can_access_transfer_when_job_roles_enabled(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+            $settings = TenantSettings::forTenant(tenant());
+            $priorJobRoles = $settings->jobRolesEnabled();
+            $settings->setJobRolesEnabled(true);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $receiveTech = User::factory()->create([
+                'email' => 'recv-xfer-'.Str::uuid().'@example.test',
+            ]);
+            $receiveTech->syncRoles([TenantRole::ReceivingTechnician->value]);
+            $receiveTech->refresh();
+            $this->actingAs($receiveTech);
+
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsTransferring());
+            $this->assertTrue(TransferringSessionResource::canAccess());
+            $this->assertFalse(TransferringSessionResource::canCreate());
+
+            $vrsOnly = User::factory()->create([
+                'email' => 'vrs-xfer-'.Str::uuid().'@example.test',
+            ]);
+            $vrsOnly->syncRoles([TenantRole::VrsAnalyst->value]);
+            $vrsOnly->refresh();
+            $this->actingAs($vrsOnly);
+
+            $this->assertFalse(TransferringSessionResource::canAccess());
+
+            $receiveTech->delete();
+            $vrsOnly->delete();
+            TenantSettings::forTenant(tenant())->setJobRolesEnabled($priorJobRoles);
+            tenant()?->save();
+            $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function create_is_ungated_while_ship_transfer_requires_confirmation_when_gate_enabled(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -218,14 +319,14 @@ class TransferringSessionResourceTest extends TestCase
             ]);
 
             $columns = collect($component->instance()->getTable()->getColumns());
-            foreach (['epc.sscc18', 'epc.gtin14', 'epc.serial_number', 'epc.epc_uri'] as $name) {
+            foreach (['identifier', 'epc.epc_uri'] as $name) {
                 $column = $columns->first(fn ($c) => $c->getName() === $name);
                 $this->assertNotNull($column, "Missing column {$name}");
-                $column->record($line);
-                $resolved = $column->getUrl();
-                $this->assertSame($expected, $resolved, "Column {$name} should link to Asset Tracking");
             }
 
+            $uriCol = $columns->first(fn ($c) => $c->getName() === 'epc.epc_uri');
+            $this->assertNotNull($uriCol);
+            // Transcoded Value is display-only; Asset Tracking is on the Actions column.
             $actionsCol = $columns->first(fn ($c) => $c->getName() === 'context_actions');
             $this->assertNotNull($actionsCol, 'Missing Actions column');
             $actionsCol->record($line);
@@ -233,6 +334,11 @@ class TransferringSessionResourceTest extends TestCase
             $this->assertStringContainsString('Transfer', $actionsHtml);
             $this->assertStringContainsString((string) $this->sessionId, $actionsHtml);
             $this->assertNotSame('—', trim(strip_tags($actionsHtml)));
+            $this->assertStringContainsString(
+                'asset-tracking',
+                (string) $expected,
+                'AssetTrackingUrl::forEpc should return an asset-tracking deep link',
+            );
         } finally {
             $this->cleanup($tenant);
         }
@@ -272,6 +378,12 @@ class TransferringSessionResourceTest extends TestCase
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
+            // Pharmacy simplified nav hides Transfer from Ops Hub; warehouse tools must be on.
+            $settings = TenantSettings::forTenant(tenant());
+            $priorSimplified = $settings->pharmacySimplifiedNavEnabled();
+            $settings->setPharmacySimplifiedNavEnabled(false);
+            tenant()?->save();
+
             $hub = Livewire::test(OperationsHub::class)->instance();
             $labels = collect($hub->directories())->pluck('label')->all();
 
@@ -280,6 +392,9 @@ class TransferringSessionResourceTest extends TestCase
             $transfer = collect($hub->directories())->firstWhere('label', 'Transfer');
             $this->assertNotNull($transfer);
             $this->assertStringContainsString('transferring-sessions', (string) $transfer['url']);
+
+            TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled($priorSimplified);
+            tenant()?->save();
         } finally {
             tenancy()->end();
         }

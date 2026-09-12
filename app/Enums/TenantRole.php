@@ -78,13 +78,23 @@ enum TenantRole: string
     public static function forProfile(TenantProfile $profile): array
     {
         $personas = match ($profile) {
-            TenantProfile::Manufacturer,
+            TenantProfile::Manufacturer => [
+                self::SupportEngineer,
+                self::PackagingLineOperator,
+                self::SerializationSystemsEngineer,
+                self::MasterDataAdministrator,
+                self::CmoIntegrationManager,
+            ],
+            // Union: Manufacturer commission/plant personas + DrugWholesaler receive/ship floor.
             TenantProfile::Prepackager => [
                 self::SupportEngineer,
                 self::PackagingLineOperator,
                 self::SerializationSystemsEngineer,
                 self::MasterDataAdministrator,
                 self::CmoIntegrationManager,
+                self::ReceivingTechnician,
+                self::OutboundPickAndPackLead,
+                self::InboundExceptionCoordinator,
             ],
             TenantProfile::Logistics3pl => [
                 self::SupportEngineer,

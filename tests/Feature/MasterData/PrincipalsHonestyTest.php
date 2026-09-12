@@ -146,6 +146,36 @@ class PrincipalsHonestyTest extends TestCase
     }
 
     #[Test]
+    public function logistics_3pl_onboarding_copy_matches_enforced_flag_when_tenant_initialized(): void
+    {
+        $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(false);
+            tenant()->save();
+
+            $soft = OnboardingCopy::forTenant(tenant());
+            $this->assertStringContainsString(PrincipalsHonesty::SENTENCE, $soft->banner());
+            $this->assertStringContainsString(PrincipalsHonesty::SENTENCE, $soft->subheading());
+            $this->assertStringNotContainsString(PrincipalsHonesty::ENFORCED_SENTENCE, $soft->banner());
+
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(true);
+            tenant()->save();
+
+            $hard = OnboardingCopy::forTenant(tenant());
+            $this->assertStringContainsString(PrincipalsHonesty::ENFORCED_SENTENCE, $hard->banner());
+            $this->assertStringContainsString(PrincipalsHonesty::ENFORCED_SENTENCE, $hard->subheading());
+            $this->assertStringNotContainsString(PrincipalsHonesty::SENTENCE, $hard->banner());
+        } finally {
+            if (tenancy()->initialized) {
+                TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(false);
+                tenant()->save();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function principal_custody_enforcement_defaults_off_with_schema_ready(): void
     {
         $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
@@ -159,6 +189,7 @@ class PrincipalsHonestyTest extends TestCase
             $this->assertTrue(in_array('principal_id', (new Epc)->getFillable(), true));
             $this->assertFalse(TenantSettings::forTenant(tenant())->principalCustodyEnforced());
             $this->assertFalse(PrincipalCustody::forTenant()->isEnforced());
+            $this->assertSame(false, (bool) data_get(tenant()?->settings, 'features.principal_custody_enforced', false));
         } finally {
             $this->cleanup();
         }

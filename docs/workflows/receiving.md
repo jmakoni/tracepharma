@@ -55,5 +55,5 @@ Confirm inbound product against an ASN/EPCIS document, scan-first receive, or tr
 ## Notes / known quirks
 
 - Scan In and Receive list share the same sessions; subheading notes a future single-screen merge.
-- Edge mode chip reflects tenant receiving policy (strict vs pragmatic gates).
+- Receive-policy chip reflects tenant receiving SOP (sealed vs open-count gates). Not an LSPedia Edge product mode.
 - Mobile receive uses `MobileViewReceivingSession` for floor layouts.

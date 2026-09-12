@@ -41,7 +41,7 @@
                     ['title' => 'Saleable return outbound', 'description' => 'Outbound return EPCIS with custody documentation—so regional DCs close the saleable return loop without a separate returns portal.'],
                     ['title' => 'Reverse logistics scorecard', 'description' => 'Return volume, verification outcomes, and partner trends—so compliance leads see reverse logistics health alongside forward ship metrics.'],
                     ['title' => 'ACK monitoring', 'description' => 'Outbound message monitor with alerts when pharmacy customers stop acknowledging—so customer success calls happen before stale ACKs pile up.'],
-                    ['title' => 'ATP & licenses', 'description' => 'Trading partner license validation with daily revalidation—so you do not ship to partners with lapsed authorization.'],
+                    ['title' => 'ATP & licenses', 'description' => 'Partner license fields and ATP readiness with manual Pulse/OCI evidence—so you diligence counterparties without claiming Pulse certification or a live Pulse/OCI directory API.'],
                     ['title' => 'WMS ship-confirm bridge', 'description' => 'Manhattan/Körber webhook → outbound EPCIS with blocked-reason trends—so WMS ship events become traceable EPCIS without manual re-entry.', 'href' => route('marketing.features.show', 'integrations')],
                     ['title' => 'Compliance export', 'description' => 'JSON/CSV audit export API—so management and inspection prep pull evidence from live ops, not ad hoc spreadsheets.'],
                 ]"

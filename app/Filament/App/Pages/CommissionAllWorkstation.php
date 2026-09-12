@@ -13,6 +13,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Epcis\EpcHasCommissioningEvent;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -33,6 +34,8 @@ use UnitEnum;
 
 class CommissionAllWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedPlusCircle;
 
     protected static ?string $navigationLabel = 'Commission-all';
@@ -120,7 +123,7 @@ class CommissionAllWorkstation extends Page implements HasKnowledgeBase
             }
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        if (! $shippable->contains((int) $site->getKey(), $epcId, $this->floorPrincipalId((int) $site->getKey()))) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -271,7 +274,7 @@ class CommissionAllWorkstation extends Page implements HasKnowledgeBase
         ReceivingGate $receivingGate,
     ): ?string {
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $this->floorPrincipalId($siteId))) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
 

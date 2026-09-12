@@ -42,7 +42,7 @@ class InspectionDayReadinessPage extends Page implements HasKnowledgeBase
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'FDA walk-in path: ZIP evidence, ATP, exceptions, SOPs, and Alert Center — under 10 minutes.';
+        return 'Competitive FDA walk-in demo path: ZIP pack, ATP, exceptions, SOPs, and Alert Center — under 10 minutes. Not a live NABP Pulse feed.';
     }
 
     public function checklistScore(): int

@@ -18,6 +18,7 @@ class TenantFeaturesTest extends TestCase
         $this->assertFalse($f->supportsUnpacking());
         $this->assertTrue($f->supportsPacking());
         $this->assertFalse($f->supportsCommissioning());
+        $this->assertTrue($f->supportsDispositionDecommission());
         $this->assertTrue($f->supportsReturning());
     }
 
@@ -30,6 +31,7 @@ class TenantFeaturesTest extends TestCase
         $this->assertFalse($f->supportsUnpacking());
         $this->assertFalse($f->supportsPacking());
         $this->assertFalse($f->supportsCommissioning());
+        $this->assertFalse($f->supportsDispositionDecommission());
         $this->assertFalse($f->supportsReturning());
         $this->assertFalse($f->hasAnyOperations());
         $this->assertFalse($f->supportsInboundIntegrations());
@@ -64,14 +66,17 @@ class TenantFeaturesTest extends TestCase
     {
         $f = new TenantFeatures(TenantProfile::Manufacturer);
 
-        $this->assertFalse($f->supportsReceiving());
+        $this->assertTrue($f->supportsReceiving());
         $this->assertFalse($f->supportsVrs());
-        $this->assertFalse($f->supportsTransferring());
+        $this->assertTrue($f->supportsVrsResponder());
+        $this->assertTrue($f->supportsTransferring());
         $this->assertTrue($f->supportsUnpacking());
         $this->assertTrue($f->supportsPacking());
         $this->assertTrue($f->supportsCommissioning());
+        $this->assertTrue($f->supportsDispositionDecommission());
         $this->assertTrue($f->supportsReturning());
         $this->assertTrue($f->supportsOutboundIntegrations());
+        $this->assertFalse($f->supportsPharmacyOutboundDesk());
         $this->assertTrue($f->supportsSsccLabeling());
     }
 
@@ -121,6 +126,17 @@ class TenantFeaturesTest extends TestCase
         $this->assertFalse((new TenantFeatures(TenantProfile::BuyingGroup))->supportsCommissioning());
     }
 
+    public function test_disposition_decommission_for_ops_profiles_not_buying_group(): void
+    {
+        $this->assertTrue((new TenantFeatures(TenantProfile::Pharmacy))->supportsDispositionDecommission());
+        $this->assertTrue((new TenantFeatures(TenantProfile::Manufacturer))->supportsDispositionDecommission());
+        $this->assertTrue((new TenantFeatures(TenantProfile::DrugWholesaler))->supportsDispositionDecommission());
+        $this->assertTrue((new TenantFeatures(TenantProfile::Prepackager))->supportsDispositionDecommission());
+        $this->assertTrue((new TenantFeatures(TenantProfile::Logistics3pl))->supportsDispositionDecommission());
+        $this->assertTrue((new TenantFeatures(TenantProfile::DentalMedicalSupply))->supportsDispositionDecommission());
+        $this->assertFalse((new TenantFeatures(TenantProfile::BuyingGroup))->supportsDispositionDecommission());
+    }
+
     /**
      * Dental = wholesaler-lite (distributor floor + SSCC ship path; no plant commission; not pharmacy desk).
      */
@@ -135,6 +151,7 @@ class TenantFeaturesTest extends TestCase
         $this->assertTrue($f->supportsPacking());
         $this->assertTrue($f->supportsReturning());
         $this->assertFalse($f->supportsCommissioning());
+        $this->assertTrue($f->supportsDispositionDecommission());
         $this->assertTrue($f->supportsOutboundIntegrations());
         $this->assertTrue($f->supportsSsccLabeling());
         $this->assertFalse($f->supportsPharmacyOutboundDesk());

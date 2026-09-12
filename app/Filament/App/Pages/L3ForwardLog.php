@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\App\Pages;
 
-use App\Enums\TenantProfile;
 use App\Filament\Notifications\Notification;
 use App\Jobs\Labeling\ForwardCommissioningToL3;
 use App\Models\Epcis\EpcisDocument;
@@ -58,14 +57,7 @@ class L3ForwardLog extends Page implements HasKnowledgeBase, HasTable
             return false;
         }
 
-        if ($tenant->profile !== TenantProfile::Manufacturer) {
-            return false;
-        }
-
-        $features = TenantFeatures::forTenant($tenant);
-        $settings = TenantSettings::forTenant($tenant);
-
-        if (! $settings->l3Enabled() && ! $features->supportsCommissioning()) {
+        if (! TenantFeatures::forTenant($tenant)->supportsCommissioning()) {
             return false;
         }
 

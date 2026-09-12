@@ -37,7 +37,7 @@
                 <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">{{ $transport }}</span>
             @endforeach
             @if ($integration['pulse_listed'])
-                <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">Pulse ecosystem vendor</span>
+                <span class="rounded-full border border-tp-border px-3 py-1 text-xs text-tp-muted">Pulse-listed partner (vendor)</span>
             @endif
         </div>
 

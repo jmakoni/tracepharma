@@ -124,13 +124,14 @@ class OperationsHub extends Page implements HasKnowledgeBase
     public function featureMap(): array
     {
         $features = TenantFeatures::forTenant(tenant());
+        $wholesaleFloor = $features->showsWholesaleOperationsNav();
 
         return [
             'Receiving' => $features->supportsReceiving(),
-            'Transferring' => $features->supportsTransferring(),
+            'Transferring' => $features->supportsTransferring() && $wholesaleFloor,
             'Unpacking' => $features->supportsUnpacking()
                 || ReceivingPolicy::forTenant(tenant())->canUnpackAtReceive(),
-            'Packing' => $features->supportsPacking(),
+            'Packing' => $features->supportsPacking() && $wholesaleFloor,
             'Commissioning (pallets)' => $features->supportsCommissioning(),
             'Returning' => $features->supportsReturning(),
         ];
@@ -432,7 +433,8 @@ class OperationsHub extends Page implements HasKnowledgeBase
             ]);
         }
 
-        if ($features->supportsPacking() || $features->supportsSsccLabeling()) {
+        if (($features->supportsPacking() || $features->supportsSsccLabeling())
+            && $features->showsWholesaleOperationsNav()) {
             $this->pushDirectory($directories, [
                 'label' => 'Packing',
                 'description' => 'Pack bottles onto a new or already generated mixed-lot SSCC.',
@@ -440,7 +442,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             ]);
         }
 
-        if ($features->supportsPacking()) {
+        if ($features->supportsPacking() && $features->showsWholesaleOperationsNav()) {
             $this->pushDirectory($directories, [
                 'label' => 'Break & pack',
                 'description' => 'Break children from a source pallet onto a new outbound SSCC.',
@@ -454,9 +456,12 @@ class OperationsHub extends Page implements HasKnowledgeBase
                 'description' => 'Author commissioning ObjectEvents for EPCs missing them.',
                 'url' => $this->pageUrl(CommissionAllWorkstation::class),
             ]);
+        }
+
+        if ($features->supportsDispositionDecommission()) {
             $this->pushDirectory($directories, [
-                'label' => 'Decommission',
-                'description' => 'Author decommissioning (inactive) for on-hand EPCs.',
+                'label' => 'Destroy / Decommission',
+                'description' => 'Author destroy/retire ObjectEvents for on-hand EPCs (expired, damaged, illegitimate, etc.).',
                 'url' => $this->pageUrl(DecommissionWorkstation::class),
             ]);
         }
@@ -469,7 +474,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             ]);
         }
 
-        if ($features->supportsTransferring()) {
+        if ($features->supportsTransferring() && $features->showsWholesaleOperationsNav()) {
             $this->pushDirectory($directories, [
                 'label' => 'Transfer',
                 'description' => 'Active and history for intracompany moves and transfer EPCIS.',
@@ -496,7 +501,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             'url' => $this->pageUrl(AssetTracking::class),
         ]);
 
-        if ($features->supportsReceiving()) {
+        if ($features->supportsVrs()) {
             $this->pushDirectory($directories, [
                 'label' => 'Verify product',
                 'description' => 'Scan a unit label and verify with VRS.',

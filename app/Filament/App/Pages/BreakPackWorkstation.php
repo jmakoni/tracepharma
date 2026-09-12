@@ -8,6 +8,7 @@ use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccReshipMode;
+use App\Enums\TenantProfile;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
@@ -20,6 +21,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Labeling\PreviewNextSsccLabels;
@@ -43,6 +45,8 @@ use UnitEnum;
 
 class BreakPackWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;
 
     protected static ?string $navigationLabel = 'Break & pack';
@@ -80,6 +84,18 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
     {
         return TenantFeatures::forTenant(tenant())->supportsPacking()
             && JobRoleAccess::allows(Permissions::NavShip);
+    }
+
+    /**
+     * Pharmacy break-pack stays Operations Hub–only (no sidebar), even with warehouse tools.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        if (TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Pharmacy) {
+            return false;
+        }
+
+        return parent::shouldRegisterNavigation();
     }
 
     public function getSubheading(): string|Htmlable|null
@@ -180,8 +196,11 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
      */
     private function passesCustodyGate(EpcCustodyGate $custodyGate, Epc $epc): bool
     {
+        $site = $this->commissionSite();
+        $siteId = $site?->getKey() !== null ? (int) $site->getKey() : null;
+
         try {
-            $custodyGate->assertOperableFor($epc, 'break and pack');
+            $custodyGate->assertOperableFor($epc, 'break and pack', $this->floorPrincipalId($siteId));
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -211,7 +230,8 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return false;
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        $siteId = (int) $site->getKey();
+        if (! $shippable->contains($siteId, $epcId, $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -359,7 +379,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Source parent is no longer on hand at the selected site — rescan.');
 
             return;
@@ -410,8 +430,14 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
 
                 // Unpack commits on its own so the SSCC serial pool lock taken by
                 // GenerateSsccLabelBatch is never held across PDF rendering.
-                $unpackResult = DB::transaction(function () use ($unpack, $parent, $selectedIds, $site): array {
-                    $unpackResult = $unpack->handleParent($parent, $selectedIds, $site, auth()->id());
+                $unpackResult = DB::transaction(function () use ($unpack, $parent, $selectedIds, $site, $siteId): array {
+                    $unpackResult = $unpack->handleParent(
+                        $parent,
+                        $selectedIds,
+                        $site,
+                        auth()->id(),
+                        $this->floorPrincipalId($siteId),
+                    );
 
                     $closedLinks = (int) ($unpackResult['closed_links'] ?? 0);
 
@@ -553,7 +579,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Source parent is not on hand at the selected site.');
 
             return;
@@ -625,7 +651,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
     private function assertSelectedOnHand(array $epcIds, int $siteId, ShippableEpcsAtSite $shippable): ?string
     {
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $this->floorPrincipalId($siteId))) {
                 return 'A selected child is no longer on hand at the selected site — rescan.';
             }
         }

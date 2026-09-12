@@ -28,6 +28,10 @@ Review EPCIS documents generated for partners (shipping, transfer, commissioning
 4. Use **Download EPCIS** for the partner TI file (commission/pack/ship when packed).
 5. Retry failed sends after fixing connection issues.
 
+## DSCSA Transaction Statement on the document
+
+The Summary **DSCSA** block (TS affirmed / legal notice) appears for **partner shipping** ownership-change files. It is hidden for generated transferring, receiving, commissioning, and other non–ownership-change authored kinds — those are custody events, not DSCSA transactions. Ship Order still requires TI/TS affirmation on send.
+
 ## Partner TI payload vs live custody events
 
 | Surface | Meaning |

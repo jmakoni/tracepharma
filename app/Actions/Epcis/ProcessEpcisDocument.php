@@ -4,6 +4,7 @@ namespace App\Actions\Epcis;
 
 use App\Actions\Labeling\StampSsccBatchCommissionedFromDocument;
 use App\Actions\Receiving\AttachInboundDocumentToShipment;
+use App\Actions\Receiving\AutoReceiveCmoInboundDocument;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -270,6 +271,16 @@ final class ProcessEpcisDocument
                     if ($inboundConnection !== null) {
                         app(ConnectionHealthTracker::class)->recordSuccess($inboundConnection);
                     }
+                }
+
+                try {
+                    app(AutoReceiveCmoInboundDocument::class)->handle($document->fresh() ?? $document);
+                } catch (Throwable $e) {
+                    Log::warning('receiving.auto_cmo_receive_hook_failed', [
+                        'source' => 'auto_cmo_receive',
+                        'document_id' => (int) $document->getKey(),
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
 

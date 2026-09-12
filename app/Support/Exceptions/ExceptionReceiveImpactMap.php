@@ -3,7 +3,9 @@
 namespace App\Support\Exceptions;
 
 use App\Enums\ExceptionReceiveImpact;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionType;
+use App\Support\Receiving\CmoOwnProductInbound;
 use Database\Seeders\ExceptionTypeSeeder;
 
 /**
@@ -11,6 +13,10 @@ use Database\Seeders\ExceptionTypeSeeder;
  *
  * Used by {@see ExceptionTypeSeeder} and as a runtime fallback
  * when {@see ExceptionType::$receive_impact} is null.
+ *
+ * Document-aware soft overrides (CMO own-product TS) live in
+ * {@see self::forCodeOnDocument()} — supplier / email surfaces should prefer that
+ * over {@see ExceptionType::blocksReceiving()} alone.
  */
 final class ExceptionReceiveImpactMap
 {
@@ -109,6 +115,24 @@ final class ExceptionReceiveImpactMap
         $normalized = strtoupper(trim($code));
 
         return self::MAP[$normalized] ?? ExceptionReceiveImpact::Warning;
+    }
+
+    /**
+     * Document-aware impact: CMO own-product inbound softens TS / biz-transaction codes.
+     */
+    public static function forCodeOnDocument(?string $code, ?EpcisDocument $document): ExceptionReceiveImpact
+    {
+        $impact = self::forCode($code);
+        if ($document === null || ! CmoOwnProductInbound::applies($document)) {
+            return $impact;
+        }
+
+        $normalized = strtoupper(trim((string) $code));
+        if (in_array($normalized, ['MISSING_DSCSA_STATEMENT', 'MISSING_BIZ_TRANSACTION'], true)) {
+            return ExceptionReceiveImpact::Soft;
+        }
+
+        return $impact;
     }
 
     /**

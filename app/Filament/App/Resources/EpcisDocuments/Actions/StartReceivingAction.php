@@ -156,7 +156,8 @@ final class StartReceivingAction
                     ? 'Continue receiving'
                     : 'Scan in')
                 ->icon(Heroicon::OutlinedQrCode)
-                ->visible(fn (EpcisDocument $record): bool => self::canStartReceiving($record))
+                ->visible(fn (EpcisDocument $record): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()
+                    && self::canStartReceiving($record))
                 ->disabled(fn (EpcisDocument $record): bool => app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record) !== null)
                 ->tooltip(function (EpcisDocument $record): ?string {
                     $blocking = app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record);

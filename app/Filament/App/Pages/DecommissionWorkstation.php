@@ -15,6 +15,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Disposition\AssertDecommissionMassApproval;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -42,11 +43,13 @@ use UnitEnum;
 
 class DecommissionWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedNoSymbol;
 
-    protected static ?string $navigationLabel = 'Decommission';
+    protected static ?string $navigationLabel = 'Destroy / Decommission';
 
-    protected static ?string $title = 'Decommission';
+    protected static ?string $title = 'Destroy / Decommission';
 
     protected static ?int $navigationSort = 17;
 
@@ -69,13 +72,13 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
-        return TenantFeatures::forTenant(tenant())->supportsCommissioning()
+        return TenantFeatures::forTenant(tenant())->supportsDispositionDecommission()
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Scan on-hand EPCs at the selected site, choose a reason, then author decommissioning ObjectEvents.';
+        return 'Scan on-hand EPCs at the selected site, choose a disposition reason, then author destroy/retire ObjectEvents.';
     }
 
     public function processScan(
@@ -134,7 +137,10 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
             }
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        $siteId = (int) $site->getKey();
+        $principalId = $this->floorPrincipalId($siteId);
+
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -175,7 +181,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $custodyGate->assertOperableFor($epc, 'decommissioning');
+            $custodyGate->assertOperableFor($epc, 'decommissioning', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -450,7 +456,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
         EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): ?string {
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $this->floorPrincipalId($siteId))) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
 

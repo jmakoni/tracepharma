@@ -15,18 +15,19 @@ class OnboardingCopy
 {
     public function __construct(
         protected TenantFeatures $features,
+        protected ?Tenant $tenant = null,
     ) {}
 
     public static function forTenant(?Tenant $tenant): self
     {
-        return new self(TenantFeatures::forTenant($tenant));
+        return new self(TenantFeatures::forTenant($tenant), $tenant);
     }
 
     public function subheading(): string
     {
         if ($this->features->profile() === TenantProfile::Logistics3pl) {
             return 'Set up your 3PL for DSCSA receive and ship — company GLN, sites, partners, and inbound path. '
-                .PrincipalsHonesty::SENTENCE;
+                .PrincipalsHonesty::forTenant($this->tenant)->sentence();
         }
 
         if ($this->usesWholesalerChecklist()) {
@@ -40,7 +41,7 @@ class OnboardingCopy
     {
         if ($this->features->profile() === TenantProfile::Logistics3pl) {
             return '3PL setup: receive and ship on behalf of clients with the right GLNs and sites. '
-                .PrincipalsHonesty::SENTENCE;
+                .PrincipalsHonesty::forTenant($this->tenant)->sentence();
         }
 
         if ($this->usesWholesalerChecklist()) {

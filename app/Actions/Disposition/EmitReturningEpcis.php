@@ -12,6 +12,7 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Disposition\AcquireReturningEpcLocks;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\EpcOnOpenShippingSession;
@@ -78,9 +79,11 @@ final class EmitReturningEpcis
      */
     private function emitWithinLock(array $epcIds, int $siteId, array $options): array
     {
+        $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
         $notOnHand = [];
         foreach ($epcIds as $epcId) {
-            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId)) {
+            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId, $principalId)) {
                 $notOnHand[] = $epcId;
             }
         }
@@ -133,7 +136,7 @@ final class EmitReturningEpcis
         }
 
         // Refuse terminal dispositions; returning expects operable stock at a tenant site.
-        $this->custodyGate->assertInCustody($epcIds, 'returning');
+        $this->custodyGate->assertInCustody($epcIds, 'returning', $principalId);
 
         $xml = $this->documentGenerator->execute(
             $uris,

@@ -56,13 +56,19 @@ final class CompleteReceivingSession
     ): ReceivingSession {
         $session = $session->fresh() ?? $session;
 
-        if (! JobRoleAccess::allows(Permissions::NavReceive)) {
+        $user = auth()->user();
+        $actor = $user instanceof User ? $user : null;
+        if ($actorId !== null) {
+            $resolved = User::query()->find($actorId);
+            $actor = $resolved instanceof User ? $resolved : $actor;
+        }
+
+        if (! JobRoleAccess::allowsForActor(Permissions::NavReceive, $actor)) {
             throw new DomainException('Receiving is not authorized for your job role.');
         }
 
-        $user = auth()->user();
-        if ($user instanceof User) {
-            $this->assertCanAccessSessionSite($user, $session);
+        if ($actor instanceof User) {
+            $this->assertCanAccessSessionSite($actor, $session);
         }
 
         try {

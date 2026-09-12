@@ -131,6 +131,10 @@ final class ShippableEpcsAtSite
      *
      * Uses effective last-known (open-parent co-location) so packed children follow
      * an SSCC received at another site — the same gate break-pack / pack / unpack use.
+     *
+     * When principal custody is enforced, pass the session principal for ship/pick.
+     * For physical location gates (e.g. scan-first cross-site receive), use
+     * {@see isOnHandAtSite()} so principal filtering cannot fail-open the location check.
      */
     public function contains(int $siteId, int $epcId, ?int $principalId = null): bool
     {
@@ -139,6 +143,18 @@ final class ShippableEpcsAtSite
         }
 
         return $this->filter($siteId, [$epcId], $principalId) !== [];
+    }
+
+    /**
+     * Physical on-hand at site by last-known GLN only (ignores principal custody filter).
+     */
+    public function isOnHandAtSite(int $siteId, int $epcId): bool
+    {
+        if ($epcId <= 0) {
+            return false;
+        }
+
+        return $this->filter($siteId, [$epcId], ignorePrincipal: true) !== [];
     }
 
     /**
@@ -151,7 +167,7 @@ final class ShippableEpcsAtSite
      * @param  iterable<int>  $epcIds
      * @return list<int>
      */
-    public function filter(int $siteId, iterable $epcIds, ?int $principalId = null): array
+    public function filter(int $siteId, iterable $epcIds, ?int $principalId = null, bool $ignorePrincipal = false): array
     {
         $candidateIds = [];
 
@@ -177,7 +193,9 @@ final class ShippableEpcsAtSite
         $ids = array_keys($candidateIds);
         $metas = $this->lastKnownGln->latestEventMetaForEpcIds($ids);
         $inTransitAncestors = $this->inTransitInsideOpenParent->inTransitAncestorByEpcId($ids);
-        $principalByEpcId = $this->principalIdsByEpcId($ids);
+        $principalByEpcId = $ignorePrincipal
+            ? []
+            : $this->principalIdsByEpcId($ids);
 
         $matched = [];
 
@@ -199,7 +217,7 @@ final class ShippableEpcsAtSite
                 continue;
             }
 
-            if (! $this->principalAllows($principalId, $principalByEpcId[$epcId] ?? null)) {
+            if (! $ignorePrincipal && ! $this->principalAllows($principalId, $principalByEpcId[$epcId] ?? null)) {
                 continue;
             }
 
@@ -228,11 +246,12 @@ final class ShippableEpcsAtSite
             return $query;
         }
 
-        if ($principalId === null || $principalId <= 0) {
-            return $query->whereRaw('0 = 1');
+        if ($principalId !== null && $principalId > 0) {
+            return $query->where('principal_id', $principalId);
         }
 
-        return $query->where('principal_id', $principalId);
+        // Null session principal: list stamped inventory (infer per-EPC), not empty.
+        return $query->whereNotNull('principal_id');
     }
 
     private function principalAllows(?int $activePrincipalId, ?int $epcPrincipalId): bool
@@ -241,11 +260,12 @@ final class ShippableEpcsAtSite
             return true;
         }
 
-        if ($activePrincipalId === null || $activePrincipalId <= 0) {
-            return false;
+        if ($activePrincipalId !== null && $activePrincipalId > 0) {
+            return $epcPrincipalId !== null && $epcPrincipalId === $activePrincipalId;
         }
 
-        return $epcPrincipalId !== null && $epcPrincipalId === $activePrincipalId;
+        // Homogeneous-of-one: stamped EPC is allowed when caller has no session principal.
+        return $epcPrincipalId !== null;
     }
 
     /**

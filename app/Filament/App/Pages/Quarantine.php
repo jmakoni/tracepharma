@@ -19,6 +19,7 @@ use Filament\Forms\Components\Textarea;
 use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -54,6 +55,11 @@ class Quarantine extends Page implements HasKnowledgeBase
     {
         return TenantFeatures::forTenant(tenant())->supportsComplianceCases()
             && JobRoleAccess::allows(Permissions::NavExceptions);
+    }
+
+    public function getSubheading(): string|Htmlable|null
+    {
+        return 'Hold and release suspect serials with QA review — not Pulse directory quarantine.';
     }
 
     public function mount(): void

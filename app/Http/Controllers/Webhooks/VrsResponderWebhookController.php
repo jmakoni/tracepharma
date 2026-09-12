@@ -35,7 +35,7 @@ final class VrsResponderWebhookController
         TenantAccess::assertActive($tenant);
 
         return TenantRunner::run($tenant, function () use ($request): JsonResponse {
-            if (! TenantFeatures::forTenant(tenant())->supportsVrs()) {
+            if (! TenantFeatures::forTenant(tenant())->supportsVrsResponder()) {
                 return response()->json(['message' => 'VRS responder is not enabled for this tenant.'], 403);
             }
 

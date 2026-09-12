@@ -80,11 +80,11 @@ final class ConfirmReceivingScan
         $scan = ElementString::normalize($scan);
         $session = $session->fresh() ?? $session;
 
-        if (! JobRoleAccess::allows(Permissions::NavReceive)) {
+        $actor = $this->resolveActor($userId);
+        if (! JobRoleAccess::allowsForActor(Permissions::NavReceive, $actor)) {
             throw new DomainException('Receiving is not authorized for your job role.');
         }
 
-        $actor = $this->resolveActor($userId);
         if ($actor !== null) {
             $this->assertCanAccessSessionSite($actor, $session);
         }
@@ -542,7 +542,8 @@ final class ConfirmReceivingScan
             return null;
         }
 
-        if ($this->shippableEpcsAtSite->contains($sessionSiteId, $epcId)) {
+        // Location-only: principal filtering must not fail-open this cross-site gate.
+        if ($this->shippableEpcsAtSite->isOnHandAtSite($sessionSiteId, $epcId)) {
             return null;
         }
 
@@ -552,7 +553,7 @@ final class ConfirmReceivingScan
                 continue;
             }
 
-            if ($this->shippableEpcsAtSite->contains($otherSiteId, $epcId)) {
+            if ($this->shippableEpcsAtSite->isOnHandAtSite($otherSiteId, $epcId)) {
                 return [
                     'ok' => false,
                     'message' => 'This unit is on hand at another site. Receive it there or transfer it first.',
@@ -907,6 +908,13 @@ final class ConfirmReceivingScan
                 'effect' => 'not_found',
                 'session_completed' => false,
             ];
+        }
+
+        $principalBlock = $this->principalCustodyBlock($session, $epc);
+        if ($principalBlock !== null) {
+            $principalBlock['session_completed'] = false;
+
+            return $principalBlock;
         }
 
         $line = ReceivingScanLine::query()

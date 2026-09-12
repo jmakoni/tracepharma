@@ -51,6 +51,7 @@ class EpcisDocumentResource extends Resource implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
+        // Inbound catalog — not Scan In / receiving sessions (those need supportsReceiving()).
         return TenantFeatures::forTenant(tenant())->supportsInboundIntegrations()
             && JobRoleAccess::allows(Permissions::NavReceive);
     }

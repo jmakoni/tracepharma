@@ -38,7 +38,10 @@ final class OpenScanFirstReceivingSession
 
         $resolvedSiteId = $this->resolveSiteId($siteId);
         $features = TenantFeatures::forTenant(tenant());
-        $resolvedPrincipalId = $this->resolvePrincipalId($features, $resolvedSiteId, $principalId);
+        $resolvedPrincipalId = PrincipalCustody::forTenant()->resolveSessionPrincipalId(
+            $resolvedSiteId,
+            $principalId,
+        );
 
         $attributes = [
             'session_kind' => ReceivingSessionKind::ScanFirst,
@@ -61,27 +64,6 @@ final class OpenScanFirstReceivingSession
         }
 
         return ReceivingSession::query()->create($attributes);
-    }
-
-    private function resolvePrincipalId(TenantFeatures $features, int $siteId, ?int $principalId): ?int
-    {
-        if (! $features->supportsPrincipals()) {
-            return null;
-        }
-
-        if ($principalId === null || $principalId <= 0) {
-            $fromSite = Site::query()->whereKey($siteId)->value('principal_id');
-            $principalId = $fromSite !== null ? (int) $fromSite : null;
-        }
-
-        if (PrincipalCustody::forTenant()->isEnforced()
-            && ($principalId === null || $principalId <= 0)) {
-            throw new DomainException(
-                'Principal custody is enforced — select a principal (or set the site default) before opening receive.',
-            );
-        }
-
-        return $principalId !== null && $principalId > 0 ? $principalId : null;
     }
 
     private function resolveSiteId(?int $explicitSiteId): int

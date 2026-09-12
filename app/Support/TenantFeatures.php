@@ -59,23 +59,54 @@ class TenantFeatures
 
     public function supportsReceiving(): bool
     {
+        // Pharmacy + distribution-ops + Manufacturer (CMO/partner ASN inbound → on-hand).
+        // Not Buying Group. Does not imply VRS requestor or Pharmacy outbound desk.
         return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
             || $this->isDistributionOpsProfile();
     }
 
     /**
      * VRS requestor UI (Verify Product, verification history, VRS directory).
+     * Not the inbound VRS responder webhook — use supportsVrsResponder().
      * Not the manufacturer verification portal — use supportsManufacturerVerificationPortal().
+     * Manufacturer is off by default; opt in via TenantSettings::manufacturerVrsRequestorEnabled().
      */
     public function supportsVrs(): bool
     {
-        return $this->profile === TenantProfile::Pharmacy
-            || $this->isDistributionOpsProfile();
+        if ($this->profile === TenantProfile::Pharmacy || $this->isDistributionOpsProfile()) {
+            return true;
+        }
+
+        if ($this->profile === TenantProfile::Manufacturer) {
+            $tenant = tenant();
+            if ($tenant === null) {
+                return false;
+            }
+
+            return TenantSettings::forTenant($tenant)->manufacturerVrsRequestorEnabled();
+        }
+
+        return false;
+    }
+
+    /**
+     * VRS responder path (inbound webhook / PI answer).
+     * Manufacturer must respond; requestor UI stays on supportsVrs() only.
+     * Prepackager is included via supportsVrs() (distribution-ops).
+     */
+    public function supportsVrsResponder(): bool
+    {
+        return $this->profile === TenantProfile::Manufacturer
+            || $this->supportsVrs();
     }
 
     public function supportsTransferring(): bool
     {
+        // Intracompany multi-site moves — Pharmacy, Manufacturer plants, distribution-ops.
+        // Not wholesale ASN receive / Scan In (supportsReceiving) and not Pharmacy outbound desk.
         return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
             || $this->isDistributionOpsProfile();
     }
 
@@ -93,8 +124,9 @@ class TenantFeatures
     }
 
     /**
-     * Greenfield commission / plant decommission ObjectEvents only (Manufacturer, Prepackager).
-     * Not packing, SSCC labeling, break-pack, or return workflows.
+     * Greenfield commission ObjectEvents only (Manufacturer, Prepackager).
+     * Not packing, SSCC labeling, break-pack, return, or disposition destroy —
+     * use supportsDispositionDecommission() for destroy/retire ObjectEvents.
      */
     public function supportsCommissioning(): bool
     {
@@ -103,6 +135,17 @@ class TenantFeatures
             TenantProfile::Prepackager => true,
             default => false,
         };
+    }
+
+    /**
+     * Floor disposition destroy / decommission ObjectEvents (DELETE + decommissioning).
+     * Not plant commission-all; not Return workstation / 3911·quarantine.
+     */
+    public function supportsDispositionDecommission(): bool
+    {
+        return $this->profile === TenantProfile::Pharmacy
+            || $this->profile === TenantProfile::Manufacturer
+            || $this->isDistributionOpsProfile();
     }
 
     public function supportsReturning(): bool
@@ -164,6 +207,20 @@ class TenantFeatures
     public function supportsPharmacyOutboundDesk(): bool
     {
         return $this->profile === TenantProfile::Pharmacy;
+    }
+
+    /**
+     * Pharmacy opt-in Scan Out + Outbound EPCIS when warehouse tools are shown.
+     * Does not unlock Ship Order list or SSCC labeling.
+     */
+    public function supportsPharmacyFullOutbound(): bool
+    {
+        if ($this->profile !== TenantProfile::Pharmacy) {
+            return false;
+        }
+
+        return TenantSettings::forTenant(tenant())->pharmacyFullOutboundEnabled()
+            && $this->showsWholesaleOperationsNav();
     }
 
     /**
@@ -275,7 +332,7 @@ class TenantFeatures
 
     /**
      * Manufacturer verification fallback portal (settings-gated).
-     * True for Manufacturer when enabled, or for VRS requestor profiles (supportsVrs) when enabled.
+     * When enabled: any supportsVrsResponder() profile (Manufacturer or VRS requestor profiles).
      * Do not require supportsVrs() alone — that blocked Manufacturer (G-P0-01).
      */
     public function supportsManufacturerVerificationPortal(): bool
@@ -289,8 +346,7 @@ class TenantFeatures
             return false;
         }
 
-        return $this->profile === TenantProfile::Manufacturer
-            || $this->supportsVrs();
+        return $this->supportsVrsResponder();
     }
 
     /**

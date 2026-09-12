@@ -148,12 +148,13 @@ class BuyingGroupMembershipTest extends TestCase
         $buyingGroup = $this->initializeDemo2Tenant(TenantProfile::BuyingGroup);
         $wholesaler = $this->createCentralTenant(TenantProfile::DrugWholesaler, 'F2 Wholesaler Reject');
         $owner = $this->seedOwnerInCurrentTenant();
+        $rosterId = $this->createSoftRosterRow();
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Hard membership is limited to pharmacy tenants.');
 
         try {
-            app(InviteBuyingGroupMembership::class)->invite($buyingGroup, $wholesaler, $owner);
+            app(InviteBuyingGroupMembership::class)->invite($buyingGroup, $wholesaler, $owner, $rosterId);
         } finally {
             // no membership created
         }
@@ -166,11 +167,12 @@ class BuyingGroupMembershipTest extends TestCase
         $buyingGroup->forceFill(['status' => 'suspended'])->save();
         $pharmacy = $this->createPharmacyTenant();
         $owner = $this->seedOwnerInCurrentTenant();
+        $rosterId = $this->createSoftRosterRow();
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('The buying-group tenant must be active to invite members.');
 
-        app(InviteBuyingGroupMembership::class)->invite($buyingGroup, $pharmacy, $owner);
+        app(InviteBuyingGroupMembership::class)->invite($buyingGroup, $pharmacy, $owner, $rosterId);
     }
 
     #[Test]
@@ -179,11 +181,100 @@ class BuyingGroupMembershipTest extends TestCase
         $pharmacyA = $this->initializeDemo2Tenant(TenantProfile::Pharmacy);
         $pharmacyB = $this->createPharmacyTenant();
         $owner = $this->seedOwnerInCurrentTenant();
+        $rosterId = $this->createSoftRosterRow();
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Only a buying-group tenant can invite members.');
 
-        app(InviteBuyingGroupMembership::class)->invite($pharmacyA, $pharmacyB, $owner);
+        app(InviteBuyingGroupMembership::class)->invite($pharmacyA, $pharmacyB, $owner, $rosterId);
+    }
+
+    #[Test]
+    public function invite_requires_roster_row(): void
+    {
+        $buyingGroup = $this->initializeDemo2Tenant(TenantProfile::BuyingGroup);
+        $pharmacy = $this->createPharmacyTenant();
+        $owner = $this->seedOwnerInCurrentTenant();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Invite a pharmacy from a member roster row');
+
+        app(InviteBuyingGroupMembership::class)->invite($buyingGroup, $pharmacy, $owner, null);
+    }
+
+    #[Test]
+    public function resolve_member_tenant_matches_uuid_or_domain_without_directory(): void
+    {
+        $this->initializeDemo2Tenant(TenantProfile::BuyingGroup);
+        $pharmacy = $this->createPharmacyTenant();
+        $domain = (string) $pharmacy->domains()->value('domain');
+
+        $byId = app(InviteBuyingGroupMembership::class)->resolveMemberTenant((string) $pharmacy->getKey());
+        $byDomain = app(InviteBuyingGroupMembership::class)->resolveMemberTenant($domain);
+
+        $this->assertTrue($byId->is($pharmacy));
+        $this->assertTrue($byDomain->is($pharmacy));
+    }
+
+    #[Test]
+    public function resolve_member_tenant_hides_non_pharmacy_and_unknown_lookups(): void
+    {
+        $this->initializeDemo2Tenant(TenantProfile::BuyingGroup);
+        $wholesaler = $this->createCentralTenant(TenantProfile::DrugWholesaler, 'Hidden Wholesaler');
+
+        $invite = app(InviteBuyingGroupMembership::class);
+
+        try {
+            $invite->resolveMemberTenant((string) $wholesaler->getKey());
+            $this->fail('Expected RuntimeException for non-pharmacy lookup.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('No active pharmacy tenant matched that ID or domain.', $e->getMessage());
+        }
+
+        try {
+            $invite->resolveMemberTenant((string) Str::uuid());
+            $this->fail('Expected RuntimeException for unknown UUID.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('No active pharmacy tenant matched that ID or domain.', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function invite_rejects_when_roster_primary_gln_does_not_match_tenant(): void
+    {
+        $buyingGroup = $this->initializeDemo2Tenant(TenantProfile::BuyingGroup);
+        $pharmacy = $this->createPharmacyTenant();
+        $pharmacy->forceFill(['gln' => '0301160000009'])->save();
+        $owner = $this->seedOwnerInCurrentTenant();
+
+        $roster = BuyingGroupMember::query()->create([
+            'name' => 'GLN mismatch roster',
+            'status' => BuyingGroupMemberStatus::Active,
+            'primary_gln' => '0614141000012',
+        ]);
+        $this->memberIds[] = (int) $roster->getKey();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Roster primary GLN does not match that pharmacy tenant.');
+
+        app(InviteBuyingGroupMembership::class)->invite(
+            $buyingGroup,
+            $pharmacy,
+            $owner,
+            (int) $roster->getKey(),
+        );
+    }
+
+    private function createSoftRosterRow(): int
+    {
+        $roster = BuyingGroupMember::query()->create([
+            'name' => 'F2 Soft Roster Pharmacy',
+            'status' => BuyingGroupMemberStatus::Active,
+            'contact_email' => 'f2-roster@example.test',
+        ]);
+        $this->memberIds[] = (int) $roster->getKey();
+
+        return (int) $roster->getKey();
     }
 
     private function seedOwnerInCurrentTenant(): User

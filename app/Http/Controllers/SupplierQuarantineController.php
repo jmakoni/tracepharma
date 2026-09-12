@@ -307,11 +307,13 @@ class SupplierQuarantineController extends Controller
             return false;
         }
 
-        if ($type->receive_impact !== null) {
-            return $type->blocksReceiving();
-        }
+        $document = $case->relationLoaded('document')
+            ? $case->document
+            : $case->document()->first();
 
-        return ExceptionReceiveImpactMap::forCode((string) $type->code)->blocksReceiving();
+        // Prefer document-aware map so CMO own-product soft TS is not treated as hard-blocking.
+        return ExceptionReceiveImpactMap::forCodeOnDocument((string) $type->code, $document)
+            ->blocksReceiving();
     }
 
     private function assertEpcis12Schema(string $absolutePath): void

@@ -60,8 +60,8 @@ class ReceivingPolicyTest extends TestCase
     {
         $copy = ReceivingPolicy::forProfile(TenantProfile::Pharmacy)->promptCopy();
 
-        $this->assertSame('Sealed tote — Edge-style. Scan SSCC or Case barcode', $copy['scanHelper']);
-        $this->assertStringStartsWith('Sealed tote — Edge-style. ', $copy['kindHelper']);
+        $this->assertSame('Sealed tote — receive policy. Scan SSCC or Case barcode', $copy['scanHelper']);
+        $this->assertStringStartsWith('Sealed tote — receive policy. ', $copy['kindHelper']);
         $this->assertStringContainsString('tote/case', strtolower($copy['sealedPalletLabel']));
         $this->assertSame('Applies to the next tote/case scan.', $copy['sealedPalletHelper']);
         $this->assertSame('Confirm tote/case + units', $copy['confirmLabelSealed']);
@@ -79,12 +79,12 @@ class ReceivingPolicyTest extends TestCase
     }
 
     #[Test]
-    public function edge_mode_chip_labels_use_edge_style_suffix(): void
+    public function edge_mode_chip_labels_describe_receive_policy_not_lspedia_edge(): void
     {
-        $this->assertSame('Sealed parent — Edge-style', ReceivingEdgeMode::SealedParent->chipLabel());
-        $this->assertSame('Sealed tote — Edge-style', ReceivingEdgeMode::ToteLpn->chipLabel());
-        $this->assertSame('Open count — Edge-style', ReceivingEdgeMode::OpenCount->chipLabel());
-        $this->assertSame('Open tote — Edge-style', ReceivingEdgeMode::OpenTote->chipLabel());
+        $this->assertSame('Sealed parent — receive policy', ReceivingEdgeMode::SealedParent->chipLabel());
+        $this->assertSame('Sealed tote — receive policy', ReceivingEdgeMode::ToteLpn->chipLabel());
+        $this->assertSame('Open count — receive policy', ReceivingEdgeMode::OpenCount->chipLabel());
+        $this->assertSame('Open tote — receive policy', ReceivingEdgeMode::OpenTote->chipLabel());
     }
 
     #[Test]
@@ -92,8 +92,8 @@ class ReceivingPolicyTest extends TestCase
     {
         $copy = (new ReceivingPolicy(TenantProfile::Pharmacy, ReceivingEdgeMode::OpenTote))->promptCopy();
 
-        $this->assertSame('Open tote — Edge-style. Scan SSCC or Case barcode', $copy['scanHelper']);
-        $this->assertStringStartsWith('Open tote — Edge-style. ', $copy['kindHelper']);
+        $this->assertSame('Open tote — receive policy. Scan SSCC or Case barcode', $copy['scanHelper']);
+        $this->assertStringStartsWith('Open tote — receive policy. ', $copy['kindHelper']);
     }
 
     #[Test]

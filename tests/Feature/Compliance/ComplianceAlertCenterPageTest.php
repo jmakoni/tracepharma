@@ -25,7 +25,7 @@ class ComplianceAlertCenterPageTest extends TestCase
     #[Test]
     public function alert_center_and_atp_readiness_pages_render_for_owner(): void
     {
-        $this->initializeTenant();
+        $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
@@ -36,17 +36,44 @@ class ComplianceAlertCenterPageTest extends TestCase
 
             Livewire::test(ComplianceAlertCenter::class)
                 ->assertSuccessful()
-                ->assertSee('Compliance alert center');
+                ->assertSee('Compliance alert center')
+                ->assertSee('not a live NABP Pulse feed');
 
             Livewire::test(AtpPartnerReadiness::class)
                 ->assertSuccessful()
-                ->assertSee('Partner ATP readiness');
+                ->assertSee('Partner ATP readiness')
+                ->assertSee('manual Pulse/OCI evidence')
+                ->assertSee('not a certified live Pulse/OCI directory API');
         } finally {
             tenancy()->end();
         }
     }
 
-    private function initializeTenant(): Tenant
+    #[Test]
+    public function prepackager_atp_readiness_uses_repackager_diligence_title(): void
+    {
+        $tenant = $this->initializeTenant(TenantProfile::Prepackager);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Prepackager);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $this->assertSame('Repackager ATP diligence.', AtpPartnerReadiness::getNavigationLabel());
+
+            Livewire::test(AtpPartnerReadiness::class)
+                ->assertSuccessful()
+                ->assertSee('Repackager ATP diligence.')
+                ->assertSee('manual Pulse/OCI evidence');
+        } finally {
+            $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
+            tenancy()->end();
+        }
+    }
+
+    private function initializeTenant(TenantProfile $profile): Tenant
     {
         $tenant = Tenant::query()->find(self::TENANT_ID);
 
@@ -54,12 +81,14 @@ class ComplianceAlertCenterPageTest extends TestCase
             $tenant = Tenant::withoutEvents(fn () => Tenant::query()->create([
                 'id' => self::TENANT_ID,
                 'name' => 'Demo Pharmacy',
-                'profile' => TenantProfile::Pharmacy,
+                'profile' => $profile->value,
                 'status' => 'active',
                 'tenancy_db_name' => 'tenant_demo2_internal_vatengi_com',
             ]));
             $tenant->domains()->create(['domain' => 'demo2.internal.vatengi.com']);
         }
+
+        $tenant->forceFill(['profile' => $profile])->save();
 
         if (! self::$tenantReady) {
             $this->artisan('tenants:migrate', [
@@ -69,8 +98,9 @@ class ComplianceAlertCenterPageTest extends TestCase
             self::$tenantReady = true;
         }
 
-        tenancy()->initialize($tenant);
+        tenancy()->end();
+        tenancy()->initialize($tenant->fresh());
 
-        return $tenant;
+        return $tenant->fresh();
     }
 }

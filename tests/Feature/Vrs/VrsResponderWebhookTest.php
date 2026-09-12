@@ -12,6 +12,7 @@ use App\Models\Verification;
 use App\Services\Atp\FakeOciWalletClient;
 use App\Services\Atp\OciWalletClient;
 use App\Services\Quarantine\QuarantineService;
+use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Database\Seeders\ExceptionCaseSeeder;
 use Illuminate\Support\Facades\DB;
@@ -92,6 +93,87 @@ class VrsResponderWebhookTest extends TestCase
             $this->assertNotNull($verification);
             $this->assertSame('responder', $verification->request_payload['source'] ?? null);
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function manufacturer_responder_verifies_known_serial_without_requestor_ui(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $priorProfile = $tenant->profile;
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::Manufacturer])->save();
+            tenancy()->end();
+            tenancy()->initialize($tenant->fresh());
+
+            TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(false);
+            tenant()?->save();
+
+            $this->assertFalse(TenantSettings::forTenant(tenant())->manufacturerVrsRequestorEnabled());
+            $this->assertFalse(TenantFeatures::forTenant(tenant())->supportsVrs());
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsVrsResponder());
+
+            $uri = 'urn:epc:id:sgtin:030116.0200116.MFR'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                [
+                    'gtin14' => $epc->gtin14,
+                    'serial' => $epc->serial_number,
+                ],
+                ['X-Vrs-Api-Key' => self::RESPONDER_KEY],
+            );
+
+            $response->assertOk()
+                ->assertJson([
+                    'status' => 'verified',
+                    'found' => true,
+                    'gtin14' => $epc->gtin14,
+                    'serial' => $epc->serial_number,
+                ]);
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+        } finally {
+            $restore = Tenant::query()->find(self::DEMO2_TENANT_ID);
+            if ($restore !== null) {
+                $restore->forceFill(['profile' => $priorProfile])->save();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function buying_group_responder_is_forbidden(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+        $priorProfile = $tenant->profile;
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::BuyingGroup])->save();
+            tenancy()->end();
+
+            $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                [
+                    'gtin14' => '30301164005162',
+                    'serial' => 'BG-'.random_int(1000, 9999),
+                ],
+                ['X-Vrs-Api-Key' => self::RESPONDER_KEY],
+            )->assertForbidden();
+        } finally {
+            $restore = Tenant::query()->find(self::DEMO2_TENANT_ID);
+            if ($restore !== null) {
+                $restore->forceFill(['profile' => $priorProfile])->save();
+            }
             $this->cleanup();
         }
     }

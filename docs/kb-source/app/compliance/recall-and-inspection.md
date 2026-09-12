@@ -9,7 +9,7 @@ Filament classes:
 
 ## When to use
 
-Drive recall closure across sites, prepare for an inspection day, export an inspection pack, or reconcile on-hand vs recalled lots at a site.
+Drive recall closure across sites, prepare for an inspection day, export an inspection pack, or reconcile on-hand vs recalled lots at a site. **Inspection day readiness** is the competitive FDA walk-in demo path (ZIP pack → ATP → exceptions → SOPs → Alert Center). It is **not** a live NABP Pulse feed — ATP diligence uses licenses plus manual Pulse/OCI partner evidence.
 
 ## Prerequisites
 

@@ -115,6 +115,33 @@ class WmsShipConfirmPrincipalTest extends TestCase
     }
 
     #[Test]
+    public function inactive_principal_id_throws_domain_exception(): void
+    {
+        $this->initializeLogistics3plTenant();
+
+        try {
+            TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(false);
+            tenant()->save();
+
+            $principal = $this->createPrincipal('Inactive Id', externalRef: 'EXT-INACTIVE-'.Str::random(6));
+            $principal->forceFill(['is_active' => false])->save();
+            $site = $this->createShipSite(principalId: null);
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('Unknown or inactive principal_id');
+
+            app(ProcessWmsShipConfirm::class)->handle([
+                'site_id' => (int) $site->getKey(),
+                'scans' => [self::SSCC_URI],
+                'complete' => false,
+                'principal_id' => (int) $principal->getKey(),
+            ]);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function enforced_mode_rejects_when_no_principal_and_no_site_default(): void
     {
         $this->initializeLogistics3plTenant();

@@ -13,6 +13,7 @@ final class EnsureManufacturerVerificationPortalEnabled
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Settings + supportsVrsResponder() (composed inside portal helper).
         if (! TenantFeatures::forTenant(tenant())->supportsManufacturerVerificationPortal()) {
             abort(404);
         }

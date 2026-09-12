@@ -4,6 +4,7 @@ namespace App\Support\Epcis\Validation;
 
 use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Models\Epcis\EpcisDocument;
+use App\Support\Receiving\CmoOwnProductInbound;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -1307,6 +1308,18 @@ final class EpcisCatalogBusinessRules
     {
         $document = $ctx->document;
         if ($ctx->direction !== 'inbound' || filled($document->asn_number) || filled($document->customer_po)) {
+            return;
+        }
+
+        if (CmoOwnProductInbound::applies($document)) {
+            $this->add(
+                $findings,
+                $ctx,
+                'MISSING_BIZ_TRANSACTION',
+                'Inbound CMO own-product EPCIS has no ASN or customer PO reference — warning only.',
+                severity: 'warning',
+            );
+
             return;
         }
 

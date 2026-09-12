@@ -11,6 +11,7 @@ use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
+use App\Support\Dscsa\DscsaTransactionStatementUi;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -111,7 +112,15 @@ class OutboundEpcisDocumentsTable
                     ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('dscsa_affirm')
                     ->label('DSCSA')
+                    ->getStateUsing(function (EpcisDocument $record): ?bool {
+                        if (! DscsaTransactionStatementUi::applies($record)) {
+                            return null;
+                        }
+
+                        return (bool) $record->dscsa_affirm;
+                    })
                     ->boolean()
+                    ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('event_count')
                     ->label('Events (file)')

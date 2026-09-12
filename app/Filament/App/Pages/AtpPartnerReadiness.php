@@ -8,6 +8,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Compliance\ComplianceAlertMetrics;
 use App\Support\TenantFeatures;
+use App\Enums\TenantProfile;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -42,7 +43,21 @@ class AtpPartnerReadiness extends Page implements HasKnowledgeBase
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'Upstream partner facility licences for your organization jurisdictions.';
+        return 'Partner licenses plus manual Pulse/OCI evidence — not a certified live Pulse/OCI directory API.';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return tenant()?->profile === TenantProfile::Prepackager
+            ? 'Repackager ATP diligence.'
+            : 'ATP readiness';
+    }
+
+    public function getTitle(): string|Htmlable
+    {
+        return tenant()?->profile === TenantProfile::Prepackager
+            ? 'Repackager ATP diligence.'
+            : 'Partner ATP readiness';
     }
 
     /**

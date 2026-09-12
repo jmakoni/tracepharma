@@ -14,6 +14,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Receiving\EligibleReceiveSites;
@@ -34,6 +35,8 @@ use UnitEnum;
 
 class ReturnWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
 
     protected static ?string $navigationLabel = 'Return';
@@ -134,7 +137,10 @@ class ReturnWorkstation extends Page implements HasKnowledgeBase
             }
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        $siteId = (int) $site->getKey();
+        $principalId = $this->floorPrincipalId($siteId);
+
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -160,7 +166,7 @@ class ReturnWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $custodyGate->assertInCustody($epc, 'returning');
+            $custodyGate->assertInCustody($epc, 'returning', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
             $this->scan = '';
@@ -325,8 +331,10 @@ class ReturnWorkstation extends Page implements HasKnowledgeBase
         EpcCustodyGate $custodyGate,
         EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): ?string {
+        $principalId = $this->floorPrincipalId($siteId);
+
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $principalId)) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
 
@@ -344,7 +352,7 @@ class ReturnWorkstation extends Page implements HasKnowledgeBase
             }
 
             try {
-                $custodyGate->assertInCustody($epc, 'returning');
+                $custodyGate->assertInCustody($epc, 'returning', $principalId);
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();
             }

@@ -78,7 +78,9 @@ class ScanOutWorkstation extends Page implements HasKnowledgeBase
 
     public static function canAccess(): bool
     {
-        return TenantFeatures::forTenant(tenant())->supportsOutboundIntegrations()
+        $features = TenantFeatures::forTenant(tenant());
+
+        return ($features->supportsOutboundIntegrations() || $features->supportsPharmacyFullOutbound())
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 

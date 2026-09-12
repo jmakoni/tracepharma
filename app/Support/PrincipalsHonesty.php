@@ -13,9 +13,9 @@ use App\Support\Custody\PrincipalCustody;
  */
 final class PrincipalsHonesty
 {
-    public const SENTENCE = 'Principals filter lists; serials are not isolated per client.';
+    public const SENTENCE = 'filter only — not isolated.';
 
-    public const ENFORCED_SENTENCE = 'Principal custody is enforced; serials are gated per principal.';
+    public const ENFORCED_SENTENCE = 'enforced';
 
     public static function forTenant(?Tenant $tenant = null): self
     {

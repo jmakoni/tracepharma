@@ -18,7 +18,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
-use App\Support\Custody\PrincipalCustody;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Disposition\SaleableReturnScorecardMetrics;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
@@ -41,6 +41,8 @@ use UnitEnum;
 
 class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
 
     protected static ?string $navigationLabel = 'Saleable return';
@@ -187,7 +189,10 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
             }
         }
 
-        if (! $shippable->contains((int) $site->getKey(), $epcId)) {
+        $siteId = (int) $site->getKey();
+        $principalId = $this->floorPrincipalId($this->siteId ?? $siteId);
+
+        if (! $shippable->contains($siteId, $epcId, $principalId)) {
             $this->flash('error', 'Not on hand at the selected site.');
             $this->scan = '';
             $this->dispatch('focus-scan');
@@ -213,9 +218,6 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         }
 
         try {
-            $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite(
-                $this->siteId ?? ($site->getKey() !== null ? (int) $site->getKey() : null),
-            );
             $custodyGate->assertInCustody($epc, 'returning', $principalId);
         } catch (InvalidArgumentException $exception) {
             $this->flash('error', $exception->getMessage());
@@ -381,8 +383,10 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         EpcCustodyGate $custodyGate,
         EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): ?string {
+        $principalId = $this->floorPrincipalId($siteId);
+
         foreach ($epcIds as $epcId) {
-            if (! $shippable->contains($siteId, $epcId)) {
+            if (! $shippable->contains($siteId, $epcId, $principalId)) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
             }
 
@@ -400,7 +404,6 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
             }
 
             try {
-                $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
                 $custodyGate->assertInCustody($epc, 'returning', $principalId);
             } catch (InvalidArgumentException $exception) {
                 return $exception->getMessage();

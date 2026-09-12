@@ -10,6 +10,9 @@ use App\Filament\App\Pages\Analytics;
 use App\Filament\App\Pages\BreakPackWorkstation;
 use App\Filament\App\Pages\OperationsHub;
 use App\Filament\App\Pages\PackWorkstation;
+use App\Filament\App\Pages\ScanOutWorkstation;
+use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
+use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Models\Tenant;
@@ -55,9 +58,72 @@ class PharmacySimplifiedNavTest extends TestCase
     }
 
     #[Test]
+    public function pharmacy_default_has_no_scan_out_or_sscc(): void
+    {
+        $this->initializeTenant(TenantProfile::Pharmacy);
+
+        try {
+            TenantSettings::forTenant(tenant())
+                ->setPharmacySimplifiedNavEnabled(true)
+                ->setPharmacyFullOutboundEnabled(false);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $features = TenantFeatures::forTenant(tenant());
+            $this->assertFalse($features->supportsPharmacyFullOutbound());
+            $this->assertFalse($features->supportsOutboundIntegrations());
+            $this->assertFalse(ScanOutWorkstation::canAccess());
+            $this->assertFalse(OutboundEpcisDocumentResource::canAccess());
+            $this->assertFalse(OutboundShippingSessionResource::canAccess());
+            $this->assertFalse(SsccLabelResource::canAccess());
+        } finally {
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function pharmacy_full_outbound_with_warehouse_tools_unlocks_scan_out_not_sscc(): void
+    {
+        $this->initializeTenant(TenantProfile::Pharmacy);
+
+        try {
+            TenantSettings::forTenant(tenant())
+                ->setPharmacySimplifiedNavEnabled(false)
+                ->setPharmacyFullOutboundEnabled(true);
+            tenant()?->save();
+
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $features = TenantFeatures::forTenant(tenant());
+            $this->assertTrue($features->showsWholesaleOperationsNav());
+            $this->assertTrue($features->supportsPharmacyFullOutbound());
+            $this->assertTrue(ScanOutWorkstation::canAccess());
+            $this->assertTrue(OutboundEpcisDocumentResource::canAccess());
+            $this->assertFalse(OutboundShippingSessionResource::canAccess());
+            $this->assertFalse(SsccLabelResource::canAccess());
+            $this->assertFalse($features->supportsSsccLabeling());
+        } finally {
+            TenantSettings::forTenant(tenant())
+                ->setPharmacySimplifiedNavEnabled(true)
+                ->setPharmacyFullOutboundEnabled(false);
+            tenant()?->save();
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
     public function pharmacy_keeps_pack_off_sidebar_when_simplified_nav_disabled(): void
     {
-        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
+        $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
             TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(false);
@@ -83,6 +149,8 @@ class PharmacySimplifiedNavTest extends TestCase
             $this->assertContains('Break & pack', $labels);
             $this->assertTrue($hub->featureMap()['Packing'] ?? false);
         } finally {
+            TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(true);
+            tenant()?->save();
             tenancy()->end();
         }
     }
@@ -90,7 +158,7 @@ class PharmacySimplifiedNavTest extends TestCase
     #[Test]
     public function pharmacy_simplified_hides_pack_from_hub_feature_map(): void
     {
-        $tenant = $this->initializeTenant(TenantProfile::Pharmacy);
+        $this->initializeTenant(TenantProfile::Pharmacy);
 
         try {
             TenantSettings::forTenant(tenant())->setPharmacySimplifiedNavEnabled(true);
@@ -130,6 +198,7 @@ class PharmacySimplifiedNavTest extends TestCase
             $this->assertTrue(BreakPackWorkstation::shouldRegisterNavigation());
             $this->assertTrue(SsccLabelResource::canAccess());
         } finally {
+            $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
             tenancy()->end();
         }
     }

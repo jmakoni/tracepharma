@@ -7,8 +7,8 @@ use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionR
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Support\Auth\CurrentSite;
-use App\Support\PrincipalsHonesty;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\ShowsPrincipalsHonestyBanner;
 use App\Support\TenantSettings;
 use DomainException;
 use Filament\Actions\Action;
@@ -18,20 +18,14 @@ use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class ListOutboundShippingSessions extends ListRecords
 {
+    use ShowsPrincipalsHonestyBanner;
+
     protected static string $resource = OutboundShippingSessionResource::class;
-
-    public function getSubheading(): string|Htmlable|null
-    {
-        $honesty = PrincipalsHonesty::forTenant();
-
-        return $honesty->shouldShow() ? $honesty->sentence() : null;
-    }
 
     protected function getHeaderActions(): array
     {

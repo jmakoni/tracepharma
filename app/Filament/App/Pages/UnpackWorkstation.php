@@ -15,6 +15,7 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Packing\AcquirePackChildLocks;
@@ -36,6 +37,8 @@ use UnitEnum;
 
 class UnpackWorkstation extends Page implements HasKnowledgeBase
 {
+    use ResolvesFloorSitePrincipal;
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCubeTransparent;
 
     protected static ?string $navigationLabel = 'Unpack';
@@ -340,7 +343,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Parent is not on hand at the selected site.');
 
             return;
@@ -384,7 +387,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
         $selected = $stillOpenChildIds;
 
         foreach ($selected as $childId) {
-            if (! $shippable->contains($siteId, $childId)) {
+            if (! $shippable->contains($siteId, $childId, $this->floorPrincipalId($siteId))) {
                 $this->flash('error', 'A selected child is not on hand at the selected site — rescan.');
 
                 return;
@@ -405,6 +408,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
                 $selected,
                 $site,
                 auth()->id(),
+                $this->floorPrincipalId($siteId),
             );
         } catch (DomainException|InvalidArgumentException|Throwable $exception) {
             $this->flash('error', $exception->getMessage());
@@ -577,7 +581,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if (! $shippable->contains($siteId, (int) $parent->getKey())) {
+        if (! $shippable->contains($siteId, (int) $parent->getKey(), $this->floorPrincipalId($siteId))) {
             $this->flash('error', 'Parent is not on hand at the selected site.');
 
             return;

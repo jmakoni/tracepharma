@@ -100,12 +100,15 @@ final class TenantRoleSeeder
 
             TenantRole::PackagingLineOperator => [
                 Permissions::NavShip,
+                // Inbound EPCIS browse (Manufacturer / Prepackager). Floor Scan In still needs supportsReceiving().
+                Permissions::NavReceive,
             ],
             TenantRole::SerializationSystemsEngineer => [
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
                 Permissions::NavCompliance,
                 Permissions::DecommissionMassApprove,
+                Permissions::NavReceive,
             ],
             TenantRole::MasterDataAdministrator => [
                 Permissions::NavMasterData,
@@ -113,6 +116,7 @@ final class TenantRoleSeeder
             TenantRole::CmoIntegrationManager => [
                 Permissions::NavIntegrations,
                 Permissions::NavMasterData,
+                Permissions::NavReceive,
             ],
 
             // Roster + compliance control-plane (ATP readiness, health, matrix, alerts, affiliation settings).

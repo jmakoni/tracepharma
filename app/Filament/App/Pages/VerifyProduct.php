@@ -184,13 +184,65 @@ class VerifyProduct extends Page implements HasKnowledgeBase
     {
         return SiteAccess::constrainVerifications(
             Verification::query()
-                ->select(['id', 'gtin14', 'serial', 'lot', 'status', 'verified_by', 'created_at', 'exception_id'])
+                ->select([
+                    'id',
+                    'gtin14',
+                    'serial',
+                    'lot',
+                    'status',
+                    'scanned_barcode',
+                    'verified_by',
+                    'created_at',
+                    'exception_id',
+                ])
                 ->whereDate('created_at', today())
                 ->with(['verifiedByUser:id,name'])
                 ->orderByDesc('created_at')
                 ->limit(15),
             'exception',
         )->get();
+    }
+
+    /**
+     * Rows for the shared scanner confirmed table (status variant).
+     *
+     * @return Collection<int, array{
+     *     line_id: int,
+     *     identifier: string,
+     *     scanned_at: string,
+     *     urn: string,
+     *     present: bool,
+     *     status_label: string,
+     *     status_badge_class: string
+     * }>
+     */
+    public function verificationTableRows(): Collection
+    {
+        return $this->todaysVerifications()
+            ->map(function (Verification $verification): array {
+                $identifier = filled($verification->scanned_barcode)
+                    ? (string) $verification->scanned_barcode
+                    : ((filled($verification->gtin14) && filled($verification->serial))
+                        ? '(01)'.$verification->gtin14.'(21)'.$verification->serial
+                        : (string) ($verification->gtin14 ?? '—'));
+
+                $detail = trim(implode(' · ', array_filter([
+                    $verification->gtin14,
+                    $verification->serial,
+                    filled($verification->lot) ? 'Lot '.$verification->lot : null,
+                ], static fn (?string $part): bool => filled($part))));
+
+                return [
+                    'line_id' => (int) $verification->getKey(),
+                    'identifier' => $identifier !== '' ? $identifier : '—',
+                    'scanned_at' => $verification->created_at?->format('Y-m-d H:i:s') ?? '—',
+                    'urn' => $detail !== '' ? $detail : '—',
+                    'present' => true,
+                    'status_label' => $this->statusLabel((string) $verification->status),
+                    'status_badge_class' => $this->statusBadgeClass((string) $verification->status),
+                ];
+            })
+            ->values();
     }
 
     public function exceptionUrl(): ?string

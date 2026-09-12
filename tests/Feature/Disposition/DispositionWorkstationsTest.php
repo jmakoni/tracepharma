@@ -1519,20 +1519,22 @@ class DispositionWorkstationsTest extends TestCase
     }
 
     #[Test]
-    public function livewire_can_access_gates_pharmacy_return_not_commission_decommission(): void
+    public function livewire_can_access_gates_disposition_destroy_not_tied_to_commission(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
         try {
             $this->setProfile($tenant, TenantProfile::Pharmacy);
             $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsReturning());
+            $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsDispositionDecommission());
             $this->assertFalse(TenantFeatures::forTenant($tenant)->supportsCommissioning());
             $this->assertTrue(ReturnWorkstation::canAccess());
             $this->assertFalse(CommissionAllWorkstation::canAccess());
-            $this->assertFalse(DecommissionWorkstation::canAccess());
+            $this->assertTrue(DecommissionWorkstation::canAccess());
 
             $this->setProfile($tenant, TenantProfile::Manufacturer);
             $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsCommissioning());
+            $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsDispositionDecommission());
             $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsReturning());
             $this->assertTrue(CommissionAllWorkstation::canAccess());
             $this->assertTrue(DecommissionWorkstation::canAccess());
@@ -1540,15 +1542,23 @@ class DispositionWorkstationsTest extends TestCase
 
             $this->setProfile($tenant, TenantProfile::DrugWholesaler);
             $this->assertFalse(TenantFeatures::forTenant($tenant)->supportsCommissioning());
+            $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsDispositionDecommission());
             $this->assertFalse(CommissionAllWorkstation::canAccess());
-            $this->assertFalse(DecommissionWorkstation::canAccess());
+            $this->assertTrue(DecommissionWorkstation::canAccess());
             $this->assertTrue(ReturnWorkstation::canAccess());
 
             $this->setProfile($tenant, TenantProfile::Prepackager);
             $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsCommissioning());
+            $this->assertTrue(TenantFeatures::forTenant($tenant)->supportsDispositionDecommission());
             $this->assertTrue(CommissionAllWorkstation::canAccess());
             $this->assertTrue(DecommissionWorkstation::canAccess());
             $this->assertTrue(ReturnWorkstation::canAccess());
+
+            $this->setProfile($tenant, TenantProfile::BuyingGroup);
+            $this->assertFalse(TenantFeatures::forTenant($tenant)->supportsDispositionDecommission());
+            $this->assertFalse(TenantFeatures::forTenant($tenant)->supportsCommissioning());
+            $this->assertFalse(CommissionAllWorkstation::canAccess());
+            $this->assertFalse(DecommissionWorkstation::canAccess());
         } finally {
             $this->cleanup($tenant);
         }

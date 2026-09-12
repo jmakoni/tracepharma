@@ -36,6 +36,7 @@ class ManufacturerVerificationPortalFeatureTest extends TestCase
             $features = TenantFeatures::forTenant(tenant());
 
             $this->assertFalse($features->supportsVrs());
+            $this->assertTrue($features->supportsVrsResponder());
             $this->assertTrue($features->supportsManufacturerVerificationPortal());
         } finally {
             TenantSettings::forTenant(tenant())->setManufacturerVerificationPortalEnabled($priorPortal);

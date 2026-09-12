@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AtpLicenseExpirationStatus;
 use App\Enums\AtpVerificationSource;
+use App\Enums\CmoOwnership;
 use App\Enums\PartnerType;
 use App\Enums\SsccNumberRangeStatus;
 use App\Models\Concerns\DerivesSgln;
@@ -114,6 +115,9 @@ class TradingPartner extends Model
         'vrs_notify_email',
         'fax',
         'is_active',
+        'is_cmo',
+        'auto_receive_inbound',
+        'cmo_ownership',
         'atp_verified_at',
         'atp_verified_by',
         'atp_verification_source',
@@ -128,6 +132,9 @@ class TradingPartner extends Model
             'atp_verification_source' => AtpVerificationSource::class,
             'atp_verified_at' => 'datetime',
             'is_active' => 'boolean',
+            'is_cmo' => 'boolean',
+            'auto_receive_inbound' => 'boolean',
+            'cmo_ownership' => CmoOwnership::class,
             'altitude' => 'decimal:2',
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',

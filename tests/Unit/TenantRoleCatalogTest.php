@@ -48,6 +48,31 @@ class TenantRoleCatalogTest extends TestCase
     }
 
     #[Test]
+    public function prepackager_unions_manufacturer_commission_and_wholesaler_receive_personas(): void
+    {
+        $roles = TenantRole::forProfile(TenantProfile::Prepackager);
+        $manufacturer = TenantRole::forProfile(TenantProfile::Manufacturer);
+
+        foreach ($manufacturer as $role) {
+            $this->assertContains($role, $roles, $role->value);
+        }
+
+        $this->assertContains(TenantRole::ReceivingTechnician, $roles);
+        $this->assertContains(TenantRole::OutboundPickAndPackLead, $roles);
+        $this->assertContains(TenantRole::InboundExceptionCoordinator, $roles);
+        $this->assertContains(TenantRole::PackagingLineOperator, $roles);
+
+        $this->assertNotContains(
+            TenantRole::ReceivingTechnician,
+            TenantRole::forProfile(TenantProfile::Manufacturer),
+        );
+        $this->assertSame(
+            TenantRole::ReceivingTechnician,
+            TenantRole::jitDefaultForProfile(TenantProfile::Prepackager),
+        );
+    }
+
+    #[Test]
     public function three_pl_includes_floor_wms_and_verify_roles(): void
     {
         $roles = TenantRole::forProfile(TenantProfile::Logistics3pl);

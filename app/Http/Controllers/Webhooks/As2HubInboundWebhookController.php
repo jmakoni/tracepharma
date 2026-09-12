@@ -87,6 +87,13 @@ class As2HubInboundWebhookController
             return $this->mdn->stationResponse($request, $stationId, $from, true);
         }
 
+        try {
+            // Bind verified AS2-From (S/MIME) to the SBDH sender GLN that selected the route.
+            $this->station->assertAs2FromMayClaimSenderGln($environment, $from, $resolution->senderGln);
+        } catch (RuntimeException $exception) {
+            return $this->mdn->stationResponse($request, $stationId, $from, false, $exception->getMessage());
+        }
+
         $tenant = $resolution->tenant;
         $connection = $resolution->connection;
 

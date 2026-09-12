@@ -13,6 +13,7 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Site;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Epcis\Outbound\Xml12Writer;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -89,6 +90,8 @@ final class AuthorTransformationRepack
             ->get()
             ->keyBy(fn (Epc $epc): int => (int) $epc->getKey());
 
+        $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
         $inputUris = [];
         foreach ($inputEpcIds as $epcId) {
             $epc = $inputs->get($epcId);
@@ -96,7 +99,7 @@ final class AuthorTransformationRepack
                 throw new InvalidArgumentException("Input EPC #{$epcId} is missing.");
             }
 
-            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId)) {
+            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId, $principalId)) {
                 throw new InvalidArgumentException(
                     "Cannot transform — EPC #{$epcId} is not on hand at the selected site.",
                 );
@@ -105,7 +108,7 @@ final class AuthorTransformationRepack
             $inputUris[] = (string) $epc->epc_uri;
         }
 
-        $this->custodyGate->assertOperableFor($inputEpcIds, 'repack transform');
+        $this->custodyGate->assertOperableFor($inputEpcIds, 'repack transform', $principalId);
 
         $transformationId = 'urn:uuid:'.(string) Str::uuid();
         $location = $this->resolveLocation->handle($siteId);

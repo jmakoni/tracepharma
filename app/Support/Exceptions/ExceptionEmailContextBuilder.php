@@ -44,10 +44,12 @@ final class ExceptionEmailContextBuilder
         $caseReference = $exception->caseReference();
         $reasonLabel = $exception->type?->name ?? $exception->title;
         $typeCode = $exception->type?->code;
-        $complianceHold = $exception->severity === ExceptionSeverity::Critical
-            || ($exception->type?->blocksReceiving() ?? false);
-
         $document = $exception->document;
+        $complianceHold = $exception->severity === ExceptionSeverity::Critical
+            || ExceptionReceiveImpactMap::forCodeOnDocument(
+                is_string($typeCode) ? $typeCode : null,
+                $document,
+            )->blocksReceiving();
         $product = $this->primarySgtinFields($exception);
         $tenantGln = (string) (tenant('gln') ?? '');
 

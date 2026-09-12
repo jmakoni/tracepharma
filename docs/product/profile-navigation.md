@@ -31,12 +31,13 @@ All values come from `App\Support\TenantFeatures` `supports*` methods.
 
 | Method | P | M | W | R | 3 | D | B | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `supportsReceiving()` | ✓ | | ✓ | ✓ | ✓ | ✓ | | |
-| `supportsVrs()` | ✓ | | ✓ | ✓ | ✓ | ✓ | | |
-| `supportsTransferring()` | ✓ | | ✓ | ✓ | ✓ | ✓ | | |
+| `supportsReceiving()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | Manufacturer: CMO/partner ASN inbound (Scan In / Receive). Not VRS requestor. |
+| `supportsVrs()` | ✓ | * | ✓ | ✓ | ✓ | ✓ | | Manufacturer ✗ by default; ✓ when `features.manufacturer_vrs_requestor` |
+| `supportsTransferring()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | Intracompany multi-site (incl. Manufacturer plants). Not Scan In / wholesale receive. |
 | `supportsUnpacking()` | | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsPacking()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
-| `supportsCommissioning()` | | ✓ | | ✓ | | | | **M + R only.** Plant ObjectEvent commission/decommission. Wholesaler, 3PL, and dental do **not** commission. |
+| `supportsCommissioning()` | | ✓ | | ✓ | | | | **M + R only.** Plant ObjectEvent commission (Commission-all). Wholesaler, 3PL, dental, pharmacy do **not** plant-commission. Disposition destroy uses `supportsDispositionDecommission()`. |
+| `supportsDispositionDecommission()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | Floor destroy/retire ObjectEvents (`DecommissionWorkstation`). Not Commission-all; not Return / 3911. |
 | `supportsReturning()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `supportsMasterData()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | B excluded |
 | `supportsPrincipals()` | | | | | ✓ | | | Soft 3PL principal registry + FK filters only |
@@ -56,7 +57,9 @@ Related helpers (not static profile columns, or used in nav):
 
 | Method | Notes |
 |---|---|
-| `supportsManufacturerVerificationPortal()` | **≠ `supportsVrs()`.** Settings-gated (`TenantSettings::manufacturerVerificationPortalEnabled()`). When enabled: Manufacturer **or** any `supportsVrs()` profile. Do **not** gate the portal on `supportsVrs()` alone — that blocked Manufacturer (G-P0-01). |
+| `supportsVrsResponder()` | **≠ `supportsVrs()`.** Manufacturer **or** any `supportsVrs()` profile (Prepackager included via requestor set). Gates inbound VRS responder webhook. Requestor UI stays on `supportsVrs()` only. |
+| `manufacturerVrsRequestorEnabled()` | `TenantSettings` (`features.manufacturer_vrs_requestor`, default off). When on for Manufacturer, `supportsVrs()` unlocks Verify Product / history / directory. Does not change responder webhook. |
+| `supportsManufacturerVerificationPortal()` | **≠ `supportsVrs()` alone.** Settings-gated (`TenantSettings::manufacturerVerificationPortalEnabled()`). When enabled: `supportsVrsResponder()`. Do **not** gate the portal on `supportsVrs()` alone — that blocked Manufacturer (G-P0-01). Partner email portal — distinct from Manufacturer VRS requestor. |
 | `supportsClientPortalV2()` | Settings-gated client portal; not a profile matrix column |
 | `supportsTrackAndTraceExport()` | Pharmacy, Manufacturer, distribution-ops profiles |
 
@@ -66,7 +69,7 @@ Related helpers (not static profile columns, or used in nav):
 | `canAuthorOutboundShipments()` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `showsWholesaleOperationsNav()` | * | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-\* Pharmacy only: `false` when tenant setting `pharmacySimplifiedNavEnabled()` is on (`TenantSettings`); otherwise `true`.
+\* Settings-gated: Pharmacy `showsWholesaleOperationsNav()` is false when `pharmacySimplifiedNavEnabled()` is on; Manufacturer `supportsVrs()` is true only when `manufacturerVrsRequestorEnabled()` is on.
 
 ### Dental / Medical Supply = wholesaler-lite
 
@@ -108,6 +111,8 @@ Filament visibility is evaluated in layers:
 
 **Job roles (opt-in):** When `access.job_roles_enabled` is off, `JobRoleAccess` passes through (capabilities unrestricted). When on, pages also require matching `nav.*` permissions. **Owner** always retains Organization Settings access when `supportsMasterData()` **or** `supportsBuyingGroupNetwork()` is true.
 
+**Prepackager persona catalog:** `TenantRole::forProfile(Prepackager)` is a **union** of Manufacturer plant/commission personas (`PackagingLineOperator`, …) and DrugWholesaler receive/ship floor personas (`ReceivingTechnician`, `OutboundPickAndPackLead`, `InboundExceptionCoordinator`). Do not collapse Prepackager back onto Manufacturer-only roles — `supportsReceiving()` is true for Prepackager and needs `NavReceive` personas when job roles are on.
+
 ### Reference: key page gates
 
 | Surface | Profile gate | Additional gates |
@@ -122,6 +127,15 @@ Filament visibility is evaluated in layers:
 | **Analytics** (`Analytics`) | `hasAnyOperations()` **or** `supportsComplianceCases()` | Owner **or** `allowsAny(NavCompliance, NavReceive, NavShip, NavIntegrations)`; nav uses `HidesForPharmacySimplifiedNav` |
 | **HQ rollup** (`HqRollup`) | `supportsComplianceCases()` **and** `hasAnyOperations()` | `allows(NavCompliance)` **and** `SitesAccessAll`; nav also requires `showsWholesaleOperationsNav()` |
 | **Partner onboarding** (`PartnerOnboardingKitPage`) | `supportsInboundIntegrations()` | `canAccessOrganizationSettings()` |
+| **Inbound EPCIS** (`EpcisDocumentResource`) | `supportsInboundIntegrations()` | `allows(NavReceive)` — plant personas include `NavReceive`; Start receiving also needs `supportsReceiving()` |
+| **Pack / Break & pack** (`PackWorkstation`, `BreakPackWorkstation`) | `supportsPacking()` | `allows(NavShip)`; **Pharmacy:** sidebar never (hub-only when warehouse tools on); feature map / hub directories also require `showsWholesaleOperationsNav()` |
+| **Transfer** (`TransferringSessionResource`) | `supportsTransferring()` | `canAccess` / view: `allowsAny(NavShip, NavReceive)` (destination receive-tech can list/view); `canCreate` + open/ship/delete mutations: `NavShip` only; nav uses `HidesForPharmacySimplifiedNav` |
+| **Scan Out** (`ScanOutWorkstation`) | `supportsOutboundIntegrations()` **or** `supportsPharmacyFullOutbound()` | `allows(NavShip)` — pharmacy full outbound requires warehouse tools on + `access.pharmacy_full_outbound` |
+| **Outbound EPCIS** (`OutboundEpcisDocumentResource`) | same as Scan Out | `allows(NavShip)` |
+| **Ship Order** (`OutboundShippingSessionResource`) | `supportsOutboundIntegrations()` only | `allows(NavShip)` — not unlocked by pharmacy full outbound |
+| **SSCC Labels** (`SsccLabelResource`) | `supportsSsccLabeling()` (= outbound integrations) | Pharmacy never; full outbound does not unlock |
+| **CMO auto-receive** | Manufacturer + `TenantSettings::autoReceiveFromCmo()` + partner `is_cmo` + `auto_receive_inbound` | After inbound validate (`AutoReceiveCmoInboundDocument`); not Guardian/L3; not transfer |
+| **CMO own-product TS** | Same master + `is_cmo` + `cmo_ownership=own_product` | Inbound only: soft `MISSING_DSCSA_STATEMENT` / skip `enforce_ts_for_receiving`; `cmo_sells` unchanged hard TS |
 | **Users** (`UserResource`) | *(none — profile-agnostic)* | `UsersManage` **and** `NavUsers` |
 
 `shouldRegisterNavigation()` on ATP readiness, alert center, partner onboarding, and HQ rollup mirrors `canAccess()` (HQ rollup additionally checks `showsWholesaleOperationsNav()`).
@@ -138,7 +152,7 @@ Filament visibility is evaluated in layers:
    }
    ```
 3. **Register navigation** — Override `shouldRegisterNavigation()` when sidebar visibility should differ from route access, or when mirroring `canAccess()`.
-4. **Pharmacy simplified nav** — For wholesaler-heavy floor surfaces, use `HidesForPharmacySimplifiedNav` so nav respects `showsWholesaleOperationsNav()`.
+4. **Pharmacy simplified nav** — Org Settings **Show warehouse tools** stores the inverse of `access.pharmacy_simplified_nav` (default simplified on = warehouse tools off). For wholesaler-heavy floor surfaces, use `HidesForPharmacySimplifiedNav` so nav respects `showsWholesaleOperationsNav()`. Pharmacy **Full outbound (Scan Out)** (`access.pharmacy_full_outbound`, default off) unlocks Scan Out + Outbound EPCIS only when warehouse tools are shown — not Ship Order or SSCC.
 5. **Document the matrix** — Update this file and `tests/Unit/ProfileNavigationMatrixTest.php` when adding a new `supports*` method.
 6. **Do not gate on `TenantType`** — Coarse type is for labels; profiles can diverge within a type (e.g. Buying Group vs Drug Wholesaler, both Distributor).
 

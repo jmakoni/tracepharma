@@ -119,7 +119,7 @@ Models live in `App\Models\Epcis\`. Resolve helpers (no auto-create of partners/
 
 ### Receiving sessions
 
-Receiving is live for Pharmacy / DrugWholesaler / Prepackager / Logistics3pl / DentalMedicalSupply (`TenantFeatures::supportsReceiving()`; Manufacturer/BuyingGroup stay gated off). Sessions are keyed by `receiving_sessions.session_kind`:
+Receiving is live for Pharmacy / Manufacturer / DrugWholesaler / Prepackager / Logistics3pl / DentalMedicalSupply (`TenantFeatures::supportsReceiving()`; BuyingGroup stays gated off). Manufacturer uses the same Receive / Scan In path for CMO/partner inbound ASNs (not Pharmacy outbound desk; VRS requestor stays off). Sessions are keyed by `receiving_sessions.session_kind`:
 
 - **`inbound_asn`** — `App\Actions\Receiving\OpenReceivingSessionFromDocument` opens from a `parsed`/`validated` inbound `EpcisDocument`, seeding `receiving_scan_lines` with the document's root SSCC parents (`epcis_document_id` set).
 - **`scan_first`** — `App\Actions\Receiving\OpenScanFirstReceivingSession` opens an ASN-free ledger (`epcis_document_id` null). Scans must resolve an existing EPC (no invent). TI soft/hard via `TenantSettings::requireTiForScanFirst`. `App\Support\Receiving\ResolveReceiveScanContext` supplies HUD chips (TI, quarantine, ASN match, in-transit transfer); confirm may persist `matched_epcis_document_id` without binding the session to that ASN.

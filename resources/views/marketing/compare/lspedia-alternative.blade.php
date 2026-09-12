@@ -1,6 +1,6 @@
 @php
     $lspediaFaqs = [
-        ['question' => 'Is TracePharma a full replacement for LSPedia OneScan?', 'answer' => 'For US DSCSA L4 workflows—EPCIS ingest, outbound, exceptions, VRS, and compliance—TracePharma covers the core overlap. LSPedia remains stronger for global regulation modules, Exchange network scale, and enterprise analytics products like OneData.'],
+        ['question' => 'Is TracePharma a full replacement for LSPedia OneScan?', 'answer' => 'No—TracePharma is not an LSPedia Exchange, Edge, or OneData replacement. For US DSCSA L4 (EPCIS ingest, outbound, exceptions, VRS, compliance) it covers the core operator overlap via AS2/SFTP/HTTPS and hub presets. LSPedia remains stronger for global regulation modules, Exchange network scale, and enterprise analytics.'],
         ['question' => 'Who should choose TracePharma over LSPedia?', 'answer' => 'SMB–mid-market US trading partners who want operator-first receiving and ship workflows, direct partner connectivity without exchange fees, and profile-tuned SaaS—not fifteen global regulation modules they will not use.'],
         ['question' => 'Does TracePharma support EPCIS 2.0 like LSPedia?', 'answer' => 'EPCIS 1.2 XML is GA (default outbound). EPCIS 2.0 JSON-LD capture is available for inbound-capable tenants (platform flag + tenant override), with a Sanctum query-as-2.0 API and HTTPS CBV-mapped subscription webhooks—not a full GS1 Query Control / Exchange-scale subscription hub. Pharmacy profiles get read-only event-store investigation including query-as-2.0.'],
     ];

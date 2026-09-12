@@ -20,6 +20,7 @@ use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Epcis\Validation\EpcisValidationProfileResolver;
 use App\Support\Epcis\Validation\EpcisValidationSeverityMap;
 use App\Support\Epcis\Validation\EpcisXsdValidator;
+use App\Support\Receiving\CmoOwnProductInbound;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -195,12 +196,20 @@ final class ValidateEpcis12Document
             || ($ctx->direction === 'outbound' && $hasShippingEvent);
 
         if ($requiresDscsaStatement && ! $document->dscsa_affirm) {
-            $this->addFinding(
-                $findings,
-                $ctx,
-                'MISSING_DSCSA_STATEMENT',
-                ucfirst($ctx->direction).' EPCIS document does not affirm the DSCSA transaction statement.',
-            );
+            if (CmoOwnProductInbound::applies($document)) {
+                $findings[] = new EpcisValidationFinding(
+                    exceptionType: 'MISSING_DSCSA_STATEMENT',
+                    severity: 'warning',
+                    description: 'Inbound CMO own-product EPCIS omits DSCSA transaction statement (TS) — recorded as warning, not a hard receive block.',
+                );
+            } else {
+                $this->addFinding(
+                    $findings,
+                    $ctx,
+                    'MISSING_DSCSA_STATEMENT',
+                    ucfirst($ctx->direction).' EPCIS document does not affirm the DSCSA transaction statement.',
+                );
+            }
         }
 
         $findings = array_merge($findings, $this->validateCheckDigits($document, $ctx));

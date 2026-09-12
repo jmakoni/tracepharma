@@ -12,25 +12,58 @@ use App\Models\BuyingGroupMembership;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\BuyingGroupMembershipInviteNotification;
+use App\Support\Gs1\Sgln;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Spatie\Permission\Exceptions\RoleDoesNotExist;
 use Throwable;
 
 class InviteBuyingGroupMembership
 {
+    /**
+     * Resolve an active Pharmacy tenant by exact UUID or primary domain only.
+     * Does not expose a platform pharmacy directory.
+     */
+    public function resolveMemberTenant(string $lookup): Tenant
+    {
+        $lookup = trim($lookup);
+        if ($lookup === '') {
+            throw new RuntimeException('Enter a pharmacy tenant ID (UUID) or primary domain.');
+        }
+
+        $tenant = Str::isUuid($lookup)
+            ? Tenant::query()->whereKey($lookup)->first()
+            : Tenant::query()
+                ->whereHas('domains', fn ($query) => $query->where('domain', Str::lower($lookup)))
+                ->first();
+
+        if (
+            ! $tenant instanceof Tenant
+            || $tenant->profile !== TenantProfile::Pharmacy
+            || (string) $tenant->status !== 'active'
+        ) {
+            throw new RuntimeException('No active pharmacy tenant matched that ID or domain.');
+        }
+
+        return $tenant;
+    }
+
     public function invite(
         Tenant $buyingGroupTenant,
         Tenant $memberTenant,
         User $invitingUser,
         ?int $bgMemberLocalId = null,
     ): BuyingGroupMembership {
-        $this->assertEligible($buyingGroupTenant, $memberTenant);
-
-        if ($bgMemberLocalId !== null) {
-            $this->assertRosterRowExists($buyingGroupTenant, $bgMemberLocalId);
+        if ($bgMemberLocalId === null) {
+            throw new RuntimeException(
+                'Invite a pharmacy from a member roster row (knowledge-based tenant ID or domain).',
+            );
         }
+
+        $this->assertEligible($buyingGroupTenant, $memberTenant);
+        $this->assertRosterCorroborates($buyingGroupTenant, $bgMemberLocalId, $memberTenant);
 
         $actor = $this->actorLabel($invitingUser);
 
@@ -61,7 +94,7 @@ class InviteBuyingGroupMembership
 
                 $membership->forceFill([
                     'status' => BuyingGroupMembershipStatus::Pending,
-                    'bg_member_local_id' => $bgMemberLocalId ?? $membership->bg_member_local_id,
+                    'bg_member_local_id' => $bgMemberLocalId,
                     'consent_version' => null,
                     'invited_by' => $actor,
                     'invited_at' => now(),
@@ -103,14 +136,27 @@ class InviteBuyingGroupMembership
         }
     }
 
-    private function assertRosterRowExists(Tenant $buyingGroupTenant, int $bgMemberLocalId): void
-    {
-        $exists = (bool) $buyingGroupTenant->run(function () use ($bgMemberLocalId): bool {
-            return BuyingGroupMember::query()->whereKey($bgMemberLocalId)->exists();
+    private function assertRosterCorroborates(
+        Tenant $buyingGroupTenant,
+        int $bgMemberLocalId,
+        Tenant $memberTenant,
+    ): void {
+        $roster = $buyingGroupTenant->run(function () use ($bgMemberLocalId): ?BuyingGroupMember {
+            return BuyingGroupMember::query()->whereKey($bgMemberLocalId)->first();
         });
 
-        if (! $exists) {
+        if (! $roster instanceof BuyingGroupMember) {
             throw new RuntimeException('The member roster row was not found in this buying group.');
+        }
+
+        $rosterGln = Sgln::normalizeGln(is_string($roster->primary_gln) ? $roster->primary_gln : null);
+        if ($rosterGln === null) {
+            return;
+        }
+
+        $tenantGln = Sgln::normalizeGln(is_string($memberTenant->gln) ? $memberTenant->gln : null);
+        if ($tenantGln !== $rosterGln) {
+            throw new RuntimeException('Roster primary GLN does not match that pharmacy tenant.');
         }
     }
 

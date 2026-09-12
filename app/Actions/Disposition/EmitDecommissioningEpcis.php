@@ -20,6 +20,7 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Disposition\AcquireDecommissionEpcLocks;
@@ -142,9 +143,11 @@ final class EmitDecommissioningEpcis
             }
         }
 
+        $principalId = PrincipalCustody::forTenant()->activePrincipalIdForSite($siteId);
+
         $notOnHand = [];
         foreach ($epcIds as $epcId) {
-            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId)) {
+            if (! $this->shippableEpcsAtSite->contains($siteId, $epcId, $principalId)) {
                 $notOnHand[] = $epcId;
             }
         }
@@ -157,7 +160,7 @@ final class EmitDecommissioningEpcis
         }
 
         // Terminal + quarantine refusal (custody already implied by on-hand).
-        $this->custodyGate->assertOperableFor($epcIds, 'decommissioning');
+        $this->custodyGate->assertOperableFor($epcIds, 'decommissioning', $principalId);
 
         $uris = [];
         foreach ($epcIds as $epcId) {

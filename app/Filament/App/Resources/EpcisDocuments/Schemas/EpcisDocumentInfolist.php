@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\EpcisDocuments\Schemas;
 
 use App\Enums\EpcisReceivedVia;
 use App\Models\Epcis\EpcisDocument;
+use App\Support\Dscsa\DscsaTransactionStatementUi;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
@@ -92,6 +93,7 @@ class EpcisDocumentInfolist
                 Section::make('DSCSA')
                     ->compact()
                     ->columnSpanFull()
+                    ->visible(fn (?EpcisDocument $record): bool => DscsaTransactionStatementUi::applies($record))
                     ->schema([
                         IconEntry::make('dscsa_affirm')
                             ->label('Transaction statement affirmed')

@@ -116,6 +116,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'block_send_on_atp_gap' => $settings->blockSendOnAtpGap(),
             'auto_open_receive_after_transfer_ship' => $settings->autoOpenReceiveAfterTransferShip(),
             'auto_complete_asn_on_ready' => $settings->autoCompleteAsnOnReady(),
+            'auto_receive_from_cmo' => $settings->autoReceiveFromCmo(),
             'receiving_edge_mode' => ReceivingPolicy::forTenant($tenant)->edgeMode()->value,
             'job_roles_enabled' => $settings->jobRolesEnabled(),
             'compliance_contact_name' => $settings->complianceContactName(),
@@ -139,11 +140,13 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'dashboard_allow_user_customize' => $settings->dashboardAllowUserCustomize(),
             'dashboard_allowed' => array_keys(array_filter($settings->dashboardAllowed())),
             'dashboard_defaults' => array_keys(array_filter($settings->dashboardDefaults())),
-            'pharmacy_simplified_nav' => $settings->pharmacySimplifiedNavEnabled(),
+            'show_warehouse_tools' => ! $settings->pharmacySimplifiedNavEnabled(),
+            'pharmacy_full_outbound' => $settings->pharmacyFullOutboundEnabled(),
             'alert_digest_enabled' => $settings->alertDigestEnabled(),
             'alert_digest_frequency' => $settings->alertDigestFrequency(),
             'email_portal_on_ship' => $settings->emailPortalOnShipEnabled(),
             'manufacturer_verification_portal' => $settings->manufacturerVerificationPortalEnabled(),
+            'manufacturer_vrs_requestor' => $settings->manufacturerVrsRequestorEnabled(),
             'client_portal_v2' => $settings->clientPortalV2Enabled(),
             'principal_custody_enforced' => $settings->principalCustodyEnforced(),
             'buying_group_network_consent' => $settings->buyingGroupNetworkConsent(),
@@ -293,6 +296,13 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->helperText('When on, the last confirmed scan finishes the session and authors receiving EPCIS. When off (default), tap Complete receive after scanning — ATTP/TraceLink-style.')
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving())
                             ->columnSpanFull(),
+                        Toggle::make('auto_receive_from_cmo')
+                            ->label('Auto-receive inbound EPCIS from CMO partners')
+                            ->helperText('Master switch only. When on, partners marked CMO with “Auto-receive inbound” may complete receive without Scan In after a validated shipping ASN. Default off — physical dock still confirms unless both gates are on. Owner only.')
+                            ->visible(fn (): bool => tenant()?->profile === TenantProfile::Manufacturer
+                                && JobRoleAccess::isOwner())
+                            ->dehydrated(fn (): bool => JobRoleAccess::isOwner())
+                            ->columnSpanFull(),
                     ]),
                 Section::make('Transferring')
                     ->compact()
@@ -320,10 +330,18 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                     ->visible(fn (): bool => tenant()?->profile === TenantProfile::Pharmacy)
                     ->description('Trim navigation for independent pharmacies — receive, verify, pharmacy outbound desk, and compliance essentials.')
                     ->schema([
-                        Toggle::make('pharmacy_simplified_nav')
-                            ->label('Simplified navigation')
-                            ->helperText('When on, hides transfer, pack, ship order, analytics, and other wholesaler floor workflows.')
-                            ->default(true)
+                        Toggle::make('show_warehouse_tools')
+                            ->label('Show warehouse tools')
+                            ->helperText('When on, reveals transfer, pack hub, analytics, and other wholesaler floor workflows. Off by default for independent pharmacies.')
+                            ->default(false)
+                            ->live()
+                            ->columnSpanFull(),
+                        Toggle::make('pharmacy_full_outbound')
+                            ->label('Full outbound (Scan Out)')
+                            ->helperText('When on and warehouse tools are shown, unlocks Scan Out and Outbound EPCIS. Pharmacy outbound desk remains available. Does not enable Ship Order list or SSCC labels. Owner only.')
+                            ->default(false)
+                            ->visible(fn (): bool => JobRoleAccess::isOwner())
+                            ->dehydrated(fn (): bool => JobRoleAccess::isOwner())
                             ->columnSpanFull(),
                     ]),
                 Section::make('Buying group network')
@@ -391,16 +409,29 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                     ]),
                 Section::make('VRS / verification')
                     ->compact()
-                    ->description('Verification Router Service fallbacks when automated verify does not confirm a product.')
-                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs()
-                        || TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Manufacturer)
+                    ->description(fn (): string => tenant()?->profile === TenantProfile::Manufacturer
+                        ? 'This tenant responds to VRS (webhook/portal). Verify Product is off unless Manufacturer VRS requestor is enabled.'
+                        : 'Verification Router Service fallbacks when automated verify does not confirm a product.')
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrsResponder())
                     ->schema([
+                        Placeholder::make('manufacturer_vrs_honesty')
+                            ->label('Responder vs requestor')
+                            ->content('This tenant responds to VRS (webhook/portal). Verify Product is off unless Manufacturer VRS requestor is enabled.')
+                            ->visible(fn (): bool => tenant()?->profile === TenantProfile::Manufacturer)
+                            ->columnSpanFull(),
+                        Toggle::make('manufacturer_vrs_requestor')
+                            ->label('Manufacturer VRS requestor')
+                            ->helperText('When on, unlocks Verify Product, verification history, and VRS directory for this manufacturer. Does not change the inbound VRS responder webhook. Owner only.')
+                            ->default(false)
+                            ->visible(fn (): bool => tenant()?->profile === TenantProfile::Manufacturer
+                                && JobRoleAccess::isOwner())
+                            ->dehydrated(fn (): bool => JobRoleAccess::isOwner())
+                            ->columnSpanFull(),
                         Toggle::make('manufacturer_verification_portal')
                             ->label('Manufacturer verification portal')
                             ->helperText('When on, Verification history shows “Request manufacturer verification” for non-verified scans. Manufacturers get an emailed secure link to respond. Requires a manufacturer notify email on the trading partner.')
                             ->default(false)
-                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs()
-                                || TenantFeatures::forTenant(tenant())->profile() === TenantProfile::Manufacturer)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrsResponder())
                             ->columnSpanFull(),
                     ]),
                 Section::make('Customer portal')
@@ -421,8 +452,10 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                     ->schema([
                         Toggle::make('principal_custody_enforced')
                             ->label('Enforce principal custody (EPC isolation)')
-                            ->helperText('Default off. When on, receive / ship / pick are gated by principal; outbound agent TI uses the principal GLN. Not an LSPedia Edge product mode — enable only after principal paths and EPC backfill are verified.')
+                            ->helperText('Default off. When on, receive / ship / pick are gated by principal; outbound agent TI uses the principal GLN. Not an LSPedia Edge product mode — enable only after principal paths and EPC backfill are verified. Owner only.')
                             ->default(false)
+                            ->visible(fn (): bool => JobRoleAccess::isOwner())
+                            ->dehydrated(fn (): bool => JobRoleAccess::isOwner())
                             ->columnSpanFull(),
                     ]),
                 Section::make('Dashboard')
@@ -679,9 +712,11 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         }
 
         if (tenant()?->profile === TenantProfile::Pharmacy) {
-            $organization['pharmacy_simplified_nav'] = (bool) ($data['pharmacy_simplified_nav'] ?? true);
+            $organization['pharmacy_simplified_nav'] = ! (bool) ($data['show_warehouse_tools'] ?? false);
 
             if (JobRoleAccess::isOwner()) {
+                $organization['pharmacy_full_outbound'] = (bool) ($data['pharmacy_full_outbound'] ?? false);
+
                 $wantsConsent = (bool) ($data['buying_group_network_consent'] ?? false);
                 $hadConsent = TenantSettings::forTenant(tenant())->buyingGroupNetworkConsent();
 
@@ -705,16 +740,23 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         $organization['match_inbound_ship_to_site'] = (bool) ($data['match_inbound_ship_to_site'] ?? false);
         $organization['auto_open_receive_after_transfer_ship'] = (bool) ($data['auto_open_receive_after_transfer_ship'] ?? false);
         $organization['auto_complete_asn_on_ready'] = (bool) ($data['auto_complete_asn_on_ready'] ?? false);
+        if (JobRoleAccess::isOwner() && tenant()?->profile === TenantProfile::Manufacturer) {
+            $organization['auto_receive_from_cmo'] = (bool) ($data['auto_receive_from_cmo'] ?? false);
+        }
 
-        if (TenantFeatures::forTenant(tenant())->supportsVrs()) {
+        if (TenantFeatures::forTenant(tenant())->supportsVrsResponder()) {
             $organization['manufacturer_verification_portal'] = (bool) ($data['manufacturer_verification_portal'] ?? false);
+        }
+
+        if (JobRoleAccess::isOwner() && tenant()?->profile === TenantProfile::Manufacturer) {
+            $organization['manufacturer_vrs_requestor'] = (bool) ($data['manufacturer_vrs_requestor'] ?? false);
         }
 
         if (TenantFeatures::forTenant(tenant())->supportsMasterData()) {
             $organization['client_portal_v2'] = (bool) ($data['client_portal_v2'] ?? false);
         }
 
-        if (TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+        if (JobRoleAccess::isOwner() && TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
             $organization['principal_custody_enforced'] = (bool) ($data['principal_custody_enforced'] ?? false);
         }
 

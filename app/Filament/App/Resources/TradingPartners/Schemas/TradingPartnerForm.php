@@ -2,7 +2,9 @@
 
 namespace App\Filament\App\Resources\TradingPartners\Schemas;
 
+use App\Enums\CmoOwnership;
 use App\Enums\PartnerType;
+use App\Enums\TenantProfile;
 use App\Filament\App\Support\FdaPicker;
 use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
@@ -101,6 +103,34 @@ class TradingPartnerForm
                                         ->default(true)
                                         ->inline(false),
                                 ]),
+                                Grid::make(['default' => 2])
+                                    ->visible(fn (): bool => tenant()?->profile === TenantProfile::Manufacturer)
+                                    ->schema([
+                                        Toggle::make('is_cmo')
+                                            ->label('Contract manufacturer (CMO)')
+                                            ->helperText('Marks this partner as a CMO / contract packager for inbound auto-receive. Not a tenant profile.')
+                                            ->default(false)
+                                            ->live()
+                                            ->inline(false),
+                                        Toggle::make('auto_receive_inbound')
+                                            ->label('Auto-receive inbound')
+                                            ->helperText('Requires Organization “Auto-receive from CMO partners” and this CMO flag. Ignored when either gate is off.')
+                                            ->default(false)
+                                            ->visible(fn (Get $get): bool => (bool) $get('is_cmo'))
+                                            ->disabled(fn (): bool => ! TenantSettings::forTenant(tenant())->autoReceiveFromCmo())
+                                            ->dehydrated()
+                                            ->inline(false),
+                                    ]),
+                                Select::make('cmo_ownership')
+                                    ->label('CMO product ownership')
+                                    ->options(collect(CmoOwnership::cases())->mapWithKeys(
+                                        fn (CmoOwnership $case): array => [$case->value => $case->label()]
+                                    ))
+                                    ->default(CmoOwnership::CmoSells->value)
+                                    ->native(false)
+                                    ->visible(fn (Get $get): bool => (bool) $get('is_cmo')
+                                        && tenant()?->profile === TenantProfile::Manufacturer)
+                                    ->helperText('Own product: inbound may omit DSCSA TS (contract packager). CMO sells: full TS required.'),
                                 Grid::make(['default' => 2])->schema([
                                     TextInput::make('telephone')->tel()->maxLength(50),
                                     TextInput::make('email')->email()->maxLength(255),

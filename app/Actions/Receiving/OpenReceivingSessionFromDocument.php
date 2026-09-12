@@ -17,7 +17,10 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Custody\PrincipalCustody;
+use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\Receiving\ResolveReceivingSite;
+use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -37,8 +40,13 @@ final class OpenReceivingSessionFromDocument
         private readonly ExpandReceivingSessionExpectedParents $expandExpectedParents,
     ) {}
 
-    public function handle(EpcisDocument $document, ?int $siteId = null, ?int $openedBy = null): ReceivingSession
-    {
+    public function handle(
+        EpcisDocument $document,
+        ?int $siteId = null,
+        ?int $openedBy = null,
+        ?int $principalId = null,
+        bool $asSystem = false,
+    ): ReceivingSession {
         $requireValidated = (bool) config('tracepharma.epcis.require_validated_for_receiving', true);
         $allowed = $requireValidated ? ['validated'] : ['parsed', 'validated'];
 
@@ -50,10 +58,22 @@ final class OpenReceivingSessionFromDocument
             );
         }
 
-        if (config('tracepharma.epcis.enforce_ts_for_receiving') && ! (bool) $document->dscsa_affirm) {
+        if (
+            config('tracepharma.epcis.enforce_ts_for_receiving')
+            && ! (bool) $document->dscsa_affirm
+            && ! CmoOwnProductInbound::applies($document)
+        ) {
             throw new DomainException(
                 'Cannot open receiving: document lacks DSCSA transaction statement affirmation (TS).',
             );
+        }
+
+        if (! TenantFeatures::forTenant(tenant())->supportsReceiving()) {
+            throw new DomainException('Receiving is not enabled for this organization profile.');
+        }
+
+        if (! $asSystem && ! JobRoleAccess::allows(Permissions::NavReceive)) {
+            throw new DomainException('Receiving is not authorized for your job role.');
         }
 
         $this->recordAtpSoftWarning->handle($document);
@@ -69,11 +89,11 @@ final class OpenReceivingSessionFromDocument
             );
         }
 
-        if (! JobRoleAccess::allows(Permissions::NavReceive)) {
-            throw new DomainException('Receiving is not authorized for your job role.');
-        }
-
         $resolvedSiteId = $this->resolveReceivingSite->handle($document, $siteId);
+        $resolvedPrincipalId = PrincipalCustody::forTenant()->resolveSessionPrincipalId(
+            $resolvedSiteId,
+            $principalId,
+        );
 
         $user = auth()->user();
         if ($user instanceof User) {
@@ -108,6 +128,11 @@ final class OpenReceivingSessionFromDocument
                     $resolvedSiteId,
                     $siteId,
                 );
+                $shipmentSession = $this->ensureSessionPrincipal(
+                    $shipmentSession,
+                    $resolvedSiteId,
+                    $resolvedPrincipalId,
+                );
 
                 $rootParentIds = $this->resolveUnionRootParentEpcIds(
                     InboundShipment::query()->findOrFail($shipmentId),
@@ -134,12 +159,18 @@ final class OpenReceivingSessionFromDocument
                     $document,
                     $resolvedSiteId,
                     $allowed,
+                    $resolvedPrincipalId,
                 );
             } elseif (in_array($existing->status, ['open', 'in_progress'], true)) {
                 $existing = $this->maybeUpdateOpenSessionSite(
                     $existing,
                     $resolvedSiteId,
                     $siteId,
+                );
+                $existing = $this->ensureSessionPrincipal(
+                    $existing,
+                    $resolvedSiteId,
+                    $resolvedPrincipalId,
                 );
 
                 if ($shipmentId !== null) {
@@ -165,7 +196,14 @@ final class OpenReceivingSessionFromDocument
             )
             : $this->resolveRootParentEpcIds($document);
 
-        $session = DB::transaction(function () use ($document, $resolvedSiteId, $openedBy, $rootParentIds, $shipmentId): ReceivingSession {
+        $session = DB::transaction(function () use (
+            $document,
+            $resolvedSiteId,
+            $resolvedPrincipalId,
+            $openedBy,
+            $rootParentIds,
+            $shipmentId,
+        ): ReceivingSession {
             $attributes = [
                 'session_kind' => ReceivingSessionKind::InboundAsn,
                 'epcis_document_id' => $document->getKey(),
@@ -182,6 +220,13 @@ final class OpenReceivingSessionFromDocument
 
             if ($shipmentId !== null) {
                 $attributes['inbound_shipment_id'] = $shipmentId;
+            }
+
+            if (
+                $resolvedPrincipalId !== null
+                && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            ) {
+                $attributes['principal_id'] = $resolvedPrincipalId;
             }
 
             $session = ReceivingSession::query()->create($attributes);
@@ -347,6 +392,7 @@ final class OpenReceivingSessionFromDocument
         EpcisDocument $document,
         int $resolvedSiteId,
         array $allowedStatuses,
+        ?int $resolvedPrincipalId = null,
     ): ReceivingSession {
         if ($session->receiving_events_generated_at !== null || $session->receiving_epcis_document_id !== null) {
             throw new DomainException('Cannot reopen receiving: session already has authored receiving EPCIS.');
@@ -364,7 +410,13 @@ final class OpenReceivingSessionFromDocument
             )
             : $this->resolveRootParentEpcIds($document);
 
-        return DB::transaction(function () use ($session, $resolvedSiteId, $rootParentIds, $shipmentId): ReceivingSession {
+        return DB::transaction(function () use (
+            $session,
+            $resolvedSiteId,
+            $resolvedPrincipalId,
+            $rootParentIds,
+            $shipmentId,
+        ): ReceivingSession {
             $session = ReceivingSession::query()
                 ->whereKey($session->getKey())
                 ->lockForUpdate()
@@ -411,6 +463,13 @@ final class OpenReceivingSessionFromDocument
                 $updates['inbound_shipment_id'] = $shipmentId;
             }
 
+            if (
+                $resolvedPrincipalId !== null
+                && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            ) {
+                $updates['principal_id'] = $resolvedPrincipalId;
+            }
+
             if (Schema::hasColumn('receiving_sessions', 'cancelled_at')) {
                 $updates['cancelled_at'] = null;
             }
@@ -419,6 +478,32 @@ final class OpenReceivingSessionFromDocument
 
             return $session->refresh();
         });
+    }
+
+    private function ensureSessionPrincipal(
+        ReceivingSession $session,
+        int $siteId,
+        ?int $resolvedPrincipalId,
+    ): ReceivingSession {
+        if (! TenantFeatures::forTenant(tenant())->supportsPrincipals()) {
+            return $session;
+        }
+
+        $current = $session->principal_id !== null ? (int) $session->principal_id : null;
+        if ($current !== null && $current > 0) {
+            return $session;
+        }
+
+        $principalId = $resolvedPrincipalId
+            ?? PrincipalCustody::forTenant()->resolveSessionPrincipalId($siteId);
+
+        if ($principalId === null) {
+            return $session;
+        }
+
+        $session->forceFill(['principal_id' => $principalId])->save();
+
+        return $session->refresh();
     }
 
     /**

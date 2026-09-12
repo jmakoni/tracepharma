@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\Http;
  */
 class TenantSettings
 {
+    public const MIN_INTEGRATION_API_KEY_LENGTH = 16;
+
     /** @var list<string> */
     public const ADDRESS_KEYS = [
         'street_address',
@@ -296,6 +298,28 @@ class TenantSettings
 
         $settings = $this->settingsBag();
         data_set($settings, 'access.pharmacy_simplified_nav', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
+    /**
+     * Pharmacy tenants: unlock Scan Out + Outbound EPCIS when warehouse tools are shown.
+     * Default off. Does not unlock Ship Order list or SSCC labeling.
+     */
+    public function pharmacyFullOutboundEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'access.pharmacy_full_outbound', false);
+    }
+
+    public function setPharmacyFullOutboundEnabled(bool $enabled): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'access.pharmacy_full_outbound', $enabled);
         $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
 
         return $this;
@@ -777,7 +801,13 @@ class TenantSettings
         if (blank($key)) {
             data_set($settings, 'integrations.wms_bridge_api_key', null);
         } else {
-            data_set($settings, 'integrations.wms_bridge_api_key', Crypt::encryptString(trim($key)));
+            $trimmed = trim($key);
+            if (strlen($trimmed) < self::MIN_INTEGRATION_API_KEY_LENGTH) {
+                throw new \InvalidArgumentException(
+                    'WMS bridge API key must be at least '.self::MIN_INTEGRATION_API_KEY_LENGTH.' characters.',
+                );
+            }
+            data_set($settings, 'integrations.wms_bridge_api_key', Crypt::encryptString($trimmed));
         }
 
         if (data_get($settings, 'integrations') === []) {
@@ -1132,7 +1162,13 @@ class TenantSettings
         if (blank($key)) {
             data_set($settings, 'integrations.vrs_responder_api_key', null);
         } else {
-            data_set($settings, 'integrations.vrs_responder_api_key', Crypt::encryptString(trim($key)));
+            $trimmed = trim($key);
+            if (strlen($trimmed) < self::MIN_INTEGRATION_API_KEY_LENGTH) {
+                throw new \InvalidArgumentException(
+                    'VRS responder API key must be at least '.self::MIN_INTEGRATION_API_KEY_LENGTH.' characters.',
+                );
+            }
+            data_set($settings, 'integrations.vrs_responder_api_key', Crypt::encryptString($trimmed));
         }
 
         if (data_get($settings, 'integrations') === []) {
@@ -1273,6 +1309,20 @@ class TenantSettings
     public function setManufacturerVerificationPortalEnabled(bool $enabled): self
     {
         return $this->putNestedSetting('features.manufacturer_verification_portal', $enabled);
+    }
+
+    /**
+     * Manufacturer opt-in VRS requestor UI (Verify Product / history / directory). Default off.
+     * Responder webhook stays on supportsVrsResponder() regardless of this flag.
+     */
+    public function manufacturerVrsRequestorEnabled(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'features.manufacturer_vrs_requestor', false);
+    }
+
+    public function setManufacturerVrsRequestorEnabled(bool $enabled): self
+    {
+        return $this->putNestedSetting('features.manufacturer_vrs_requestor', $enabled);
     }
 
     /**
@@ -1538,6 +1588,23 @@ class TenantSettings
     public function setAutoCompleteAsnOnReady(bool $enabled): self
     {
         return $this->putNestedSetting('receiving.auto_complete_asn_on_ready', $enabled);
+    }
+
+    /**
+     * Manufacturer master switch: when true, inbound EPCIS from trading partners
+     * marked is_cmo + auto_receive_inbound may auto-complete receive (no Scan In).
+     * Default false. Partner flag alone is never enough.
+     */
+    public function autoReceiveFromCmo(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.auto_receive_from_cmo');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAutoReceiveFromCmo(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.auto_receive_from_cmo', $enabled);
     }
 
     /**
@@ -1948,6 +2015,7 @@ class TenantSettings
      *     match_inbound_ship_to_site?: bool|null,
      *     auto_open_receive_after_transfer_ship?: bool|null,
      *     auto_complete_asn_on_ready?: bool|null,
+     *     auto_receive_from_cmo?: bool|null,
      *     receiving_edge_mode?: string|ReceivingEdgeMode|null,
      *     job_roles_enabled?: bool|null,
      *     client_print_bridge?: string|null,
@@ -2017,6 +2085,7 @@ class TenantSettings
             'block_send_on_atp_gap',
             'auto_open_receive_after_transfer_ship',
             'auto_complete_asn_on_ready',
+            'auto_receive_from_cmo',
             'receiving_edge_mode',
             'job_roles_enabled',
             'client_print_bridge',
@@ -2031,11 +2100,13 @@ class TenantSettings
             'dashboard_defaults',
             'dashboard_allowed',
             'pharmacy_simplified_nav',
+            'pharmacy_full_outbound',
             'alert_digest_enabled',
             'alert_digest_frequency',
             'email_portal_on_ship',
             'allow_assign_partner_glns_from_prefix',
             'manufacturer_verification_portal',
+            'manufacturer_vrs_requestor',
             'client_portal_v2',
             'principal_custody_enforced',
             'buying_group_network_consent',
@@ -2095,6 +2166,7 @@ class TenantSettings
                 'block_send_on_atp_gap' => $this->setBlockSendOnAtpGap((bool) $data[$key]),
                 'auto_open_receive_after_transfer_ship' => $this->setAutoOpenReceiveAfterTransferShip((bool) $data[$key]),
                 'auto_complete_asn_on_ready' => $this->setAutoCompleteAsnOnReady((bool) $data[$key]),
+                'auto_receive_from_cmo' => $this->setAutoReceiveFromCmo((bool) $data[$key]),
                 'receiving_edge_mode' => $this->setReceivingEdgeMode($this->normalizeReceivingEdgeMode($data[$key])),
                 'job_roles_enabled' => $this->setJobRolesEnabled((bool) $data[$key]),
                 'client_print_bridge' => $this->setClientPrintBridge(
@@ -2125,6 +2197,7 @@ class TenantSettings
                     is_array($data[$key]) ? $data[$key] : [],
                 ),
                 'pharmacy_simplified_nav' => $this->setPharmacySimplifiedNavEnabled((bool) $data[$key]),
+                'pharmacy_full_outbound' => $this->setPharmacyFullOutboundEnabled((bool) $data[$key]),
                 'alert_digest_enabled' => $this->setAlertDigestEnabled((bool) $data[$key]),
                 'alert_digest_frequency' => $this->setAlertDigestFrequency(
                     is_string($data[$key]) ? $data[$key] : 'daily',
@@ -2132,6 +2205,7 @@ class TenantSettings
                 'email_portal_on_ship' => $this->setEmailPortalOnShipEnabled((bool) $data[$key]),
                 'allow_assign_partner_glns_from_prefix' => $this->setAllowAssignPartnerGlnsFromPrefix((bool) $data[$key]),
                 'manufacturer_verification_portal' => $this->setManufacturerVerificationPortalEnabled((bool) $data[$key]),
+                'manufacturer_vrs_requestor' => $this->setManufacturerVrsRequestorEnabled((bool) $data[$key]),
                 'client_portal_v2' => $this->setClientPortalV2Enabled((bool) $data[$key]),
                 'principal_custody_enforced' => $this->setPrincipalCustodyEnforced((bool) $data[$key]),
                 'buying_group_network_consent' => $this->setBuyingGroupNetworkConsent((bool) $data[$key]),

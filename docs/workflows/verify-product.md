@@ -2,7 +2,7 @@
 
 - **Slug / URL:** `/verify-product`
 - **Filament:** `App\Filament\App\Pages\VerifyProduct`
-- **Who:** `supportsVrs()` and `NavVerify`
+- **Who:** `supportsVrs()` and `NavVerify` (Manufacturer only when Org Settings **Manufacturer VRS requestor** is on; responder webhook is separate via `supportsVrsResponder()`)
 - **Produces:** — (VRS verification record only; no authored outbound EPCIS)
 
 ## When to use

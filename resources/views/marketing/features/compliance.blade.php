@@ -96,7 +96,7 @@
                 title="Analytics workspace"
                 :items="[
                     'Self-serve compliance and operations analytics beyond fixed scorecards.',
-                    'Export-ready views for management review and inspection prep.',
+                    'Export-ready views for management review and inspection prep via Inspection day readiness (ZIP pack, ATP, exceptions) — not a live NABP Pulse feed.',
                     'Profile-gated metrics for manufacturer, wholesaler, 3PL, and dispenser tenants.',
                 ]"
             />

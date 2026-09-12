@@ -12,6 +12,7 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionReceiveImpactMap;
+use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\TenantSettings;
 
 final class ReceivingGate
@@ -51,6 +52,15 @@ final class ReceivingGate
             ->first();
 
         if ($case !== null) {
+            $code = $case->type?->code;
+            if (
+                is_string($code)
+                && in_array($code, ['MISSING_DSCSA_STATEMENT', 'MISSING_BIZ_TRANSACTION'], true)
+                && CmoOwnProductInbound::applies($document)
+            ) {
+                return $this->blockingDestinationGlnMismatchCase($document);
+            }
+
             return $case;
         }
 

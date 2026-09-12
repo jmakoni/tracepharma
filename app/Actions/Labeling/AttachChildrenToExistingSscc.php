@@ -67,15 +67,19 @@ final class AttachChildrenToExistingSscc
             return $batch->fresh(['labels.children']) ?? $batch;
         }
 
-        $this->childCustodyGuard->assertUrnsOperable($toEmit !== [] ? $toEmit : $toAttach);
+        $siteId = isset($options['site_id']) && $options['site_id'] !== null && $options['site_id'] !== ''
+            ? (int) $options['site_id']
+            : ($batch->commission_site_id !== null ? (int) $batch->commission_site_id : null);
+
+        $this->childCustodyGuard->assertUrnsOperable(
+            $toEmit !== [] ? $toEmit : $toAttach,
+            siteId: $siteId,
+        );
 
         if ($toAttach !== []) {
             $this->childAttacher->attachToLabel($label, implode("\n", $toAttach));
         }
 
-        $siteId = isset($options['site_id']) && $options['site_id'] !== null && $options['site_id'] !== ''
-            ? (int) $options['site_id']
-            : ($batch->commission_site_id !== null ? (int) $batch->commission_site_id : null);
         $sync = (bool) ($options['epcis_sync'] ?? true);
 
         $label->refresh();

@@ -30,6 +30,10 @@ final class BuyingGroupMemberMetricsCollector
         SiteAtpReadinessStatus::NeedsReceivingState,
     ];
 
+    public function __construct(
+        private readonly int $partnerFactLimit = self::PARTNER_FACT_LIMIT,
+    ) {}
+
     /**
      * @return array{
      *     atp_gap_count: int,
@@ -52,6 +56,7 @@ final class BuyingGroupMemberMetricsCollector
     {
         $atpGapCount = 0;
         $partners = [];
+        $partnerFactLimit = max(0, $this->partnerFactLimit);
 
         Site::query()
             ->where('is_active', true)
@@ -63,12 +68,8 @@ final class BuyingGroupMemberMetricsCollector
                     ->limit(5),
             ])
             ->orderBy('id')
-            ->chunkById(50, function ($sites) use (&$atpGapCount, &$partners): bool {
+            ->chunkById(50, function ($sites) use (&$atpGapCount, &$partners, $partnerFactLimit): bool {
                 foreach ($sites as $site) {
-                    if (count($partners) >= self::PARTNER_FACT_LIMIT) {
-                        return false;
-                    }
-
                     /** @var Site $site */
                     if (! AtpLicenseRelevance::siteInComplianceAlertScope($site)) {
                         continue;
@@ -82,6 +83,11 @@ final class BuyingGroupMemberMetricsCollector
 
                     if (in_array($status, self::ATP_GAP_STATUSES, true)) {
                         $atpGapCount++;
+                    }
+
+                    // Cap stored partner facts only — keep scanning for full ATP gap counts.
+                    if (count($partners) >= $partnerFactLimit) {
+                        continue;
                     }
 
                     $expiresAt = $site->atpLicenses

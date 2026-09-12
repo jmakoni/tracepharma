@@ -26,7 +26,7 @@ Gate for the product surface: `TenantFeatures::supportsPrincipals()` (true only 
 - Master Data → **Principals** CRUD (`name`, optional `gln`, optional `external_ref`, `is_active`)
 - Optional `principal_id` on `sites`, `receiving_sessions`, `outbound_shipping_sessions`, `exceptions`, and `epcs`
 - List filters on Sites / Ship Orders / Exceptions (and related ops surfaces) by principal
-- Honesty copy: *Principals filter lists; serials are not isolated per client.*
+- Honesty copy (banner): *filter only — not isolated.*
 
 Soft mode does **not** hard-gate scans. Inventory, verification, and EPCIS custody remain tenant-scoped (`EpcCustodyGate` location rules) unless enforcement is on.
 
@@ -36,7 +36,7 @@ Soft mode does **not** hard-gate scans. Inventory, verification, and EPCIS custo
 
 When on:
 
-1. Opening receive / ship requires a principal (explicit or site default).
+1. Opening receive (scan-first, ASN, transfer-receive) / ship requires a principal (explicit or site default). Floor workstations (pack, unpack, break-pack, decommission, return, etc.) use the **site default** principal for on-hand and custody gates.
 2. Completing receive stamps `epcs.principal_id` from the session.
 3. Ship / pack / return / decommission refuse cross-principal serials with: *This serial belongs to another principal.*
 4. `ShippableEpcsAtSite` filters to the session principal.
@@ -46,7 +46,9 @@ When on:
 8. Asset Tracking + track-and-trace export constrain EPCs to principals on the actor’s accessible sites (Owners with all-site access see stamped EPCs across principals).
 9. **WMS ship-confirm:** must resolve a principal (`principal_external_ref`, `principal_gln`, or site default); mismatch with site default is rejected.
 
-Enable from **Settings → Organization → Principals → Enforce principal custody (EPC isolation)** (Logistics 3PL only), or via `TenantSettings::setPrincipalCustodyEnforced(true)` + `$tenant->save()` after backfill. Default remains **off**.
+Enable from **Settings → Organization → Principals → Enforce principal custody (EPC isolation)** (Logistics 3PL only; **Owner only**), or via `TenantSettings::setPrincipalCustodyEnforced(true)` + `$tenant->save()` after backfill. Default remains **off**. Honesty banner becomes *enforced* (soft mode uses *filter only — not isolated.*). Not an LSPedia Edge product mode and not a per-principal database.
+
+**Before turning enforcement on:** backfill `epcs.principal_id` for stock already at the warehouse. Receive still allows a first stamp when `principal_id` is null (claims into the session principal). Ship uses `assertMatches` and blocks unstamped EPCs when enforced. Pre-enforcement unstamped inventory can therefore be claimed into any principal session that opens at that site — run the backfill (and verify site defaults) first.
 
 Backfill helper (dry-run by default):
 
@@ -99,6 +101,7 @@ Explicitly **out of Wave D** (and not claimed as GA multi-client depth):
 - MariaDB LIST partition by principal for isolation
 - Full LSPedia OneScan Edge / Investigator / ATP directory product clone
 - Plant commissioning for 3PL (`supportsCommissioning` stays false)
+- Disposition destroy/retire is available via `supportsDispositionDecommission()` (Destroy / Decommission workstation); not plant Commission-all
 - Principal GLNs as hub route tenants (see hub vs principal table above)
 
 ## What this is not

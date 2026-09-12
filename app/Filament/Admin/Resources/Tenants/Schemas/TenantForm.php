@@ -44,7 +44,11 @@ class TenantForm
                                 fn (TenantProfile $profile) => [$profile->value => $profile->label()]
                             ))
                             ->required()
-                            ->native(false),
+                            ->live()
+                            ->native(false)
+                            ->helperText(fn (Get $get): ?string => TenantProfile::tryFrom((string) ($get('profile') ?? '')) === TenantProfile::Pharmacy
+                                ? 'Pharmacy cannot commission (no plant ObjectEvents).'
+                                : null),
                         Select::make('status')
                             ->options([
                                 'active' => 'Active',

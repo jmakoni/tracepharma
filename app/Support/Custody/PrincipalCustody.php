@@ -13,6 +13,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
@@ -135,6 +136,37 @@ final class PrincipalCustody
         $fromSite = Site::query()->whereKey($siteId)->value('principal_id');
 
         return $fromSite !== null ? (int) $fromSite : null;
+    }
+
+    /**
+     * Resolve principal when opening receive/ship: explicit override, else site default.
+     * When custody is enforced, fails closed if still unresolved.
+     *
+     * @param  'receive'|'ship'  $operation
+     */
+    public function resolveSessionPrincipalId(
+        int $siteId,
+        ?int $explicitPrincipalId = null,
+        string $operation = 'receive',
+    ): ?int {
+        if (! $this->features->supportsPrincipals()) {
+            return null;
+        }
+
+        $principalId = $explicitPrincipalId;
+        if ($principalId === null || $principalId <= 0) {
+            $principalId = $this->activePrincipalIdForSite($siteId);
+        }
+
+        if ($this->isEnforced() && ($principalId === null || $principalId <= 0)) {
+            throw new DomainException(
+                $operation === 'ship'
+                    ? 'Principal custody is enforced — select a principal (or set the site default) before opening a ship order.'
+                    : 'Principal custody is enforced — select a principal (or set the site default) before opening receive.',
+            );
+        }
+
+        return $principalId !== null && $principalId > 0 ? $principalId : null;
     }
 
     /**

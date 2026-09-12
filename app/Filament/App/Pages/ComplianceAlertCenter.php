@@ -45,7 +45,7 @@ class ComplianceAlertCenter extends Page implements HasKnowledgeBase
 
     public function getSubheading(): string|Htmlable|null
     {
-        return 'ATP/expiry and exception signals for compliance; integration failures for Support Engineers.';
+        return 'Tenant ATP/expiry and exception signals — not a live NABP Pulse feed.';
     }
 
     /**

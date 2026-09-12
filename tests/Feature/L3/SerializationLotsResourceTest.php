@@ -82,6 +82,28 @@ class SerializationLotsResourceTest extends TestCase
     }
 
     #[Test]
+    public function prepackager_can_access_serialization_lots_with_commissioning(): void
+    {
+        $this->initializeDemo2Tenant(TenantProfile::Prepackager);
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwner(TenantProfile::Prepackager));
+
+            $this->assertTrue(TenantFeatures::forTenant(tenant())->supportsCommissioning());
+            $this->assertTrue(SerializationLotResource::canAccess());
+
+            $lot = $this->createLot();
+
+            Livewire::test(ListSerializationLots::class)
+                ->assertSuccessful()
+                ->assertCanSeeTableRecords([$lot]);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function pharmacy_cannot_access_serialization_lots_resource(): void
     {
         $this->initializeDemo2Tenant(TenantProfile::Pharmacy);
