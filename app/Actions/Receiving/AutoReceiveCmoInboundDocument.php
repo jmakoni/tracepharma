@@ -110,7 +110,11 @@ final class AutoReceiveCmoInboundDocument
             'error' => $error->getMessage(),
         ]);
 
-        $session ??= $document->openReceivingSession();
+        if ($session === null) {
+            $document->unsetRelation('receivingSession');
+            $session = $document->openReceivingSession();
+        }
+
         if ($session === null) {
             return;
         }
