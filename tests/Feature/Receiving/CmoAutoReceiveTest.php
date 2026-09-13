@@ -355,6 +355,43 @@ class CmoAutoReceiveTest extends TestCase
         }
     }
 
+    #[Test]
+    public function abandon_does_not_cancel_when_receiving_epcis_already_authored(): void
+    {
+        $this->initializeAsManufacturer();
+
+        try {
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(true);
+            tenant()->save();
+
+            $partner = $this->createCmoPartner(autoReceive: true);
+            $document = $this->ingestPartnerShippingDocument($partner);
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle(
+                $document->fresh(),
+                asSystem: true,
+            );
+            $this->sessionId = (int) $session->getKey();
+
+            // Simulate peer CompleteReceivingSession having authored EPCIS while status
+            // is still open — abandon must not cancel under lock.
+            $session->forceFill([
+                'receiving_epcis_document_id' => (int) $document->getKey(),
+                'receiving_events_generated_at' => now(),
+            ])->save();
+
+            $action = app(AutoReceiveCmoInboundDocument::class);
+            $method = new \ReflectionMethod($action, 'abandonFailedAutoReceiveSession');
+            $method->invoke($action, $session->fresh(), $document->fresh(), new DomainException('peer raced'));
+
+            $fresh = $session->fresh();
+            $this->assertSame('open', $fresh->status);
+            $this->assertNotNull($fresh->receiving_epcis_document_id);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function createCmoPartner(bool $autoReceive, CmoOwnership $ownership = CmoOwnership::CmoSells): TradingPartner
     {
         $partner = TradingPartner::factory()->create([
