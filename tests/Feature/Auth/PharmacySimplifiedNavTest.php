@@ -170,11 +170,10 @@ class PharmacySimplifiedNavTest extends TestCase
             $user->assignRole(TenantRole::Owner->value);
             $this->actingAs($user);
 
-            // Hub page itself is not in nav; feature map still must not advertise Packing.
+            // Hub page itself is not in nav; feature map must not advertise Packing
+            // (enabled-only map omits disabled desks entirely).
             $this->assertFalse(TenantFeatures::forTenant(tenant())->showsWholesaleOperationsNav());
-            $this->assertFalse(
-                (new OperationsHub)->featureMap()['Packing'] ?? true,
-            );
+            $this->assertArrayNotHasKey('Packing', (new OperationsHub)->featureMap());
         } finally {
             tenancy()->end();
         }

@@ -15,6 +15,7 @@ use App\Models\TradingPartner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -110,30 +111,42 @@ final class AutoReceiveCmoInboundDocument
             'error' => $error->getMessage(),
         ]);
 
-        $session ??= $document->openReceivingSession();
+        if ($session === null) {
+            $document->unsetRelation('receivingSession');
+            $session = $document->openReceivingSession();
+        }
+
         if ($session === null) {
             return;
         }
 
         try {
-            $session = ReceivingSession::query()->whereKey($session->getKey())->first();
-            if ($session === null) {
-                return;
-            }
+            DB::transaction(function () use ($session): void {
+                $locked = ReceivingSession::query()
+                    ->whereKey($session->getKey())
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($session->receiving_events_generated_at !== null
-                || $session->receiving_epcis_document_id !== null) {
-                return;
-            }
+                if ($locked === null) {
+                    return;
+                }
 
-            if (! in_array($session->status, ['open', 'in_progress'], true)) {
-                return;
-            }
+                // Re-check under lock so a peer CompleteReceivingSession cannot leave
+                // authored receiving EPCIS on a session we then mark cancelled.
+                if ($locked->receiving_events_generated_at !== null
+                    || $locked->receiving_epcis_document_id !== null) {
+                    return;
+                }
 
-            $session->forceFill([
-                'status' => 'cancelled',
-                'completed_at' => now(),
-            ])->save();
+                if (! in_array($locked->status, ['open', 'in_progress'], true)) {
+                    return;
+                }
+
+                $locked->forceFill([
+                    'status' => 'cancelled',
+                    'completed_at' => now(),
+                ])->save();
+            });
         } catch (Throwable $cancelError) {
             Log::warning('receiving.auto_cmo_receive_abandon_failed', [
                 'source' => 'auto_cmo_receive',
