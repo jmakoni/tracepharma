@@ -14,6 +14,7 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\TradingPartner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use DomainException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -38,6 +39,8 @@ final class AutoReceiveCmoInboundDocument
             return null;
         }
 
+        $session = null;
+
         try {
             $session = $this->openReceivingSessionFromDocument->handle(
                 $document,
@@ -55,15 +58,19 @@ final class AutoReceiveCmoInboundDocument
             foreach ($parentLines as $line) {
                 $uri = $line->epc?->epc_uri;
                 if (! is_string($uri) || $uri === '') {
-                    continue;
+                    throw new DomainException('Expected parent line is missing an EPC URI.');
                 }
 
-                $this->confirmReceivingScan->handle(
+                $confirm = $this->confirmReceivingScan->handle(
                     $session->fresh() ?? $session,
                     $uri,
                     userId: null,
                     autoConfirmChildren: true,
                 );
+
+                if (! ($confirm['ok'] ?? false)) {
+                    throw new DomainException((string) ($confirm['message'] ?? 'Confirm scan failed.'));
+                }
             }
 
             $session = $session->fresh() ?? $session;
@@ -81,13 +88,59 @@ final class AutoReceiveCmoInboundDocument
 
             return $session->fresh() ?? $session;
         } catch (Throwable $e) {
-            Log::warning('receiving.auto_cmo_receive_failed', [
-                'source' => 'auto_cmo_receive',
-                'document_id' => (int) $document->getKey(),
-                'error' => $e->getMessage(),
-            ]);
+            $this->abandonFailedAutoReceiveSession($session, $document, $e);
 
             return null;
+        }
+    }
+
+    /**
+     * Cancel a leftover open/in-progress auto-receive session so shouldAutoReceive
+     * can retry and EPCs are not stuck on a dead session.
+     */
+    private function abandonFailedAutoReceiveSession(
+        ?ReceivingSession $session,
+        EpcisDocument $document,
+        Throwable $error,
+    ): void {
+        Log::warning('receiving.auto_cmo_receive_failed', [
+            'source' => 'auto_cmo_receive',
+            'document_id' => (int) $document->getKey(),
+            'session_id' => $session !== null ? (int) $session->getKey() : null,
+            'error' => $error->getMessage(),
+        ]);
+
+        $session ??= $document->openReceivingSession();
+        if ($session === null) {
+            return;
+        }
+
+        try {
+            $session = ReceivingSession::query()->whereKey($session->getKey())->first();
+            if ($session === null) {
+                return;
+            }
+
+            if ($session->receiving_events_generated_at !== null
+                || $session->receiving_epcis_document_id !== null) {
+                return;
+            }
+
+            if (! in_array($session->status, ['open', 'in_progress'], true)) {
+                return;
+            }
+
+            $session->forceFill([
+                'status' => 'cancelled',
+                'completed_at' => now(),
+            ])->save();
+        } catch (Throwable $cancelError) {
+            Log::warning('receiving.auto_cmo_receive_abandon_failed', [
+                'source' => 'auto_cmo_receive',
+                'document_id' => (int) $document->getKey(),
+                'session_id' => (int) $session->getKey(),
+                'error' => $cancelError->getMessage(),
+            ]);
         }
     }
 

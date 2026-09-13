@@ -119,14 +119,17 @@ class OperationsHub extends Page implements HasKnowledgeBase
     }
 
     /**
-     * @return array<string, bool>
+     * Enabled operations only — do not list profile-gated desks as "hidden"
+     * (e.g. Commissioning for DrugWholesaler).
+     *
+     * @return array<string, true>
      */
     public function featureMap(): array
     {
         $features = TenantFeatures::forTenant(tenant());
         $wholesaleFloor = $features->showsWholesaleOperationsNav();
 
-        return [
+        $map = [
             'Receiving' => $features->supportsReceiving(),
             'Transferring' => $features->supportsTransferring() && $wholesaleFloor,
             'Unpacking' => $features->supportsUnpacking()
@@ -135,6 +138,11 @@ class OperationsHub extends Page implements HasKnowledgeBase
             'Commissioning (pallets)' => $features->supportsCommissioning(),
             'Returning' => $features->supportsReturning(),
         ];
+
+        return array_map(
+            static fn (): true => true,
+            array_filter($map),
+        );
     }
 
     public function routeHubScan(ResolveEpcFromScan $resolveEpcFromScan): void

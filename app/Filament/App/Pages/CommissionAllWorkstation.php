@@ -65,6 +65,11 @@ class CommissionAllWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return static::canAccess();
+    }
+
     public function getSubheading(): string|Htmlable|null
     {
         return 'Scan on-hand EPCs that need commissioning ObjectEvents, then author commissioning EPCIS at the selected site.';

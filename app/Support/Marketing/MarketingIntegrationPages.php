@@ -63,7 +63,7 @@ class MarketingIntegrationPages
                 'best_for' => [
                     'Regional wholesalers receiving from TraceLink manufacturers.',
                     'Mid-market manufacturers shipping to TraceLink wholesalers.',
-                    'Teams leaving Opus network economics but keeping known partner transport paths.',
+                    'EPCIS interop + hub routing. Not Opus; not a TraceLink replacement.',
                 ],
                 'compare_route' => 'marketing.compare.tracelink',
                 'faq' => [
@@ -86,7 +86,7 @@ class MarketingIntegrationPages
                 'transports' => ['HTTPS'],
                 'meta_description' => 'Interoperate TracePharma with LSPedia OneScan partners via HTTPS EPCIS webhooks. Direct L4 connectivity without mandatory Exchange network enrollment.',
                 'hero_description' => 'Receive EPCIS from LSPedia-connected wholesalers and manufacturers through HTTPS inbound presets—while running operator-first receiving, exceptions, and compliance on TracePharma.',
-                'summary' => 'LSPedia OneScan and Exchange serve many US trading partners. TracePharma interoperates via HTTPS webhook when partners push EPCIS to your tenant. Use it alongside—or instead of—a OneScan module for US L4 workflows you actually operate.',
+                'summary' => 'LSPedia OneScan and Exchange serve many US trading partners. TracePharma interoperates via HTTPS webhook when partners push EPCIS to your tenant. TracePharma works alongside a OneScan module; we are not OneScan/Edge.',
                 'inbound' => [
                     'HTTPS inbound webhook with tenant-scoped token authentication.',
                     'EPCIS 1.2 XML and opt-in 2.0 JSON-LD capture into unified receiving.',
@@ -449,7 +449,7 @@ class MarketingIntegrationPages
                 'transports' => ['HTTPS'],
                 'meta_description' => 'Connect TracePharma to SAP Advanced Track and Trace via SAP ICH HTTPS webhook—corporate ERP serialization plus partner-edge L4 workflows.',
                 'hero_description' => 'SAP ATTP is the corporate serialization repository for SAP-centric manufacturers. TracePharma interoperates via SAP ICH HTTPS when EPCIS flows from Integration Suite to your tenant—without replacing ATTP in the ERP core.',
-                'summary' => 'SAP is a Pulse-listed enterprise stack vendor. TracePharma rarely displaces ATTP entirely. It handles partner-edge L4 workflows—receive, ship, exceptions, ACK monitoring—while SAP remains the corporate serial number repository.',
+                'summary' => 'SAP is a Pulse-listed enterprise stack vendor. TracePharma provides L4 operations beside ATTP; does not replace ATTP. It handles partner-edge L4 workflows—receive, ship, exceptions, ACK monitoring—while SAP remains the corporate serial number repository.',
                 'inbound' => [
                     'HTTPS webhook preset (sap_ich) for SAP Integration Suite / ICH delivery.',
                     'EPCIS capture into unified receiving and 3T matching.',

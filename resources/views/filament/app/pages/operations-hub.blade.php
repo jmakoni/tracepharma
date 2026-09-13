@@ -41,25 +41,23 @@
             </div>
         </div>
 
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title text-base">Operations features</h2>
-                <div class="stats stats-vertical lg:stats-horizontal w-full shadow">
-                    @foreach ($this->featureMap() as $label => $enabled)
-                        <div class="stat">
-                            <div class="stat-title">{{ $label }}</div>
-                            <div class="stat-value text-base">
-                                @if ($enabled)
+        @if (filled($featureMap = $this->featureMap()))
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title text-base">Operations features</h2>
+                    <div class="stats stats-vertical lg:stats-horizontal w-full shadow">
+                        @foreach ($featureMap as $label => $enabled)
+                            <div class="stat">
+                                <div class="stat-title">{{ $label }}</div>
+                                <div class="stat-value text-base">
                                     <span class="badge badge-success badge-outline">enabled</span>
-                                @else
-                                    <span class="badge badge-ghost">hidden</span>
-                                @endif
+                                </div>
                             </div>
-                        </div>
-                    @endforeach
+                        @endforeach
+                    </div>
                 </div>
             </div>
-        </div>
+        @endif
 
         @if (\App\Support\TenantFeatures::forTenant(tenant())->supportsReceiving() && ($activeSessions = $this->activeReceivingSessions())->isNotEmpty())
             <div class="card bg-base-100 shadow-xl">

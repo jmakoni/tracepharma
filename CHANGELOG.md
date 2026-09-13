@@ -4,6 +4,20 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.7.1] — 2026-09-13
+
+Post-1.7.0 patch: CMO auto-receive retry safety and Ops Hub profile honesty.
+
+### Fixed
+
+- **CMO auto-receive retry** — When a parent confirm fails (or a parent line has no EPC URI), auto-receive cancels the leftover open/in-progress session so `shouldAutoReceive` can retry and serials are not stuck on a dead session. Confirm `ok` failures already abort before complete/success log.
+- **Ops Hub feature chips** — Lists only enabled operations for the tenant profile (Drug Wholesaler no longer sees “Commissioning (pallets) — hidden”).
+- **Nav registration mirrors** — `CommissionAllWorkstation`, `PrincipalResource`, and `SerializationLotResource` set `shouldRegisterNavigation()` to `canAccess()` so profile-gated desks never appear in the sidebar.
+
+## [1.7.0] — 2026-09-12
+
+GTM honesty + profile depth: Manufacturer CMO inbound receive (optional auto-receive), buying-group network control plane (F0–F6), optional 3PL principal custody, hub receiver GLN claim requests, Owner-gated feature flags, and marketing/integration copy that matches shipped `TenantFeatures`.
+
 ### Added
 
 - **P0-2 disposition destroy gate** — `TenantFeatures::supportsDispositionDecommission()` (Pharmacy, Manufacturer, DrugWholesaler, Prepackager, Logistics3pl, Dental). `DecommissionWorkstation` / Operations Hub Destroy card use it; Commission-all stays `supportsCommissioning()` (M+R only).
@@ -15,6 +29,8 @@ All notable releases of TracePharma are documented here.
 - **CMO auto-receive (dual gate)** — Tenant master `receiving.auto_receive_from_cmo` (Manufacturer Org Settings, default off) **and** partner `is_cmo` + `auto_receive_inbound`. When both on, validated inbound shipping ASN auto-completes receive (`source=auto_cmo_receive`). Guardian/L3 commissioning ingest excluded. Manual Receive/Scan In unchanged when either gate is off.
 - **CMO own-product inbound TS soft-gate** — Partner `cmo_ownership` (`own_product` | `cmo_sells`, default sells). When master auto-receive-from-CMO is on and partner is CMO own-product, inbound missing TS / biz-transaction is warning/soft (not hard-block); auto-receive can complete without `dscsa_affirm`. `cmo_sells` and non-CMO inbound keep hard TS.
 - **P0-1 VRS responder vs requestor** — `TenantFeatures::supportsVrsResponder()` (Manufacturer **or** `supportsVrs()`). Inbound VRS webhook + verification-request profile check use responder; Verify Product / history / directory stay on `supportsVrs()` only (Manufacturer requestor UI remains off). Organization Settings portal toggle save/visibility uses `supportsVrsResponder()` so Manufacturer can persist the setting.
+- **Hub receiver GLN claim requests** — Tenant App requests + Admin review lifecycle (notify, accept/reject, resubmit), with acceptance tests; complements 1.6 hub route directory.
+- **OCI ATP verify/present seam** — Org toggles for client portal v2 ATP evidence presentation.
 - **Marketing GTM alignment** — Sell shipped depth: manufacturer verification portal (settings-gated ≠ VRS alone), 3PL WMS principal map / agent TI / Logistics3pl roles, buying-group home/demo parity, hub connectivity (connection approval, hub GLN routes, platform AS2/SFTP). Provider checklist covers BG control plane and not-GA fences.
 - **Wave F6 (partial)** — BuyingGroup personas (`BuyingGroupNetworkAdmin`, `BuyingGroupAnalyst`) with `NavCompliance` / roster `UsersManage`; KB + marketing GTM freeze: member health, partner matrix, and member APIs claimed as GA (control-plane only; not ATP warehouse compliance for the group).
 - **Wave F5 (partial)** — BuyingGroup tenant program `affiliation_code` (`TenantSettings` / Organization Settings when `supportsBuyingGroupNetwork()`); Member roster enrollment stub (soft vs hard-linked counts, % with roster affiliation code).
@@ -22,6 +38,7 @@ All notable releases of TracePharma are documented here.
 - **Wave F3** — `tracepharma:buying-group-rollup`, Member network health, Authorized partner matrix, BG network alerts from member snapshots (hard-linked consented pharmacies only).
 - **Wave F2** — Hard membership invite/consent (`buying_group_memberships`) between BuyingGroup roster and Pharmacy tenants.
 - **Wave F1** — Member roster identity enrichment + CSV export.
+- **Wave E (3PL principal custody)** — Multi-client principal registry stamp + optional `features.principal_custody_enforced` EPC isolation (default **off**); soft filter mode remains the default product promise.
 
 ### Changed
 
@@ -29,7 +46,7 @@ All notable releases of TracePharma are documented here.
 - **3PL viable-honest** — Principal honesty banners: soft *filter only — not isolated.*; enforced *enforced*. Onboarding matches the custody flag. Filament ship view proves cross-principal scan block when `principal_custody_enforced` is on. Default remains off; no Edge schema / no per-principal DB.
 - **Manufacturer VRS honesty + optional requestor** — Manufacturer always responds via `supportsVrsResponder()` (webhook/portal). Verify Product / history / directory stay off unless Org Settings **Manufacturer VRS requestor** (`features.manufacturer_vrs_requestor`, default off) enables `supportsVrs()`.
 - **POC floor honesty (three gates)** — Transfer `canAccess`/`view` allows `NavShip` **or** `NavReceive`; `canCreate` and ship mutations stay `NavShip`. Pharmacy Org Settings: **Show warehouse tools** = inverse of `pharmacy_simplified_nav` (default unchanged). Opt-in `pharmacy_full_outbound` (default off) unlocks Scan Out + Outbound EPCIS when warehouse tools are on; desk remains default; no Ship Order / SSCC / T2 for pharmacy.
-- **Marketing honesty pass** — Interop story is EPCIS over AS2/SFTP/HTTPS + hub GLN routing / connection presets (not native TraceLink or SAP ATTP replacement). ATP copy = licenses + manual Pulse/OCI evidence (not Pulse certified / live directory API). Drop-ship remains GS1 indicator only (T2 network deferred). 3PL isolation only when custody enforcement is on. Receive HUD chips say “receive policy” (not “Edge-style”).
+- **Marketing honesty pass** — Interop story is EPCIS over AS2/SFTP/HTTPS + hub GLN routing / connection presets (not native TraceLink or SAP ATTP replacement). ATP copy = licenses + manual Pulse/OCI evidence (not Pulse certified / live directory API). Drop-ship remains GS1 indicator only (T2 network deferred). 3PL isolation only when custody enforcement is on. Receive HUD chips say “receive policy” (not “Edge-style”). LSPedia / TraceLink / SAP integration pages state we are not OneScan/Edge, not Opus/TraceLink, and do not replace ATTP.
 
 ### Fixed
 
@@ -37,6 +54,7 @@ All notable releases of TracePharma are documented here.
 - **Transfer authz honesty** — Receive-tech may list/view transfer sessions (`NavShip|NavReceive`); create and ship-side mutations stay `NavShip` only.
 - **Outbound EPCIS canView** — Resource overrides use `NavShip` + outbound features so ship-only users are not 403’d by the shared inbound `EpcisDocumentPolicy`.
 - **Soft TS impact map** — Supplier quarantine / exception email use `ExceptionReceiveImpactMap::forCodeOnDocument` so CMO own-product soft TS is not escalated as hard-blocking.
+- **CMO auto-receive scan confirm** — Auto-receive no longer ignores failed `confirmReceivingScan` results.
 - **Integration API key strength** — WMS bridge and VRS responder keys require at least 16 characters on set.
 - **Commissioning action gate** — `EmitCommissioningEpcisForEpcs` requires `supportsCommissioning()` (not UI-only).
 - **EPCIS DSCSA section visibility** — “Transaction statement affirmed” / “Legal notice” (and list DSCSA icons) show only for partner ownership-change docs (inbound partner files, authored shipping). Hidden for generated transferring/receiving/commissioning and other non–ownership-change authored kinds so `dscsa_affirm=false` no longer looks like a miss. Ship-session TI/TS affirm unchanged.
@@ -53,8 +71,9 @@ All notable releases of TracePharma are documented here.
 - **Wave F0→F6 GTM (buying groups)** — Marketing/home/features/compare and solutions copy: Member roster, member health, authorized partner matrix, and member APIs are GA with Partner ATP readiness + Alert center; still control-plane (no floor ops); do not claim the buying group is DSCSA-compliant as an ATP. Product doc gates: roster `UsersManage`; health/matrix `NavCompliance`.
 - **Wave E GTM honesty (3PL custody)** — Marketing and compare copy: soft principal registry/filters GA (including scorecards); optional EPC custody enforcement as tenant ops setting (**default off**); do not claim serial isolation as the default product promise; not positioned as LSPedia Edge / ATP DB. In-app `PrincipalsHonesty` shows an enforced sentence when custody is on.
 - **Organization Settings** — Logistics 3PL tenants can toggle **Enforce principal custody (EPC isolation)** (`features.principal_custody_enforced`; default off).
+- **SSRF / SSO / hub routing / connection approval gates** — Harden edge cases around hub identity and approval flows.
 
-### Buying-group network waves F0–F5 (summary)
+### Buying-group network waves F0–F6 (summary)
 
 | Wave | Outcome |
 |---|---|
@@ -229,12 +248,16 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Dual-stack **ship** authoring (JSON-LD 2.0) is not productized; `Xml20Writer` is a retag stub and is not selected
 - No Gateway Checker–class TraceReady conformance export; no live OCI/NABP Pulse ATP API (1.3.0 adds internal evidence exports + manual Pulse/OCI attestation sources)
 - Certified per-vendor PMS HTTP adapters are not shipped (1.2.0 adds runbooks on unified dispense-check)
-- 3PL multi-principal **custody isolation** is not shipped (1.4.0 adds principal registry + soft tags only)
+- 3PL multi-principal **custody isolation** was not shipped at GA (1.4.0 adds principal registry + soft tags; **1.7.0** adds optional EPC custody enforcement, default off)
 - Full email-reply / POET multienterprise workspace and TraceLink-style multi-party T2 network remain deferred
 - AS2 inbound webhook exists but is not operator-selectable on the Inbound Connections form
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.7.1]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.1
+[1.7.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.0
+[1.6.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.6.0
+[1.5.1]: https://github.com/jmakoni/tracepharma/releases/tag/v1.5.1
 [1.5.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.5.0
 [1.4.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.4.0
 [1.3.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.3.0
