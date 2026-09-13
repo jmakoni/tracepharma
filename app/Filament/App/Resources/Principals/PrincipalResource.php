@@ -43,6 +43,11 @@ class PrincipalResource extends Resource implements HasKnowledgeBase
             && JobRoleAccess::allowsOwnerOrAny(Permissions::NavMasterData);
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return static::canAccess();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return PrincipalForm::configure($schema);

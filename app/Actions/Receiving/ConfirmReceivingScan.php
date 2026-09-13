@@ -36,7 +36,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
-final class ConfirmReceivingScan
+class ConfirmReceivingScan
 {
     public function __construct(
         private readonly ResolveEpcFromScan $resolveEpcFromScan,

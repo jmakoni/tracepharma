@@ -4,6 +4,16 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.7.1] — 2026-09-13
+
+Post-1.7.0 patch: CMO auto-receive retry safety and Ops Hub profile honesty.
+
+### Fixed
+
+- **CMO auto-receive retry** — When a parent confirm fails (or a parent line has no EPC URI), auto-receive cancels the leftover open/in-progress session so `shouldAutoReceive` can retry and serials are not stuck on a dead session. Confirm `ok` failures already abort before complete/success log.
+- **Ops Hub feature chips** — Lists only enabled operations for the tenant profile (Drug Wholesaler no longer sees “Commissioning (pallets) — hidden”).
+- **Nav registration mirrors** — `CommissionAllWorkstation`, `PrincipalResource`, and `SerializationLotResource` set `shouldRegisterNavigation()` to `canAccess()` so profile-gated desks never appear in the sidebar.
+
 ## [1.7.0] — 2026-09-12
 
 GTM honesty + profile depth: Manufacturer CMO inbound receive (optional auto-receive), buying-group network control plane (F0–F6), optional 3PL principal custody, hub receiver GLN claim requests, Owner-gated feature flags, and marketing/integration copy that matches shipped `TenantFeatures`.
@@ -244,6 +254,7 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.7.1]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.1
 [1.7.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.0
 [1.6.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.6.0
 [1.5.1]: https://github.com/jmakoni/tracepharma/releases/tag/v1.5.1

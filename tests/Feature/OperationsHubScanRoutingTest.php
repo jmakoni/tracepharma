@@ -699,6 +699,35 @@ class OperationsHubScanRoutingTest extends TestCase
         return $gln;
     }
 
+    #[Test]
+    public function feature_map_omits_disabled_desks_for_drug_wholesaler(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $priorProfile = $tenant->profile;
+
+        try {
+            $tenant->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+            tenancy()->initialize($tenant->fresh());
+
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $map = Livewire::test(OperationsHub::class)
+                ->instance()
+                ->featureMap();
+
+            $this->assertArrayNotHasKey('Commissioning (pallets)', $map);
+            $this->assertArrayHasKey('Receiving', $map);
+            $this->assertArrayHasKey('Packing', $map);
+            $this->assertSame(['Receiving', 'Transferring', 'Unpacking', 'Packing', 'Returning'], array_keys($map));
+        } finally {
+            $tenant->forceFill(['profile' => $priorProfile])->save();
+            tenancy()->end();
+        }
+    }
+
     private function uniqueGlnUnderCompanyPrefix(): string
     {
         $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?? '0399991';

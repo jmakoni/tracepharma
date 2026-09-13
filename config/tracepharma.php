@@ -25,7 +25,7 @@ return [
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.7.0'),
+    'app_version' => env('APP_VERSION', '1.7.1'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))

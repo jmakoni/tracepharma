@@ -59,6 +59,11 @@ class SerializationLotResource extends Resource implements HasKnowledgeBase
             );
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return static::canAccess();
+    }
+
     public static function canCreate(): bool
     {
         return false;

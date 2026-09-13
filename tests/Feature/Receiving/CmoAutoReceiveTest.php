@@ -7,6 +7,7 @@ namespace Tests\Feature\Receiving;
 use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Actions\Receiving\AutoReceiveCmoInboundDocument;
+use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Enums\CmoOwnership;
 use App\Enums\EpcisReceivedVia;
@@ -300,6 +301,55 @@ class CmoAutoReceiveTest extends TestCase
             $this->assertNotEmpty($tsFindings);
             $this->assertTrue($tsFindings[0]->isBlocking());
             $this->assertFalse(app(AutoReceiveCmoInboundDocument::class)->shouldAutoReceive($document));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function failed_confirm_cancels_open_session_so_auto_receive_can_retry(): void
+    {
+        $this->initializeAsManufacturer();
+
+        try {
+            TenantSettings::forTenant(tenant())->setAutoReceiveFromCmo(true);
+            tenant()->save();
+
+            $partner = $this->createCmoPartner(autoReceive: true);
+            $document = $this->ingestPartnerShippingDocument($partner);
+
+            $this->mock(ConfirmReceivingScan::class, function ($mock): void {
+                $mock->shouldReceive('handle')
+                    ->atLeast()
+                    ->once()
+                    ->andReturn([
+                        'ok' => false,
+                        'message' => 'Simulated confirm failure',
+                        'tone' => 'error',
+                        'line' => null,
+                        'epc' => null,
+                        'effect' => 'simulated_failure',
+                    ]);
+            });
+
+            $result = app(AutoReceiveCmoInboundDocument::class)->handle($document->fresh());
+            $this->assertNull($result);
+
+            $session = ReceivingSession::query()
+                ->where('epcis_document_id', $document->getKey())
+                ->first();
+            $this->assertNotNull($session);
+            $this->sessionId = (int) $session->getKey();
+            $this->assertSame(
+                'cancelled',
+                $session->fresh()->status,
+                'Failed auto-receive must cancel the leftover session so serials are not locked',
+            );
+
+            $this->assertTrue(
+                app(AutoReceiveCmoInboundDocument::class)->shouldAutoReceive($document->fresh()),
+                'After cancel, shouldAutoReceive must allow retry',
+            );
         } finally {
             $this->cleanup();
         }
