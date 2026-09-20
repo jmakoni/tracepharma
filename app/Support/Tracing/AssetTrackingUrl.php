@@ -3,6 +3,7 @@
 namespace App\Support\Tracing;
 
 use App\Filament\App\Pages\AssetTracking;
+use App\Filament\App\Pages\FloorFind;
 use App\Models\Epcis\Epc;
 use App\Support\Ui\CopyableIdentifier;
 use Filament\Infolists\Components\TextEntry;
@@ -90,7 +91,13 @@ final class AssetTrackingUrl
             return null;
         }
 
-        return AssetTracking::getUrl(['scan' => (string) $scan], panel: 'app');
+        $params = ['scan' => (string) $scan];
+
+        if (function_exists('floorShell') && floorShell() && FloorFind::canAccess()) {
+            return FloorFind::getUrl($params, isAbsolute: false, panel: 'app');
+        }
+
+        return AssetTracking::getUrl($params, isAbsolute: false, panel: 'app');
     }
 
     public static function forEpc(?Epc $epc): ?string

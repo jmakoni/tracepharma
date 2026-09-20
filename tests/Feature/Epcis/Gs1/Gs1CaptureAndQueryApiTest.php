@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Epcis\Gs1;
 
-use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Epcis\EventEpc;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Services\Epcis\EpcisIngestionService;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\SanctumAbilities;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantSettings;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\CleansDemo2EpcisArtifacts;
 use Tests\TestCase;
@@ -75,6 +76,51 @@ class Gs1CaptureAndQueryApiTest extends TestCase
     }
 
     #[Test]
+    public function capture_rejects_gs1_vrs_lightweight_json(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create([
+                'email' => 'vrs-capture-'.uniqid('', true).'@example.test',
+            ]);
+            $user->assignRole(TenantRole::Owner->value);
+            $token = $user->createToken('capture', [
+                SanctumAbilities::EPCIS_UPLOAD,
+                SanctumAbilities::EPCIS_VIEW,
+            ])->plainTextToken;
+
+            $before = EpcisDocument::query()->count();
+            tenancy()->end();
+
+            $response = $this->tenantApiPost('/api/v1/epcis/capture', $token, json_encode([
+                'verificationRequest' => [
+                    'gtin' => '00301164023161',
+                    'lotNumber' => '606412T',
+                    'expiryDate' => '2029-05-31',
+                    'serialNumber' => '10000082001560',
+                ],
+            ], JSON_THROW_ON_ERROR), [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X-Original-Filename' => 'vrs-request.json',
+            ]);
+
+            $response->assertUnprocessable()
+                ->assertJsonPath('type', 'CaptureInvalid')
+                ->assertJsonFragment(['message' => 'GS1 VRS Lightweight Messaging is not an EPCIS document and cannot be captured.']);
+
+            tenancy()->initialize($tenant);
+            $this->assertSame($before, EpcisDocument::query()->count());
+        } finally {
+            $this->cleanupTrackedEpcisArtifacts();
+            if (tenancy()->initialized) {
+                tenancy()->end();
+            }
+        }
+    }
+
+    #[Test]
     public function events_query_filters_by_biz_step(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -113,10 +159,10 @@ class Gs1CaptureAndQueryApiTest extends TestCase
                 'event_id' => 'urn:uuid:'.str()->uuid(),
             ]);
 
-            $epc = \App\Models\Epcis\Epc::query()->create(
-                \App\Models\Epcis\Epc::materializeAttributesFromUri($uniqueEpcUri),
+            $epc = Epc::query()->create(
+                Epc::materializeAttributesFromUri($uniqueEpcUri),
             );
-            \App\Models\Epcis\EventEpc::query()->create([
+            EventEpc::query()->create([
                 'event_id' => $event->getKey(),
                 'epc_id' => $epc->getKey(),
                 'role' => 'epcList',
@@ -245,10 +291,14 @@ class Gs1CaptureAndQueryApiTest extends TestCase
         $xml = file_get_contents(base_path($fixturePath));
         $this->assertNotFalse($xml);
 
-        return str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+        return str_replace(
+            '0096295000009',
+            (string) Tenant::query()->findOrFail(self::DEMO2_TENANT_ID)->gln,
+            str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml),
+        );
     }
 
-    private function tenantApiPost(string $uri, ?string $token, string $body, array $headers = []): \Illuminate\Testing\TestResponse
+    private function tenantApiPost(string $uri, ?string $token, string $body, array $headers = []): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;
@@ -264,7 +314,7 @@ class Gs1CaptureAndQueryApiTest extends TestCase
         return $this->call('POST', $absolute, [], [], [], $server, $body);
     }
 
-    private function tenantApiGet(string $uri, ?string $token): \Illuminate\Testing\TestResponse
+    private function tenantApiGet(string $uri, ?string $token): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;

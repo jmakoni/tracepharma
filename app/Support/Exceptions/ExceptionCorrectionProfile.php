@@ -501,7 +501,9 @@ final class ExceptionCorrectionProfile
         'ENCODING_ERROR' => self::FAMILY_DOCUMENT, // hook-only today
         'MISSING_SOURCE_DESTINATION' => self::FAMILY_DOCUMENT,
         'MISSING_BIZ_TRANSACTION' => self::FAMILY_DOCUMENT,
+        'CASE_ONLY_PALLET_COVERED' => self::FAMILY_DOCUMENT, // ConfirmReceivingScan case_only outer pallet cover
         'ASN_SHIPMENT_FILE_ADDED' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'ASN_SHIPMENT_CORRECTED' => self::FAMILY_DOCUMENT, // SyncInboundExpectedLinesFromDocument correction prune
         'ASN_SHIPMENT_PO_MISMATCH' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
         'DESTINATION_OWNING_PARTY_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
         'DESTINATION_LOCATION_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
@@ -511,9 +513,13 @@ final class ExceptionCorrectionProfile
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => self::FAMILY_QUARANTINE,
         'DECOMMISSIONED_SERIAL_SHIPPED' => self::FAMILY_QUARANTINE,
         'SUSPECT_PRODUCT' => self::FAMILY_QUARANTINE,
-        'VERIFICATION_FAILED' => self::FAMILY_QUARANTINE, // VRS hook exists but unwired; mapped for when it fires
+        'VERIFICATION_FAILED' => self::FAMILY_QUARANTINE,
+        'VOID_SHIPPING' => self::FAMILY_QUARANTINE,
+        'ERROR_DECLARATION' => self::FAMILY_DOCUMENT,
+        'INBOUND_RECEIVER_REJECTED' => self::FAMILY_DOCUMENT,
         'RETURNS_NOT_LINKED' => self::FAMILY_DOCUMENT,
         'DROP_SHIPMENT_INDICATOR_MISSING' => self::FAMILY_DOCUMENT,
+        'MIXED_DSCSA_GUIDELINE_RELEASE' => self::FAMILY_DOCUMENT,
         'OWNERSHIP_TRANSFER_UNCLEAR' => self::FAMILY_DOCUMENT,
 
         // System / Operational
@@ -610,6 +616,10 @@ final class ExceptionCorrectionProfile
             'resolutionAction' => 'request_partner_correction',
             'waive' => true,
         ],
+        'CASE_ONLY_PALLET_COVERED' => [
+            'blurb' => 'Case-only SOP auto-confirmed the outer logistics pallet after all nested cases were scanned. No pallet barcode was observed; waive after confirming the pallet SSCC was expected on the ASN.',
+            'waive' => true,
+        ],
         'OWNERSHIP_TRANSFER_UNCLEAR' => [
             'rootCause' => 'partner_data_error',
             'resolutionAction' => 'request_partner_correction',
@@ -684,6 +694,10 @@ final class ExceptionCorrectionProfile
         'FILE_SIZE_EXCEEDED' => ['waive' => true],
         'ASN_SHIPMENT_FILE_ADDED' => [
             'blurb' => 'Another inbound EPCIS file joined this ASN shipment. Expected receive lines may expand; investigate only if the extra file was unexpected.',
+            'waive' => true,
+        ],
+        'ASN_SHIPMENT_CORRECTED' => [
+            'blurb' => 'A later inbound file corrected this ASN expected list. Unconfirmed serials absent from that file were cancelled; already-received serials were not changed.',
             'waive' => true,
         ],
         'ASN_SHIPMENT_PO_MISMATCH' => [

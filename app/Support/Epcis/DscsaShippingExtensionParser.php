@@ -117,10 +117,11 @@ final class DscsaShippingExtensionParser
         $qualifier = self::xmlAttribute($block, 'qualifier');
         $statement = self::firstChildText($block, $statementName);
 
+        $booleanAffirmed = null;
         if ($qualifier === null && $statement === null) {
             $value = trim((string) $block);
             if ($value === 'true' || $value === '1') {
-                $qualifier = 'ENTIRELY_DIRECT';
+                $booleanAffirmed = true;
             } elseif ($value === 'false' || $value === '0') {
                 return null;
             }
@@ -128,7 +129,7 @@ final class DscsaShippingExtensionParser
 
         $indirect = self::collectEpcUrisFromList($block, $indirectListName);
 
-        if ($qualifier === null && $statement === null && $indirect === []) {
+        if ($qualifier === null && $statement === null && $indirect === [] && $booleanAffirmed !== true) {
             return null;
         }
 
@@ -136,6 +137,7 @@ final class DscsaShippingExtensionParser
             qualifier: $qualifier,
             statement: $statement,
             indirectEpcUris: $indirect,
+            booleanAffirmed: $booleanAffirmed,
         );
     }
 
@@ -155,14 +157,14 @@ final class DscsaShippingExtensionParser
         $block = $parent[$blockName];
         if (is_bool($block)) {
             return $block
-                ? new DscsaPurchaseExtension(qualifier: 'ENTIRELY_DIRECT', statement: null)
+                ? new DscsaPurchaseExtension(qualifier: null, statement: null, booleanAffirmed: true)
                 : null;
         }
 
         if (is_string($block)) {
             $trimmed = trim($block);
             if ($trimmed === 'true' || $trimmed === '1') {
-                return new DscsaPurchaseExtension(qualifier: 'ENTIRELY_DIRECT', statement: null);
+                return new DscsaPurchaseExtension(qualifier: null, statement: null, booleanAffirmed: true);
             }
 
             return null;
@@ -177,8 +179,11 @@ final class DscsaShippingExtensionParser
             : null;
         $statement = filled($block[$statementName] ?? null) ? (string) $block[$statementName] : null;
         $indirect = self::collectEpcUrisFromArray($block[$indirectListName] ?? null);
+        $booleanAffirmed = is_bool($block['boolean_affirmed'] ?? null)
+            ? $block['boolean_affirmed']
+            : null;
 
-        if ($qualifier === null && $statement === null && $indirect === []) {
+        if ($qualifier === null && $statement === null && $indirect === [] && $booleanAffirmed !== true) {
             return null;
         }
 
@@ -186,6 +191,7 @@ final class DscsaShippingExtensionParser
             qualifier: $qualifier,
             statement: $statement,
             indirectEpcUris: $indirect,
+            booleanAffirmed: $booleanAffirmed,
         );
     }
 

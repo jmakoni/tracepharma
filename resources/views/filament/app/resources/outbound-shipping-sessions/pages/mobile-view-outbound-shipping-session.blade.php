@@ -1,11 +1,12 @@
 <x-filament-panels::page>
     @assets
-        <script src="{{ asset('js/tp-floor-receive.js') }}"></script>
+        <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}" data-tp-html5-qrcode="1"></script>
+        <script src="{{ asset('js/tp-floor-receive.js') }}?v={{ @filemtime(public_path('js/tp-floor-receive.js')) ?: time() }}"></script>
     @endassets
 
     <x-scan-flash />
 
-    <div class="tp-floor-ship__layout-switch">
+    <div class="tp-floor-receive__layout-switch">
         @include('filament.app.partials.ship-layout-switch', [
             'mode' => 'floor',
             'desktopUrl' => $this->desktopShipUrl(),
@@ -16,98 +17,76 @@
     @php
         $cookieName = \App\Support\Shipping\ShipLayout::COOKIE;
         $desktopUrl = $this->desktopShipUrl();
-        $recentLines = $this->recentScanLines();
-        $cartCount = $this->cartBadgeCount();
-        $recentCaption = $this->recentScansCaption();
         $isCompleted = $this->isCompleted();
         $isCancelled = $this->isCancelled();
+        $completeCopy = $isCompleted ? $this->shipCompleteCopy() : null;
     @endphp
 
     <div
         class="tp-floor-receive tp-floor-ship"
-        x-data="tpFloorReceive(@js(['libraryUrl' => asset('vendor/html5-qrcode/html5-qrcode.min.js')]))"
+        x-data="tpFloorReceive(@js(\App\Support\Floor\FloorCameraScanAlpine::tpFloorReceiveConfig('stageScan')))"
         x-on:destroy="stopCamera()"
-        @keydown.escape.window="if (cameraOn) { stopCamera() } else if (cartOpen) { closeCart() }"
+        @keydown.escape.window="if (cameraOn) { stopCamera() }"
+        x-on:focus-scan.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:close-modal.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:modal-closed.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
     >
         <header class="tp-floor-receive__sticky-header">
-            <div
-                class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
-                aria-label="Confirmed {{ $this->confirmedCount() }}"
-                aria-live="polite"
-            >
-                <div class="stat">
-                    <div class="stat-title">Confirmed</div>
-                    <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
+            <div class="flex min-w-0 flex-col gap-1">
+                <div class="tp-floor-receive__header-top">
+                    @include('filament.app.partials.floor-task-menu')
+                    <span class="badge badge-outline tp-floor-receive__mode-chip">Ship</span>
                 </div>
-            </div>
-            @if ($this->chipDeaLabel)
-                <span @class([
-                    'badge badge-outline',
-                    'badge-error' => $this->chipDeaColor === 'danger',
-                    'badge-warning' => $this->chipDeaColor === 'warning',
-                ])>{{ $this->chipDeaLabel }}</span>
-            @endif
 
-            <div
-                class="tp-floor-receive__menu"
-                x-data="{ open: false }"
-                @keydown.escape.window="open = false"
-            >
-                <button
-                    type="button"
-                    class="tp-floor-receive__menu-btn"
-                    aria-label="Ship order menu"
-                    aria-haspopup="true"
-                    :aria-expanded="open"
-                    @click="open = !open"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M10.5 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" clip-rule="evenodd" />
-                    </svg>
-                </button>
+                @if ($this->chipDeaLabel)
+                    <span @class([
+                        'badge badge-outline tp-floor-receive__mode-chip',
+                        'badge-error' => $this->chipDeaColor === 'danger',
+                        'badge-warning' => $this->chipDeaColor === 'warning',
+                    ])>{{ $this->chipDeaLabel }}</span>
+                @endif
+
+                <p class="text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
 
                 <div
-                    x-cloak
-                    x-show="open"
-                    x-transition
-                    @click.outside="open = false"
-                    class="tp-floor-receive__menu-panel"
-                    role="menu"
+                    class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
+                    aria-label="Confirmed {{ $this->confirmedCount() }}"
+                    aria-live="polite"
                 >
-                    <a
-                        href="{{ $this->scanOutDeskUrl() }}"
-                        class="tp-floor-receive__menu-item"
-                        role="menuitem"
-                    >Customer &amp; send on Scan Out</a>
-                    <a
-                        href="{{ $desktopUrl }}"
-                        class="tp-floor-receive__menu-item"
-                        role="menuitem"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >Open desktop ship order</a>
+                    <div class="stat">
+                        <div class="stat-title">Confirmed</div>
+                        <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
+                    </div>
                 </div>
             </div>
         </header>
 
-        <p class="px-4 text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
-
         @if ($isCompleted)
-            <div class="tp-floor-receive__complete">
-                <div class="tp-floor-receive__complete-title">{{ $this->shipCompleteCopy()['title'] }}</div>
+            <div class="{{ $this->shipFloorCompleteClass() }}">
+                <div class="tp-floor-receive__complete-title">{{ $completeCopy['title'] }}</div>
                 <p class="tp-floor-receive__complete-body">
-                    {{ $this->shipCompleteCopy()['body'] }}
+                    {{ $completeCopy['body'] }}
                 </p>
-                <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
+                @if ($this->outboundShippingSession()->canVoid())
+                    <button
+                        type="button"
+                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--warning tp-floor-receive__complete-exit min-h-14"
+                        wire:click="mountAction('voidShipOrder')"
+                    >
+                        Void shipment
+                    </button>
+                @endif
+                <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit">
                     Back to ship orders
                 </a>
             </div>
         @elseif ($isCancelled)
-            <div class="tp-floor-receive__complete">
+            <div class="tp-floor-receive__complete tp-floor-receive__complete--cancelled">
                 <div class="tp-floor-receive__complete-title">Ship order cancelled</div>
                 <p class="tp-floor-receive__complete-body">
                     This order is closed. Open the desktop view for audit details.
                 </p>
-                <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
+                <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit">
                     Back to ship orders
                 </a>
             </div>
@@ -116,13 +95,13 @@
                 <form
                     wire:submit.prevent="stageScan"
                     x-init="$nextTick(() => $refs.scanInput?.focus())"
-                    x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
                     class="tp-floor-receive__scan-form"
                 >
                     <div class="tp-floor-receive__scan-field">
                         <input
                             id="floor-scan-input"
                             type="text"
+                            inputmode="none"
                             wire:model.live.blur="scan"
                             x-ref="scanInput"
                             x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
@@ -131,6 +110,7 @@
                             class="tp-floor-receive__scan-input"
                             placeholder="Scan barcode"
                             aria-label="Scan to confirm ship order"
+                            wire:loading.attr="disabled"
                         />
                     </div>
 
@@ -141,6 +121,7 @@
                         :aria-label="cameraOn ? 'Close camera' : 'Open camera scanner'"
                         :aria-pressed="cameraOn ? 'true' : 'false'"
                         x-bind:disabled="starting"
+                        wire:loading.attr="disabled"
                         x-on:click="toggleCamera()"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
@@ -177,152 +158,44 @@
                     </div>
                 @endif
 
-                @if ($this->confirmedCount() > 0)
-                    <a
-                        href="{{ $desktopUrl }}"
-                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__stage-complete"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >
-                        Customer &amp; send
-                    </a>
+                <x-confirmed-scan-panel
+                    :rows="$this->recentConfirmedScanRows()"
+                    :caption="$this->recentScansCaption()"
+                    remove-confirm="Remove this scan from the ship order?"
+                />
+
+                @if ($this->confirmedCount() === 0)
+                    <p class="tp-floor-receive__complete-reason">
+                        Scan at least one item, then finish customer and send on desktop.
+                    </p>
                 @endif
             </div>
-        @endif
 
-        @if ($this->canScan())
-            <button
-                type="button"
-                class="tp-floor-receive__cart-fab"
-                x-ref="cartFab"
-                aria-label="Open scanned items, {{ $cartCount }}"
-                x-on:click="openCart()"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
-                </svg>
-                @if ($cartCount > 0)
-                    <span class="tp-floor-receive__cart-count" aria-live="polite">{{ $cartCount }}</span>
-                @endif
-            </button>
-        @endif
-
-        <div
-            x-show="cameraOn"
-            x-cloak
-            class="tp-floor-receive__camera-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Camera scanner"
-            @keydown="trapTab($event, $el)"
-        >
-            <div class="tp-floor-receive__camera-overlay-bar">
-                <span>Align barcode</span>
-                <button
-                    type="button"
-                    class="tp-floor-receive__camera-close"
-                    x-ref="cameraClose"
-                    x-on:click="stopCamera()"
+            <div class="tp-floor-receive__footer" role="group" aria-label="Ship actions">
+                <a
+                    href="{{ $desktopUrl }}"
+                    class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--confirm"
+                    onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
                 >
-                    Close
-                </button>
-            </div>
-            <div wire:ignore class="tp-floor-receive__camera-host">
-                <div id="tp-floor-qr-reader" class="tp-floor-receive__camera"></div>
-            </div>
-        </div>
+                    Customer &amp; send
+                </a>
 
-        @if ($this->canScan())
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet-backdrop"
-                x-on:click="closeCart()"
-                x-transition.opacity
-            ></div>
-
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Recent scans"
-                x-transition:enter="tp-floor-receive__sheet-enter"
-                x-transition:enter-start="tp-floor-receive__sheet-enter-start"
-                x-transition:enter-end="tp-floor-receive__sheet-enter-end"
-                x-transition:leave="tp-floor-receive__sheet-leave"
-                x-transition:leave-start="tp-floor-receive__sheet-leave-start"
-                x-transition:leave-end="tp-floor-receive__sheet-leave-end"
-                @keydown="trapTab($event, $el)"
-            >
-                <div class="tp-floor-receive__sheet-header">
-                    <h2 class="tp-floor-receive__sheet-title">Recent scans</h2>
-                    <button
-                        type="button"
-                        class="tp-floor-receive__sheet-close"
-                        x-ref="sheetClose"
-                        x-on:click="closeCart()"
-                    >
-                        Close
-                    </button>
-                </div>
-
-                <div class="tp-floor-receive__sheet-progress" aria-live="polite">
-                    <div class="tp-floor-receive__sheet-progress-row">
-                        <span>Confirmed</span>
-                        <strong class="tp-scan-qty">{{ $this->confirmedCount() }}</strong>
-                    </div>
-                </div>
-
-                <section class="tp-floor-receive__recent" aria-label="Recent scans">
-                    @if ($recentCaption)
-                        <p class="tp-floor-receive__recent-caption">{{ $recentCaption }}</p>
-                    @endif
-
-                    @forelse ($recentLines as $line)
-                        <div class="tp-floor-receive__recent-row">
-                            <div class="tp-floor-receive__recent-main">
-                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                                <span class="tp-floor-receive__recent-meta">
-                                    {{ ucfirst((string) $line->status) }}
-                                </span>
-                            </div>
-                            @if ($this->canRemoveRecentScanLine($line))
-                                <button
-                                    type="button"
-                                    class="tp-floor-receive__recent-remove"
-                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
-                                    wire:confirm="Remove this scan from the ship order?"
-                                >
-                                    Remove
-                                </button>
-                            @endif
-                        </div>
-                    @empty
-                        <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>
-                    @endforelse
-                </section>
-
-                <div class="tp-floor-receive__sheet-actions">
-                    @if ($this->confirmedCount() > 0)
-                        <a
-                            href="{{ $desktopUrl }}"
-                            class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready"
-                            onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                        >
-                            Customer &amp; send
-                        </a>
-                    @else
-                        <p class="tp-floor-receive__complete-reason">
-                            Scan at least one item, then finish customer and send on desktop.
-                        </p>
-                    @endif
-
-                    <a href="{{ $this->shippingListUrl() }}" class="tp-floor-receive__cancel-btn">
-                        Back to ship orders
-                    </a>
-                </div>
+                <a
+                    href="{{ $this->shippingListUrl() }}"
+                    class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--cancel"
+                >
+                    Back to ship orders
+                </a>
             </div>
         @endif
+
+        @include('filament.app.partials.floor-camera-overlay', [
+            'stats' => [[
+                'title' => 'Confirmed',
+                'value' => $this->confirmedCount(),
+            ]],
+            'decode' => in_array($this->lastScanTone, ['ok', 'warn'], true) ? $this->lastScanDetail : null,
+            'error' => $this->lastScanTone === 'error' ? $this->lastScanMessage : null,
+        ])
     </div>
 </x-filament-panels::page>

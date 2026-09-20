@@ -17,6 +17,7 @@ use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
@@ -63,10 +64,9 @@ class ReceiveQueueVerificationTest extends TestCase
             $this->sessionId = (int) $session->getKey();
 
             Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
-                ->call('stageScan', $uri)
-                ->call('confirmStagedScans');
+                ->call('confirmScanInput', $uri);
 
-            Bus::assertDispatched(RunProductVerificationJob::class, function (RunProductVerificationJob $job) use ($uri, $epc, $user): bool {
+            Bus::assertDispatched(RunProductVerificationJob::class, function (RunProductVerificationJob $job) use ($epc, $user): bool {
                 return $job->tenantId === self::DEMO2_TENANT_ID
                     && $job->actorId === (int) $user->getKey()
                     && str_contains($job->scan, (string) $epc->gtin14)
@@ -160,8 +160,7 @@ class ReceiveQueueVerificationTest extends TestCase
             $this->sessionId = (int) $session->getKey();
 
             Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
-                ->call('stageScan', $uri)
-                ->call('confirmStagedScans');
+                ->call('confirmScanInput', $uri);
 
             Bus::assertNotDispatched(RunProductVerificationJob::class);
         } finally {
@@ -232,6 +231,8 @@ class ReceiveQueueVerificationTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+        TenantSettings::forTenant($tenant)->setReceivingEdgeMode(null);
+        $tenant->save();
 
         return $tenant;
     }

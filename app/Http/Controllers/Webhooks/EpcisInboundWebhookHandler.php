@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Webhooks;
 
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Models\InboundConnection;
 use App\Services\Integrations\InboundConnectionLogger;
 use App\Services\Integrations\InboundEpcisReceiver;
@@ -99,6 +100,10 @@ class EpcisInboundWebhookHandler
                 'status' => $existing->status,
                 'duplicate' => true,
             ], 409);
+        } catch (InboundReceiverGlnRejected $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
         }
 
         $document = $result['document'];

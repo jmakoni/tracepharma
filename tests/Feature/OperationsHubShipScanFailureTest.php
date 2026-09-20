@@ -3,19 +3,20 @@
 namespace Tests\Feature;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
-use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Pages\OperationsHub;
+use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Quarantine\QuarantineHold;
-use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Models\Receiving\ReceivingSession;
+use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
@@ -23,12 +24,13 @@ use App\Models\User;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Gs1\ElementString;
+use App\Support\Shipping\ShipLayout;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
+use DomainException;
 use Filament\Facades\Filament;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
-use DomainException;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -209,6 +211,72 @@ class OperationsHubShipScanFailureTest extends TestCase
         }
     }
 
+    #[Test]
+    public function hub_shippable_scan_uses_floor_url_when_layout_prefers_floor(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+        $epcId = null;
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
+
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $site = $this->createShipSite($tenant);
+
+            $suffix = (string) random_int(10000000, 99999999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.HB'.$suffix;
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epcId = (int) $epc->getKey();
+
+            $session = app(OpenOutboundShippingSession::class)->handle(
+                (int) $site->getKey(),
+                (int) $user->getKey(),
+            );
+            $this->sessionIds[] = (int) $session->getKey();
+
+            OutboundShippingScanLine::query()->create([
+                'outbound_shipping_session_id' => $session->getKey(),
+                'epc_id' => $epc->getKey(),
+                'line_role' => 'parent',
+                'status' => 'confirmed',
+                'scan_raw' => $uri,
+                'confirmed_at' => now(),
+                'confirmed_by' => $user->getKey(),
+            ]);
+
+            $barcode = '(01)'.$epc->gtin14.'(21)'.$epc->serial_number;
+            $normalized = ElementString::normalize($barcode);
+
+            $component = Livewire::actingAs($user)->test(OperationsHub::class);
+            $hub = $component->instance();
+
+            $routeShippable = new \ReflectionMethod(OperationsHub::class, 'routeShippableEpcScan');
+            $routeShippable->setAccessible(true);
+
+            $desktopUrl = $routeShippable->invoke($hub, $epc, $normalized);
+            $this->assertSame(ShipLayout::sessionUrl($session, ['scan' => $normalized]), $desktopUrl);
+            $this->assertStringNotContainsString('/floor', parse_url((string) $desktopUrl, PHP_URL_PATH) ?? (string) $desktopUrl);
+
+            request()->cookies->set(ShipLayout::COOKIE, ShipLayout::FLOOR);
+
+            $floorUrl = $routeShippable->invoke($hub, $epc, $normalized);
+            $this->assertSame(ShipLayout::sessionUrl($session, ['scan' => $normalized]), $floorUrl);
+            $this->assertSame(ShipLayout::floorUrl($session, ['scan' => $normalized]), $floorUrl);
+            $this->assertStringContainsString('/floor', (string) $floorUrl);
+        } finally {
+            request()->cookies->remove(ShipLayout::COOKIE);
+            if ($epcId !== null && tenancy()->initialized) {
+                OutboundShippingScanLine::query()->where('epc_id', $epcId)->delete();
+                Epc::query()->whereKey($epcId)->delete();
+            }
+            $this->cleanup($tenant);
+        }
+    }
+
     private function initializeWholesalerTenant(): Tenant
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -329,7 +397,7 @@ class OperationsHubShipScanFailureTest extends TestCase
                 OutboundShippingSession::query()->whereIn('id', $this->sessionIds)->delete();
             }
             if ($this->receivingSessionIds !== []) {
-                \App\Models\Receiving\ReceivingSession::query()->whereIn('id', $this->receivingSessionIds)->delete();
+                ReceivingSession::query()->whereIn('id', $this->receivingSessionIds)->delete();
             }
             if ($this->documentIds !== []) {
                 EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();

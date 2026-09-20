@@ -2,6 +2,7 @@
 
 namespace App\Support\Epcis;
 
+use App\Enums\EpcisGuideline;
 use App\Models\Epcis\Epc;
 use App\Models\Principal;
 use App\Models\Product;
@@ -45,7 +46,7 @@ final class BuildFullHistoryShippingEpcisXml
     /**
      * @return array{xml: string, filename: string, path: string, ship_event_time: Carbon, instance_id: string}
      */
-    public function handle(OutboundShippingSession $session): array
+    public function handle(OutboundShippingSession $session, ?EpcisGuideline $guideline = null, ?string $transactionDate = null): array
     {
         $session->loadMissing(['site', 'tradingPartner', 'shipToSite', 'epcisDocument', 'principal']);
 
@@ -92,6 +93,8 @@ final class BuildFullHistoryShippingEpcisXml
 
         $instanceId = SbdhInstanceIdentifier::uuid();
         $directPurchaseStatement = $this->resolveDirectPurchaseStatement($session);
+        $senderGln = $this->resolveSbdhSenderGln($session, $tenant);
+        $guideline ??= ResolveOutboundEpcisGuideline::forPartner($session->tradingPartner);
 
         $xml = $this->render(
             session: $session,
@@ -101,7 +104,10 @@ final class BuildFullHistoryShippingEpcisXml
             ssccUris: $ssccUris,
             pedigree: $pedigree,
             instanceId: $instanceId,
+            senderGln: $senderGln,
             directPurchaseStatement: $directPurchaseStatement,
+            guideline: $guideline,
+            transactionDate: $transactionDate,
         );
 
         $filename = OutboundEpcisFilename::forShippingEvent($tenant, $shipEventTime);
@@ -125,9 +131,40 @@ final class BuildFullHistoryShippingEpcisXml
         $eventId = DB::table('epcis_events')
             ->where('document_id', $documentId)
             ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+            ->orderByDesc('event_time')
             ->value('event_id');
 
         return is_string($eventId) && $eventId !== '' ? $eventId : null;
+    }
+
+    /**
+     * SBDH Sender is the legal-entity GLN that authors the document.
+     * Partner ship: tenant org GLN only — never site.gln / dock fallback.
+     * Agent TI: principal GLN when principal custody is in play.
+     */
+    private function resolveSbdhSenderGln(OutboundShippingSession $session, Tenant $tenant): string
+    {
+        if (TenantFeatures::forTenant($tenant)->supportsPrincipals()
+            && $session->principal_id !== null) {
+            $principal = $session->principal instanceof Principal
+                ? $session->principal
+                : Principal::query()->find((int) $session->principal_id);
+            if ($principal instanceof Principal && $principal->is_active) {
+                $principalGln = Sgln::normalizeGln($principal->gln);
+                if ($principalGln !== null) {
+                    return $principalGln;
+                }
+            }
+        }
+
+        $orgGln = TenantSettings::forTenant($tenant)->gln();
+        if ($orgGln === null || $orgGln === '') {
+            throw new DomainException(
+                'Cannot author shipping EPCIS: organization GLN is required for SBDH Sender.',
+            );
+        }
+
+        return $orgGln;
     }
 
     /**
@@ -198,14 +235,20 @@ final class BuildFullHistoryShippingEpcisXml
                 : Principal::query()->find((int) $session->principal_id);
 
             if ($principal instanceof Principal && filled($principal->gln)) {
-                return $this->partyFromPrincipal($principal, 'Principal owning party');
+                $party = $this->partyFromPrincipal($principal, 'Principal owning party');
+                $party['sgln'] = Sgln::toFacilityUrn($party['sgln']);
+
+                return $party;
             }
         }
 
-        return $this->partyFromSite(
+        $party = $this->partyFromSite(
             $this->resolveOwningPartySite->handle($shipFrom),
             'Ship-from owning party',
         );
+        $party['sgln'] = Sgln::toFacilityUrn($party['sgln']);
+
+        return $party;
     }
 
     private function assertAgentPrincipalReady(OutboundShippingSession $session): void
@@ -246,16 +289,9 @@ final class BuildFullHistoryShippingEpcisXml
 
         $sgln = $this->resolveSglnUrnForGln($gln, [], partnerLocation: true);
         if ($sgln === null) {
-            foreach ([6, 7, 8, 9, 10, 11, 12] as $prefixLength) {
-                $sgln = Sgln::toUrn($gln, $prefixLength, '0');
-                if ($sgln !== null) {
-                    break;
-                }
-            }
-        }
-        if ($sgln === null) {
             throw new DomainException(
-                'No SGLN could be built for '.$fallbackName.' (GLN '.$gln.').',
+                'No SGLN on record for '.$fallbackName.' (GLN '.$gln.'). Record the principal\'s own SGLN '
+                .'before sending — their GS1 company prefix is theirs to state, not ours to guess.',
             );
         }
 
@@ -484,7 +520,10 @@ final class BuildFullHistoryShippingEpcisXml
         array $ssccUris,
         array $pedigree,
         string $instanceId,
+        string $senderGln,
         ?string $directPurchaseStatement = null,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        ?string $transactionDate = null,
     ): string {
         $creationDate = $shipEventTime->copy()->addSeconds(4)->format('Y-m-d\TH:i:s.v\Z');
 
@@ -495,6 +534,20 @@ final class BuildFullHistoryShippingEpcisXml
         }
 
         $events = $pedigree['event_xml'];
+        $timezoneOffset = AuthoredEventTimezone::offsetForSite($session->site, $shipEventTime);
+        if ($guideline === EpcisGuideline::R13) {
+            $events[] = $this->shippingXml(
+                eventTime: $shipEventTime->copy()->subSecond(),
+                eventId: 'urn:uuid:'.(string) Str::uuid(),
+                ssccUris: $ssccUris,
+                parties: $parties,
+                po: $po,
+                asn: $asn,
+                timezoneOffset: $timezoneOffset,
+                directPurchaseStatement: null,
+                guideline: $guideline,
+            );
+        }
         $events[] = $this->shippingXml(
             eventTime: $shipEventTime,
             eventId: $shippingEventId,
@@ -502,7 +555,10 @@ final class BuildFullHistoryShippingEpcisXml
             parties: $parties,
             po: $po,
             asn: $asn,
+            timezoneOffset: $timezoneOffset,
             directPurchaseStatement: $directPurchaseStatement,
+            guideline: $guideline,
+            transactionDate: $transactionDate,
         );
 
         $locationXml = $this->mergedLocationVocabularyXml(
@@ -520,13 +576,14 @@ final class BuildFullHistoryShippingEpcisXml
         );
 
         $headerExtras = '';
-        $headerExtras .= "    <gs1ushc:guidelineVersion>R1.3</gs1ushc:guidelineVersion>\n";
+        $headerExtras .= ShippingTiTsFragments::guidelineVersionXml($guideline);
         if ((bool) $session->dscsa_affirm) {
             $headerExtras .= ShippingTiTsFragments::dscsaTransactionStatementXml('    ');
         }
         $headerExtras .= ShippingTiTsFragments::dropShipmentIndicatorXml(
             (bool) $session->is_drop_shipment,
             '    ',
+            $guideline,
         );
 
         // EPCISHeaderExtensionType = EPCISMasterData + optional nested extension only.
@@ -534,10 +591,11 @@ final class BuildFullHistoryShippingEpcisXml
         $header =
             "  <EPCISHeader>\n".
             ShippingTiTsFragments::sbdhXml(
-                senderGln: $parties['source_owning']['gln'],
+                senderGln: $senderGln,
                 receiverGln: $parties['dest_owning']['gln'],
                 instanceId: $instanceId,
                 creationDate: $creationDate,
+                guideline: $guideline,
             ).
             "    <extension>\n".
             "      <EPCISMasterData>\n".
@@ -559,7 +617,7 @@ final class BuildFullHistoryShippingEpcisXml
 
         $xml =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".
-            "<!-- EPCIS 1.2 / GS1 US R1.3: replayed prior commission+pack + authored shipping. -->\n".
+            "<!-- EPCIS schema 1.2; GS1 US DSCSA guideline R1.2 or R1.3 per partner: replayed prior commission+pack + authored shipping. -->\n".
             "<epcis:EPCISDocument\n".
             "    xmlns:epcis=\"urn:epcglobal:epcis:xsd:1\"\n".
             "    xmlns:sbdh=\"http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader\"\n".
@@ -666,6 +724,7 @@ final class BuildFullHistoryShippingEpcisXml
         string $sgln,
         ?string $lot,
         ?string $expiry,
+        string $timezoneOffset,
     ): string {
         $recordTime = $eventTime->copy()->addSeconds(3);
         $epcXml = collect($epcs)
@@ -687,7 +746,7 @@ final class BuildFullHistoryShippingEpcisXml
             "      <ObjectEvent>\n".
             '        <eventTime>'.$eventTime->format('Y-m-d\TH:i:s.v\Z')."</eventTime>\n".
             '        <recordTime>'.$recordTime->format('Y-m-d\TH:i:s.v\Z')."</recordTime>\n".
-            "        <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>\n".
+            '        <eventTimeZoneOffset>'.$this->e($timezoneOffset)."</eventTimeZoneOffset>\n".
             "        <baseExtension>\n".
             '          <eventID>urn:uuid:'.(string) Str::uuid()."</eventID>\n".
             "        </baseExtension>\n".
@@ -715,6 +774,7 @@ final class BuildFullHistoryShippingEpcisXml
         string $parentUri,
         array $childUris,
         string $sgln,
+        string $timezoneOffset,
     ): string {
         $recordTime = $eventTime->copy()->addSeconds(3);
         $childXml = collect($childUris)
@@ -727,7 +787,7 @@ final class BuildFullHistoryShippingEpcisXml
             "      <AggregationEvent>\n".
             '        <eventTime>'.$eventTime->format('Y-m-d\TH:i:s.v\Z')."</eventTime>\n".
             '        <recordTime>'.$recordTime->format('Y-m-d\TH:i:s.v\Z')."</recordTime>\n".
-            "        <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>\n".
+            '        <eventTimeZoneOffset>'.$this->e($timezoneOffset)."</eventTimeZoneOffset>\n".
             "        <baseExtension>\n".
             '          <eventID>urn:uuid:'.(string) Str::uuid()."</eventID>\n".
             "        </baseExtension>\n".
@@ -763,7 +823,10 @@ final class BuildFullHistoryShippingEpcisXml
         array $parties,
         string $po,
         string $asn,
+        string $timezoneOffset,
         ?string $directPurchaseStatement = null,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        ?string $transactionDate = null,
     ): string {
         $recordTime = $eventTime->copy()->addSeconds(3);
         $epcXml = collect($ssccUris)
@@ -777,7 +840,7 @@ final class BuildFullHistoryShippingEpcisXml
             "      <ObjectEvent>\n".
             '        <eventTime>'.$eventTime->format('Y-m-d\TH:i:s.v\Z')."</eventTime>\n".
             '        <recordTime>'.$recordTime->format('Y-m-d\TH:i:s.v\Z')."</recordTime>\n".
-            "        <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>\n".
+            '        <eventTimeZoneOffset>'.$this->e($timezoneOffset)."</eventTimeZoneOffset>\n".
             "        <baseExtension>\n".
             '          <eventID>'.$this->e($eventId)."</eventID>\n".
             "        </baseExtension>\n".
@@ -802,22 +865,25 @@ final class BuildFullHistoryShippingEpcisXml
                 destOwningSgln: $parties['dest_owning']['sgln'],
                 destLocationSgln: $parties['dest_location']['sgln'],
                 directPurchaseStatement: $directPurchaseStatement,
+                guideline: $guideline,
             ).
+            ($transactionDate !== null && $transactionDate !== ''
+                ? ShippingTiTsFragments::transactionDateXml($transactionDate)
+                : '').
             '      </ObjectEvent>';
     }
 
     private function resolveDirectPurchaseStatement(OutboundShippingSession $session): ?string
     {
-        if (! (bool) $session->dscsa_affirm) {
-            return null;
-        }
-
-        $partnerType = $this->directPurchaseStatements->tenantProfileToPartnerType(tenant());
         $sellerName = filled($session->site?->name)
             ? (string) $session->site->name
             : (string) (tenant()?->name ?? 'Seller');
 
-        return $this->directPurchaseStatements->statementForSeller($partnerType, $sellerName);
+        return $this->directPurchaseStatements->outboundWholesalerDirectPurchaseStatement(
+            tenant() instanceof Tenant ? tenant() : null,
+            (bool) $session->dscsa_affirm,
+            $sellerName,
+        );
     }
 
     /**
@@ -858,6 +924,7 @@ final class BuildFullHistoryShippingEpcisXml
         array $patterns,
         ?int $documentId = null,
         ?int $ingestGeneration = null,
+        EpcisGuideline $guideline = EpcisGuideline::R12,
     ): string {
         if ($patterns === []) {
             return '';
@@ -872,8 +939,16 @@ final class BuildFullHistoryShippingEpcisXml
             // FDA_NDC_11 must only label a real NDC-11. Emitting a GTIN-14 under that
             // type code makes downstream partners ingest the GTIN as the product's NDC.
             if ($master['ndc11'] !== null) {
-                $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">'.$this->e($master['ndc11'])."</attribute>\n";
-                $attrs .= "                <attribute id=\"urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode\">FDA_NDC_11</attribute>\n";
+                if ($guideline === EpcisGuideline::R13) {
+                    $dashed = Ndc::formatPackageDisplay($master['ndc11'], $master['package_ndc']);
+                    if ($dashed !== null) {
+                        $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">'.$this->e($dashed)."</attribute>\n";
+                        $attrs .= "                <attribute id=\"urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode\">US_FDA_NDC</attribute>\n";
+                    }
+                } else {
+                    $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">'.$this->e($master['ndc11'])."</attribute>\n";
+                    $attrs .= "                <attribute id=\"urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode\">FDA_NDC_11</attribute>\n";
+                }
             }
             if ($master['manufacturer'] !== null) {
                 $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#manufacturerOfTradeItemPartyName">'.$this->e($master['manufacturer'])."</attribute>\n";
@@ -905,7 +980,7 @@ final class BuildFullHistoryShippingEpcisXml
 
     /**
      * @param  array{company_prefix: string, indicator_digit: string, item_reference: string, gtin14: string}  $parsed
-     * @return array{name: string, ndc11: ?string, manufacturer: ?string, dosage_form: ?string, strength: ?string, net_content: ?string}
+     * @return array{name: string, ndc11: ?string, package_ndc: ?string, manufacturer: ?string, dosage_form: ?string, strength: ?string, net_content: ?string}
      */
     private function resolveTradeItemMaster(array $parsed, ?int $documentId = null, ?int $ingestGeneration = null): array
     {
@@ -935,9 +1010,12 @@ final class BuildFullHistoryShippingEpcisXml
             ?? Ndc::toNdc11($class?->ndc11)
             ?? Ndc::toNdc11(is_string($class?->ndc_raw ?? null) ? $class->ndc_raw : null);
 
+        $packageNdc = filled($product?->package_ndc) ? (string) $product->package_ndc : null;
+
         return [
             'name' => $name,
             'ndc11' => $ndc11,
+            'package_ndc' => $packageNdc,
             'manufacturer' => $manufacturer,
             'dosage_form' => $dosage,
             'strength' => $strength,

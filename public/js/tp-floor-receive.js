@@ -14,8 +14,36 @@
             starting: false,
             scanner: null,
             cameraError: null,
+            connectionError: null,
             lastFocusEl: null,
             libraryUrl: config.libraryUrl || '',
+            confirmMethod: config.confirmMethod || 'confirmScanInput',
+            cameraScanPace: config.cameraScanPace || 'balanced',
+            cooldownMs: Number(config.cooldownMs) > 0 ? Number(config.cooldownMs) : 1000,
+            fps: Number(config.fps) > 0 ? Number(config.fps) : 24,
+            frameRateIdeal: Number(config.frameRateIdeal) > 0 ? Number(config.frameRateIdeal) : 24,
+            frameRateMax: Number(config.frameRateMax) > 0 ? Number(config.frameRateMax) : 30,
+            torchSupported: false,
+            torchOn: false,
+
+            init() {
+                const syncOnline = () => {
+                    this.connectionError = navigator.onLine ? null : 'Scan needs a connection';
+                };
+                syncOnline();
+                window.addEventListener('online', syncOnline);
+                window.addEventListener('offline', syncOnline);
+
+                if (window.Livewire) {
+                    window.Livewire.hook('request', ({ fail }) => {
+                        fail(({ status }) => {
+                            if (! navigator.onLine || status === 0) {
+                                this.connectionError = 'Scan needs a connection';
+                            }
+                        });
+                    });
+                }
+            },
 
             resolveHtml5Qrcode() {
                 return window.Html5Qrcode
@@ -31,8 +59,20 @@
                 await new Promise((resolve, reject) => {
                     const existing = document.querySelector('script[data-tp-html5-qrcode]');
                     if (existing) {
+                        if (this.resolveHtml5Qrcode()) {
+                            resolve();
+
+                            return;
+                        }
+
                         existing.addEventListener('load', () => resolve());
                         existing.addEventListener('error', () => reject(new Error('Camera library failed to load')));
+
+                        // Preloaded sync scripts may have finished before listeners attach.
+                        if (this.resolveHtml5Qrcode()) {
+                            resolve();
+                        }
+
                         return;
                     }
 
@@ -51,6 +91,55 @@
                 }
 
                 return ctor;
+            },
+
+            applyPaceConfig(next = {}) {
+                if (next.cameraScanPace) {
+                    this.cameraScanPace = next.cameraScanPace;
+                }
+                if (Number(next.cooldownMs) > 0) {
+                    this.cooldownMs = Number(next.cooldownMs);
+                }
+                if (Number(next.fps) > 0) {
+                    this.fps = Number(next.fps);
+                }
+                if (Number(next.frameRateIdeal) > 0) {
+                    this.frameRateIdeal = Number(next.frameRateIdeal);
+                }
+                if (Number(next.frameRateMax) > 0) {
+                    this.frameRateMax = Number(next.frameRateMax);
+                }
+            },
+
+            async setScanPace(pace) {
+                if (! pace || pace === this.cameraScanPace || this.starting) {
+                    return;
+                }
+
+                const previousFps = this.fps;
+                const previousIdeal = this.frameRateIdeal;
+                const previousMax = this.frameRateMax;
+
+                try {
+                    const next = await this.$wire.setFloorCameraScanPace(pace);
+                    if (next && typeof next === 'object') {
+                        this.applyPaceConfig(next);
+                    } else {
+                        this.cameraScanPace = pace;
+                    }
+                } catch (e) {
+                    this.cameraError = 'Could not save scan pace — try again.';
+                    return;
+                }
+
+                const fpsChanged = previousFps !== this.fps
+                    || previousIdeal !== this.frameRateIdeal
+                    || previousMax !== this.frameRateMax;
+
+                if (this.cameraOn && fpsChanged) {
+                    await this.stopCamera();
+                    await this.toggleCamera();
+                }
             },
 
             focusables(root) {
@@ -107,6 +196,81 @@
                 });
             },
 
+            pinAimWindowToTop(Html5Qrcode) {
+                const proto = Html5Qrcode?.prototype;
+                if (! proto || proto.__tpAimPinned || typeof proto.possiblyInsertShadingElement !== 'function') {
+                    return;
+                }
+
+                const inset = 6;
+                const originalShade = proto.possiblyInsertShadingElement;
+                proto.possiblyInsertShadingElement = function (parent, viewW, viewH, qrbox) {
+                    originalShade.call(this, parent, viewW, viewH, qrbox);
+
+                    const shade = parent?.querySelector?.('#qr-shaded-region');
+                    const boxW = Number(qrbox?.width) || 0;
+                    const boxH = Number(qrbox?.height) || 0;
+                    if (! shade || viewW < 1 || viewH < 1 || boxW < 1 || boxH < 1) {
+                        return;
+                    }
+
+                    const y = Math.min(inset, Math.max(0, viewH - boxH));
+                    const x = Math.max(0, Math.round((viewW - boxW) / 2));
+                    shade.style.setProperty('border-top-width', `${y}px`, 'important');
+                    shade.style.setProperty('border-bottom-width', `${Math.max(0, viewH - boxH - y)}px`, 'important');
+                    shade.style.setProperty('border-left-width', `${x}px`, 'important');
+                    shade.style.setProperty('border-right-width', `${Math.max(0, viewW - boxW - x)}px`, 'important');
+                };
+
+                const originalBounds = proto.getShadedRegionBounds;
+                if (typeof originalBounds === 'function') {
+                    proto.getShadedRegionBounds = function (viewW, viewH, qrbox) {
+                        const bounds = originalBounds.call(this, viewW, viewH, qrbox);
+                        bounds.y = Math.min(inset, Math.max(0, viewH - bounds.height));
+
+                        return bounds;
+                    };
+                }
+
+                proto.__tpAimPinned = true;
+            },
+
+            bindScanWindowResize() {
+                if (this._onScanWindowResize) {
+                    window.removeEventListener('resize', this._onScanWindowResize);
+                }
+
+                this._onScanWindowResize = () => this.placeScanWindowInTopHalf();
+                window.addEventListener('resize', this._onScanWindowResize);
+            },
+
+            placeScanWindowInTopHalf() {
+                const region = this.scanner?.qrRegion;
+                const host = document.getElementById('tp-floor-qr-reader');
+                const shade = document.getElementById('qr-shaded-region');
+                if (! region || ! host || ! shade) {
+                    return;
+                }
+
+                const viewW = host.clientWidth;
+                const viewH = host.clientHeight;
+                const boxW = region.width;
+                const boxH = region.height;
+                if (viewW < 1 || viewH < 1 || boxW < 1 || boxH < 1) {
+                    return;
+                }
+
+                const bracketInset = 6;
+                const y = Math.min(bracketInset, Math.max(0, viewH - boxH));
+                const x = Math.max(0, Math.round((viewW - boxW) / 2));
+                region.x = x;
+                region.y = y;
+                shade.style.setProperty('border-top-width', `${y}px`, 'important');
+                shade.style.setProperty('border-bottom-width', `${Math.max(0, viewH - boxH - y)}px`, 'important');
+                shade.style.setProperty('border-left-width', `${x}px`, 'important');
+                shade.style.setProperty('border-right-width', `${Math.max(0, viewW - boxW - x)}px`, 'important');
+            },
+
             async toggleCamera() {
                 if (this.cameraOn || this.starting) {
                     await this.stopCamera();
@@ -124,6 +288,7 @@
                     await new Promise((r) => requestAnimationFrame(() => r()));
 
                     const Html5Qrcode = await this.ensureLibrary();
+                    this.pinAimWindowToTop(Html5Qrcode);
                     const elId = 'tp-floor-qr-reader';
                     const host = document.getElementById(elId);
                     if (! host) {
@@ -131,47 +296,79 @@
                     }
 
                     host.innerHTML = '';
-                    this.scanner = new Html5Qrcode(elId);
 
+                    // formatsToSupport is constructor-only in html5-qrcode — start() ignores it.
+                    // Without this, ZXing still tries QR/EAN/UPC/Code39 every frame.
                     const formats = window.Html5QrcodeSupportedFormats
                         || window.__Html5QrcodeLibrary__?.Html5QrcodeSupportedFormats
                         || null;
+                    const formatsToSupport = formats
+                        ? [formats.DATA_MATRIX, formats.CODE_128].filter(Boolean)
+                        : null;
 
-                    const config = {
-                        fps: 10,
-                        qrbox: (viewfinderWidth, viewfinderHeight) => {
-                            const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72);
-                            return { width: edge, height: edge };
-                        },
-                        aspectRatio: 1.333,
+                    const ctorConfig = {
+                        verbose: false,
+                        // Native BarcodeDetector when available (Chrome/Android) — much faster than ZXing.
+                        useBarCodeDetectorIfSupported: true,
                     };
-
-                    if (formats) {
-                        config.formatsToSupport = [
-                            formats.QR_CODE,
-                            formats.DATA_MATRIX,
-                            formats.CODE_128,
-                            formats.CODE_39,
-                            formats.EAN_13,
-                            formats.EAN_8,
-                            formats.UPC_A,
-                            formats.UPC_E,
-                        ].filter(Boolean);
+                    if (formatsToSupport?.length) {
+                        ctorConfig.formatsToSupport = formatsToSupport;
                     }
+
+                    this.scanner = new Html5Qrcode(elId, ctorConfig);
+
+                    // Pharma floor: GS1 DataMatrix (units) + Code128/GS1-128 (SSCC).
+                    // Wide ROI; keep camera open between labels (Close / toggle / Escape to stop).
+                    const scanConfig = {
+                        fps: this.fps,
+                        disableFlip: true,
+                        qrbox: (viewfinderWidth, viewfinderHeight) => {
+                            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                            const width = Math.floor(minEdge * 0.92);
+                            const height = Math.floor(minEdge * 0.40);
+
+                            return { width, height };
+                        },
+                        videoConstraints: {
+                            facingMode: { ideal: 'environment' },
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            frameRate: { ideal: this.frameRateIdeal, max: this.frameRateMax },
+                        },
+                    };
 
                     await this.scanner.start(
                         { facingMode: 'environment' },
-                        config,
+                        scanConfig,
                         (decoded) => {
                             if (! decoded) {
                                 return;
                             }
 
-                            this.$wire.call('stageScan', decoded);
-                            this.stopCamera();
+                            const now = performance.now();
+                            if (this._confirming || (this._ignoreUntil && now < this._ignoreUntil)) {
+                                return;
+                            }
+
+                            this._confirming = true;
+                            this._ignoreUntil = now + this.cooldownMs;
+
+                            Promise.resolve(this.$wire.call(this.confirmMethod, decoded))
+                                .catch(() => {
+                                    if (! navigator.onLine) {
+                                        this.connectionError = 'Scan needs a connection';
+                                    }
+                                })
+                                .finally(() => {
+                                    this._confirming = false;
+                                });
                         },
                         () => {},
                     );
+
+                    this.placeScanWindowInTopHalf();
+                    this.bindScanWindowResize();
+                    this.detectTorch();
                 } catch (e) {
                     const raw = String(e?.message || '');
                     if (/NotAllowedError|Permission|denied/i.test(raw)) {
@@ -188,6 +385,19 @@
             },
 
             async stopCamera() {
+                if (this._onScanWindowResize) {
+                    window.removeEventListener('resize', this._onScanWindowResize);
+                    this._onScanWindowResize = null;
+                }
+
+                try {
+                    if (this.torchOn) {
+                        await this.setTorch(false);
+                    }
+                } catch (e) {
+                    // ignore torch races
+                }
+
                 try {
                     if (this.scanner) {
                         const state = this.scanner.getState?.();
@@ -203,6 +413,10 @@
                 this.scanner = null;
                 this.cameraOn = false;
                 this.starting = false;
+                this._confirming = false;
+                this._ignoreUntil = 0;
+                this.torchSupported = false;
+                this.torchOn = false;
 
                 const host = document.getElementById('tp-floor-qr-reader');
                 if (host) {
@@ -215,12 +429,79 @@
                 });
             },
 
+            detectTorch() {
+                try {
+                    const caps = this.scanner?.getRunningTrackCameraCapabilities?.();
+                    const torch = caps?.torchFeature?.();
+                    this.torchSupported = Boolean(torch?.isSupported?.());
+                } catch (e) {
+                    this.torchSupported = false;
+                }
+            },
+
+            async toggleTorch() {
+                await this.setTorch(! this.torchOn);
+            },
+
+            async setTorch(on) {
+                if (! this.scanner || ! this.torchSupported) {
+                    return;
+                }
+
+                try {
+                    const caps = this.scanner.getRunningTrackCameraCapabilities?.();
+                    const torch = caps?.torchFeature?.();
+                    if (torch?.isSupported?.()) {
+                        await torch.apply(Boolean(on));
+                        this.torchOn = Boolean(on);
+
+                        return;
+                    }
+                } catch (e) {
+                    // fall through to constraints
+                }
+
+                try {
+                    await this.scanner.applyVideoConstraints?.({
+                        advanced: [{ torch: Boolean(on) }],
+                    });
+                    this.torchOn = Boolean(on);
+                } catch (e) {
+                    this.torchSupported = false;
+                    this.torchOn = false;
+                }
+            },
+
             focusScan() {
+                if (this.cameraOn) {
+                    return;
+                }
+
                 this.$refs.scanInput?.focus();
             },
         }));
 
         window.__tpFloorReceiveRegistered = true;
+
+        if (! window.__tpFloorReceiveFocusHook && window.Livewire) {
+            window.__tpFloorReceiveFocusHook = true;
+            window.Livewire.hook('morph.updated', ({ el }) => {
+                if (! el?.closest?.('.tp-floor-receive')) {
+                    return;
+                }
+
+                const root = el.closest('.tp-floor-receive');
+                const data = root?.__x?.$data;
+                if (data?.cameraOn) {
+                    return;
+                }
+
+                requestAnimationFrame(() => {
+                    root.querySelector('#floor-scan-input, [x-ref=\"scanInput\"], .tp-floor-receive__scan-input')?.focus?.();
+                });
+            });
+        }
+
         return true;
     };
 

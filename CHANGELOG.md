@@ -4,6 +4,41 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+## [1.8.0] — 2026-09-20
+
+Floor shell + DSCSA dual-release + GS1/QA remediations: mobile floor Home/Find and camera scan pace, expected inbound / parallel ASN receive, packing and disposition sessions, R1.2/R1.3 per partner, void shipping, and partner-TI / hub / VRS invert fixes from the GS1 US dual-release review.
+
+### Added
+
+- **Floor shell** — Floor Home / Find, mobile receive/ship/transfer/pack/unpack/verify lists, camera scan pace, exclusive EPC session gates, and phone login layout.
+- **Expected inbound / parallel ASN receive** — `inbound_expected_lines`, claimed sessions, remaining-expected confirm, and shortage-on-short-close so Complete cannot URI-confirm unscanned parents.
+- **Packing and disposition sessions** — Persisted pack/break-pack and commission/decommission/return staging sessions (tenant migrations).
+- **DSCSA dual-release** — Detect and persist `dscsa_guideline_release` per inbound document. Outbound ship XML/JSON-LD follows the trading partner `epcis_guideline` (R1.3 official `guidelineVersion` + drop-ship + qualifier DP; R1.2 omits those). New Filament partners default to R1.2. Drop-ship fails closed on an R1.2 partner.
+- **Void shipping** — Authored `void_shipping` document with `errorDeclaration`, MAIN R1.3 `correctiveEventID`, SGLN `readPoint`, and quarantine hold until release.
+- **On-hand inventory** — Lot rollup, export, and investigate paths on the on-hand list.
+- **JSON-LD 2.0 full-history TI** — Packed SSCC ships replay manufacturer commission/pack fragments via `PedigreeXmlFragmentsToJsonLdEvents` (same TI as XML, not lean shipping-only).
+- **Inbound `ERROR_DECLARATION`** — Stored `errorDeclaration` opens an exception case on ingest, not only on the void path.
+- **GS1 Digital Link on Verify Product** — Requestor and dispense-check parse Digital Link scans the same way receive/ship already do.
+
+### Changed
+
+- **Shipping `bizLocation`** — Authored shipping events persist `biz_location_gln` null. Customer stays on `destinationList`. Custody remains `OutboundShipmentInTransit`.
+- **Hub SGLN routing** — SBDH Receiver extension other than `0` is rejected (not collapsed to the party GLN). Extension `0` and raw 13-digit identifiers still route.
+- **Destroy ObjectEvent** — Physical destroy authors `bizStep:destroying` (not `decommissioning`).
+- **Homogeneous case pack** — Hybrid instance `childEPCs` plus LGTIN `childQuantityList` when the children share a class.
+- **Replace payload** — In-place correction cannot mix R1.2/R1.3 or upgrade a stored release.
+- **3PL / wholesaler TI** — Principal required when confirmed lines already belong to one; outbound `directPurchase` is wholesaler-only on lean and full-history paths.
+- **VRS responder** — Lot/expiry mismatch does not verify. `not_in_network` stays unavailable (not suspect).
+- **LMS on EPCIS capture** — GS1 VRS Lightweight Messaging JSON is rejected as not an EPCIS document.
+
+### Fixed
+
+- **SBDH / identifiers** — Sender is tenant org GLN (not site). Read-point lookup matches stored GLN digits or SGLN URN only (no prefix walk). Catalog GLN normalization uses `ValidGln`.
+- **Authored timezone** — Commission, pack, unpack, transform, and full-history events use the site of bizLocation.
+- **Remint / transfer** — Retransmit preserves inbound bytes. Transfer XML has no `gs1ushc` TI extras.
+- **Capture / HTTPS** — Foreign Receiver is rejected on capture and HTTPS webhook (same as AS2/portal).
+- **Pack / unpack / commission-all** — Authored pack uses `packing`, unpack uses `unpacking` (not `inspecting`). Commission-all refuses open quarantine and terminal disposition.
+
 ## [1.7.1] — 2026-09-13
 
 Post-1.7.0 patch: CMO auto-receive retry safety and Ops Hub profile honesty.
@@ -254,6 +289,7 @@ Documented for the 1.0.0 GA snapshot (later 1.1.0–1.4.0 releases close several
 - Sanctum `GET /api/v1/compliance/*` scorecard routes are not GA — use in-app scorecards
 - Outbound SFTP and AS2 MDN catalog emitters ship in 1.2.0 (not in 1.0.0)
 
+[1.8.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.8.0
 [1.7.1]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.1
 [1.7.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.7.0
 [1.6.0]: https://github.com/jmakoni/tracepharma/releases/tag/v1.6.0

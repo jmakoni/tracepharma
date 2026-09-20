@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Receiving;
 
+use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
+use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Enums\ReceivingSessionKind;
@@ -20,8 +23,10 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\File;
@@ -143,6 +148,11 @@ class ReceivingSessionResourceTest extends TestCase
             $this->assertStringContainsString('scan-field', $desktopBlade);
             $this->assertStringContainsString('show-camera="false"', $desktopBlade);
             $this->assertStringContainsString('submit-action="confirmScan"', $desktopBlade);
+            $this->assertStringContainsString("mountAction('completeReceiving')", $desktopBlade);
+            $this->assertStringContainsString("mountAction('closeTransferWithShortage')", $desktopBlade);
+            $this->assertStringContainsString("mountAction('retryReceiveEpcis')", $desktopBlade);
+            $this->assertStringContainsString('isCancelled()', $desktopBlade);
+            $this->assertStringContainsString('Back to receives', $desktopBlade);
             $this->assertStringNotContainsString('stageScan', $desktopBlade);
         } finally {
             $this->cleanup();
@@ -171,9 +181,99 @@ class ReceivingSessionResourceTest extends TestCase
 
             $component = Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()]);
 
-            $component->assertSee('Receiving complete');
+            $copy = $component->instance()->promptCopy();
+            $this->assertArrayHasKey('completeTitle', $copy);
+            $this->assertContains($copy['completeTitle'], ['Session complete', 'ASN complete']);
+            if (! ($copy['documentComplete'] ?? true)) {
+                $component->assertSee('Session complete');
+                $component->assertDontSee('All expected pallets');
+            } else {
+                $component->assertSee('ASN complete');
+            }
             $component->assertDontSee('Scan barcode');
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function partial_asn_complete_view_shows_session_complete_not_all_expected(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            TenantSettings::forTenant(tenant())->setReceivingEdgeMode(ReceivingEdgeMode::SealedParent);
+            TenantSettings::forTenant(tenant())->setAllowParallelSessions(true);
+            TenantSettings::forTenant(tenant())->setAutoCompleteAsnOnReady(false);
+            tenant()->save();
+
+            $suffixA = (string) random_int(100000, 999999);
+            $suffixB = (string) random_int(100000, 999999);
+            $asn = 'ASN-COPY-'.$suffixA;
+            $po = 'PO-COPY-'.$suffixA;
+            $fixture = base_path('tests/Fixtures/epcis/minimal_with_shipping_refs.xml');
+            $this->assertFileExists($fixture);
+
+            $docs = [];
+            $documentIds = [];
+            foreach ([$suffixA, $suffixB] as $suffix) {
+                $sscc = 'urn:epc:id:sscc:030116.01015'.$suffix;
+                $sgtin = 'urn:epc:id:sgtin:030116.0200116.7'.$suffix;
+                $tmp = tempnam(sys_get_temp_dir(), 'epcis_copy_');
+                $xml = file_get_contents($fixture);
+                $xml = str_replace(
+                    [
+                        '22222222-3333-4444-5555-666666666666',
+                        'urn:epc:id:sscc:030116.01001227052',
+                        'urn:epc:id:sgtin:030116.0200116.10000082001560',
+                        'ASN-TEST-4787',
+                        'PO-TEST-7174',
+                    ],
+                    [(string) str()->uuid(), $sscc, $sgtin, $asn, $po],
+                    $xml,
+                );
+                file_put_contents($tmp, $xml);
+                $ingested = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'minimal_with_shipping_refs.xml',
+                ]);
+                $docs[] = [$sscc, $ingested];
+                $documentIds[] = (int) $ingested->getKey();
+                @unlink($tmp);
+            }
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($docs[0][1]);
+            $this->sessionId = (int) $session->getKey();
+
+            $policy = ReceivingPolicy::forTenant(tenant());
+            $this->assertTrue(
+                app(ConfirmReceivingScan::class)->handle(
+                    $session->fresh(),
+                    $docs[0][0],
+                    null,
+                    $policy->defaultAutoConfirmChildren(),
+                )['ok'],
+            );
+            app(CompleteReceivingSession::class)->handle($session->fresh());
+
+            $component = Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()]);
+            $component->assertSee('Session complete');
+            $component->assertDontSee('Receiving complete');
+            $component->assertDontSee('All expected pallets');
+            $component->assertSee('still expected');
+            $component->assertSee('Start next receive');
+        } finally {
+            TenantSettings::forTenant(tenant())->setAllowParallelSessions(false);
+            TenantSettings::forTenant(tenant())->setReceivingEdgeMode(null);
+            tenant()?->save();
+            if (($documentIds ?? []) !== []) {
+                EpcisDocument::query()->whereIn('id', $documentIds)->delete();
+            }
             $this->cleanup();
         }
     }
@@ -252,8 +352,14 @@ class ReceivingSessionResourceTest extends TestCase
                 ->assertSee(ReceivingPolicy::forTenant(tenant())->edgeMode()->chipLabel())
                 ->assertSee('Attach invoice')
                 ->assertSee('ADD')
-                ->assertDontSee('Not on this ASN — do not put away')
-                ->assertSee('no ASN required');
+                ->assertDontSee('Not on this ASN — do not put away');
+
+            $this->assertStringContainsString(
+                'no ASN required',
+                Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()])
+                    ->instance()
+                    ->promptCopy()['kindHelper'],
+            );
         } finally {
             $this->cleanup();
         }
@@ -318,7 +424,7 @@ class ReceivingSessionResourceTest extends TestCase
 
             $this->assertTrue(
                 $complete->isConfirmationRequired(),
-                'Complete receive must require confirmation when submitting scanned data.',
+                'Complete session must require confirmation when submitting scanned data.',
             );
         } finally {
             $this->cleanup();
@@ -374,14 +480,17 @@ class ReceivingSessionResourceTest extends TestCase
 
         $document = EpcisDocument::query()
             ->whereIn('status', $statuses)
+            ->where(function ($q): void {
+                $q->where('dscsa_affirm', true)->orWhere('dscsa_affirm', 1);
+            })
             ->orderByDesc('id')
             ->first();
 
         $this->assertNotNull(
             $document,
             $requireValidated
-                ? 'Demo2 needs a validated inbound EPCIS document.'
-                : 'Demo2 needs a parsed/validated inbound EPCIS document.',
+                ? 'Demo2 needs a validated inbound EPCIS document with DSCSA TS affirmation.'
+                : 'Demo2 needs a parsed/validated inbound EPCIS document with DSCSA TS affirmation.',
         );
 
         return $document;

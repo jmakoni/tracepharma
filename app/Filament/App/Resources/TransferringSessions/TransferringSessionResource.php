@@ -4,6 +4,8 @@ namespace App\Filament\App\Resources\TransferringSessions;
 
 use App\Filament\App\Resources\TransferringSessions\Pages\CreateTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\Pages\ListTransferringSessions;
+use App\Filament\App\Resources\TransferringSessions\Pages\MobileListTransferReceiveSessions;
+use App\Filament\App\Resources\TransferringSessions\Pages\MobileListTransferShipSessions;
 use App\Filament\App\Resources\TransferringSessions\Pages\MobileViewTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\Pages\ViewTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\RelationManagers\ScanLinesRelationManager;
@@ -139,6 +141,8 @@ class TransferringSessionResource extends Resource implements HasKnowledgeBase
         return [
             'index' => ListTransferringSessions::route('/'),
             'create' => CreateTransferringSession::route('/create'),
+            'list-floor' => MobileListTransferShipSessions::route('/floor'),
+            'receive-floor' => MobileListTransferReceiveSessions::route('/receive-floor'),
             'view' => ViewTransferringSession::route('/{record}'),
             'floor' => MobileViewTransferringSession::route('/{record}/floor'),
         ];

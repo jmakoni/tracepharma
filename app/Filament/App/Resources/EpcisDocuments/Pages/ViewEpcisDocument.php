@@ -8,6 +8,7 @@ use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Filament\App\Resources\EpcisDocuments\Actions\StartReceivingAction;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Support\QueueSerializedTrackTraceExport;
@@ -19,6 +20,7 @@ use App\Models\User;
 use App\Services\Dscsa\TransactionReportGenerator;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Receiving\ReceiveLayout;
@@ -362,6 +364,20 @@ class ViewEpcisDocument extends ViewRecord
                                     ->send();
 
                                 return;
+                            }
+
+                            if ((string) $document->direction !== 'outbound') {
+                                try {
+                                    AssertInboundReceiverGln::assertBelongsToCurrentTenant($file->get());
+                                } catch (InboundReceiverGlnRejected $e) {
+                                    Notification::make()
+                                        ->title('Upload rejected')
+                                        ->body($e->getMessage())
+                                        ->danger()
+                                        ->send();
+
+                                    return;
+                                }
                             }
 
                             $originalFilename = SafeFilename::forUpload($file->getClientOriginalName(), 'corrected.xml');

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\InboundExpectedLineClaims;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +51,8 @@ final class CancelReceivingSession
                 'status' => 'cancelled',
                 'completed_at' => now(),
             ])->save();
+
+            InboundExpectedLineClaims::releaseUnconfirmedForSession($session);
 
             return $session->refresh();
         });

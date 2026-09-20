@@ -1,11 +1,12 @@
 <x-filament-panels::page>
     @assets
-        <script src="{{ asset('js/tp-floor-receive.js') }}"></script>
+        <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}" data-tp-html5-qrcode="1"></script>
+        <script src="{{ asset('js/tp-floor-receive.js') }}?v={{ @filemtime(public_path('js/tp-floor-receive.js')) ?: time() }}"></script>
     @endassets
 
     <x-scan-flash />
 
-    <div class="tp-floor-transfer__layout-switch">
+    <div class="tp-floor-receive__layout-switch">
         @include('filament.app.partials.transfer-layout-switch', [
             'mode' => 'floor',
             'desktopUrl' => $this->desktopTransferUrl(),
@@ -14,11 +15,6 @@
     </div>
 
     @php
-        $cookieName = \App\Support\Transferring\TransferLayout::COOKIE;
-        $desktopUrl = $this->desktopTransferUrl();
-        $recentLines = $this->recentScanLines();
-        $cartCount = $this->cartBadgeCount();
-        $recentCaption = $this->recentScansCaption();
         $shipReason = $this->shipDisabledReason();
         $canShip = $this->canShipTransfer();
         $isCompleted = $this->isCompleted();
@@ -27,66 +23,42 @@
 
     <div
         class="tp-floor-receive tp-floor-transfer"
-        x-data="tpFloorReceive(@js(['libraryUrl' => asset('vendor/html5-qrcode/html5-qrcode.min.js')]))"
+        x-data="tpFloorReceive(@js(\App\Support\Floor\FloorCameraScanAlpine::tpFloorReceiveConfig()))"
         x-on:destroy="stopCamera()"
-        @keydown.escape.window="if (cameraOn) { stopCamera() } else if (cartOpen) { closeCart() }"
+        @keydown.escape.window="if (cameraOn) { stopCamera() }"
+        x-on:focus-scan.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:close-modal.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:modal-closed.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
     >
         <header class="tp-floor-receive__sticky-header">
-            <div
-                class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
-                aria-label="Confirmed {{ $this->confirmedCount() }}"
-                aria-live="polite"
-            >
-                <div class="stat">
-                    <div class="stat-title">Confirmed</div>
-                    <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
+            <div class="flex min-w-0 flex-col gap-1">
+                <div class="tp-floor-receive__header-top">
+                    @include('filament.app.partials.floor-task-menu')
+                    <span class="badge badge-outline tp-floor-receive__mode-chip">Transfer</span>
                 </div>
-            </div>
-            @if ($this->chipDeaLabel)
-                <span @class([
-                    'badge badge-outline',
-                    'badge-error' => $this->chipDeaColor === 'danger',
-                    'badge-warning' => $this->chipDeaColor === 'warning',
-                ])>{{ $this->chipDeaLabel }}</span>
-            @endif
 
-            <div
-                class="tp-floor-receive__menu"
-                x-data="{ open: false }"
-                @keydown.escape.window="open = false"
-            >
-                <button
-                    type="button"
-                    class="tp-floor-receive__menu-btn"
-                    aria-label="Transfer menu"
-                    aria-haspopup="true"
-                    :aria-expanded="open"
-                    @click="open = !open"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M10.5 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" clip-rule="evenodd" />
-                    </svg>
-                </button>
+                @if ($this->chipDeaLabel)
+                    <span @class([
+                        'badge badge-outline tp-floor-receive__mode-chip',
+                        'badge-error' => $this->chipDeaColor === 'danger',
+                        'badge-warning' => $this->chipDeaColor === 'warning',
+                    ])>{{ $this->chipDeaLabel }}</span>
+                @endif
+
+                <p class="text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
 
                 <div
-                    x-cloak
-                    x-show="open"
-                    x-transition
-                    @click.outside="open = false"
-                    class="tp-floor-receive__menu-panel"
-                    role="menu"
+                    class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
+                    aria-label="Confirmed {{ $this->confirmedCount() }}"
+                    aria-live="polite"
                 >
-                    <a
-                        href="{{ $desktopUrl }}"
-                        class="tp-floor-receive__menu-item"
-                        role="menuitem"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >Open desktop transfer</a>
+                    <div class="stat">
+                        <div class="stat-title">Confirmed</div>
+                        <div class="stat-value text-2xl">{{ $this->confirmedCount() }}</div>
+                    </div>
                 </div>
             </div>
         </header>
-
-        <p class="px-4 text-sm font-medium text-base-content/80">{{ $this->routeDisplayLabel() }}</p>
 
         @if ($isCompleted)
             <div class="tp-floor-receive__complete">
@@ -94,7 +66,7 @@
                 <p class="tp-floor-receive__complete-body">
                     Destination receive scans verified. Shipping and receiving EPCIS events are on the transfer document.
                 </p>
-                <a href="{{ $this->transferListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
+                <a href="{{ $this->transferListUrl() }}" class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit">
                     Back to transfers
                 </a>
             </div>
@@ -104,38 +76,48 @@
                 <p class="tp-floor-receive__complete-body">
                     Shipping EPCIS event authored. Receive this transfer at the destination to complete it.
                 </p>
-                @if ($this->receivingSession())
+                @if ($this->openReceiveSessionUrl())
                     <a
-                        href="{{ \App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource::getUrl('view', ['record' => $this->receivingSession()], panel: 'app') }}"
-                        class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit"
+                        href="{{ $this->openReceiveSessionUrl() }}"
+                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit"
+                        wire:navigate
                     >
                         Open receive session
                     </a>
+                @elseif (\App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource::canAccess())
+                    <button
+                        type="button"
+                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit"
+                        wire:click="receiveAtDestination"
+                    >
+                        Receive at destination
+                    </button>
                 @endif
-                <a href="{{ $this->transferListUrl() }}" class="tp-floor-receive__cancel-btn">
-                    Back to transfers
+                <a href="{{ $this->transferListUrl() }}" class="tp-floor-receive__cancel-btn" wire:navigate>
+                    Back to transfer receive
                 </a>
             </div>
         @else
             <div class="tp-floor-receive__stage">
                 <form
-                    wire:submit.prevent="stageScan"
+                    wire:submit.prevent="confirmScanInput"
                     x-init="$nextTick(() => $refs.scanInput?.focus())"
-                    x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
                     class="tp-floor-receive__scan-form"
                 >
                     <div class="tp-floor-receive__scan-field">
                         <input
                             id="floor-scan-input"
                             type="text"
+                            inputmode="none"
                             wire:model.live.blur="scan"
                             x-ref="scanInput"
-                            x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
+                            x-on:keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"
                             autocomplete="off"
                             autofocus
                             class="tp-floor-receive__scan-input"
                             placeholder="Scan barcode"
                             aria-label="Scan to confirm transfer"
+                            wire:loading.attr="disabled"
                         />
                     </div>
 
@@ -146,6 +128,7 @@
                         :aria-label="cameraOn ? 'Close camera' : 'Open camera scanner'"
                         :aria-pressed="cameraOn ? 'true' : 'false'"
                         x-bind:disabled="starting"
+                        wire:loading.attr="disabled"
                         x-on:click="toggleCamera()"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
@@ -182,164 +165,52 @@
                     </div>
                 @endif
 
-                @if ($canShip)
-                    <button
-                        type="button"
-                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__stage-complete"
-                        wire:click="mountAction('completeTransfer')"
-                        wire:loading.attr="disabled"
-                    >
-                        Ship transfer
-                    </button>
+                <x-confirmed-scan-panel
+                    :rows="$this->recentConfirmedScanRows()"
+                    :caption="$this->recentScansCaption()"
+                    remove-confirm="Remove this scan from the transfer?"
+                />
+
+                @if ($shipReason)
+                    <p class="tp-floor-receive__complete-reason">{{ $shipReason }}</p>
                 @endif
             </div>
-        @endif
 
-        @if ($this->isOpen())
-            <button
-                type="button"
-                class="tp-floor-receive__cart-fab"
-                x-ref="cartFab"
-                aria-label="Open scanned items, {{ $cartCount }}"
-                x-on:click="openCart()"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
-                </svg>
-                @if ($cartCount > 0)
-                    <span class="tp-floor-receive__cart-count" aria-live="polite">{{ $cartCount }}</span>
-                @endif
-            </button>
-        @endif
-
-        <div
-            x-show="cameraOn"
-            x-cloak
-            class="tp-floor-receive__camera-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Camera scanner"
-            @keydown="trapTab($event, $el)"
-        >
-            <div class="tp-floor-receive__camera-overlay-bar">
-                <span>Align barcode</span>
+            <div class="tp-floor-receive__footer" role="group" aria-label="Transfer actions">
                 <button
                     type="button"
-                    class="tp-floor-receive__camera-close"
-                    x-ref="cameraClose"
-                    x-on:click="stopCamera()"
+                    @class([
+                        'tp-floor-receive__footer-btn',
+                        'tp-floor-receive__footer-btn--confirm' => $canShip,
+                        'tp-floor-receive__footer-btn--neutral' => ! $canShip,
+                    ])
+                    @if ($canShip)
+                        wire:click="mountAction('completeTransfer')"
+                    @else
+                        disabled
+                        aria-disabled="true"
+                    @endif
+                    wire:loading.attr="disabled"
                 >
-                    Close
+                    Ship transfer
                 </button>
-            </div>
-            <div wire:ignore class="tp-floor-receive__camera-host">
-                <div id="tp-floor-qr-reader" class="tp-floor-receive__camera"></div>
-            </div>
-        </div>
 
-        @if ($this->isOpen())
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet-backdrop"
-                x-on:click="closeCart()"
-                x-transition.opacity
-            ></div>
-
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Recent scans"
-                x-transition:enter="tp-floor-receive__sheet-enter"
-                x-transition:enter-start="tp-floor-receive__sheet-enter-start"
-                x-transition:enter-end="tp-floor-receive__sheet-enter-end"
-                x-transition:leave="tp-floor-receive__sheet-leave"
-                x-transition:leave-start="tp-floor-receive__sheet-leave-start"
-                x-transition:leave-end="tp-floor-receive__sheet-leave-end"
-                @keydown="trapTab($event, $el)"
-            >
-                <div class="tp-floor-receive__sheet-header">
-                    <h2 class="tp-floor-receive__sheet-title">Recent scans</h2>
-                    <button
-                        type="button"
-                        class="tp-floor-receive__sheet-close"
-                        x-ref="sheetClose"
-                        x-on:click="closeCart()"
-                    >
-                        Close
-                    </button>
-                </div>
-
-                <div class="tp-floor-receive__sheet-progress" aria-live="polite">
-                    <div class="tp-floor-receive__sheet-progress-row">
-                        <span>Confirmed</span>
-                        <strong class="tp-scan-qty">{{ $this->confirmedCount() }}</strong>
-                    </div>
-                </div>
-
-                <section class="tp-floor-receive__recent" aria-label="Recent scans">
-                    @if ($recentCaption)
-                        <p class="tp-floor-receive__recent-caption">{{ $recentCaption }}</p>
-                    @endif
-
-                    @forelse ($recentLines as $line)
-                        <div class="tp-floor-receive__recent-row">
-                            <div class="tp-floor-receive__recent-main">
-                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                                <span class="tp-floor-receive__recent-meta">
-                                    {{ ucfirst((string) $line->status) }}
-                                </span>
-                            </div>
-                            @if ($this->canRemoveRecentScanLine($line))
-                                <button
-                                    type="button"
-                                    class="tp-floor-receive__recent-remove"
-                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
-                                    wire:confirm="Remove this scan from the transfer?"
-                                >
-                                    Remove
-                                </button>
-                            @endif
-                        </div>
-                    @empty
-                        <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>
-                    @endforelse
-                </section>
-
-                <div class="tp-floor-receive__sheet-actions">
-                    <button
-                        type="button"
-                        @class([
-                            'tp-floor-receive__complete-btn',
-                            'tp-floor-receive__complete-btn--ready' => $canShip,
-                            'tp-floor-receive__complete-btn--disabled' => ! $canShip,
-                        ])
-                        @if ($canShip)
-                            wire:click="mountAction('completeTransfer')"
-                        @else
-                            disabled
-                            aria-disabled="true"
-                            aria-describedby="tp-floor-ship-reason"
-                        @endif
-                        wire:loading.attr="disabled"
-                    >
-                        Ship transfer
-                    </button>
-
-                    @if ($shipReason)
-                        <p id="tp-floor-ship-reason" class="tp-floor-receive__complete-reason">
-                            {{ $shipReason }}
-                        </p>
-                    @endif
-
-                    <a href="{{ $this->transferListUrl() }}" class="tp-floor-receive__cancel-btn">
-                        Back to transfers
-                    </a>
-                </div>
+                <a
+                    href="{{ $this->transferListUrl() }}"
+                    class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--cancel"
+                >
+                    Back to transfers
+                </a>
             </div>
         @endif
+
+        @include('filament.app.partials.floor-camera-overlay', [
+            'stats' => [[
+                'title' => 'Confirmed',
+                'value' => $this->confirmedCount(),
+            ]],
+            'decode' => in_array($this->lastScanTone, ['ok', 'warn'], true) ? $this->lastScanDetail : null,
+            'error' => $this->lastScanTone === 'error' ? $this->lastScanMessage : null,
+        ])
     </div>
 </x-filament-panels::page>

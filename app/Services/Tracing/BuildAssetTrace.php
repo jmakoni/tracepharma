@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Custody\ResolveEpcCustodyAsOf;
+use App\Support\Custody\OutboundShipmentInTransit;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Epcis\ArchivedEpcEvents;
 use App\Support\Epcis\LastGoodIngestProjection;
@@ -166,14 +167,18 @@ final class BuildAssetTrace
         } else {
             $inCustody = app(EpcCustodyGate::class)->isInCustody($epc);
             $inTransitViaParent = $this->isInTransitInsideOpenParent($epc);
+            $inTransitDirect = OutboundShipmentInTransit::matches(
+                app(ResolveEpcLastKnownGln::class)->latestEventMeta($epc),
+            );
+            $inTransit = $inTransitViaParent || $inTransitDirect;
             $status = $quarantined
                 ? 'Quarantined'
-                : ($inTransitViaParent
+                : ($inTransit
                     ? 'In transit'
                     : ($inCustody ? 'In custody' : 'Not in custody'));
             $statusTone = $quarantined
                 ? 'warn'
-                : ($inTransitViaParent || ! $inCustody ? 'warn' : 'ok');
+                : ($inTransit || ! $inCustody ? 'warn' : 'ok');
             [$dispositionLabel, $dispositionUri, $dispositionAt, $lastSeen] = $this->latestEventDisplay($latestDirectEvent);
             // Packed children follow the open parent's location (SSCC-only transfer/ship events).
             $effectiveGln = app(ResolveEpcLastKnownGln::class)->forEpc($epc);
@@ -210,7 +215,7 @@ final class BuildAssetTrace
             'parent' => $this->parentArray($epc),
             'product' => $this->productArray($epc->product),
             'lot' => $this->lotArray($epc->ilmd),
-            'parties' => $this->partiesArray($latestDirectEvent),
+            'parties' => $this->partiesArray($latestDirectEvent, $epc),
             'timeline' => $this->buildTimeline($displayEvents, $inferredFromByEventId),
             'map_points' => $this->buildMapPoints($epc, $displayEvents),
             'events' => $this->buildEventsSummary($displayEvents),
@@ -767,9 +772,9 @@ final class BuildAssetTrace
      *
      * @return array<string, ?string>
      */
-    private function partiesArray(?EpcisEvent $latestEvent): array
+    private function partiesArray(?EpcisEvent $latestEvent, Epc $epc): array
     {
-        $document = $latestEvent?->document;
+        $document = $this->shippingPartiesDocument($latestEvent, $epc);
 
         if (! $document instanceof EpcisDocument) {
             return [];
@@ -792,6 +797,31 @@ final class BuildAssetTrace
         }
 
         return $parties;
+    }
+
+    /**
+     * Authored receiving is a custody attestation, not TI. Prefer the latest
+     * inbound shipping document so Seller/Sold-to stay the original trade parties.
+     */
+    private function shippingPartiesDocument(?EpcisEvent $latestEvent, Epc $epc): ?EpcisDocument
+    {
+        $document = $latestEvent?->document;
+
+        if (! $document instanceof EpcisDocument) {
+            return null;
+        }
+
+        if (! $document->isAuthoredReceiving()) {
+            return $document;
+        }
+
+        $inbound = EpcisDocument::query()
+            ->where('direction', 'inbound')
+            ->whereHas('events.epcs', fn ($query) => $query->whereKey($epc->getKey()))
+            ->orderByDesc('id')
+            ->first();
+
+        return $inbound instanceof EpcisDocument ? $inbound : $document;
     }
 
     /**

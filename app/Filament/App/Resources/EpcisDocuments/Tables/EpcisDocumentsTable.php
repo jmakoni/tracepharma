@@ -180,11 +180,12 @@ class EpcisDocumentsTable
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('received_at')
-                    ->label('Received')
+                    ->label('Uploaded')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('status')
+                    ->label('Status')
                     ->badge()
                     ->formatStateUsing(function (EpcisDocument $record, mixed $state): string {
                         return $record->floorReceiveStatusLabel()
@@ -204,8 +205,9 @@ class EpcisDocumentsTable
             ->defaultSort('creation_date', 'desc')
             ->filters([
                 SelectFilter::make('status')
+                    ->label('Ingest status')
                     ->options([
-                        'received' => 'Received',
+                        'received' => 'Uploaded',
                         'parsing' => 'Parsing',
                         'parsed' => 'Parsed',
                         'validated' => 'Validated',
@@ -215,9 +217,9 @@ class EpcisDocumentsTable
                 SelectFilter::make('schema_version')
                     ->label('Schema version')
                     ->options([
-                        '1.2' => 'EPCIS 1.2',
-                        '1.3' => 'EPCIS 1.3',
-                        '2.0' => 'EPCIS 2.0',
+                        '1.2' => 'EPCIS schema 1.2',
+                        '1.3' => 'EPCIS schema 1.3',
+                        '2.0' => 'EPCIS schema 2.0',
                     ]),
                 SelectFilter::make('format')
                     ->label('Format')
@@ -337,12 +339,12 @@ class EpcisDocumentsTable
                         $data['until'] ?? null,
                     )),
                 Filter::make('received_at')
-                    ->label('Received')
+                    ->label('Uploaded')
                     ->schema([
                         DatePicker::make('from')
-                            ->label('Received from'),
+                            ->label('Uploaded from'),
                         DatePicker::make('until')
-                            ->label('Received until'),
+                            ->label('Uploaded until'),
                     ])
                     ->query(fn (Builder $query, array $data): Builder => self::applyDateRangeFilter(
                         $query,

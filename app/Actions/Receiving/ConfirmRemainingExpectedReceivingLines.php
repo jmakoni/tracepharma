@@ -2,6 +2,7 @@
 
 namespace App\Actions\Receiving;
 
+use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -10,27 +11,34 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 final class ConfirmRemainingExpectedReceivingLines
 {
     public function __construct(
-        private readonly ConfirmReceivingScan $confirmReceivingScan,
         private readonly CompleteReceivingSession $completeReceivingSession,
         private readonly ReceivingGate $receivingGate,
+        private readonly SeedReceivingAsnParentChildren $seedReceivingAsnParentChildren,
+        private readonly FlagManualReceivingException $flagManualReceivingException,
     ) {}
 
     /**
      * @return array{confirmed: int, skipped: int, blockers: list<string>}
      */
-    public function handle(ReceivingSession $session, ?int $userId = null, bool $unpack = false): array
-    {
+    public function handle(
+        ReceivingSession $session,
+        ?int $userId = null,
+        bool $unpack = false,
+        ?string $reason = null,
+        bool $sealAcknowledged = false,
+    ): array {
         if (! TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             throw new DomainException('Receiving is not available for this tenant profile.');
         }
@@ -44,6 +52,26 @@ final class ConfirmRemainingExpectedReceivingLines
         $actor = $this->resolveActor($userId);
         if ($actor !== null) {
             $this->assertCanAccessSessionSite($actor, $session);
+        }
+
+        $settings = TenantSettings::forTenant(tenant());
+        $policy = ReceivingPolicy::forTenant(tenant());
+        $requiresReason = $settings->requireAcceptRemainingReason();
+        $requiresSeal = $settings->requireSealQuestion() && $policy->defaultAutoConfirmChildren();
+        $reason = is_string($reason) ? trim($reason) : '';
+
+        if ($requiresReason || $requiresSeal) {
+            if ($reason === '') {
+                throw new DomainException(
+                    'A reason is required to accept remaining unscanned expected lines.',
+                );
+            }
+        }
+
+        if ($requiresSeal && ! $sealAcknowledged) {
+            throw new DomainException(
+                'Confirm seal intact before accepting remaining sealed hierarchies.',
+            );
         }
 
         if ($session->epcis_document_id !== null) {
@@ -69,159 +97,171 @@ final class ConfirmRemainingExpectedReceivingLines
                 throw new DomainException('Accept remaining is disabled until a tote is open');
             }
 
-            $result = $this->confirmRemainingChildrenOfActiveParent($session, $userId, $unpack);
+            $result = $this->acceptRemainingOpenTote($session, $userId);
         } else {
-            $autoConfirmChildren = ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren();
-            $parentResult = $this->confirmExpectedLinesFromQuery(
-                $session,
-                ReceivingScanLine::query()
-                    ->where('receiving_session_id', $session->getKey())
-                    ->where('line_role', 'parent')
-                    ->where('status', 'expected'),
-                $userId,
-                $unpack,
-                $autoConfirmChildren,
-                'Skipped parent line(s) under open quarantine hold.',
-            );
-
-            // Open-count parent confirm does not auto-confirm units. Accept remaining
-            // still has to take leftover expected children or the session cannot complete
-            // and a second click finds no expected parents.
-            $childResult = $this->confirmExpectedLinesFromQuery(
-                $session,
-                ReceivingScanLine::query()
-                    ->where('receiving_session_id', $session->getKey())
-                    ->where('line_role', 'child')
-                    ->where('status', 'expected'),
-                $userId,
-                $unpack,
-                false,
-                'Skipped child line(s) under open quarantine hold.',
-            );
-
-            $result = [
-                'confirmed' => $parentResult['confirmed'] + $childResult['confirmed'],
-                'skipped' => $parentResult['skipped'] + $childResult['skipped'],
-                'blockers' => [...$parentResult['blockers'], ...$childResult['blockers']],
-            ];
+            $result = $this->acceptRemainingFromScannedParents($session, $userId, $actor, $reason);
         }
 
-        // Accept remaining is an explicit operator action: when the ASN is ready,
-        // finish like Close tote (not silent last-scan auto-complete).
         $session = $session->fresh() ?? $session;
+        $missingParentEpcIds = $this->unscannedExpectedParentEpcIds($session);
+
         if (
-            $result['confirmed'] > 0
-            && $result['blockers'] === []
+            $result['blockers'] === []
+            && $missingParentEpcIds === []
             && $session->isInboundAsn()
             && $session->status !== 'completed'
             && $session->isReadyToCompleteInboundAsn()
         ) {
             $this->completeReceivingSession->handle($session, $userId, unpack: $unpack);
+            $session = $session->fresh() ?? $session;
+        } elseif ($result['confirmed'] > 0) {
+            ExpectedInboundOrderHeader::refreshShipmentRollups($session);
+        }
+
+        if ($reason !== '' || $requiresReason || $requiresSeal) {
+            $this->persistAcceptRemainingAudit(
+                $session,
+                $actor,
+                $userId,
+                $reason,
+                $sealAcknowledged,
+                $result,
+            );
         }
 
         return $result;
     }
 
     /**
+     * GS1 inference: infer children only under confirmed (scanned) parents from inbound agg.
+     *
      * @return array{confirmed: int, skipped: int, blockers: list<string>}
      */
-    private function confirmRemainingChildrenOfActiveParent(ReceivingSession $session, ?int $userId, bool $unpack = false): array
-    {
-        return $this->confirmExpectedLinesFromQuery(
-            $session,
-            ReceivingScanLine::query()
-                ->where('receiving_session_id', $session->getKey())
-                ->where('line_role', 'child')
-                ->where('parent_epc_id', $session->active_parent_epc_id)
-                ->where('status', 'expected'),
-            $userId,
-            $unpack,
-            false,
-            'Skipped child line(s) under open quarantine hold.',
-        );
-    }
-
-    /**
-     * @param  Builder<ReceivingScanLine>  $query
-     * @return array{confirmed: int, skipped: int, blockers: list<string>}
-     */
-    private function confirmExpectedLinesFromQuery(
+    private function acceptRemainingFromScannedParents(
         ReceivingSession $session,
-        Builder $query,
         ?int $userId,
-        bool $unpack,
-        bool $autoConfirmChildren,
-        string $quarantineBlocker,
+        ?User $actor,
+        string $reason,
     ): array {
         $confirmed = 0;
-        $skipped = 0;
-        $blockers = [];
-        $hadQuarantineSkip = false;
 
-        $query
+        $confirmedParents = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('line_role', 'parent')
+            ->where('status', 'confirmed')
             ->with('epc')
             ->orderBy('id')
-            ->chunkById(500, function (Collection $lines) use (
+            ->get();
+
+        foreach ($confirmedParents as $line) {
+            if (! $line->epc instanceof Epc) {
+                continue;
+            }
+
+            $seeded = $this->seedReceivingAsnParentChildren->handle(
                 $session,
+                $line->epc,
                 $userId,
-                $unpack,
-                $autoConfirmChildren,
-                &$confirmed,
-                &$skipped,
-                &$blockers,
-                &$hadQuarantineSkip,
-            ): void {
-                $blockedEpcIds = $this->receivingGate->epcIdsBlockedByOpenHold(
-                    $lines->pluck('epc_id')->map(fn ($id): int => (int) $id)->all(),
-                );
-                $blockedSet = array_flip($blockedEpcIds);
+                autoConfirmChildren: true,
+            );
+            $confirmed += $seeded['confirmed_children'];
+        }
 
-                foreach ($lines as $line) {
-                    $epcId = (int) $line->epc_id;
-                    if (isset($blockedSet[$epcId])) {
-                        $skipped++;
-                        $hadQuarantineSkip = true;
+        $missingParentEpcIds = $this->unscannedExpectedParentEpcIds($session);
+        $blockers = [];
 
-                        continue;
-                    }
-
-                    $scan = $line->epc?->epc_uri ?? $line->scan_raw;
-                    if (! is_string($scan) || $scan === '') {
-                        $skipped++;
-
-                        continue;
-                    }
-
-                    $result = $this->confirmReceivingScan->handle(
-                        $session->fresh() ?? $session,
-                        $scan,
-                        $userId,
-                        $autoConfirmChildren,
-                        unpack: $unpack,
-                    );
-
-                    if ($result['ok'] ?? false) {
-                        $confirmed++;
-
-                        continue;
-                    }
-
-                    $skipped++;
-                    if (filled($result['message'] ?? null)) {
-                        $blockers[] = (string) $result['message'];
-                    }
-                }
-            });
-
-        if ($hadQuarantineSkip) {
-            $blockers[] = $quarantineBlocker;
+        if ($missingParentEpcIds !== []) {
+            $this->flagManualReceivingException->ensureShortageFromShortClose(
+                $session,
+                $missingParentEpcIds,
+                $actor,
+                $reason !== ''
+                    ? $reason
+                    : 'Accept remaining: unscanned expected parent container(s).',
+            );
+            $blockers[] = 'Unscanned expected parent container(s) recorded as shortage.';
         }
 
         return [
             'confirmed' => $confirmed,
-            'skipped' => $skipped,
+            'skipped' => count($missingParentEpcIds),
             'blockers' => $blockers,
         ];
+    }
+
+    /**
+     * @return array{confirmed: int, skipped: int, blockers: list<string>}
+     */
+    private function acceptRemainingOpenTote(ReceivingSession $session, ?int $userId): array
+    {
+        $parentEpc = Epc::query()->find($session->active_parent_epc_id);
+        if ($parentEpc === null) {
+            throw new DomainException('Active tote parent EPC not found.');
+        }
+
+        $seeded = $this->seedReceivingAsnParentChildren->handle(
+            $session,
+            $parentEpc,
+            $userId,
+            autoConfirmChildren: true,
+        );
+
+        return [
+            'confirmed' => $seeded['confirmed_children'],
+            'skipped' => 0,
+            'blockers' => [],
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function unscannedExpectedParentEpcIds(ReceivingSession $session): array
+    {
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('line_role', 'parent')
+            ->where('status', 'expected')
+            ->whereNotNull('epc_id')
+            ->pluck('epc_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{confirmed: int, skipped: int, blockers: list<string>}  $result
+     */
+    private function persistAcceptRemainingAudit(
+        ReceivingSession $session,
+        ?User $actor,
+        ?int $userId,
+        string $reason,
+        bool $sealAcknowledged,
+        array $result,
+    ): void {
+        $properties = [
+            'receiving_session_id' => $session->getKey(),
+            'session_kind' => $session->session_kind?->value,
+            'confirmed' => $result['confirmed'],
+            'skipped' => $result['skipped'],
+            'reason' => $reason !== '' ? $reason : null,
+            'seal_acknowledged' => $sealAcknowledged,
+            'actor_id' => $actor?->getKey() ?? $userId,
+        ];
+
+        Log::info('receiving.session.accept_remaining', $properties);
+
+        $logger = activity()
+            ->performedOn($session)
+            ->withProperties($properties);
+
+        if ($actor !== null) {
+            $logger->causedBy($actor);
+        }
+
+        $logger->log('receiving_accept_remaining');
     }
 
     private function assertCanAccessSessionSite(User $user, ReceivingSession $session): void

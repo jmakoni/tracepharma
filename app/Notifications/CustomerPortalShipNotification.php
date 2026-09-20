@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
-use App\Models\Tenant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -41,7 +40,7 @@ class CustomerPortalShipNotification extends Notification implements ShouldQueue
         $mail = (new MailMessage)
             ->subject('EPCIS / TI available for download')
             ->greeting('Hello '.$this->partnerName.',')
-            ->line("{$from} has shipped transaction information you can download from the customer portal.")
+            ->line("{$from} has sent transaction information you can download from the customer portal.")
             ->line('No account is required — use the signed link below (it expires).');
 
         if (filled($this->asnNumber)) {

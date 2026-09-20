@@ -21,6 +21,22 @@ class Login extends BaseLogin
 {
     use AuthenticatesWithAccountSecurity;
 
+    protected string $view = 'filament.app.pages.auth.login';
+
+    protected static string $layout = 'layouts.floor-guest';
+
+    /**
+     * @var array<string, string>
+     */
+    protected array $extraBodyAttributes = [
+        'class' => 'tp-floor-guest-login',
+    ];
+
+    public function hasLogo(): bool
+    {
+        return false;
+    }
+
     public function form(Schema $schema): Schema
     {
         if ($this->ssoOnly()) {
@@ -69,6 +85,14 @@ class Login extends BaseLogin
                 ->url(route('tenant.oidc.redirect'))
                 ->color('gray'),
         ];
+    }
+
+    protected function getAuthenticateFormAction(): Action
+    {
+        return parent::getAuthenticateFormAction()
+            ->extraAttributes([
+                'class' => 'tp-login-submit-btn btn btn-primary btn-block w-full',
+            ]);
     }
 
     protected function getSsoActionsSchema(): Component

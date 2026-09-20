@@ -8,6 +8,24 @@
                     </span>
                 </x-slot:context>
 
+                <x-slot:qty>
+                    @if ($this->parentEpcId && $this->openChildren !== [])
+                        @include('filament.app.partials.scanner-progress-stats', [
+                            'stats' => [
+                                [
+                                    'title' => 'Selected',
+                                    'value' => count(array_values(array_unique(array_map('intval', $this->selectedChildIds)))),
+                                ],
+                                [
+                                    'title' => 'Open',
+                                    'value' => count($this->openChildren),
+                                ],
+                            ],
+                            'class' => 'stats stats-horizontal bg-base-200 shadow',
+                        ])
+                    @endif
+                </x-slot:qty>
+
                 <x-slot:alert>
                     @if ($this->lastMessage)
                         <div
@@ -31,6 +49,7 @@
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                        x-on:keydown.enter.prevent="$wire.processScan()"
                         class="flex flex-col gap-3"
                     >
                         <div class="flex w-full flex-col gap-3">
@@ -41,7 +60,7 @@
                                 <input
                                     id="break-pack-scan-input"
                                     type="text"
-                                    wire:model="scan"
+                                    wire:model.live.blur="scan"
                                     x-ref="scanInput"
                                     autocomplete="off"
                                     class="tp-scan-input min-h-14 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-base shadow-sm outline-none transition duration-75 placeholder:text-gray-400 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/20 dark:border-white/20 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500"
@@ -118,6 +137,18 @@
                 </div>
             </div>
         @endif
+
+        <div class="flex flex-wrap gap-2">
+            <button
+                type="button"
+                class="btn btn-primary min-h-14"
+                wire:click="mountAction('confirmBreakPack')"
+                wire:loading.attr="disabled"
+                @disabled($this->selectedChildIds === [])
+            >
+                Confirm break & pack
+            </button>
+        </div>
     </x-scanner-desk>
 
     <x-filament-actions::modals />

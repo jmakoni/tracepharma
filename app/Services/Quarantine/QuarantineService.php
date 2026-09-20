@@ -255,7 +255,7 @@ final class QuarantineService
             ]);
         }
 
-        $this->releaseForCase($case, $actor, 'Cleared for distribution: '.$notes);
+        $this->releaseForCase($case, $actor, 'Hold cleared for distribution: '.$notes);
 
         $case->refresh();
 
@@ -278,7 +278,7 @@ final class QuarantineService
         $case->logActivity(
             ExceptionActivityKind::Resolution,
             $actor,
-            'Disposition: Cleared for distribution. '.$notes,
+            'Disposition: Hold cleared for distribution. '.$notes,
             ExceptionActivityVisibility::Internal,
             ['disposition' => ExceptionDisposition::Cleared->value],
         );

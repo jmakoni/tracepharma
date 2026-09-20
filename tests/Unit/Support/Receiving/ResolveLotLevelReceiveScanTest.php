@@ -53,6 +53,56 @@ class ResolveLotLevelReceiveScanTest extends TestCase
     }
 
     #[Test]
+    public function serialized_asn_with_expected_parent_rejects_gtin_lot_scan(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $session = $this->makeAsnSession();
+            $child = $this->makeExpectedLine($session, '123456', 'LOT-SER');
+            $this->makeExpectedParentLine($session);
+            $scan = '(01)'.$child->gtin14.'(10)LOT-SER';
+
+            try {
+                app(ResolveLotLevelReceiveScan::class)->handle($session, $scan);
+                $this->fail('Serialized ASN must require (00) or (01)+(21), not lot-only.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('Scan the 2D serial', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function transfer_receive_rejects_gtin_lot_scan(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $session = ReceivingSession::query()->create([
+                'session_kind' => ReceivingSessionKind::TransferReceive,
+                'status' => 'open',
+                'expected_parent_count' => 0,
+                'confirmed_parent_count' => 0,
+                'expected_child_count' => 0,
+                'confirmed_child_count' => 0,
+                'opened_at' => now(),
+            ]);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            try {
+                app(ResolveLotLevelReceiveScan::class)->handle($session, '(01)00301163001167(10)LOT1');
+                $this->fail('Transfer receive must require SSCC or SGTIN serial scan.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('Scan the 2D serial', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function a_single_expected_line_returns_that_epc_uri(): void
     {
         $this->initializeDemo2Tenant();
@@ -84,6 +134,29 @@ class ResolveLotLevelReceiveScanTest extends TestCase
         $this->sessionIds[] = (int) $session->getKey();
 
         return $session;
+    }
+
+    private function makeExpectedParentLine(ReceivingSession $session): Epc
+    {
+        do {
+            $serial = '0'.str_pad((string) random_int(0, 9_999_999_999), 10, '0', STR_PAD_LEFT);
+            $uri = 'urn:epc:id:sscc:030116.'.$serial;
+        } while (Epc::query()->where('epc_uri', $uri)->exists());
+
+        $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+        $this->epcIds[] = (int) $epc->getKey();
+
+        ReceivingScanLine::query()->create([
+            'receiving_session_id' => $session->getKey(),
+            'epc_id' => $epc->getKey(),
+            'parent_epc_id' => null,
+            'line_role' => 'parent',
+            'status' => 'expected',
+        ]);
+
+        $session->forceFill(['expected_parent_count' => 1])->save();
+
+        return $epc->fresh();
     }
 
     private function makeExpectedLine(ReceivingSession $session, string $itemRef, string $lot): Epc

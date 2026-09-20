@@ -5,8 +5,11 @@ namespace Tests\Feature\Vrs;
 use App\Enums\TenantProfile;
 use App\Models\AtpCredential;
 use App\Models\Epcis\Epc;
+use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Exceptions\ExceptionCase;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Tenant;
 use App\Models\Verification;
 use App\Services\Atp\FakeOciWalletClient;
@@ -93,6 +96,54 @@ class VrsResponderWebhookTest extends TestCase
             $this->assertNotNull($verification);
             $this->assertSame('responder', $verification->request_payload['source'] ?? null);
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function responder_fails_when_request_lot_does_not_match_ilmd(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+
+        try {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.LOT'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+            EpcIlmd::query()->create([
+                'epc_id' => $epc->getKey(),
+                'gtin14' => $epc->gtin14,
+                'lot_number' => 'ILMD-LOT',
+                'expiry_date' => '2027-06-30',
+            ]);
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                [
+                    'gtin14' => $epc->gtin14,
+                    'serial' => $epc->serial_number,
+                    'lot' => 'WRONG-LOT',
+                ],
+                ['X-Vrs-Api-Key' => self::RESPONDER_KEY],
+            );
+
+            $response->assertOk()
+                ->assertJson([
+                    'status' => 'failed',
+                    'found' => true,
+                    'gtin14' => $epc->gtin14,
+                    'serial' => $epc->serial_number,
+                ]);
+            $this->assertStringContainsString('lot', (string) $response->json('message'));
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+        } finally {
+            if (tenancy()->initialized && $this->epcIds !== []) {
+                EpcIlmd::query()->whereIn('epc_id', $this->epcIds)->delete();
+            }
             $this->cleanup();
         }
     }
@@ -319,7 +370,7 @@ class VrsResponderWebhookTest extends TestCase
     public function responder_rejects_tenant_a_key_against_tenant_b(): void
     {
         $tenantA = $this->initializeDemo2Tenant();
-        $tenantBId = (string) \Illuminate\Support\Str::uuid();
+        $tenantBId = (string) Str::uuid();
         $tenantB = Tenant::withoutEvents(fn () => Tenant::query()->create([
             'id' => $tenantBId,
             'name' => 'VRS Responder Tenant B',
@@ -397,7 +448,6 @@ class VrsResponderWebhookTest extends TestCase
             $this->cleanup();
         }
     }
-
 
     #[Test]
     public function oci_off_stores_skipped_without_wallet_call(): void
@@ -575,7 +625,6 @@ class VrsResponderWebhookTest extends TestCase
         }
     }
 
-
     private function sampleAtpVp(): string
     {
         $payload = rtrim(strtr(base64_encode(json_encode([
@@ -712,8 +761,8 @@ class VrsResponderWebhookTest extends TestCase
             }
 
             foreach ($this->caseIds as $caseId) {
-                \App\Models\Quarantine\QuarantineHold::query()->where('exception_id', $caseId)->delete();
-                \App\Models\Exceptions\ExceptionCase::query()->whereKey($caseId)->delete();
+                QuarantineHold::query()->where('exception_id', $caseId)->delete();
+                ExceptionCase::query()->whereKey($caseId)->delete();
             }
             $this->caseIds = [];
 
@@ -729,6 +778,7 @@ class VrsResponderWebhookTest extends TestCase
             }
 
             if ($this->epcIds !== []) {
+                EpcIlmd::query()->whereIn('epc_id', $this->epcIds)->delete();
                 Epc::query()->whereKey($this->epcIds)->delete();
                 $this->epcIds = [];
             }

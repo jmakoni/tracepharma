@@ -28,7 +28,7 @@ use Throwable;
  *   (new InstanceIdentifier + prepare-time filename; packing childEPCs filtered to open children).
  * - Other outbound: remint SBDH InstanceIdentifier + prepare-time filename only.
  *
- * Always runs GS1 EPCIS 1.2 / GS1 US R1.3 validation after persist (including portal).
+ * Always runs EPCIS schema 1.2 / GS1 US DSCSA guideline validation after persist (including portal).
  *
  * @return array{
  *     document: EpcisDocument,
@@ -244,7 +244,7 @@ class PrepareOutboundEpcisForRetransmit
         }
 
         throw new DomainException(
-            'Generated EPCIS failed GS1 EPCIS 1.2 / GS1 US R1.3 validation: '
+            'Generated EPCIS failed validation (EPCIS schema 1.2 XML / GS1 US DSCSA guideline R1.2 or R1.3): '
             .Str::limit(implode('; ', $summaries), 1800),
         );
     }

@@ -4,6 +4,8 @@ namespace App\Filament\App\Pages;
 
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
+use App\Enums\PackingSessionKind;
+use App\Filament\App\Pages\Concerns\InteractsWithPackingWorkstationSession;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
@@ -32,12 +34,18 @@ use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Support\Htmlable;
 use InvalidArgumentException;
+use Livewire\Attributes\Locked;
 use Throwable;
 use UnitEnum;
 
 class UnpackWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithPackingWorkstationSession;
     use ResolvesFloorSitePrincipal;
+
+    /** @var list<array{epc_id: int, label: string}> */
+    #[Locked]
+    public array $children = [];
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCubeTransparent;
 
@@ -84,6 +92,17 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithPackingWorkstationSession();
+        $this->restoreUnpackSessionState();
+    }
+
+    protected function packingSessionKind(): PackingSessionKind
+    {
+        return PackingSessionKind::Unpack;
+    }
+
     public function getSubheading(): string|Htmlable|null
     {
         return 'Break a case here. Build a mixed SSCC on Pack.';
@@ -126,7 +145,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             }
 
             if ($epcId === $this->parentEpcId) {
-                $this->flash('ok', 'Parent confirmed.');
+                $this->flash('warn', 'Parent locked — select children, then confirm unpack.');
                 $this->scan = '';
                 $this->dispatch('focus-scan');
 
@@ -164,8 +183,13 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
                 $selected,
                 fn (int $id): bool => $id !== $childId,
             ));
+            $this->removePackingStagedChild($childId);
             $this->flash('ok', 'Returned to container.');
         } else {
+            if (! $this->reservePackingChildByEpcId($childId)) {
+                return;
+            }
+
             $this->selectedChildIds = array_values(array_unique([
                 $childId,
                 ...array_values(array_filter($selected, fn (int $id): bool => $id !== $childId)),
@@ -445,6 +469,10 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
 
         $notification->send();
 
+        if ($closed > 0) {
+            $this->completePackingSession();
+        }
+
         $this->loadParent($parent, app(ShippableEpcsAtSite::class));
         $this->showPostUnpackHandoff = $closed > 0;
         $this->lastTone = $successTone;
@@ -455,6 +483,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
 
     public function clearParent(): void
     {
+        $this->clearPackingSessionState();
         $this->parentEpcId = null;
         $this->parentLabel = null;
         $this->openChildren = [];
@@ -550,12 +579,16 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
         if (array_key_exists($epcId, $this->openChildren)) {
             $selected = array_map('intval', $this->selectedChildIds);
             if (! in_array($epcId, $selected, true)) {
+                if (! $this->reservePackingChildByEpcId($epcId)) {
+                    return true;
+                }
+
                 $this->selectedChildIds = array_values(array_unique([
                     $epcId,
                     ...$selected,
                 ]));
             }
-            $this->flash('ok', 'Parent loaded — child selected for unpack.');
+            $this->flash('warn', 'Parent loaded — child selected for unpack.');
         }
 
         return true;
@@ -587,11 +620,29 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        if ($this->refuseIfEpcReserved($parent, (string) $parent->epc_uri, 'error')) {
+            return;
+        }
+
         $this->parentEpcId = (int) $parent->getKey();
         $this->parentLabel = $this->epcLabel($parent);
         $this->openChildren = app(UnpackReceivingHierarchy::class)->openChildOptionsForParent($parent);
         $this->openChildrenOrder = array_map('intval', array_keys($this->openChildren));
         $this->selectedChildIds = [];
+
+        $session = $this->ensurePackingSession($siteId);
+        $this->persistPackingSessionParent($session);
+        if (! $this->reservePackingParentScan($session, $parent)) {
+            $this->clearPackingSessionState();
+            $this->parentEpcId = null;
+            $this->parentLabel = null;
+            $this->openChildren = [];
+            $this->openChildrenOrder = [];
+            $this->selectedChildIds = [];
+            $this->hiddenChildrenCount = 0;
+
+            return;
+        }
 
         $totalOpen = (int) AggregationLink::query()
             ->where('parent_epc_id', $parent->getKey())
@@ -608,7 +659,7 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
             }
             $this->flash('warn', $message);
         } else {
-            $this->flash('ok', 'Parent loaded — select children to unpack.');
+            $this->flash('warn', 'Parent loaded — select children to unpack.');
         }
     }
 
@@ -619,6 +670,23 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
         }
 
         return Epc::query()->find($this->parentEpcId);
+    }
+
+    private function restoreUnpackSessionState(): void
+    {
+        $session = $this->packingSession();
+        if ($session === null) {
+            return;
+        }
+
+        if ($session->parent_epc_id !== null) {
+            $parent = Epc::query()->find($session->parent_epc_id);
+            if ($parent instanceof Epc) {
+                $this->loadParent($parent, app(ShippableEpcsAtSite::class));
+            }
+        }
+
+        $this->hydrateSelectedChildIdsFromPackingSession();
     }
 
     private function commissionSite(): ?Site

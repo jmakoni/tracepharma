@@ -4,6 +4,9 @@ namespace App\Support\Epcis\Validation;
 
 use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Models\Epcis\EpcisDocument;
+use App\Support\Epcis\DetectDscsaGuidelineRelease;
+use App\Support\Epcis\EpcisXmlReader;
+use App\Support\Gs1\Ndc;
 use App\Support\Receiving\CmoOwnProductInbound;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
@@ -71,6 +74,10 @@ final class EpcisCatalogBusinessRules
         $this->checkTimingSequenceAndReturns($ctx, $events, $findings);
         $this->checkMixedPackagingLevels($ctx, $events, $findings);
         $this->checkDropShipmentIndicator($ctx, $events, $findings);
+        $this->checkMixedDscsaGuidelineRelease($ctx, $findings);
+        $this->checkPartiallyDirectRequiresIndirectEpcs($ctx, $findings);
+        $this->checkEventTimeZoneRequired($ctx, $events, $findings);
+        $this->checkNdcIdentificationTypeCodeShape($ctx, $findings);
         $this->checkMissingBizTransaction($ctx, $findings);
         $this->checkFileSizeExceeded($ctx, $findings);
         $this->checkDuplicateTransmission($ctx, $findings);
@@ -1258,6 +1265,201 @@ final class EpcisCatalogBusinessRules
                 );
             }
         }
+    }
+
+    /**
+     * MIXED_DSCSA_GUIDELINE_RELEASE — R1.2-only and R1.3-only constructs in one file.
+     *
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkMixedDscsaGuidelineRelease(EpcisValidationContext $ctx, array &$findings): void
+    {
+        $detection = DetectDscsaGuidelineRelease::fromPath($ctx->payloadPath);
+        if (! $detection->mixed) {
+            return;
+        }
+
+        $this->add(
+            $findings,
+            $ctx,
+            'MIXED_DSCSA_GUIDELINE_RELEASE',
+            'Document mixes GS1 US DSCSA guideline R1.2-only and R1.3-only constructs. One document, one release.',
+        );
+    }
+
+    /**
+     * R1.3 PARTIALLY_DIRECT requires indirectPurchaseEPCs. Do not rewrite XML.
+     *
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkPartiallyDirectRequiresIndirectEpcs(EpcisValidationContext $ctx, array &$findings): void
+    {
+        $xml = $this->payloadXml($ctx);
+        if ($xml === null) {
+            return;
+        }
+
+        if (preg_match('/<(?:[\w.-]+:)?directPurchase\b[^>]*\bqualifier\s*=\s*"PARTIALLY_DIRECT"/i', $xml) !== 1) {
+            return;
+        }
+
+        if (preg_match('/<(?:[\w.-]+:)?indirectPurchaseEPCs\b/i', $xml) === 1) {
+            return;
+        }
+
+        $this->add(
+            $findings,
+            $ctx,
+            'MISSING_MANDATORY_FIELD',
+            'GS1 US DSCSA guideline R1.3: directPurchase qualifier PARTIALLY_DIRECT requires indirectPurchaseEPCs.',
+        );
+    }
+
+    /**
+     * eventTimeZoneOffset is required when eventTime is present.
+     *
+     * @param  Collection<int, mixed>  $events
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkEventTimeZoneRequired(EpcisValidationContext $ctx, Collection $events, array &$findings): void
+    {
+        foreach ($events as $event) {
+            if ($event->event_time === null) {
+                continue;
+            }
+
+            if (filled($event->event_timezone_offset)) {
+                continue;
+            }
+
+            $this->add(
+                $findings,
+                $ctx,
+                'MISSING_MANDATORY_FIELD',
+                'eventTimeZoneOffset is required on events that have eventTime.',
+                (int) $event->getKey(),
+            );
+        }
+    }
+
+    private function payloadXml(EpcisValidationContext $ctx): ?string
+    {
+        $path = $ctx->payloadPath;
+        if ($path === null || $path === '' || ! is_file($path) || ! is_readable($path)) {
+            return null;
+        }
+
+        $xml = @file_get_contents($path);
+
+        return $xml === false ? null : $xml;
+    }
+
+    /**
+     * INVALID_NDC_IDENTIFICATION_SHAPE — TypeCode must match identifier shape.
+     *
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function checkNdcIdentificationTypeCodeShape(EpcisValidationContext $ctx, array &$findings): void
+    {
+        foreach ($this->documentProductClassIdentifications($ctx) as $row) {
+            $type = strtoupper($row['typeCode']);
+            $value = $row['identification'];
+            $mismatch = match ($type) {
+                'FDA_NDC_11' => ! Ndc::isCmsNdc11($value),
+                'US_FDA_NDC' => ! Ndc::isFdaListingDashed($value),
+                default => false,
+            };
+            if (! $mismatch) {
+                continue;
+            }
+
+            $this->add(
+                $findings,
+                $ctx,
+                'INVALID_NDC_IDENTIFICATION_SHAPE',
+                "additionalTradeItemIdentification '{$value}' does not match TypeCode {$type}.",
+            );
+        }
+    }
+
+    /**
+     * @return list<array{typeCode: string, identification: string}>
+     */
+    private function documentProductClassIdentifications(EpcisValidationContext $ctx): array
+    {
+        $document = $ctx->document;
+        $generation = (int) ($document->ingest_generation ?? 1);
+        $rows = [];
+
+        if ($document->getKey() !== null && Schema::hasTable('epcis_document_product_classes')) {
+            $persisted = DB::table('epcis_document_product_classes')
+                ->where('document_id', $document->getKey())
+                ->where('ingest_generation', $generation)
+                ->get(['ndc_raw', 'attributes_json']);
+
+            foreach ($persisted as $row) {
+                $extracted = $this->identificationFromProductClassAttributes(
+                    is_string($row->attributes_json) ? json_decode($row->attributes_json, true) : null,
+                    is_string($row->ndc_raw) ? $row->ndc_raw : null,
+                );
+                if ($extracted !== null) {
+                    $rows[] = $extracted;
+                }
+            }
+
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
+        if ($ctx->payloadPath === null || $ctx->payloadPath === '' || ! is_file($ctx->payloadPath)) {
+            return [];
+        }
+
+        try {
+            $classes = app(EpcisXmlReader::class)->parseHeader($ctx->payloadPath)['product_classes'] ?? [];
+        } catch (\Throwable) {
+            return [];
+        }
+
+        foreach ($classes as $class) {
+            if (! is_array($class)) {
+                continue;
+            }
+            $extracted = $this->identificationFromProductClassAttributes(
+                is_array($class['attributes_json'] ?? null) ? $class['attributes_json'] : null,
+                isset($class['ndc_raw']) && is_string($class['ndc_raw']) ? $class['ndc_raw'] : null,
+            );
+            if ($extracted !== null) {
+                $rows[] = $extracted;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $attrs
+     * @return array{typeCode: string, identification: string}|null
+     */
+    private function identificationFromProductClassAttributes(?array $attrs, ?string $ndcRaw): ?array
+    {
+        $attrs ??= [];
+        $typeCode = $attrs['urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode']
+            ?? $attrs['additionalTradeItemIdentificationTypeCode']
+            ?? null;
+        $identification = $attrs['urn:epcglobal:cbv:mda#additionalTradeItemIdentification']
+            ?? $attrs['additionalTradeItemIdentification']
+            ?? $ndcRaw;
+
+        if (! filled($typeCode) || ! filled($identification)) {
+            return null;
+        }
+
+        return [
+            'typeCode' => (string) $typeCode,
+            'identification' => (string) $identification,
+        ];
     }
 
     /**

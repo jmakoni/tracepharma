@@ -266,6 +266,19 @@ final class ValidateEpcis12Document
             );
         }
 
+        if (filled($bizStep)
+            && ! $ctx->r13Hard
+            && EpcisCbvAllowlist::isR13OnlyBizStep((string) $bizStep)
+        ) {
+            $this->addFinding(
+                $findings,
+                $ctx,
+                'INVALID_BIZSTEP',
+                'Event has R1.3-only bizStep on an R1.2 document: '.$bizStep,
+                $eventId,
+            );
+        }
+
         if (filled($disposition) && ! EpcisCbvAllowlist::isAllowedDisposition($disposition)) {
             $this->addFinding(
                 $findings,
@@ -585,6 +598,10 @@ final class ValidateEpcis12Document
                     'epc_ilmd.expiry_date',
                 ]);
 
+            if (Schema::hasColumn('epc_ilmd', 'extra_json')) {
+                $ilmdQuery->addSelect('epc_ilmd.extra_json');
+            }
+
             if (Schema::hasColumn('epc_ilmd', 'gtin14')) {
                 $ilmdQuery->addSelect('epc_ilmd.gtin14');
             } else {
@@ -608,7 +625,7 @@ final class ValidateEpcis12Document
                 );
             }
 
-            if (blank($row->expiry_date)) {
+            if (blank($row->expiry_date) && ! $this->ilmdExpiryRedacted($row)) {
                 $this->addFinding(
                     $findings,
                     $ctx,
@@ -695,6 +712,17 @@ final class ValidateEpcis12Document
         }
 
         return $findings;
+    }
+
+    private function ilmdExpiryRedacted(object $row): bool
+    {
+        $extra = $row->extra_json ?? null;
+        if (is_string($extra) && $extra !== '') {
+            $decoded = json_decode($extra, true);
+            $extra = is_array($decoded) ? $decoded : null;
+        }
+
+        return is_array($extra) && ($extra['expiry_redacted'] ?? false) === true;
     }
 
     /**

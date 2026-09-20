@@ -182,7 +182,7 @@
                                         @endphp
                                         @if ($ssccTraceScan)
                                             <a
-                                                href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $ssccTraceScan]) }}"
+                                                href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $ssccTraceScan], isAbsolute: false) }}"
                                                 class="tp-trace-link"
                                             >{{ $label->sscc_18 }}</a>
                                         @else
@@ -247,7 +247,7 @@
                                             @endphp
                                             @if ($traceScan)
                                                 <a
-                                                    href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $traceScan]) }}"
+                                                    href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $traceScan], isAbsolute: false) }}"
                                                     class="tp-trace-link"
                                                 >
                                                     Open in Trace

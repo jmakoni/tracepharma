@@ -70,6 +70,7 @@
                             'badge-success' => $this->statusBadgeColor() === 'success',
                             'badge-info' => $this->statusBadgeColor() === 'info',
                             'badge-warning' => $this->statusBadgeColor() === 'warning',
+                            'badge-error' => $this->statusBadgeColor() === 'danger',
                             'badge-outline' => $this->statusBadgeColor() === 'outline',
                             'badge-ghost' => $this->statusBadgeColor() === 'gray',
                         ])>
@@ -90,29 +91,36 @@
                     </div>
                 @endif
 
-                <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
-                    <div class="stat">
-                        <div class="stat-title">Confirmed</div>
-                        <div class="stat-value text-2xl">
-                            {{ (int) $this->getRecord()->confirmed_count }}
+                @if ($this->isVoided())
+                    <div class="alert alert-warning" role="status" data-testid="voided-shipment">
+                        <div class="text-sm">
+                            <span class="font-semibold">Shipment voided.</span>
+                            Units stay on hold until a supervisor releases the voided-shipment quarantine.
                         </div>
                     </div>
-                    @if ((int) $this->getRecord()->expected_count > 0)
-                        <div class="stat">
-                            <div class="stat-title">Expected</div>
-                            <div class="stat-value text-2xl">
-                                {{ (int) $this->getRecord()->expected_count }}
-                            </div>
-                            @if ($this->getRecord()->split_declared)
-                                <div class="stat-desc">Split declared</div>
-                            @elseif ((int) $this->getRecord()->confirmed_count < (int) $this->getRecord()->expected_count)
-                                <div class="stat-desc">
-                                    Residual {{ (int) $this->getRecord()->expected_count - (int) $this->getRecord()->confirmed_count }}
-                                </div>
-                            @endif
-                        </div>
-                    @endif
-                </div>
+                @endif
+
+                @include('filament.app.partials.scanner-progress-stats', [
+                    'stats' => array_values(array_filter([
+                        [
+                            'title' => 'Confirmed',
+                            'value' => (int) $this->getRecord()->confirmed_count,
+                        ],
+                        (int) $this->getRecord()->expected_count > 0
+                            ? [
+                                'title' => 'Expected',
+                                'value' => (int) $this->getRecord()->expected_count,
+                                'desc' => $this->getRecord()->split_declared
+                                    ? 'Split declared'
+                                    : (
+                                        (int) $this->getRecord()->confirmed_count < (int) $this->getRecord()->expected_count
+                                            ? 'Residual '.((int) $this->getRecord()->expected_count - (int) $this->getRecord()->confirmed_count)
+                                            : null
+                                    ),
+                            ]
+                            : null,
+                    ])),
+                ])
 
                 @if ($this->isCompleted())
                     <div class="{{ $this->shipCompletePanelClass() }}">
@@ -148,6 +156,16 @@
                                     Use <strong>Download EPCIS</strong> in the page header to save the file.
                                 </span>
                             </div>
+                        @endif
+                        @if ($this->outboundShippingSession()->canVoid())
+                            <button
+                                type="button"
+                                class="btn btn-warning min-h-14 mt-3"
+                                wire:click="mountAction('voidShipOrder')"
+                                wire:loading.attr="disabled"
+                            >
+                                Void shipment
+                            </button>
                         @endif
                     </div>
                 @elseif ($this->getRecord()->status === 'cancelled')

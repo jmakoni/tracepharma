@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Epcis;
 
+use App\Enums\EpcisGuideline;
 use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
 use DomainException;
 
@@ -158,6 +159,7 @@ final class ShippingTiTsFragments
         string $destOwningSgln,
         string $destLocationSgln,
         ?string $directPurchaseStatement = null,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
     ): string {
         // Core EPCIS 1.2 ObjectEventExtensionType allows sourceList/destinationList
         // then optional nested <extension> (##local only). GS1 US HC directPurchase
@@ -175,18 +177,40 @@ final class ShippingTiTsFragments
             "        </extension>\n";
 
         if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
-            $xml .= self::directPurchaseXml($directPurchaseStatement);
+            $xml .= self::directPurchaseXml($directPurchaseStatement, $guideline);
         }
 
         return $xml;
     }
 
-    public static function directPurchaseXml(string $statement): string
+    public static function directPurchaseXml(string $statement, EpcisGuideline $guideline = EpcisGuideline::R13): string
     {
+        if ($guideline === EpcisGuideline::R12) {
+            return "        <gs1ushc:directPurchase>true</gs1ushc:directPurchase>\n";
+        }
+
         return
             "        <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
             '          <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
             "        </gs1ushc:directPurchase>\n";
+    }
+
+    public static function transactionDateXml(string $date, string $indent = '        '): string
+    {
+        if ($date === '') {
+            return '';
+        }
+
+        return $indent.'<gs1ushc:transactionDate>'.self::e($date)."</gs1ushc:transactionDate>\n";
+    }
+
+    public static function guidelineVersionXml(EpcisGuideline $guideline, string $indent = '    '): string
+    {
+        if ($guideline !== EpcisGuideline::R13) {
+            return '';
+        }
+
+        return $indent."<gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>\n";
     }
 
     /**
@@ -225,8 +249,15 @@ final class ShippingTiTsFragments
      *
      * @param  non-empty-string  $indent
      */
-    public static function dropShipmentIndicatorXml(bool $isDropShipment, string $indent = '    '): string
-    {
+    public static function dropShipmentIndicatorXml(
+        bool $isDropShipment,
+        string $indent = '    ',
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+    ): string {
+        if ($guideline !== EpcisGuideline::R13) {
+            return '';
+        }
+
         $value = $isDropShipment ? 'true' : 'false';
 
         return $indent.'<gs1ushc:dropShipment>'.$value."</gs1ushc:dropShipment>\n";
@@ -273,10 +304,19 @@ final class ShippingTiTsFragments
      * Fail closed when a drop-ship ship order's payload lacks the indicator
      * inbound validation would accept (stripos for `dropShipment` in XML or JSON).
      */
-    public static function assertDropShipmentEmitted(bool $isDropShipment, string $payload): void
-    {
+    public static function assertDropShipmentEmitted(
+        bool $isDropShipment,
+        string $payload,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+    ): void {
         if (! $isDropShipment) {
             return;
+        }
+
+        if ($guideline !== EpcisGuideline::R13) {
+            throw new DomainException(
+                'Drop shipment requires GS1 US DSCSA guideline R1.3 on the trading partner.',
+            );
         }
 
         if (stripos($payload, 'dropShipment') === false) {
@@ -296,15 +336,18 @@ final class ShippingTiTsFragments
         string $receiverGln,
         string $instanceId,
         string $creationDate,
+        EpcisGuideline $guideline = EpcisGuideline::R12,
     ): string {
+        $authority = $guideline->sbdhAuthority();
+
         return
             "    <sbdh:StandardBusinessDocumentHeader>\n".
             "      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>\n".
             "      <sbdh:Sender>\n".
-            '        <sbdh:Identifier Authority="GLN">'.self::e($senderGln)."</sbdh:Identifier>\n".
+            '        <sbdh:Identifier Authority="'.$authority.'">'.self::e($senderGln)."</sbdh:Identifier>\n".
             "      </sbdh:Sender>\n".
             "      <sbdh:Receiver>\n".
-            '        <sbdh:Identifier Authority="GLN">'.self::e($receiverGln)."</sbdh:Identifier>\n".
+            '        <sbdh:Identifier Authority="'.$authority.'">'.self::e($receiverGln)."</sbdh:Identifier>\n".
             "      </sbdh:Receiver>\n".
             "      <sbdh:DocumentIdentification>\n".
             "        <sbdh:Standard>EPCglobal</sbdh:Standard>\n".

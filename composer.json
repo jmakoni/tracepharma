@@ -75,7 +75,8 @@
             "vendor/filament/actions/src/Concerns/HasLabel.php"
         ],
         "files": [
-            "app/Filament/Overrides/Actions/HasLabel.php"
+            "app/Filament/Overrides/Actions/HasLabel.php",
+            "app/Support/Floor/helpers.php"
         ]
     },
     "autoload-dev": {

@@ -5,6 +5,8 @@ namespace App\Filament\App\Pages;
 use App\Actions\Disposition\EmitDecommissioningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Enums\DecommissionReason;
+use App\Filament\App\Pages\Concerns\InteractsWithDispositionWorkstationSession;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -17,18 +19,16 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Disposition\AssertDecommissionMassApproval;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Receiving\EligibleReceiveSites;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
-use App\Support\Shipping\EpcOnOpenShippingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
-use App\Support\Transferring\EpcOnOpenTransferringSession;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -43,6 +43,7 @@ use UnitEnum;
 
 class DecommissionWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithDispositionWorkstationSession;
     use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedNoSymbol;
@@ -76,6 +77,16 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithDispositionWorkstationSession();
+    }
+
+    protected function dispositionBizStep(): string
+    {
+        return 'decommissioning';
+    }
+
     public function getSubheading(): string|Htmlable|null
     {
         return 'Scan on-hand EPCs at the selected site, choose a disposition reason, then author destroy/retire ObjectEvents.';
@@ -86,9 +97,6 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
         EpcCustodyGate $custodyGate,
         ShippableEpcsAtSite $shippable,
         ReceivingGate $receivingGate,
-        EpcOnOpenShippingSession $epcOnOpenShippingSession,
-        EpcOnOpenTransferringSession $epcOnOpenTransferringSession,
-        EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): void {
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
@@ -156,30 +164,6 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if ($epcOnOpenShippingSession->exists($epc)) {
-            $this->flash('error', 'Already confirmed on an open ship order.');
-            $this->scan = '';
-            $this->dispatch('focus-scan');
-
-            return;
-        }
-
-        if ($epcOnOpenTransferringSession->exists($epc)) {
-            $this->flash('error', 'Already confirmed on an open or in-transit transfer.');
-            $this->scan = '';
-            $this->dispatch('focus-scan');
-
-            return;
-        }
-
-        if ($epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-            $this->flash('error', 'Already confirmed on an open receive session.');
-            $this->scan = '';
-            $this->dispatch('focus-scan');
-
-            return;
-        }
-
         try {
             $custodyGate->assertOperableFor($epc, 'decommissioning', $principalId);
         } catch (InvalidArgumentException $exception) {
@@ -190,27 +174,30 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        $this->confirmed[] = [
-            'epc_id' => $epcId,
-            'label' => $this->epcLabel($epc),
-        ];
+        if ($this->refuseIfEpcReserved($epc, $scan)) {
+            return;
+        }
+
+        $session = $this->ensureDispositionSession($siteId);
+        if (! $this->stageDispositionScan($session, $scan, $epc)) {
+            return;
+        }
+
+        $this->hydrateDispositionListFromDatabase();
 
         $this->scan = '';
-        $this->flash('ok', 'Added '.$this->epcLabel($epc));
+        $this->flash('warn', 'Staged '.$this->epcLabel($epc).' — confirm to decommission.');
         $this->dispatch('focus-scan');
     }
 
     public function removeConfirmed(int $epcId): void
     {
-        $this->confirmed = array_values(array_filter(
-            $this->confirmed,
-            fn (array $row): bool => (int) $row['epc_id'] !== $epcId,
-        ));
+        $this->removeDispositionStaged($epcId);
     }
 
     public function clearConfirmed(): void
     {
-        $this->confirmed = [];
+        $this->clearDispositionSession();
         $this->flash('ok', 'Cleared list.');
         $this->dispatch('focus-scan');
     }
@@ -341,9 +328,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                             $siteId,
                             $shippable,
                             $receivingGate,
-                            app(EpcOnOpenShippingSession::class),
-                            app(EpcOnOpenTransferringSession::class),
-                            app(EpcOnAnotherOpenReceivingSession::class),
+                            app(EpcExclusiveSessionGate::class),
                         );
                         if ($eligibilityError !== null) {
                             $this->flash('error', $eligibilityError);
@@ -362,6 +347,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                                 'dispatch' => true,
                                 'reason' => $reason,
                                 'approver_user_id' => $approverUserId,
+                                'disposition_session' => $this->dispositionSession(),
                             ]);
                         } catch (InvalidArgumentException|LockTimeoutException|Throwable $exception) {
                             $this->flash('error', $exception->getMessage());
@@ -382,6 +368,7 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                             $message .= ' '.$result['drift_notes'];
                         }
 
+                        $this->completeDispositionSession();
                         $this->confirmed = [];
                         $this->decommissionReason = null;
 
@@ -451,10 +438,12 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
         int $siteId,
         ShippableEpcsAtSite $shippable,
         ReceivingGate $receivingGate,
-        EpcOnOpenShippingSession $epcOnOpenShippingSession,
-        EpcOnOpenTransferringSession $epcOnOpenTransferringSession,
-        EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        EpcExclusiveSessionGate $exclusiveGate,
     ): ?string {
+        $except = $this->dispositionSession() !== null
+            ? ExclusiveSessionContext::forDisposition($this->dispositionSession())
+            : ExclusiveSessionContext::none();
+
         foreach ($epcIds as $epcId) {
             if (! $shippable->contains($siteId, $epcId, $this->floorPrincipalId($siteId))) {
                 return 'An EPC is no longer on hand at the selected site. Remove it and rescan.';
@@ -469,16 +458,8 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                 return 'An EPC is quarantined and cannot be decommissioned.';
             }
 
-            if ($epcOnOpenShippingSession->exists($epc)) {
-                return 'An EPC is already confirmed on an open ship order.';
-            }
-
-            if ($epcOnOpenTransferringSession->exists($epc)) {
-                return 'An EPC is already confirmed on an open or in-transit transfer.';
-            }
-
-            if ($epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-                return 'An EPC is already confirmed on an open receive session.';
+            if ($exclusiveGate->check($epc, $except) !== null) {
+                return 'An EPC is reserved on another open work session.';
             }
         }
 

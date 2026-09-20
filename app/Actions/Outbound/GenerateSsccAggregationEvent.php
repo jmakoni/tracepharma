@@ -6,8 +6,12 @@ namespace App\Actions\Outbound;
 
 use App\Domain\Epcis\Enums\EpcisAction;
 use App\Enums\OutboundEpcisAggregationMode;
+use App\Models\Site;
 use App\Models\SsccLabel;
 use App\Services\Epcis\Outbound\AggregationEventChildrenRenderer;
+use App\Support\Epcis\AuthoredEventTimezone;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 final class GenerateSsccAggregationEvent
 {
@@ -20,7 +24,7 @@ final class GenerateSsccAggregationEvent
     /**
      * @param  list<string>  $childEpcs
      * @param  list<array{epcClass?: string, epc_class?: string, quantity?: float|int, uom?: ?string}>  $quantityChildren
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}|null  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}|null  $settings
      */
     public function execute(
         SsccLabel $label,
@@ -47,6 +51,14 @@ final class GenerateSsccAggregationEvent
         );
 
         $sglnUrn = htmlspecialchars($this->resolveSglnUrn($settings, $siteId), ENT_XML1);
+        $site = $siteId !== null ? Site::query()->find($siteId) : null;
+        $timezoneOffset = htmlspecialchars(
+            AuthoredEventTimezone::offsetForSite(
+                $site instanceof Site ? $site : null,
+                $this->resolveEventTimeCarbon($settings),
+            ),
+            ENT_XML1,
+        );
         $eventTime = htmlspecialchars($this->resolveEventTimeIso($settings), ENT_XML1);
         $parent = htmlspecialchars($candidate->parentId, ENT_XML1);
         $bizStepXml = htmlspecialchars($candidate->bizStep, ENT_XML1);
@@ -60,7 +72,7 @@ final class GenerateSsccAggregationEvent
         return <<<XML
             <AggregationEvent>
                 <eventTime>{$eventTime}</eventTime>
-                <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>
+                <eventTimeZoneOffset>{$timezoneOffset}</eventTimeZoneOffset>
                 <parentID>{$parent}</parentID>
 {$childrenXml}                <action>ADD</action>
                 <bizStep>{$bizStepXml}</bizStep>
@@ -153,7 +165,7 @@ XML;
     }
 
     /**
-     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: \Carbon\CarbonInterface|string}  $settings
+     * @param  array{biz_step?: string, disposition?: string, sgln_urn?: string, gln?: string, event_time?: CarbonInterface|string}  $settings
      */
     private function resolveSglnUrn(array $settings, ?int $siteId): string
     {
@@ -167,16 +179,24 @@ XML;
     }
 
     /**
-     * @param  array{event_time?: \Carbon\CarbonInterface|string}  $settings
+     * @param  array{event_time?: CarbonInterface|string}  $settings
      */
     private function resolveEventTimeIso(array $settings): string
     {
+        return $this->resolveEventTimeCarbon($settings)->toIso8601String();
+    }
+
+    /**
+     * @param  array{event_time?: CarbonInterface|string}  $settings
+     */
+    private function resolveEventTimeCarbon(array $settings): Carbon
+    {
         $eventTime = $settings['event_time'] ?? now();
 
-        if ($eventTime instanceof \Carbon\CarbonInterface) {
-            return $eventTime->toIso8601String();
+        if ($eventTime instanceof CarbonInterface) {
+            return Carbon::instance($eventTime);
         }
 
-        return \Illuminate\Support\Carbon::parse($eventTime)->toIso8601String();
+        return Carbon::parse($eventTime);
     }
 }

@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\DB;
  *
  * A recorded SGLN survives only when it parses and encodes the row's own GLN —
  * which is how a partner's SGLN, typed in from their EPCIS, is kept. Organization
- * facilities are then derived from the organization GS1 Company Prefix, a sibling
- * facility prefix, or (last resort) that prefix's length so a GLN always yields
- * an SGLN on save. Partner locations and devices are not guessed.
+ * facilities are then derived from the organization GS1 Company Prefix or a sibling
+ * facility prefix. A GLN that sits under neither is left without an SGLN — we do
+ * not guess the split from prefix length. Partner locations and devices are not guessed.
  *
  * @see SglnResolution
  */
@@ -70,10 +70,6 @@ trait DerivesSgln
                 $current !== null ? [$current] : [],
                 $orgPrefix,
                 $siblingPrefixes,
-            ) ?? SglnResolution::fromPrefixLength(
-                $gln,
-                $orgPrefix,
-                SglnResolution::extensionOf($current, $gln),
             ));
 
             return;
@@ -87,13 +83,7 @@ trait DerivesSgln
             $gln,
             $current !== null ? [$current] : [],
             $encodingPrefix,
-        ) ?? ($this instanceof Site && $encodingPrefix !== null
-            ? SglnResolution::fromPrefixLength(
-                $gln,
-                $encodingPrefix,
-                SglnResolution::extensionOf($current, $gln),
-            )
-            : null));
+        ));
     }
 
     /**

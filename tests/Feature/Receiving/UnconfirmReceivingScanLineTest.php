@@ -4,7 +4,6 @@ namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Receiving\ConfirmReceivingScan;
-use App\Actions\Receiving\CopyConfirmedReceivingScansToSession;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Receiving\OpenTransferReceivingSession;
@@ -13,6 +12,7 @@ use App\Actions\Transferring\CompleteTransferringSession;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\OpenTransferringSession;
 use App\Enums\TenantProfile;
+use App\Enums\TenantRole;
 use App\Filament\App\Resources\ReceivingSessions\Pages\ViewReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Models\Epcis\Epc;
@@ -25,7 +25,10 @@ use App\Models\Tenant;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
+use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Gs1\Gtin;
+use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\TenantSettings;
 use DomainException;
 use Filament\Actions\Testing\TestAction;
@@ -34,10 +37,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class UnconfirmReceivingScanLineTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
+
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -89,7 +95,7 @@ class UnconfirmReceivingScanLineTest extends TestCase
             $document = $this->ingestMinimalFixture();
             $this->documentId = (int) $document->getKey();
 
-            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $session = $this->openAsnSessionFromDocument($document);
             $parentLine = ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->id)
                 ->where('line_role', 'parent')
@@ -136,12 +142,15 @@ class UnconfirmReceivingScanLineTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
+            TenantSettings::forTenant(tenant())->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            tenant()->save();
+
             $document = $this->ingestMinimalFixture();
             $this->documentId = (int) $document->getKey();
 
-            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $session = $this->openAsnSessionFromDocument($document);
 
-            $unexpected = Epc::query()->create(Epc::materializeAttributesFromUri(self::UNEXPECTED_URI));
+            $unexpected = $this->epcFromUri(self::UNEXPECTED_URI);
             $this->unexpectedEpcId = (int) $unexpected->getKey();
 
             $result = app(ConfirmReceivingScan::class)->handle($session, self::UNEXPECTED_URI);
@@ -242,15 +251,21 @@ class UnconfirmReceivingScanLineTest extends TestCase
         $tenant = $this->initializeDemo2Tenant();
 
         try {
-            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $settings = TenantSettings::forTenant($tenant);
+            $settings->setRequireTiForScanFirst(false);
+            $settings->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
             $tenant->save();
+
+            $siteId = $this->organizationReceiveSiteId();
+            $site = Site::query()->findOrFail($siteId);
 
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.UC'.$suffix;
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->unexpectedEpcId = (int) $epc->getKey();
+            $this->receiveAtSite($site, $epc);
 
-            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $session = app(OpenScanFirstReceivingSession::class)->handle($siteId);
             $this->documentId = null;
             $this->receivingSessionIds[] = (int) $session->getKey();
 
@@ -298,15 +313,21 @@ class UnconfirmReceivingScanLineTest extends TestCase
             $document = $this->ingestMinimalFixture();
             $this->documentId = (int) $document->getKey();
 
-            $scanFirst = app(OpenScanFirstReceivingSession::class)->handle();
-            $this->sessionId = (int) $scanFirst->getKey();
+            $siteId = $this->organizationReceiveSiteId();
+            $site = Site::query()->findOrFail($siteId);
+            $sscc = $this->epcFromUri(self::SSCC_URI);
+            $this->receiveAtSite($site, $sscc);
 
-            app(ConfirmReceivingScan::class)->handle(
+            $scanFirst = app(OpenScanFirstReceivingSession::class)->handle($siteId);
+            $this->receivingSessionIds[] = (int) $scanFirst->getKey();
+
+            $confirm = app(ConfirmReceivingScan::class)->handle(
                 $scanFirst,
                 self::SSCC_URI,
                 userId: null,
                 autoConfirmChildren: false,
             );
+            $this->assertTrue($confirm['ok'], $confirm['message'] ?? '');
 
             $parentLine = ReceivingScanLine::query()
                 ->where('receiving_session_id', $scanFirst->getKey())
@@ -342,7 +363,7 @@ class UnconfirmReceivingScanLineTest extends TestCase
             $document = $this->ingestMinimalFixture();
             $this->documentId = (int) $document->getKey();
 
-            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $session = $this->openAsnSessionFromDocument($document);
             $parentLine = ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->id)
                 ->where('line_role', 'parent')
@@ -372,17 +393,20 @@ class UnconfirmReceivingScanLineTest extends TestCase
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
 
             $user = User::factory()->create([
                 'email' => 'unconfirm-ui-'.uniqid('', true).'@example.test',
             ]);
             $this->userIds[] = (int) $user->getKey();
-            $this->actingAs($user);
+            $user->assignRole(TenantRole::Owner->value);
 
             $document = $this->ingestMinimalFixture();
             $this->documentId = (int) $document->getKey();
 
-            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $session = $this->openAsnSessionFromDocument($document);
+            $user->syncSites([(int) $session->site_id]);
+            $this->actingAs($user);
             app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, autoConfirmChildren: false);
 
             $parentLine = ReceivingScanLine::query()
@@ -544,8 +568,41 @@ class UnconfirmReceivingScanLineTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+        $this->prepareDemo2ReceivingState([self::SSCC_URI, self::SGTIN_URI]);
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
+    }
+
+    private function openAsnSessionFromDocument(EpcisDocument $document): ReceivingSession
+    {
+        $siteId = $this->defaultReceiveSiteId();
+        $this->assertNotNull($siteId, 'Demo2 needs an eligible default receive site with GLN.');
+
+        return app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
+    }
+
+    private function defaultReceiveSiteId(): ?int
+    {
+        $site = EligibleReceiveSites::forOrganization()->first();
+
+        return $site !== null ? (int) $site->getKey() : null;
+    }
+
+    private function organizationReceiveSiteId(): int
+    {
+        $siteId = $this->defaultReceiveSiteId();
+        $this->assertNotNull($siteId, 'Demo2 needs an eligible organization receive site with GLN.');
+
+        return $siteId;
+    }
+
+    private function epcFromUri(string $uri): Epc
+    {
+        $attrs = Epc::materializeAttributesFromUri($uri);
+        $existing = Epc::query()->where('epc_uri', $attrs['epc_uri'])->first();
+
+        return $existing instanceof Epc ? $existing : Epc::query()->create($attrs);
     }
 
     private function cleanup(): void

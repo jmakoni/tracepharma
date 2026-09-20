@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Shipping;
 
+use App\Enums\EpcisGuideline;
 use App\Enums\TenantProfile;
 use App\Models\Product;
 use App\Models\Tenant;
@@ -87,7 +88,26 @@ class ShippingEpcisTradeItemIdentificationTest extends TestCase
         }
     }
 
-    private function epcClassVocabularyXml(string $gtin14): string
+    #[Test]
+    public function r13_authored_epcclass_emits_us_fda_ndc_dashed_not_fda_ndc_11(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $gtin14 = '00301164023161';
+            $this->createProduct($gtin14, ndc11: '00116402316', packageNdc: '0116-4023-16');
+
+            $xml = $this->epcClassVocabularyXml($gtin14, EpcisGuideline::R13);
+
+            $this->assertStringContainsString('US_FDA_NDC', $xml);
+            $this->assertStringContainsString('>0116-4023-16</attribute>', $xml);
+            $this->assertStringNotContainsString('FDA_NDC_11', $xml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    private function epcClassVocabularyXml(string $gtin14, EpcisGuideline $guideline = EpcisGuideline::R12): string
     {
         $method = new ReflectionMethod(BuildFullHistoryShippingEpcisXml::class, 'epcClassVocabularyXml');
 
@@ -101,6 +121,9 @@ class ShippingEpcisTradeItemIdentificationTest extends TestCase
         return (string) $method->invoke(
             app(BuildFullHistoryShippingEpcisXml::class),
             [$parsed['company_prefix'].'.'.$parsed['indicator_digit'].$parsed['item_reference'] => $parsed],
+            null,
+            null,
+            $guideline,
         );
     }
 

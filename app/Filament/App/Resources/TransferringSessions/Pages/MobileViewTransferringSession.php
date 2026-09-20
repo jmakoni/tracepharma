@@ -2,8 +2,11 @@
 
 namespace App\Filament\App\Resources\TransferringSessions\Pages;
 
+use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Transferring\DeleteTransferringSession;
 use App\Actions\Transferring\UnconfirmTransferringScanLine;
+use App\Filament\App\Concerns\SetsFloorCameraScanPace;
+use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\TransferringSessions\Concerns\InteractsWithTransferringSessionHud;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Filament\Notifications\Notification;
@@ -11,12 +14,14 @@ use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\ReceiveLayout;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 /**
  * Scan-only floor transfer (phone/tablet). Desktop HUD remains {@see ViewTransferringSession}.
@@ -26,6 +31,7 @@ class MobileViewTransferringSession extends ViewRecord
     use InteractsWithTransferringSessionHud {
         getHeaderActions as getTransferringSessionHudHeaderActions;
     }
+    use SetsFloorCameraScanPace;
 
     protected static string $resource = TransferringSessionResource::class;
 
@@ -98,7 +104,49 @@ class MobileViewTransferringSession extends ViewRecord
 
     public function transferListUrl(): string
     {
-        return TransferringSessionResource::getUrl(name: 'index', panel: 'app');
+        if ($this->isInTransit()) {
+            return TransferringSessionResource::getUrl('receive-floor', panel: 'app');
+        }
+
+        return TransferringSessionResource::getUrl('list-floor', panel: 'app');
+    }
+
+    public function receiveAtDestination(): void
+    {
+        if (! $this->isInTransit() || ! ReceivingSessionResource::canAccess()) {
+            return;
+        }
+
+        /** @var TransferringSession $session */
+        $session = $this->getRecord();
+
+        try {
+            $receiving = app(OpenTransferReceivingSession::class)->handle(
+                $session,
+                auth()->id(),
+            );
+        } catch (InvalidArgumentException|DomainException $e) {
+            Notification::make()
+                ->title('Receive blocked')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $this->redirect(ReceiveLayout::floorUrl($receiving));
+    }
+
+    public function openReceiveSessionUrl(): ?string
+    {
+        $receiving = $this->receivingSession();
+
+        if ($receiving === null) {
+            return null;
+        }
+
+        return ReceiveLayout::floorUrl($receiving);
     }
 
     public function cartBadgeCount(): int
@@ -115,6 +163,22 @@ class MobileViewTransferringSession extends ViewRecord
         }
 
         return 'Showing last 8 of '.$total;
+    }
+
+    /**
+     * @return list<array{id: int, label: string, type: string, can_remove: bool}>
+     */
+    public function recentConfirmedScanRows(): array
+    {
+        return $this->recentScanLines()
+            ->map(fn (TransferringScanLine $line): array => [
+                'id' => (int) $line->getKey(),
+                'label' => $this->recentScanLineLabel($line),
+                'type' => ucfirst((string) $line->status),
+                'can_remove' => $this->canRemoveRecentScanLine($line),
+            ])
+            ->values()
+            ->all();
     }
 
     public function shipDisabledReason(): ?string

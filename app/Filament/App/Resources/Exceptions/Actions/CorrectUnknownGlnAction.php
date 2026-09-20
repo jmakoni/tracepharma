@@ -16,6 +16,7 @@ use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseEditor;
 use App\Support\Gs1\GlnRules;
+use App\Support\Gs1\Gs1IdentityStatus;
 use Database\Seeders\ExceptionCaseSeeder;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -131,6 +132,8 @@ final class CorrectUnknownGlnAction
                         return;
                     }
 
+                    $createdSgln = null;
+
                     if ($registerAs === self::REGISTER_AS_TRADING_PARTNER) {
                         $partner = TradingPartner::query()->create([
                             'name' => $name,
@@ -139,6 +142,7 @@ final class CorrectUnknownGlnAction
                             'is_active' => true,
                         ]);
                         $label = 'Trading partner #'.$partner->getKey();
+                        $createdSgln = $partner->fresh()?->getAttribute('sgln');
                     } else {
                         $tradingPartnerId = filled($data['trading_partner_id'] ?? null)
                             ? (int) $data['trading_partner_id']
@@ -151,6 +155,7 @@ final class CorrectUnknownGlnAction
                             'is_active' => true,
                         ]);
                         $label = 'Site #'.$site->getKey();
+                        $createdSgln = $site->fresh()?->getAttribute('sgln');
                     }
 
                     if ((bool) ($data['also_resolve'] ?? false)) {
@@ -165,10 +170,15 @@ final class CorrectUnknownGlnAction
 
                     $page->refreshRecord();
 
-                    Notification::make()
+                    $notification = Notification::make()
                         ->title($label.' registered')
-                        ->success()
-                        ->send();
+                        ->success();
+
+                    if (! is_string($createdSgln) || $createdSgln === '') {
+                        $notification->body(Gs1IdentityStatus::missingSglnAfterRegisterBody());
+                    }
+
+                    $notification->send();
                 }),
             'exception_correct_unknown_gln',
             requireReason: true,

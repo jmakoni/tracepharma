@@ -134,6 +134,10 @@ final class OpenQuarantineHold
             $siteId = SiteAccess::organizationSiteIdForGln($gln);
         }
 
+        if ($siteId === null && $epc === null && $document === null) {
+            return;
+        }
+
         if (! SiteAccess::canAccessShipToSite($actor, $siteId)) {
             throw new AuthorizationException('You do not have access to open holds for this site.');
         }

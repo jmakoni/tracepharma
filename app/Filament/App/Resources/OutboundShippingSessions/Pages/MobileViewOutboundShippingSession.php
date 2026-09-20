@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Pages;
 
 use App\Actions\Shipping\DeleteOutboundShippingSession;
 use App\Actions\Shipping\UnconfirmOutboundShippingScanLine;
+use App\Filament\App\Concerns\SetsFloorCameraScanPace;
 use App\Filament\App\Pages\ScanOutWorkstation;
 use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
@@ -24,6 +25,7 @@ use Illuminate\Support\Collection;
 class MobileViewOutboundShippingSession extends ViewRecord
 {
     use InteractsWithOutboundShippingSessionHud;
+    use SetsFloorCameraScanPace;
 
     protected static string $resource = OutboundShippingSessionResource::class;
 
@@ -57,6 +59,7 @@ class MobileViewOutboundShippingSession extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->voidShipOrderAction(),
             UnsubmittedSessionDeleteAction::forShipping(
                 fn (OutboundShippingSession $record) => app(DeleteOutboundShippingSession::class)->handle($record, auth()->id()),
                 OutboundShippingSessionResource::getUrl(name: 'index', panel: 'app'),
@@ -107,6 +110,22 @@ class MobileViewOutboundShippingSession extends ViewRecord
         }
 
         return 'Showing last 8 of '.$total;
+    }
+
+    /**
+     * @return list<array{id: int, label: string, type: string, can_remove: bool}>
+     */
+    public function recentConfirmedScanRows(): array
+    {
+        return $this->recentScanLines()
+            ->map(fn (OutboundShippingScanLine $line): array => [
+                'id' => (int) $line->getKey(),
+                'label' => $this->recentScanLineLabel($line),
+                'type' => ucfirst((string) $line->status),
+                'can_remove' => $this->canRemoveRecentScanLine($line),
+            ])
+            ->values()
+            ->all();
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
@@ -28,9 +29,8 @@ final class DispenseCheckController extends Controller
             abort(403, 'VRS is not enabled for this tenant profile.');
         }
 
-        $scan = $this->resolveScan($request);
-
         try {
+            $scan = $this->resolveScan($request);
             $result = $verification->handle($scan, $request->user());
         } catch (InvalidArgumentException $exception) {
             return response()->json(['message' => $exception->getMessage(), 'allowed' => false], 422);
@@ -142,12 +142,15 @@ final class DispenseCheckController extends Controller
         }
 
         $gtin = $request->input('gtin14') ?? $request->input('gtin');
-        $gtin14 = str_pad(preg_replace('/\D+/', '', (string) $gtin) ?? '', 14, '0', STR_PAD_LEFT);
-        $serial = trim((string) $request->input('serial'));
+        $gtin14 = Gtin::fromUpc((string) $gtin);
+        if ($gtin14 === null) {
+            throw new InvalidArgumentException('GTIN must be a valid GS1 GTIN-8/12/13/14.');
+        }
+        $serial = (string) $request->input('serial');
         $scan = '(01)'.$gtin14.'(21)'.$serial;
 
         if ($request->filled('lot')) {
-            $scan .= '(10)'.trim((string) $request->input('lot'));
+            $scan .= '(10)'.(string) $request->input('lot');
         }
 
         if ($request->filled('expiry')) {

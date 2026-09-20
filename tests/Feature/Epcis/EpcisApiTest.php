@@ -9,12 +9,15 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Gs1\Gtin;
 use App\Support\SanctumAbilities;
 use App\Support\TenantSettings;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\CleansDemo2EpcisArtifacts;
 use Tests\TestCase;
 
@@ -45,9 +48,11 @@ class EpcisApiTest extends TestCase
             config(['queue.default' => 'database']);
             Queue::fake();
 
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
             $token = $user->createToken('epcis-test', [SanctumAbilities::EPCIS_UPLOAD])->plainTextToken;
-            $xml = $this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $xml = $this->addressFixtureToTenantOrg($this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml'));
 
             tenancy()->end();
 
@@ -87,9 +92,11 @@ class EpcisApiTest extends TestCase
             config(['queue.default' => 'database']);
             Queue::fake();
 
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
             $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
             $token = $user->createToken('epcis-test', [SanctumAbilities::EPCIS_UPLOAD])->plainTextToken;
-            $xml = $this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $xml = $this->addressFixtureToTenantOrg($this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml'));
             $file = UploadedFile::fake()->createWithContent('minimal_object_shipping.xml', $xml);
 
             tenancy()->end();
@@ -119,7 +126,7 @@ class EpcisApiTest extends TestCase
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
             $user->assignRole(TenantRole::Owner->value);
             $token = $user->createToken('epcis-test', [SanctumAbilities::EPCIS_UPLOAD])->plainTextToken;
-            $xml = $this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $xml = $this->addressFixtureToTenantOrg($this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml'));
 
             tenancy()->end();
 
@@ -196,7 +203,7 @@ class EpcisApiTest extends TestCase
                 SanctumAbilities::EPCIS_UPLOAD,
                 SanctumAbilities::EPCIS_VIEW,
             ])->plainTextToken;
-            $xml = $this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $xml = $this->addressFixtureToTenantOrg($this->uniqueFixtureXml('tests/Fixtures/epcis/minimal_object_shipping.xml'));
 
             tenancy()->end();
 
@@ -294,7 +301,7 @@ class EpcisApiTest extends TestCase
 
         try {
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
             TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
             $tenant->save();
 
@@ -319,7 +326,7 @@ class EpcisApiTest extends TestCase
 
         try {
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
             TenantSettings::forTenant($tenant)->setJobRolesEnabled(true);
             $tenant->save();
 
@@ -462,7 +469,7 @@ class EpcisApiTest extends TestCase
         }
     }
 
-    private function trackInboundDocumentIfPresent(\Illuminate\Testing\TestResponse $response): void
+    private function trackInboundDocumentIfPresent(TestResponse $response): void
     {
         $id = $response->json('document_id');
         if (is_numeric($id)) {
@@ -474,7 +481,7 @@ class EpcisApiTest extends TestCase
     {
         do {
             $body = '03'.str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
-            $gln = $body.\App\Support\Gs1\Gtin::checkDigit($body);
+            $gln = $body.Gtin::checkDigit($body);
         } while (Site::query()->where('gln', $gln)->exists());
 
         return $gln;
@@ -489,6 +496,14 @@ class EpcisApiTest extends TestCase
         $this->assertNotFalse($xml);
 
         return str_replace($uuidPlaceholder, (string) str()->uuid(), $xml);
+    }
+
+    private function addressFixtureToTenantOrg(string $xml): string
+    {
+        $gln = (string) Tenant::query()->findOrFail(self::DEMO2_TENANT_ID)->gln;
+        $this->assertMatchesRegularExpression('/^\d{13}$/', $gln);
+
+        return str_replace('0096295000009', $gln, $xml);
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -547,7 +562,7 @@ class EpcisApiTest extends TestCase
     /**
      * @param  array<string, string>  $extraServer
      */
-    private function tenantApiPost(string $uri, ?string $token, string $body, array $extraServer = []): \Illuminate\Testing\TestResponse
+    private function tenantApiPost(string $uri, ?string $token, string $body, array $extraServer = []): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;
@@ -575,7 +590,7 @@ class EpcisApiTest extends TestCase
     /**
      * @param  array<string, mixed>  $data
      */
-    private function tenantApiMultipartPost(string $uri, ?string $token, array $data): \Illuminate\Testing\TestResponse
+    private function tenantApiMultipartPost(string $uri, ?string $token, array $data): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;
@@ -599,7 +614,7 @@ class EpcisApiTest extends TestCase
         );
     }
 
-    private function tenantApiGet(string $uri, ?string $token): \Illuminate\Testing\TestResponse
+    private function tenantApiGet(string $uri, ?string $token): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;

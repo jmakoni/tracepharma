@@ -106,6 +106,42 @@ class PharmacyOutboundDeskTest extends TestCase
     }
 
     #[Test]
+    public function pharmacy_desk_refuses_gtin_lot_without_serial(): void
+    {
+        $tenant = $this->initializePharmacyTenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwner());
+            $this->createShipSite($tenant);
+
+            $beforeIds = OutboundShippingSession::query()->pluck('id')->all();
+
+            $component = Livewire::test(PharmacyOutboundDesk::class)
+                ->callAction('startShipOrder')
+                ->assertHasNoActionErrors();
+
+            $session = OutboundShippingSession::query()
+                ->whereNotIn('id', $beforeIds)
+                ->latest('id')
+                ->first();
+
+            $this->assertNotNull($session);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $component->set('scan', '(01)00301163001167(10)LOTONLY')
+                ->callAction('confirmScan');
+
+            $page = $component->instance();
+            $this->assertSame('error', $page->lastScanTone);
+            $this->assertStringContainsString('serial', strtolower((string) $page->lastScanMessage));
+            $this->assertSame(0, $session->fresh()->scanLines()->count());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function missing_session_is_not_shown_as_outbound_sent(): void
     {
         $this->initializePharmacyTenant();

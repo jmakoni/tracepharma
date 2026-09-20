@@ -8,12 +8,16 @@ use App\Filament\App\Pages\OrganizationSettings;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Gs1\Gs1IdentityStatus;
+use App\Support\Gs1\SglnResolution;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class OrganizationSettingsPageTest extends TestCase
@@ -96,6 +100,34 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function identity_section_shows_derived_company_sgln_when_gln_and_gcp_match(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $gln = '0366159000026';
+            $prefix = '036615';
+            $urn = SglnResolution::fromCompanyPrefix($gln, $prefix);
+            $this->assertNotNull($urn);
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'gln' => $gln,
+                    'company_prefix' => $prefix,
+                ])
+                ->assertSee($urn)
+                ->assertSee('Company SGLN (derived)')
+                ->assertDontSee(Gs1IdentityStatus::MISSING_COMPANY_SGLN);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function save_persists_require_pure_epcis_document_toggle(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -160,7 +192,7 @@ class OrganizationSettingsPageTest extends TestCase
                 ->assertHasNoFormErrors();
 
             $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->manufacturerVerificationPortalEnabled());
-            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
+            $this->assertTrue(TenantFeatures::forTenant($tenant->fresh())->supportsManufacturerVerificationPortal());
 
             Livewire::test(OrganizationSettings::class)
                 ->fillForm([
@@ -270,7 +302,7 @@ class OrganizationSettingsPageTest extends TestCase
                 ->assertHasNoFormErrors();
 
             $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
-            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+            $this->assertTrue(TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
 
             Livewire::test(OrganizationSettings::class)
                 ->fillForm([
@@ -282,7 +314,7 @@ class OrganizationSettingsPageTest extends TestCase
                 ->assertHasNoFormErrors();
 
             $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->clientPortalV2Enabled());
-            $this->assertFalse(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
+            $this->assertFalse(TenantFeatures::forTenant($tenant->fresh())->supportsClientPortalV2());
         } finally {
             TenantSettings::forTenant($tenant)->setClientPortalV2Enabled($prior);
             $tenant->save();
@@ -314,7 +346,7 @@ class OrganizationSettingsPageTest extends TestCase
             $this->actingAs($user);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
-            $this->assertTrue(\App\Support\TenantFeatures::forTenant($tenant->fresh())->supportsPrincipals());
+            $this->assertTrue(TenantFeatures::forTenant($tenant->fresh())->supportsPrincipals());
 
             Livewire::test(OrganizationSettings::class)
                 ->assertFormFieldExists('principal_custody_enforced')
@@ -639,7 +671,7 @@ class OrganizationSettingsPageTest extends TestCase
         try {
             $this->setProfile($tenant, TenantProfile::Pharmacy);
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
             TenantSettings::forTenant(tenant())->setPharmacyFullOutboundEnabled(true);
@@ -657,8 +689,8 @@ class OrganizationSettingsPageTest extends TestCase
             $this->actingAs($admin);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
-            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
-            $this->assertTrue(\App\Support\Auth\JobRoleAccess::canAccessOrganizationSettings($admin));
+            $this->assertFalse(JobRoleAccess::isOwner($admin));
+            $this->assertTrue(JobRoleAccess::canAccessOrganizationSettings($admin));
 
             Livewire::actingAs($admin)
                 ->test(OrganizationSettings::class)
@@ -684,7 +716,7 @@ class OrganizationSettingsPageTest extends TestCase
         try {
             $this->setProfile($tenant, TenantProfile::Manufacturer);
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Manufacturer);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
             TenantSettings::forTenant(tenant())->setManufacturerVrsRequestorEnabled(true);
@@ -703,7 +735,7 @@ class OrganizationSettingsPageTest extends TestCase
             $this->actingAs($admin);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
-            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+            $this->assertFalse(JobRoleAccess::isOwner($admin));
 
             Livewire::actingAs($admin)
                 ->test(OrganizationSettings::class)
@@ -733,7 +765,7 @@ class OrganizationSettingsPageTest extends TestCase
         try {
             $this->setProfile($tenant, TenantProfile::Logistics3pl);
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Logistics3pl);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             TenantSettings::forTenant(tenant())->setJobRolesEnabled(true);
             TenantSettings::forTenant(tenant())->setPrincipalCustodyEnforced(true);
@@ -751,7 +783,7 @@ class OrganizationSettingsPageTest extends TestCase
             $this->actingAs($admin);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
-            $this->assertFalse(\App\Support\Auth\JobRoleAccess::isOwner($admin));
+            $this->assertFalse(JobRoleAccess::isOwner($admin));
 
             Livewire::actingAs($admin)
                 ->test(OrganizationSettings::class)

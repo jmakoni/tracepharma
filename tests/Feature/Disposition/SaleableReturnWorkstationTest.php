@@ -24,7 +24,6 @@ use App\Services\Receiving\ReceivingGate;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\TenantRoleSeeder;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use Filament\Facades\Filament;
@@ -172,7 +171,6 @@ class SaleableReturnWorkstationTest extends TestCase
                 app(ReceivingGate::class),
                 app(EpcCustodyGate::class),
                 app(ShippableEpcsAtSite::class),
-                app(EpcOnAnotherOpenReceivingSession::class),
             );
 
             Verification::query()
@@ -306,6 +304,130 @@ class SaleableReturnWorkstationTest extends TestCase
             }
             foreach ($requestIds as $id) {
                 TracingRequest::query()->whereKey($id)->delete();
+            }
+            foreach ($eventIds as $eventId) {
+                DB::table('event_epcs')->where('event_id', $eventId)->delete();
+                EpcisEvent::query()->whereKey($eventId)->delete();
+            }
+            foreach ($documentIds as $documentId) {
+                EpcisDocument::query()->whereKey($documentId)->delete();
+            }
+            foreach ($epcIds as $epcId) {
+                EpcIlmd::query()->where('epc_id', $epcId)->delete();
+                if (! DB::table('event_epcs')->where('epc_id', $epcId)->exists()) {
+                    Epc::query()->whereKey($epcId)->delete();
+                }
+            }
+            foreach ($siteIds as $siteId) {
+                Site::query()->whereKey($siteId)->delete();
+            }
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function complete_is_blocked_when_only_a_stale_vrs_verified_exists(): void
+    {
+        $this->initializeDemo2Tenant();
+        $siteIds = [];
+        $epcIds = [];
+        $documentIds = [];
+        $eventIds = [];
+        $verificationIds = [];
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $gln = '03'.str_pad((string) random_int(0, 99_999_999_999), 11, '0', STR_PAD_LEFT);
+            $site = Site::query()->create([
+                'name' => 'Saleable stale VRS site '.substr((string) str()->uuid(), 0, 8),
+                'gln' => $gln,
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $siteIds[] = (int) $site->getKey();
+            CurrentSite::set((int) $site->getKey());
+
+            $suffix = (string) random_int(10_000_000, 99_999_999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.SV'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->first_seen_at = now();
+            $epc->save();
+            $epcIds[] = (int) $epc->getKey();
+            EpcIlmd::query()->create([
+                'epc_id' => $epc->getKey(),
+                'gtin14' => $epc->gtin14,
+                'lot_number' => 'SRSTALE',
+            ]);
+            $placed = $this->placeEpcOnHandAtSite($site, $epc);
+            $documentIds[] = (int) $placed['document']->getKey();
+            $eventIds[] = (int) $placed['event']->getKey();
+
+            $this->app->bind(VrsClient::class, fn (): VrsClient => new class implements VrsClient
+            {
+                public function verify(
+                    string $gtin14,
+                    string $serial,
+                    ?string $lot = null,
+                    ?string $expiryYymmdd = null,
+                ): array {
+                    return [
+                        'gtin14' => $gtin14,
+                        'serial' => $serial,
+                        'lot' => $lot,
+                        'expiry_yymmdd' => $expiryYymmdd,
+                        'status' => 'verified',
+                        'message' => 'Verified',
+                    ];
+                }
+            });
+
+            $scan = '(01)'.$epc->gtin14.'(21)'.$epc->serial_number;
+            $component = Livewire::test(SaleableReturnWorkstation::class);
+            CurrentSite::set((int) $site->getKey());
+            $component->set('scan', $scan)->call('processScan');
+            $page = $component->instance();
+            $this->assertNotSame([], $page->confirmed);
+
+            $freshIds = Verification::query()
+                ->where('gtin14', $epc->gtin14)
+                ->where('serial', $epc->serial_number)
+                ->pluck('id')
+                ->all();
+
+            Verification::query()->whereIn('id', $freshIds)->delete();
+
+            $stale = Verification::query()->create([
+                'gtin14' => $epc->gtin14,
+                'serial' => $epc->serial_number,
+                'lot' => 'SRSTALE',
+                'status' => 'verified',
+                'scanned_barcode' => $scan,
+                'verified_by' => $user->getKey(),
+                'message' => 'Stale verified',
+                'verified_at' => now()->subWeek(),
+                'created_at' => now()->subWeek(),
+                'updated_at' => now()->subWeek(),
+            ]);
+            $verificationIds[] = (int) $stale->getKey();
+
+            $component->callAction('confirmReturn')
+                ->assertNotified('Return failed');
+
+            $page = $component->instance();
+            $this->assertStringContainsString('vrs', strtolower((string) $page->lastMessage));
+            $this->assertSame([(int) $epc->getKey()], array_map(
+                fn (array $row): int => (int) $row['epc_id'],
+                $page->confirmed,
+            ));
+        } finally {
+            foreach ($verificationIds as $id) {
+                Verification::query()->whereKey($id)->delete();
             }
             foreach ($eventIds as $eventId) {
                 DB::table('event_epcs')->where('event_id', $eventId)->delete();

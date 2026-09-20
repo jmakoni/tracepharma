@@ -7,12 +7,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\EpcisReceivedVia;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\EpcisInboundRequest;
 use App\Models\User;
 use App\Services\Integrations\InboundPayloadResolver;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\EpcisApiSiteAccess;
 use App\Support\Epcis\EpcisTempFile;
 use App\Support\Filesystem\SafeFilename;
@@ -54,6 +56,12 @@ final class EpcisInboundController extends Controller
 
             if (! JobRoleAccess::allows(Permissions::NavReceive, $user)) {
                 abort(403, 'Receiving is not authorized for your job role.');
+            }
+
+            try {
+                AssertInboundReceiverGln::assertBelongsToCurrentTenant($resolved['content']);
+            } catch (InboundReceiverGlnRejected $exception) {
+                return response()->json(['message' => $exception->getMessage()], 422);
             }
 
             $existing = $this->siteAccess->findDuplicate($path, 'inbound');

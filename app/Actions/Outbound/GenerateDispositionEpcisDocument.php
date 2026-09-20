@@ -95,8 +95,7 @@ final class GenerateDispositionEpcisDocument
             ],
             GenerateDispositionObjectEvent::KIND_DECOMMISSIONING => [
                 EpcisAction::Delete,
-                'decommissioning',
-                $this->resolveDispositionLocal($settings['disposition'] ?? null, 'inactive'),
+                ...$this->eventBuilder->decommissioningStepAndDisposition($settings),
             ],
             GenerateDispositionObjectEvent::KIND_RETURNING => [
                 EpcisAction::Observe,

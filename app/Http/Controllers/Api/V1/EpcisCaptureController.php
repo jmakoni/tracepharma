@@ -7,12 +7,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\EpcisReceivedVia;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Http\Controllers\Controller;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Services\Integrations\InboundPayloadResolver;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\EpcisApiSiteAccess;
 use App\Support\Epcis\EpcisTempFile;
 use App\Support\Filesystem\SafeFilename;
@@ -22,6 +24,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * GS1-shaped Capture REST (Phase 1): POST capture + GET capture status.
@@ -42,7 +45,7 @@ final class EpcisCaptureController extends Controller
 
         try {
             TenantKillSwitches::forTenant(tenant())->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             return $this->securityException($e->getMessage());
         }
 
@@ -62,6 +65,12 @@ final class EpcisCaptureController extends Controller
 
             if (! JobRoleAccess::allows(Permissions::NavReceive, $user)) {
                 return $this->securityException('Receiving is not authorized for your job role.');
+            }
+
+            try {
+                AssertInboundReceiverGln::assertBelongsToCurrentTenant($resolved['content']);
+            } catch (InboundReceiverGlnRejected $exception) {
+                return $this->captureInvalid($exception->getMessage());
             }
 
             $existing = $this->siteAccess->findDuplicate($path, 'inbound');
@@ -119,7 +128,7 @@ final class EpcisCaptureController extends Controller
 
         try {
             TenantKillSwitches::forTenant(tenant())->assertNotKilled(TenantKillSwitches::INBOUND_EPCIS);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             return $this->securityException($e->getMessage());
         }
 

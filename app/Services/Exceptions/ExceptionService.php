@@ -424,8 +424,12 @@ final class ExceptionService
      * @param  array<string, mixed>  $attributes
      * @param  list<int>  $epcIds
      */
-    public function create(array $attributes, array $epcIds = [], ?User $actor = null): ExceptionCase
-    {
+    public function create(
+        array $attributes,
+        array $epcIds = [],
+        ?User $actor = null,
+        bool $notify = true,
+    ): ExceptionCase {
         $attributes = Arr::only($attributes, self::CREATE_ATTRIBUTES);
 
         $typeId = $attributes['exception_type_id'] ?? null;
@@ -474,7 +478,10 @@ final class ExceptionService
         );
 
         $fresh = $case->fresh() ?? $case;
-        app(ExceptionNotificationDispatcher::class)->dispatchCreated($fresh);
+
+        if ($notify) {
+            app(ExceptionNotificationDispatcher::class)->dispatchCreated($fresh);
+        }
 
         return $fresh;
     }

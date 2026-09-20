@@ -3,6 +3,8 @@
 namespace App\Services\Integrations;
 
 use App\Support\Epcis\EpcisSoapDocumentNormalizer;
+use App\Support\Epcis\RejectGs1VrsAsEpcis;
+use InvalidArgumentException;
 
 final class InboundPayloadResolver
 {
@@ -17,6 +19,10 @@ final class InboundPayloadResolver
     {
         $normalized = $this->soapNormalizer->normalize($rawBody);
         $content = $normalized['content'];
+
+        if (RejectGs1VrsAsEpcis::looksLike($content)) {
+            throw new InvalidArgumentException(RejectGs1VrsAsEpcis::rejectMessage());
+        }
 
         $resolvedName = $this->normalizeFilename($filename, $contentType, $content);
 

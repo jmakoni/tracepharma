@@ -6,15 +6,16 @@ use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\App\Resources\Verifications\VerificationResource;
+use App\Filament\Notifications\Notification;
 use App\Models\User;
 use App\Models\Verification;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\ElementString;
+use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use App\Support\Vrs\VerificationScorecardMetrics;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
@@ -63,8 +64,10 @@ class VerifyProduct extends Page implements HasKnowledgeBase
         if (filled($barcode)) {
             $this->scan = (string) $barcode;
         } elseif (filled($gtin) && filled($serial)) {
-            $gtin14 = str_pad(preg_replace('/\D+/', '', (string) $gtin) ?? '', 14, '0', STR_PAD_LEFT);
-            $this->scan = '(01)'.$gtin14.'(21)'.trim((string) $serial);
+            $gtin14 = Gtin::fromUpc((string) $gtin);
+            if ($gtin14 !== null) {
+                $this->scan = '(01)'.$gtin14.'(21)'.(string) $serial;
+            }
         }
 
         if (filled($this->scan)) {

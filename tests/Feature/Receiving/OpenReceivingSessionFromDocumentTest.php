@@ -14,11 +14,13 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
+use App\Models\Receiving\InboundExpectedLine;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
-use App\Support\TenantSettings;
 use App\Services\Quarantine\QuarantineService;
+use App\Support\Receiving\ReceivingEdgeMode;
+use App\Support\TenantSettings;
 use Database\Seeders\ExceptionCaseSeeder;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +33,7 @@ use Tests\TestCase;
 class OpenReceivingSessionFromDocumentTest extends TestCase
 {
     use PreparesDemo2ReceivingState;
+
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -173,6 +176,9 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
 
             $this->assertTrue($result['ok']);
             $this->assertSame('parent_confirmed', $result['effect']);
+            $this->assertSame(1, $result['parent_expected_children']);
+            $this->assertSame(1, $result['parent_confirmed_children']);
+            $this->assertStringContainsString('1 of 1', (string) $result['message']);
 
             $session->refresh();
             $this->assertSame(1, $session->confirmed_parent_count);
@@ -196,7 +202,8 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
     public function it_rejects_scan_of_epc_under_open_quarantine_but_allows_opening_session(): void
     {
         $this->initializeDemo2Tenant();
-        $this->seed(ExceptionCaseSeeder::class);
+        // Avoid $this->seed() under tenancy — it routes to db:seed requiring --tenants.
+        (new ExceptionCaseSeeder)->run();
 
         try {
             $this->prepareFixtureReceivingState();
@@ -287,6 +294,15 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
                 'completed_at' => now(),
                 'site_id' => null,
             ])->save();
+
+            // Soft-return of completed requires no remaining expected on the ASN shipment
+            // (otherwise Open starts a day-2 session). This test only checks site backfill.
+            if ($session->inbound_shipment_id !== null) {
+                InboundExpectedLine::query()
+                    ->where('inbound_shipment_id', $session->inbound_shipment_id)
+                    ->where('status', 'expected')
+                    ->update(['status' => 'cancelled']);
+            }
 
             $completedAgain = app(OpenReceivingSessionFromDocument::class)->handle($document->fresh());
             $this->assertSame('completed', $completedAgain->status);
@@ -457,6 +473,15 @@ class OpenReceivingSessionFromDocumentTest extends TestCase
     private function prepareFixtureReceivingState(array $epcUris = [self::SSCC_URI, self::SGTIN_URI]): void
     {
         $this->ensureDemo2OrgPrefixMatchesReceiveSites();
+
+        // Shared demo2 can retain sealed_parent / parallel-on from other suites.
+        $tenant = tenant();
+        if ($tenant !== null) {
+            TenantSettings::forTenant($tenant)
+                ->setReceivingEdgeMode(ReceivingEdgeMode::OpenCount)
+                ->setAllowParallelSessions(false)
+                ->saveQuietly();
+        }
 
         $epcIds = Epc::query()
             ->whereIn('epc_uri', $epcUris)

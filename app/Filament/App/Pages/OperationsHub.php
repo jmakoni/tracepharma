@@ -15,6 +15,7 @@ use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\App\Resources\Sites\SiteResource;
 use App\Filament\App\Resources\TradingPartners\TradingPartnerResource;
 use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
@@ -23,19 +24,22 @@ use App\Support\Auth\CurrentSite;
 use App\Support\Auth\HidesForPharmacySimplifiedNav;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Floor\OpenFloorWork;
 use App\Support\Gs1\ElementString;
+use App\Support\Gs1\Gs1DigitalLinkScan;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
+use App\Support\Shipping\ShipLayout;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Facades\Filament;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Resources\Resource;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -95,7 +99,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
         return ReceivingSession::query()
             ->whereIn('status', ['open', 'in_progress'])
             ->where('site_id', $siteId)
-            ->with(['site', 'document'])
+            ->with(['site', 'document', 'inboundShipment'])
             ->orderByDesc('opened_at')
             ->limit(5)
             ->get()
@@ -116,6 +120,21 @@ class OperationsHub extends Page implements HasKnowledgeBase
     public function receivingSessionUrl(ReceivingSession $session): string
     {
         return ReceiveLayout::sessionUrl($session);
+    }
+
+    /**
+     * Unsubmitted work at the topbar-selected site (receive, ship, transfer, pack, disposition).
+     *
+     * @return Collection<int, array{type: string, id: int, label: string, detail: string, url: ?string, opened_at: ?Carbon}>
+     */
+    public function openWorkItems(): Collection
+    {
+        $siteId = CurrentSite::id();
+        if ($siteId === null) {
+            return collect();
+        }
+
+        return OpenFloorWork::itemsForSite($siteId, 10);
     }
 
     /**
@@ -165,17 +184,8 @@ class OperationsHub extends Page implements HasKnowledgeBase
         $normalized = $scan;
         $features = TenantFeatures::forTenant(tenant());
 
-        if ($features->supportsReceiving() && ElementString::ssccIdentity($normalized) !== null) {
-            $url = $this->routeSsccScan($normalized, $resolveEpcFromScan);
-            if ($url !== null) {
-                $this->redirect($url);
-            }
-
-            return;
-        }
-
-        if ($features->supportsReceiving() && ElementString::sgtinIdentity($normalized) !== null) {
-            $url = $this->routeSgtinScan($normalized, $resolveEpcFromScan);
+        if ($features->supportsReceiving() && $this->isReceiveRoutableScan($normalized)) {
+            $url = $this->routeReceiveScan($normalized, $resolveEpcFromScan);
             if ($url !== null) {
                 $this->redirect($url);
             }
@@ -201,6 +211,14 @@ class OperationsHub extends Page implements HasKnowledgeBase
 
         $this->hubScan = '';
         $this->dispatch('focus-hub-scan');
+    }
+
+    private function isReceiveRoutableScan(string $normalized): bool
+    {
+        return ElementString::ssccIdentity($normalized) !== null
+            || ElementString::sgtinIdentity($normalized) !== null
+            || str_starts_with($normalized, 'urn:epc:id:')
+            || Gs1DigitalLinkScan::toElementString($normalized) !== null;
     }
 
     /**
@@ -263,7 +281,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             return null;
         }
 
-        return AssetTracking::getUrl(['scan' => $normalized]);
+        return AssetTracking::getUrl(['scan' => $normalized], isAbsolute: false);
     }
 
     /**
@@ -287,8 +305,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
             ->first();
 
         if ($onShipSession !== null) {
-            return OutboundShippingSessionResource::getUrl('view', [
-                'record' => $onShipSession,
+            return ShipLayout::sessionUrl($onShipSession, [
                 'scan' => $normalized,
             ]);
         }
@@ -334,8 +351,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
                 return null;
             }
 
-            return OutboundShippingSessionResource::getUrl('view', [
-                'record' => $resumeSession->fresh(),
+            return ShipLayout::sessionUrl($resumeSession->fresh(), [
                 'scan' => $normalized,
             ]);
         }
@@ -356,8 +372,7 @@ class OperationsHub extends Page implements HasKnowledgeBase
                 return null;
             }
 
-            return OutboundShippingSessionResource::getUrl('view', [
-                'record' => $session->fresh(),
+            return ShipLayout::sessionUrl($session->fresh(), [
                 'scan' => $normalized,
             ]);
         } catch (DomainException|InvalidArgumentException $e) {
@@ -428,6 +443,14 @@ class OperationsHub extends Page implements HasKnowledgeBase
                 'label' => 'Unpacking',
                 'description' => 'Break a case here. Build a mixed SSCC on Pack.',
                 'url' => $this->pageUrl(UnpackWorkstation::class),
+            ]);
+        }
+
+        if (OnHandList::canAccess() && $features->showsWholesaleOperationsNav()) {
+            $this->pushDirectory($directories, [
+                'label' => 'On-hand',
+                'description' => 'Lot rollups, serial custody, near-expiry, and investigate at a site.',
+                'url' => $this->pageUrl(OnHandList::class),
             ]);
         }
 

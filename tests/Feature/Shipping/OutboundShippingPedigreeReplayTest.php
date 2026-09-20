@@ -167,12 +167,12 @@ class OutboundShippingPedigreeReplayTest extends TestCase
 XML;
 
             // Replace packing fragments so TI packing lists an off-tree child to strip.
-            \App\Models\Epcis\EpcisPedigreeEventFragment::query()
+            EpcisPedigreeEventFragment::query()
                 ->where('document_id', $document->getKey())
                 ->where('event_local_name', 'AggregationEvent')
                 ->delete();
 
-            \App\Models\Epcis\EpcisPedigreeEventFragment::query()->create([
+            EpcisPedigreeEventFragment::query()->create([
                 'document_id' => $document->getKey(),
                 'ingest_generation' => (int) ($document->ingest_generation ?? 1),
                 'event_local_name' => 'AggregationEvent',
@@ -208,8 +208,9 @@ XML;
         $generate = (string) file_get_contents(base_path('app/Actions/Shipping/GenerateShippingEpcisEvents.php'));
         $fullHistory = (string) file_get_contents(base_path('app/Support/Epcis/BuildFullHistoryShippingEpcisXml.php'));
 
-        $this->assertStringNotContainsString('Sgln::toFacilityUrn', $generate);
-        $this->assertStringNotContainsString('toFacilityUrn', $fullHistory);
+        $this->assertStringContainsString('Sgln::toFacilityUrn', $generate);
+        $this->assertStringContainsString('owningPartySgln', $generate);
+        $this->assertStringContainsString('toFacilityUrn', $fullHistory);
         $this->assertStringNotContainsString('asDscsaFacilitySgln', $fullHistory);
     }
 

@@ -3,11 +3,14 @@
 namespace App\Filament\App\Resources\ReceivingSessions\Pages;
 
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
+use App\Filament\App\Concerns\SetsFloorCameraScanPace;
 use App\Filament\App\Resources\ReceivingSessions\Concerns\InteractsWithReceivingSessionHud;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\Notifications\Notification;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Gs1\ElementString;
+use App\Support\Receiving\ReceivingScanLevel;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
@@ -16,17 +19,22 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 
 /**
- * Scan-only floor receive (phone/tablet). Desktop HUD remains {@see ViewReceivingSession}.
+ * Scan-only floor receive (phone/tablet). Each scan confirms immediately — same
+ * commit path as desktop {@see ViewReceivingSession}; "Just scanned" lists recent
+ * confirmed lines with remove.
  */
 class MobileViewReceivingSession extends ViewRecord
 {
     use InteractsWithReceivingSessionHud {
         getHeaderActions as getReceivingSessionHudHeaderActions;
     }
+    use SetsFloorCameraScanPace;
 
     protected static string $resource = ReceivingSessionResource::class;
 
     protected string $view = 'filament.app.resources.receiving-sessions.pages.mobile-view-receiving-session';
+
+    private const RECENT_SCAN_LIMIT = 8;
 
     /**
      * @var array<string, mixed>
@@ -95,105 +103,88 @@ class MobileViewReceivingSession extends ViewRecord
         return ReceivingSessionResource::getUrl(name: 'index', panel: 'app');
     }
 
-    /**
-     * FAB badge — count of confirmed/unexpected scan lines (matches sheet list semantics).
-     */
-    public function cartBadgeCount(): int
+    public function floorScanPlaceholder(): string
     {
-        return $this->scannedLineTotalCount();
-    }
+        $policy = $this->receivingPolicy();
 
-    /**
-     * Total confirmed/unexpected lines for this session (for "last 8 of N").
-     */
-    public function scannedLineTotalCount(): int
-    {
-        return (int) ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->getRecord()->getKey())
-            ->whereIn('status', ['confirmed', 'unexpected'])
-            ->count();
+        if ($policy->operatorScansUnitsOnly()) {
+            return 'Scan the unit 2D code';
+        }
+
+        if ($policy->operatorScansCaseOnly()) {
+            return 'Scan the case';
+        }
+
+        if ($policy->operatorScansSsccOnly()) {
+            return 'Scan pallet SSCC';
+        }
+
+        return match ($policy->preferredScanLevel()) {
+            ReceivingScanLevel::Case => 'Scan case SSCC',
+            ReceivingScanLevel::ToteOrCase => 'Scan SSCC or case',
+            default => 'Scan pallet SSCC',
+        };
     }
 
     public function recentScansCaption(): ?string
     {
-        $total = $this->scannedLineTotalCount();
+        $total = $this->recentConfirmedScanLineCount();
 
-        if ($total <= 8) {
+        if ($total <= self::RECENT_SCAN_LIMIT) {
             return null;
         }
 
-        return 'Showing last 8 of '.$total;
-    }
-
-    public function completeDisabledReason(): ?string
-    {
-        if ($this->isCompleted() || $this->canCompleteManually()) {
-            return null;
-        }
-
-        if ($this->isInboundAsn()) {
-            return 'Confirm all expected lines, then tap Complete Receive.';
-        }
-
-        if (! $this->isScanFirst()) {
-            return 'Keep scanning expected transfer lines.';
-        }
-
-        return 'Scan at least one item to complete.';
+        return 'Showing last '.self::RECENT_SCAN_LIMIT.' of '.$total;
     }
 
     /**
-     * Last 8 confirmed/unexpected lines for the cart sheet.
-     *
-     * @return Collection<int, ReceivingScanLine>
+     * @return list<array{id: int, label: string, type: string, can_remove: bool}>
      */
-    public function recentScanLines(): Collection
+    public function recentConfirmedScanRows(): array
     {
-        return ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->getRecord()->getKey())
-            ->whereIn('status', ['confirmed', 'unexpected'])
-            ->select([
-                'id',
-                'receiving_session_id',
-                'epc_id',
-                'line_role',
-                'status',
-                'scan_raw',
-                'confirmed_at',
+        return $this->recentConfirmedScanLines()
+            ->map(fn (ReceivingScanLine $line): array => [
+                'id' => (int) $line->getKey(),
+                'label' => $this->recentScanLineLabel($line),
+                'type' => $this->recentScanLineTypeLabel($line),
+                'can_remove' => $this->canRemoveRecentScanLine($line),
             ])
-            ->with([
-                'epc:id,epc_uri,sscc18,gtin14,serial_number',
-            ])
-            ->orderByDesc('confirmed_at')
-            ->orderByDesc('id')
-            ->limit(8)
-            ->get();
+            ->values()
+            ->all();
     }
 
-    protected function usesStagedScans(): bool
+    public function latestUndoableScanLine(): ?ReceivingScanLine
     {
-        return true;
-    }
-
-    public function recentScanLineLabel(ReceivingScanLine $line): string
-    {
-        $epc = $line->epc;
-
-        if ($epc !== null) {
-            if (filled($epc->sscc18)) {
-                return (string) $epc->sscc18;
-            }
-
-            if (filled($epc->gtin14)) {
-                return (string) $epc->gtin14.(filled($epc->serial_number) ? ' / '.$epc->serial_number : '');
-            }
-
-            if (filled($epc->epc_uri)) {
-                return (string) $epc->epc_uri;
-            }
+        if ($this->isCompleted()) {
+            return null;
         }
 
-        return filled($line->scan_raw) ? (string) $line->scan_raw : 'Scan #'.$line->getKey();
+        $line = $this->recentConfirmedScanLines()->first();
+
+        if ($line === null || ! $this->canRemoveRecentScanLine($line)) {
+            return null;
+        }
+
+        return $line;
+    }
+
+    public function undoLastScan(): void
+    {
+        $line = $this->latestUndoableScanLine();
+
+        if ($line === null) {
+            Notification::make()
+                ->title('Nothing to undo')
+                ->warning()
+                ->ephemeral()->send();
+
+            $this->dispatch('focus-scan');
+
+            return;
+        }
+
+        $this->removeRecentScanLine((int) $line->getKey());
+        $this->dispatch('focus-scan');
     }
 
     public function canRemoveRecentScanLine(ReceivingScanLine $line): bool
@@ -246,6 +237,8 @@ class MobileViewReceivingSession extends ViewRecord
 
         $this->getRecord()->refresh()->loadMissing([
             'document',
+            'document.inboundShipment',
+            'inboundShipment',
             'tradingPartner',
             'site',
             'matchedDocument',
@@ -258,5 +251,89 @@ class MobileViewReceivingSession extends ViewRecord
             ->title('Scan removed')
             ->success()
             ->send();
+
+        $this->dispatch('focus-scan');
+    }
+
+    /**
+     * @return Collection<int, ReceivingScanLine>
+     */
+    private function recentConfirmedScanLines(): Collection
+    {
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->getRecord()->getKey())
+            ->whereIn('status', ['confirmed', 'unexpected'])
+            ->whereNotNull('scan_raw')
+            ->where('scan_raw', '!=', '')
+            ->select([
+                'id',
+                'receiving_session_id',
+                'epc_id',
+                'line_role',
+                'status',
+                'scan_raw',
+                'confirmed_at',
+            ])
+            ->with([
+                'epc:id,epc_uri,sscc18,gtin14,serial_number,epc_type,ai_01_21,ai_00',
+            ])
+            ->orderByDesc('confirmed_at')
+            ->orderByDesc('id')
+            ->limit(self::RECENT_SCAN_LIMIT)
+            ->get();
+    }
+
+    private function recentConfirmedScanLineCount(): int
+    {
+        return (int) ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->getRecord()->getKey())
+            ->whereIn('status', ['confirmed', 'unexpected'])
+            ->whereNotNull('scan_raw')
+            ->where('scan_raw', '!=', '')
+            ->count();
+    }
+
+    private function recentScanLineLabel(ReceivingScanLine $line): string
+    {
+        $raw = trim((string) ($line->scan_raw ?? ''));
+
+        if ($raw !== '') {
+            return ElementString::identityBarcodeDisplay($raw);
+        }
+
+        $epc = $line->epc;
+
+        if ($epc !== null) {
+            if (filled($epc->ai_01_21)) {
+                return ElementString::identityBarcodeDisplay((string) $epc->ai_01_21);
+            }
+
+            if (filled($epc->sscc18)) {
+                return ElementString::identityBarcodeDisplay((string) $epc->sscc18);
+            }
+
+            if (filled($epc->ai_00)) {
+                return ElementString::identityBarcodeDisplay((string) $epc->ai_00);
+            }
+
+            if (filled($epc->gtin14) && filled($epc->serial_number)) {
+                return ElementString::identityBarcodeDisplay(
+                    ElementString::encodeSgtin((string) $epc->gtin14, (string) $epc->serial_number),
+                );
+            }
+
+            if (filled($epc->epc_uri)) {
+                return ElementString::identityBarcodeDisplay((string) $epc->epc_uri);
+            }
+        }
+
+        return 'Scan #'.$line->getKey();
+    }
+
+    private function recentScanLineTypeLabel(ReceivingScanLine $line): string
+    {
+        return $line->line_role === 'parent'
+            ? $this->parentTypeLabel()
+            : $this->childTypeLabel();
     }
 }

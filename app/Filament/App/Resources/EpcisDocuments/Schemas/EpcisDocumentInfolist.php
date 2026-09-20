@@ -181,7 +181,7 @@ class EpcisDocumentInfolist
                             ->dateTime()
                             ->placeholder('—'),
                         TextEntry::make('received_at')
-                            ->label('Received')
+                            ->label('Uploaded')
                             ->dateTime()
                             ->placeholder('—'),
                         TextEntry::make('sent_at')

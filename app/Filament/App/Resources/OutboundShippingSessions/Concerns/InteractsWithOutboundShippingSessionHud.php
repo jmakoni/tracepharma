@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\OutboundShippingSessions\Concerns;
 
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
+use App\Actions\Shipping\VoidOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
@@ -16,7 +17,9 @@ use App\Support\Shipping\ShipLayout;
 use App\Support\TenantFeatures;
 use App\Support\Tracing\AssetTrackingUrl;
 use App\Support\Tracing\EpcContextLinks;
+use DomainException;
 use Filament\Actions\Action;
+use Filament\Support\Icons\Heroicon;
 use Livewire\Attributes\Locked;
 use Throwable;
 
@@ -98,6 +101,11 @@ trait InteractsWithOutboundShippingSessionHud
         return $this->outboundShippingSession()->status === 'cancelled';
     }
 
+    public function isVoided(): bool
+    {
+        return $this->outboundShippingSession()->isVoided();
+    }
+
     /**
      * Floor and desktop complete banners must not read as "sent" when outbound
      * transmission failed or is still pending after EPCIS authoring.
@@ -107,8 +115,30 @@ trait InteractsWithOutboundShippingSessionHud
     public function shipCompleteCopy(): array
     {
         $session = $this->outboundShippingSession();
+
+        if ($session->isVoided()) {
+            return [
+                'title' => 'Shipment voided',
+                'body' => 'A void_shipping document was authored. Units stay on hold until a supervisor releases the voided-shipment quarantine.',
+                'tone' => 'warning',
+            ];
+        }
+
         $document = $session->epcisDocument;
         $status = $document?->transmission_status;
+        $expected = (int) ($session->expected_count ?? 0);
+        $confirmed = (int) ($session->confirmed_count ?? 0);
+        $hasResidual = (bool) ($session->split_declared ?? false)
+            || ($expected > 0 && $confirmed < $expected);
+        $residual = max(0, $expected - $confirmed);
+        $residualClause = $hasResidual
+            ? sprintf(
+                ' %d of %d units shipped this session; %d still expected on this order.',
+                $confirmed,
+                max($expected, $confirmed),
+                $residual,
+            )
+            : '';
 
         if ($session->shipping_events_generated_at === null) {
             return [
@@ -120,8 +150,8 @@ trait InteractsWithOutboundShippingSessionHud
 
         if ($status === 'sent') {
             return [
-                'title' => 'Shipment sent',
-                'body' => 'Shipping EPCIS authored and transmitted to the partner.',
+                'title' => $hasResidual ? 'Session shipped' : 'Ship order sent',
+                'body' => 'Shipping EPCIS authored and transmitted to the partner.'.$residualClause,
                 'tone' => 'success',
             ];
         }
@@ -133,7 +163,7 @@ trait InteractsWithOutboundShippingSessionHud
 
             return [
                 'title' => 'Shipment not transmitted',
-                'body' => 'Shipping EPCIS was authored, but outbound transmission failed: '.$detail,
+                'body' => 'Shipping EPCIS was authored, but outbound transmission failed: '.$detail.$residualClause,
                 'tone' => 'error',
             ];
         }
@@ -145,22 +175,22 @@ trait InteractsWithOutboundShippingSessionHud
 
             return [
                 'title' => 'Shipment not transmitted',
-                'body' => 'Shipping EPCIS was authored, but outbound transmission was skipped: '.$detail,
+                'body' => 'Shipping EPCIS was authored, but outbound transmission was skipped: '.$detail.$residualClause,
                 'tone' => 'error',
             ];
         }
 
         if (in_array($status, ['queued', 'sending'], true)) {
             return [
-                'title' => 'Shipment authored',
-                'body' => 'Shipping EPCIS authored. Outbound transmission is '.$this->transmissionStatusLabel().'.',
+                'title' => $hasResidual ? 'Session authored' : 'Ship order authored',
+                'body' => 'Shipping EPCIS authored. Outbound transmission is '.$this->transmissionStatusLabel().'.'.$residualClause,
                 'tone' => 'warning',
             ];
         }
 
         return [
-            'title' => 'Shipment authored',
-            'body' => 'Shipping EPCIS authored. Outbound transmission is pending.',
+            'title' => $hasResidual ? 'Session authored' : 'Ship order authored',
+            'body' => 'Shipping EPCIS authored. Outbound transmission is pending.'.$residualClause,
             'tone' => 'warning',
         ];
     }
@@ -172,6 +202,53 @@ trait InteractsWithOutboundShippingSessionHud
             'warning' => 'rounded-lg border border-warning/30 bg-warning/10 p-4',
             default => 'rounded-lg border border-error/30 bg-error/10 p-4',
         };
+    }
+
+    public function shipFloorCompleteClass(): string
+    {
+        return match ($this->shipCompleteCopy()['tone']) {
+            'success' => 'tp-floor-receive__complete',
+            'warning' => 'tp-floor-receive__complete tp-floor-receive__complete--warning',
+            default => 'tp-floor-receive__complete tp-floor-receive__complete--error',
+        };
+    }
+
+    public function voidShipOrderAction(): Action
+    {
+        return Action::make('voidShipOrder')
+            ->label('Void shipment')
+            ->icon(Heroicon::OutlinedNoSymbol)
+            ->color('danger')
+            ->visible(fn (): bool => $this->outboundShippingSession()->canVoid())
+            ->requiresConfirmation()
+            ->modalHeading('Void this shipment?')
+            ->modalDescription('Authors a void_shipping EPCIS document and holds the units until a supervisor releases them. The original shipping document is not changed.')
+            ->modalSubmitActionLabel('Void shipment')
+            ->action(function (): void {
+                try {
+                    app(VoidOutboundShippingSession::class)->handle($this->outboundShippingSession(), auth()->id());
+                } catch (DomainException $e) {
+                    Notification::make()
+                        ->title('Void blocked')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $this->outboundShippingSession()->refresh();
+                $this->refreshOutboundShippingSessionHud();
+                if (method_exists($this, 'hydrateWizardFromRecord')) {
+                    $this->hydrateWizardFromRecord();
+                }
+
+                Notification::make()
+                    ->title('Shipment voided')
+                    ->body('Units stay on hold until a supervisor releases the voided-shipment quarantine.')
+                    ->success()
+                    ->send();
+            });
     }
 
     public function transmissionStatusLabel(): string
@@ -287,12 +364,13 @@ trait InteractsWithOutboundShippingSessionHud
 
                 try {
                     $session = $this->outboundShippingSession();
+                    $this->authorize('update', $session);
 
                     if (! $session->canScan()) {
                         $this->setLastScan('error', 'This ship order is no longer open.');
 
                         Notification::make()
-                            ->title('Session closed')
+                            ->title('Ship order closed')
                             ->danger()
                             ->ephemeral()->send();
 

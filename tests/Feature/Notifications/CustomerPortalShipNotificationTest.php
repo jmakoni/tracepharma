@@ -23,6 +23,11 @@ class CustomerPortalShipNotificationTest extends TestCase
 
         $this->assertSame('EPCIS / TI available for download', $mail->subject);
         $this->assertSame('https://demo.example/customer-portal/abc?signature=x', $mail->actionUrl);
+        $intro = collect($mail->introLines)
+            ->map(fn ($line): string => (string) (is_array($line) ? implode(' ', $line) : $line))
+            ->implode(' ');
+        $this->assertStringContainsString('has sent transaction information', $intro);
+        $this->assertStringNotContainsString('has shipped transaction information', $intro);
         $this->assertTrue(
             collect($mail->introLines)->contains(fn ($line): bool => str_contains((string) (is_array($line) ? implode(' ', $line) : $line), 'ASN-42')),
         );

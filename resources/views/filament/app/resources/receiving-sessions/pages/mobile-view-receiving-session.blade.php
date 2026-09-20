@@ -1,11 +1,12 @@
 <x-filament-panels::page>
     @assets
-        <script src="{{ asset('js/tp-floor-receive.js') }}"></script>
+        <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}" data-tp-html5-qrcode="1"></script>
+        <script src="{{ asset('js/tp-floor-receive.js') }}?v={{ @filemtime(public_path('js/tp-floor-receive.js')) ?: time() }}"></script>
     @endassets
 
     <x-scan-flash />
 
-    {{-- Auto layout redirect (visible link hidden; menu owns desktop link). --}}
+    {{-- Auto layout redirect only (visible desktop/floor links hidden via CSS). --}}
     <div class="tp-floor-receive__layout-switch">
         @include('filament.app.partials.receive-layout-switch', [
             'mode' => 'floor',
@@ -15,28 +16,29 @@
     </div>
 
     @php
-        $cookieName = \App\Support\Receiving\ReceiveLayout::COOKIE;
-        $desktopUrl = $this->desktopReceiveUrl();
-        $showUnits = $this->showUnitsProgress();
-        $parentTypeLabel = $this->parentTypeLabel();
         $childTypeLabel = $this->childTypeLabel();
-        $recentLines = $this->recentScanLines();
-        $cartCount = $this->cartBadgeCount();
-        $recentCaption = $this->recentScansCaption();
-        $completeReason = $this->completeDisabledReason();
         $canComplete = $this->canCompleteManually();
         $isCompleted = $this->isCompleted();
+        $showAccept = $this->canAcceptRemaining() && $this->acceptRemainingEnabled();
+        $scanPlaceholder = $this->floorScanPlaceholder();
     @endphp
 
     <div
         class="tp-floor-receive"
-        x-data="tpFloorReceive(@js(['libraryUrl' => asset('vendor/html5-qrcode/html5-qrcode.min.js')]))"
+        x-data="tpFloorReceive(@js(\App\Support\Floor\FloorCameraScanAlpine::tpFloorReceiveConfig()))"
         x-on:destroy="stopCamera()"
-        @keydown.escape.window="if (cameraOn) { stopCamera() } else if (cartOpen) { closeCart() }"
+        @keydown.escape.window="if (cameraOn) { stopCamera() }"
+        x-on:focus-scan.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:close-modal.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
+        x-on:modal-closed.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"
     >
         <header class="tp-floor-receive__sticky-header">
             <div class="flex min-w-0 flex-col gap-1">
-                <span class="badge badge-outline tp-floor-receive__mode-chip">{{ $this->edgeModeChipLabel() }}</span>
+                <div class="tp-floor-receive__header-top">
+                    @include('filament.app.partials.floor-task-menu')
+                    <span class="badge badge-outline tp-floor-receive__mode-chip">{{ $this->edgeModeChipLabel() }}</span>
+                </div>
+
                 @if ($this->chipDeaLabel)
                     <span @class([
                         'badge badge-outline tp-floor-receive__mode-chip',
@@ -47,22 +49,13 @@
                 @if ($this->isScanFirst() && $this->attachedInvoiceFilename())
                     <span class="text-xs opacity-70">Invoice: {{ $this->attachedInvoiceFilename() }}</span>
                 @endif
-            <div
-                class="tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow"
-                aria-label="{{ $this->progressChipAriaLabel() }}"
-                aria-live="polite"
-            >
-                <div class="stat">
-                    <div class="stat-title">{{ $parentTypeLabel }}</div>
-                    <div class="stat-value text-2xl">{{ $this->parentProgressQuantity() }}</div>
-                </div>
-                @if ($showUnits)
-                    <div class="stat">
-                        <div class="stat-title">{{ $childTypeLabel }}</div>
-                        <div class="stat-value text-2xl">{{ $this->childProgressQuantity() }}</div>
-                    </div>
-                @endif
-            </div>
+
+                {{-- Floor: skip order rollup chips (PO/ASN/Parents/Eaches) — session progress below is enough; desktop keeps the header. --}}
+                @include('filament.app.partials.receiving-session-progress-stats', [
+                    'progress' => $this->sessionProgress(),
+                    'class' => 'tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow',
+                ])
+
                 @if ($lockedTote = $this->openToteLockedParentLabel())
                     <div class="text-sm font-medium">
                         Open tote {{ $lockedTote }}
@@ -72,70 +65,12 @@
                     </div>
                 @endif
             </div>
-
-            <div
-                class="tp-floor-receive__menu"
-                x-data="{ open: false }"
-                @keydown.escape.window="open = false"
-            >
-                <button
-                    type="button"
-                    class="tp-floor-receive__menu-btn"
-                    aria-label="Receive menu"
-                    aria-haspopup="true"
-                    :aria-expanded="open"
-                    @click="open = !open"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M10.5 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm0 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" clip-rule="evenodd" />
-                    </svg>
-                </button>
-
-                <div
-                    x-cloak
-                    x-show="open"
-                    x-transition
-                    @click.outside="open = false"
-                    class="tp-floor-receive__menu-panel"
-                    role="menu"
-                >
-                    <a
-                        href="{{ $desktopUrl }}"
-                        class="tp-floor-receive__menu-item"
-                        role="menuitem"
-                        onclick="document.cookie='{{ $cookieName }}=desktop;path=/;max-age=31536000;SameSite=Lax'"
-                    >Open desktop receive</a>
-
-                    @if ($this->canAttachInvoice())
-                        <button
-                            type="button"
-                            class="tp-floor-receive__menu-item"
-                            role="menuitem"
-                            wire:click="mountAction('attachInvoice')"
-                            @click="open = false"
-                        >Attach invoice</button>
-                    @endif
-
-                    @if ($this->canResetScans())
-                        <button
-                            type="button"
-                            class="tp-floor-receive__menu-item tp-floor-receive__menu-item--danger"
-                            role="menuitem"
-                            wire:click="mountAction('resetScans')"
-                            @click="open = false"
-                        >Clear / reset scans</button>
-                    @endif
-
-                    @if ($issuesUrl = $this->receivingIssuesUrl())
-                        <a href="{{ $issuesUrl }}" class="tp-floor-receive__menu-item" role="menuitem">
-                            Report issues
-                        </a>
-                    @endif
-                </div>
-            </div>
         </header>
 
         @if ($isCompleted)
+            @php
+                $documentComplete = $this->documentReceiveComplete();
+            @endphp
             <div class="tp-floor-receive__complete">
                 <div class="tp-floor-receive__complete-title">{{ $this->promptCopy()['completeTitle'] }}</div>
                 <p class="tp-floor-receive__complete-body">{{ $this->promptCopy()['completeBody'] }}</p>
@@ -144,30 +79,52 @@
                         <a href="{{ $issuesUrl }}">Report receiving issues</a>
                     </p>
                 @endif
-                <a href="{{ $this->receiveListUrl() }}" class="tp-floor-receive__cancel-btn tp-floor-receive__complete-exit">
-                    Back to receives
-                </a>
+                @if ($documentComplete)
+                    <a href="{{ $this->receiveListUrl() }}" class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit">
+                        Back to receives
+                    </a>
+                @else
+                    <button
+                        type="button"
+                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit"
+                        wire:click="startNextReceive"
+                        wire:loading.attr="disabled"
+                    >
+                        Start next receive
+                    </button>
+                    <a href="{{ $this->receiveListUrl() }}" class="tp-floor-receive__cancel-btn">
+                        Back to receives
+                    </a>
+                @endif
             </div>
         @else
             <div class="tp-floor-receive__stage">
                 <form
-                    wire:submit.prevent="stageScan"
+                    wire:submit.prevent="confirmScanInput"
                     x-init="$nextTick(() => $refs.scanInput?.focus())"
-                    x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
                     class="tp-floor-receive__scan-form"
                 >
+                    <p
+                        x-show="connectionError"
+                        x-cloak
+                        x-text="connectionError"
+                        class="tp-floor-receive__camera-error mb-2 w-full"
+                        role="alert"
+                    ></p>
                     <div class="tp-floor-receive__scan-field">
                         <input
                             id="floor-scan-input"
                             type="text"
+                            inputmode="none"
                             wire:model.live.blur="scan"
                             x-ref="scanInput"
-                            x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
+                            x-on:keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"
                             autocomplete="off"
                             autofocus
                             class="tp-floor-receive__scan-input"
-                            placeholder="{{ $this->promptCopy()['scanHelper'] }}"
-                            aria-label="{{ $this->promptCopy()['scanHelper'] }}"
+                            placeholder="{{ $scanPlaceholder }}"
+                            aria-label="{{ $scanPlaceholder }}"
+                            wire:loading.attr="disabled"
                         />
                     </div>
 
@@ -178,6 +135,7 @@
                         :aria-label="cameraOn ? 'Close camera' : 'Open camera scanner'"
                         :aria-pressed="cameraOn ? 'true' : 'false'"
                         x-bind:disabled="starting"
+                        wire:loading.attr="disabled"
                         x-on:click="toggleCamera()"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
@@ -220,17 +178,20 @@
                     </div>
                 @endif
 
-                <x-staged-scan-panel :staged-scans="$this->stagedScans" />
-
-                @if ($this->canAttachInvoice())
-                    <button
-                        type="button"
-                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral min-h-14"
-                        wire:click="mountAction('attachInvoice')"
-                    >
-                        Attach invoice
-                    </button>
+                @php($outstanding = $this->outstandingReceive())
+                @if ($outstanding['heading'] !== '')
+                    <x-confirmed-scan-panel
+                        :heading="$outstanding['heading']"
+                        :rows="$outstanding['rows']"
+                        :caption="$outstanding['caption']"
+                        empty="Nothing left to scan."
+                    />
                 @endif
+
+                <x-confirmed-scan-panel
+                    :rows="$this->recentConfirmedScanRows()"
+                    :caption="$this->recentScansCaption()"
+                />
 
                 @if ($this->canCloseOpenTote())
                     <button
@@ -242,162 +203,6 @@
                         Close tote
                     </button>
                 @endif
-
-                @if ($this->canAcceptRemaining())
-                    <button
-                        type="button"
-                        class="tp-scanner-macro-btn tp-scanner-macro-btn--neutral min-h-14"
-                        @if ($this->acceptRemainingEnabled())
-                            wire:click="mountAction('acceptRemaining')"
-                        @else
-                            disabled
-                            aria-disabled="true"
-                        @endif
-                        wire:loading.attr="disabled"
-                    >
-                        Accept remaining
-                    </button>
-                @endif
-
-                @if ($canComplete)
-                    <button
-                        type="button"
-                        class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__stage-complete"
-                        wire:click="mountAction('completeReceiving')"
-                        wire:loading.attr="disabled"
-                    >
-                        Complete Receive
-                    </button>
-                @endif
-            </div>
-        @endif
-
-        @if (! $isCompleted)
-            <button
-                type="button"
-                class="tp-floor-receive__cart-fab"
-                x-ref="cartFab"
-                aria-label="Open scanned items, {{ $cartCount }}"
-                x-on:click="openCart()"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-7" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
-                </svg>
-                @if ($cartCount > 0)
-                    <span class="tp-floor-receive__cart-count" aria-live="polite">{{ $cartCount }}</span>
-                @endif
-            </button>
-        @endif
-
-        {{-- Fullscreen camera overlay --}}
-        <div
-            x-show="cameraOn"
-            x-cloak
-            class="tp-floor-receive__camera-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Camera scanner"
-            @keydown="trapTab($event, $el)"
-        >
-            <div class="tp-floor-receive__camera-overlay-bar">
-                <span>Align barcode</span>
-                <button
-                    type="button"
-                    class="tp-floor-receive__camera-close"
-                    x-ref="cameraClose"
-                    x-on:click="stopCamera()"
-                >
-                    Close
-                </button>
-            </div>
-            <div wire:ignore class="tp-floor-receive__camera-host">
-                <div id="tp-floor-qr-reader" class="tp-floor-receive__camera"></div>
-            </div>
-        </div>
-
-        @if (! $isCompleted)
-            {{-- Cart sheet --}}
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet-backdrop"
-                x-on:click="closeCart()"
-                x-transition.opacity
-            ></div>
-
-            <div
-                x-show="cartOpen"
-                x-cloak
-                class="tp-floor-receive__sheet"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Recent scans"
-                x-transition:enter="tp-floor-receive__sheet-enter"
-                x-transition:enter-start="tp-floor-receive__sheet-enter-start"
-                x-transition:enter-end="tp-floor-receive__sheet-enter-end"
-                x-transition:leave="tp-floor-receive__sheet-leave"
-                x-transition:leave-start="tp-floor-receive__sheet-leave-start"
-                x-transition:leave-end="tp-floor-receive__sheet-leave-end"
-                @keydown="trapTab($event, $el)"
-            >
-                <div class="tp-floor-receive__sheet-header">
-                    <h2 class="tp-floor-receive__sheet-title">Recent scans</h2>
-                    <button
-                        type="button"
-                        class="tp-floor-receive__sheet-close"
-                        x-ref="sheetClose"
-                        x-on:click="closeCart()"
-                    >
-                        Close
-                    </button>
-                </div>
-
-                <div class="tp-floor-receive__sheet-progress" aria-live="polite">
-                    <div class="tp-floor-receive__sheet-progress-row">
-                        <span>{{ $parentTypeLabel }}</span>
-                        <strong class="tp-scan-qty">{{ $this->parentProgressQuantity() }}</strong>
-                    </div>
-                    @if ($showUnits)
-                        <div class="tp-floor-receive__sheet-progress-row">
-                            <span>{{ $childTypeLabel }}</span>
-                            <strong class="tp-scan-qty">{{ $this->childProgressQuantity() }}</strong>
-                        </div>
-                    @endif
-                </div>
-
-                <section class="tp-floor-receive__recent" aria-label="Recent scans">
-                    @if ($recentCaption)
-                        <p class="tp-floor-receive__recent-caption">{{ $recentCaption }}</p>
-                    @endif
-
-                    @forelse ($recentLines as $line)
-                        <div @class([
-                            'tp-floor-receive__recent-row',
-                            'tp-floor-receive__recent-row--unexpected' => $line->status === 'unexpected',
-                        ])>
-                            <div class="tp-floor-receive__recent-main">
-                                <span class="tp-floor-receive__recent-id font-mono">{{ $this->recentScanLineLabel($line) }}</span>
-                                <span class="tp-floor-receive__recent-meta">
-                                    {{ ucfirst((string) $line->line_role) }}
-                                    ·
-                                    {{ ucfirst((string) $line->status) }}
-                                </span>
-                            </div>
-                            @if ($this->canRemoveRecentScanLine($line))
-                                <button
-                                    type="button"
-                                    class="tp-floor-receive__recent-remove"
-                                    wire:click="removeRecentScanLine({{ (int) $line->getKey() }})"
-                                    wire:confirm="Remove this scan from the session?"
-                                >
-                                    Remove
-                                </button>
-                            @endif
-                        </div>
-                    @empty
-                        <p class="tp-floor-receive__recent-empty">Scanned items will appear here</p>
-                    @endforelse
-                </section>
 
                 @if ($this->canShowUnpackOnComplete())
                     <label class="tp-floor-receive__hierarchy">
@@ -413,70 +218,75 @@
                     </label>
                 @endif
 
-                <div class="tp-floor-receive__sheet-actions">
+                @unless ($canComplete)
+                    @if ($completeReason = $this->completeDisabledReason())
+                        <p class="tp-floor-receive__complete-reason">{{ $completeReason }}</p>
+                    @endif
+                @endunless
+            </div>
+
+            <div class="tp-floor-receive__footer" role="group" aria-label="Receive actions">
+                @if ($canComplete)
                     <button
                         type="button"
-                        @class([
-                            'tp-floor-receive__complete-btn',
-                            'tp-floor-receive__complete-btn--ready' => $canComplete,
-                            'tp-floor-receive__complete-btn--disabled' => ! $canComplete,
-                        ])
-                        @if ($canComplete)
-                            wire:click="mountAction('completeReceiving')"
-                        @else
-                            disabled
-                            aria-disabled="true"
-                            aria-describedby="tp-floor-complete-reason"
-                        @endif
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--confirm"
+                        wire:click="mountAction('completeReceiving')"
                         wire:loading.attr="disabled"
                     >
-                        Complete Receive
+                        Complete session
                     </button>
+                @endif
 
-                    @if ($completeReason)
-                        <p id="tp-floor-complete-reason" class="tp-floor-receive__complete-reason">
-                            {{ $completeReason }}
-                        </p>
-                    @endif
+                @if ($showAccept)
+                    <button
+                        type="button"
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--neutral"
+                        wire:click="mountAction('acceptRemaining')"
+                        wire:loading.attr="disabled"
+                    >
+                        Accept remaining
+                    </button>
+                @endif
 
-                    @if ($this->canUnpackHierarchy())
-                        <button
-                            type="button"
-                            class="tp-floor-receive__cancel-session-btn"
-                            wire:click="mountAction('unpackHierarchy')"
-                            wire:loading.attr="disabled"
-                        >
-                            Unpack hierarchy
-                        </button>
-                    @endif
+                @if ($this->canCloseTransferWithShortage())
+                    <button
+                        type="button"
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--warning min-h-14"
+                        wire:click="mountAction('closeTransferWithShortage')"
+                        wire:loading.attr="disabled"
+                    >
+                        Close with shortage
+                    </button>
+                @endif
 
-                    @if ($this->canCancelReceiving())
-                        <button
-                            type="button"
-                            class="tp-floor-receive__cancel-session-btn"
-                            wire:click="mountAction('cancelReceiving')"
-                            wire:loading.attr="disabled"
-                        >
-                            Cancel receive
-                        </button>
-                    @endif
-
-                    @if ($this->canHardDeleteReceiving())
-                        <button
-                            type="button"
-                            class="tp-floor-receive__cancel-session-btn"
-                            wire:click="mountAction('deleteReceiving')"
-                            wire:loading.attr="disabled"
-                        >
-                            Delete receive
-                        </button>
-                    @endif
-
-                    <a href="{{ $this->receiveListUrl() }}" class="tp-floor-receive__cancel-btn">
-                        Back to receives
-                    </a>
-                </div>
+                @if ($this->canHardDeleteReceiving())
+                    <button
+                        type="button"
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--cancel"
+                        wire:click="mountAction('deleteReceiving')"
+                        wire:loading.attr="disabled"
+                    >
+                        Cancel
+                    </button>
+                @endif
             </div>
         @endif
+
+        @include('filament.app.partials.floor-camera-overlay', [
+            'stats' => array_values(array_filter([
+                [
+                    'title' => $this->parentTypeLabel(),
+                    'value' => $this->parentProgressQuantity(),
+                ],
+                $this->showUnitsProgress()
+                    ? [
+                        'title' => $this->childTypeLabel(),
+                        'value' => $this->childProgressQuantity(),
+                    ]
+                    : null,
+            ])),
+            'decode' => in_array($this->lastScanTone, ['ok', 'warn'], true) ? $this->lastScanDetail : null,
+            'error' => $this->lastScanTone === 'error' ? $this->lastScanMessage : null,
+        ])
     </div>
 </x-filament-panels::page>

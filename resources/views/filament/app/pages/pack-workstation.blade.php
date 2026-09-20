@@ -1,4 +1,10 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.floor-layout-switch', [
+        'mode' => 'desktop',
+        'desktopUrl' => \App\Filament\App\Pages\PackWorkstation::getUrl(panel: 'app'),
+        'floorUrl' => \App\Filament\App\Pages\MobilePackWorkstation::getUrl(panel: 'app'),
+    ])
+
     <x-scanner-desk>
         <x-slot:header>
             <x-scanner-desk-header>
@@ -10,9 +16,12 @@
 
                 <x-slot:qty>
                     @if ($this->children !== [])
-                        <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
-                            Children {{ count($this->children) }}
-                        </span>
+                        @include('filament.app.partials.scanner-progress-stats', [
+                            'stats' => [
+                                ['title' => 'Children', 'value' => count($this->children)],
+                            ],
+                            'class' => 'stats stats-horizontal bg-base-200 shadow',
+                        ])
                     @endif
                 </x-slot:qty>
 
@@ -44,6 +53,7 @@
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                        x-on:keydown.enter.prevent="$wire.processScan()"
                         class="flex flex-col gap-3"
                     >
                         <div class="flex w-full flex-col gap-3">
@@ -54,7 +64,7 @@
                                 <input
                                     id="pack-scan-input"
                                     type="text"
-                                    wire:model="scan"
+                                    wire:model.live.blur="scan"
                                     x-ref="scanInput"
                                     autocomplete="off"
                                     class="tp-scan-input min-h-14 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-base shadow-sm outline-none transition duration-75 placeholder:text-gray-400 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/20 dark:border-white/20 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500"
@@ -125,6 +135,18 @@
                 @endif
             </x-slot:headerActions>
         </x-scanner-confirmed-table>
+
+        <div class="flex flex-wrap gap-2">
+            <button
+                type="button"
+                class="btn btn-primary min-h-14"
+                wire:click="mountAction('confirmPack')"
+                wire:loading.attr="disabled"
+                @disabled($this->children === [])
+            >
+                {{ $this->parentLabelId ? 'Add to SSCC' : 'Confirm pack' }}
+            </button>
+        </div>
     </x-scanner-desk>
 
     <x-filament-actions::modals />

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\FloorCameraScanPace;
 use App\Models\Concerns\HasAccountSecurity;
 use App\Models\Concerns\HasForcedPasswordChange;
 use App\Support\Tenancy\TenantAccess;
@@ -24,6 +25,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
 
     /** @use HasFactory<UserFactory> */
     use HasApiTokens;
+
     use HasFactory;
     use HasForcedPasswordChange;
     use HasRoles;
@@ -114,6 +116,28 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     {
         return is_array($this->preferencesBag())
             && array_key_exists('dashboard_widgets', $this->preferencesBag());
+    }
+
+    public function floorCameraScanPace(): FloorCameraScanPace
+    {
+        return FloorCameraScanPace::tryFromUserValue(
+            data_get($this->preferencesBag(), 'floor.camera_scan_pace'),
+        );
+    }
+
+    public function setFloorCameraScanPace(FloorCameraScanPace $pace): void
+    {
+        $preferences = $this->preferencesBag();
+        data_set($preferences, 'floor.camera_scan_pace', $pace->value);
+        $this->preferences = $preferences;
+    }
+
+    /**
+     * @return array{cameraScanPace: string, cooldownMs: int, fps: int, frameRateIdeal: int, frameRateMax: int}
+     */
+    public function floorCameraScanAlpineConfig(): array
+    {
+        return $this->floorCameraScanPace()->toAlpineConfig();
     }
 
     /**

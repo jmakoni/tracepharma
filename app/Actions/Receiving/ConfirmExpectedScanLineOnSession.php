@@ -172,6 +172,18 @@ final class ConfirmExpectedScanLineOnSession
                 }
             }
 
+            // Propagate / Match ASN confirms session lines without ConfirmReceivingScan —
+            // still advance inbound_expected_lines + shipment rollups.
+            $confirmedEpc = Epc::query()->find($targetLine->epc_id);
+            if ($confirmedEpc !== null) {
+                app(ConfirmReceivingScan::class)->markShipmentExpectedConfirmed(
+                    $session->fresh() ?? $session,
+                    $confirmedEpc,
+                    $userId ?? ($sourceLine->confirmed_by !== null ? (int) $sourceLine->confirmed_by : null),
+                    autoConfirmChildren: false,
+                );
+            }
+
             $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
             return [
@@ -190,6 +202,10 @@ final class ConfirmExpectedScanLineOnSession
         }
 
         if (! TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady()) {
+            return false;
+        }
+
+        if (TenantSettings::forTenant(tenant())->allowParallelSessions()) {
             return false;
         }
 

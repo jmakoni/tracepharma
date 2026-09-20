@@ -28,6 +28,7 @@ final class EpcisValidationCatalog
         'GTIN_SERIAL_MISMATCH',
         'INVALID_EPC_URI',
         'UNSUPPORTED_EPC_TYPE',
+        'INVALID_NDC_IDENTIFICATION_SHAPE',
 
         // Event Structure & Content
         'MISSING_MANDATORY_FIELD',
@@ -79,6 +80,7 @@ final class EpcisValidationCatalog
         'MISSING_SOURCE_DESTINATION',
         'MISSING_BIZ_TRANSACTION',
         'ASN_SHIPMENT_FILE_ADDED',
+        'ASN_SHIPMENT_CORRECTED',
         'ASN_SHIPMENT_PO_MISMATCH',
         'DESTINATION_OWNING_PARTY_MISMATCH',
         'DESTINATION_LOCATION_MISMATCH',
@@ -91,7 +93,11 @@ final class EpcisValidationCatalog
         'VERIFICATION_FAILED',
         'RETURNS_NOT_LINKED',
         'DROP_SHIPMENT_INDICATOR_MISSING',
+        'MIXED_DSCSA_GUIDELINE_RELEASE',
         'OWNERSHIP_TRANSFER_UNCLEAR',
+        'VOID_SHIPPING',
+        'ERROR_DECLARATION',
+        'INBOUND_RECEIVER_REJECTED',
 
         // System / Operational
         'L2_L3_RECONCILIATION_FAILURE',
@@ -132,10 +138,14 @@ final class EpcisValidationCatalog
         'LOT_MISMATCH',
         'QUANTITY_MISMATCH',
         'ASN_SHIPMENT_FILE_ADDED',
+        'ASN_SHIPMENT_CORRECTED',
         'ASN_SHIPMENT_PO_MISMATCH',
         'DESTINATION_OWNING_PARTY_MISMATCH',
         'DESTINATION_LOCATION_MISMATCH',
         'SCHEDULED_PRODUCT_MISSING_DEA',
+        'VOID_SHIPPING',
+        'ERROR_DECLARATION',
+        'INBOUND_RECEIVER_REJECTED',
     ];
 
     public static function isOwned(string $code): bool

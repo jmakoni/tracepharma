@@ -2,7 +2,9 @@
 
 namespace App\Models\Epcis;
 
+use App\Actions\Receiving\ReconcileInboundExpectedLinesFromCustody;
 use App\Enums\EpcisAuthoredKind;
+use App\Enums\EpcisGuideline;
 use App\Enums\EpcisReceivedVia;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Resources\OutboundEpcisDocuments\OutboundEpcisDocumentResource;
@@ -20,11 +22,13 @@ use App\Models\SsccLabelBatch;
 use App\Models\TradingPartner;
 use App\Models\Transferring\TransferringSession;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Copy\OperatorNouns;
 use App\Support\Epcis\EpcisXmlReader;
 use App\Support\Epcis\ExtractPriorPedigreeXml;
 use App\Support\Gs1\Ndc;
 use App\Support\Gs1\Sgtin;
 use App\Support\Shipping\CorrectiveShipmentDocument;
+use App\Support\TenantSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,6 +54,7 @@ class EpcisDocument extends Model
         'ingest_generation',
         'document_uuid_synthesized',
         'schema_version',
+        'dscsa_guideline_release',
         'creation_date',
         'direction',
         'authored_kind',
@@ -103,6 +108,7 @@ class EpcisDocument extends Model
     protected function casts(): array
     {
         return [
+            'dscsa_guideline_release' => EpcisGuideline::class,
             'creation_date' => 'datetime',
             'authored_kind' => EpcisAuthoredKind::class,
             'received_via' => EpcisReceivedVia::class,
@@ -176,14 +182,7 @@ class EpcisDocument extends Model
     public function directionDisplayLabel(): string
     {
         if ($this->direction === 'outbound') {
-            $authoredKind = $this->authored_kind;
-
-            if (! $authoredKind instanceof EpcisAuthoredKind) {
-                $authoredKind = EpcisAuthoredKind::inferAuthoredKindFromNotesAndFilename(
-                    (string) $this->notes,
-                    (string) $this->original_filename,
-                );
-            }
+            $authoredKind = $this->resolvedAuthoredKind();
 
             if ($authoredKind instanceof EpcisAuthoredKind) {
                 return $authoredKind->displayLabel();
@@ -265,11 +264,29 @@ class EpcisDocument extends Model
      * Floor receive overlay for inbound list/view badges.
      * null = show ingest pipeline status instead.
      *
+     * When an inbound shipment (ASN) is linked, badge truth follows shipment
+     * remaining expected — a completed receive session alone is not "Received".
+     *
      * Priority: Received / Partially Received → Receive Blocked → ingest badge.
      */
     public function floorReceiveStatusLabel(): ?string
     {
         $session = $this->receivingSession;
+        $shipment = $this->inboundShipment;
+
+        if ($shipment !== null) {
+            app(ReconcileInboundExpectedLinesFromCustody::class)->handle($shipment);
+            $shipment = $shipment->fresh() ?? $shipment;
+            $this->setRelation('inboundShipment', $shipment);
+        }
+
+        if ($shipment !== null && $this->hasFloorReceiveActivityForShipment($shipment, $session)) {
+            if ($shipment->hasRemainingExpected()) {
+                return OperatorNouns::FLOOR_PARTIALLY_RECEIVED;
+            }
+
+            return OperatorNouns::FLOOR_RECEIVED;
+        }
 
         if ($session !== null && $session->status !== 'cancelled') {
             $expectedParent = (int) ($session->expected_parent_count ?? 0);
@@ -278,7 +295,7 @@ class EpcisDocument extends Model
             $confirmedChild = (int) ($session->confirmed_child_count ?? 0);
 
             if ($session->status === 'completed') {
-                return 'Received';
+                return OperatorNouns::FLOOR_RECEIVED;
             }
 
             $parentsDone = $expectedParent === 0 || $confirmedParent >= $expectedParent;
@@ -289,17 +306,17 @@ class EpcisDocument extends Model
                 || $confirmedChild > 0;
 
             if ($parentsDone && $childrenDone && $hasActivity) {
-                return 'Received';
+                return OperatorNouns::FLOOR_RECEIVED;
             }
 
             $confirmedTotal = $confirmedParent + $confirmedChild;
             if ($confirmedTotal > 0 || $session->status === 'in_progress') {
-                return 'Partially Received';
+                return OperatorNouns::FLOOR_PARTIALLY_RECEIVED;
             }
         }
 
         if (app(ReceivingGate::class)->documentBlockedByOpenException($this) !== null) {
-            return 'Receive Blocked';
+            return OperatorNouns::FLOOR_RECEIVE_BLOCKED;
         }
 
         return null;
@@ -307,7 +324,55 @@ class EpcisDocument extends Model
 
     public function isFloorReceived(): bool
     {
-        return $this->floorReceiveStatusLabel() === 'Received';
+        return $this->floorReceiveStatusLabel() === OperatorNouns::FLOOR_RECEIVED;
+    }
+
+    /**
+     * True when floor work has started on this ASN (shipment rollups or sessions).
+     */
+    private function hasFloorReceiveActivityForShipment(
+        InboundShipment $shipment,
+        ?ReceivingSession $session,
+    ): bool {
+        if ((int) $shipment->confirmed_parent_count > 0 || (int) $shipment->confirmed_each_count > 0) {
+            return true;
+        }
+
+        if ($shipment->expectedLines()->where('status', 'confirmed')->exists()) {
+            return true;
+        }
+
+        $documentId = $this->getKey();
+
+        $sessionActivity = ReceivingSession::query()
+            ->where('status', '!=', 'cancelled')
+            ->where(function ($query) use ($shipment, $documentId): void {
+                $query->where('inbound_shipment_id', $shipment->getKey());
+
+                if ($documentId !== null) {
+                    $query->orWhere('epcis_document_id', $documentId);
+                }
+            })
+            ->where(function ($query): void {
+                $query->whereIn('status', ['in_progress', 'completed'])
+                    ->orWhere('confirmed_parent_count', '>', 0)
+                    ->orWhere('confirmed_child_count', '>', 0);
+            })
+            ->exists();
+
+        if ($sessionActivity) {
+            return true;
+        }
+
+        if ($session === null || $session->status === 'cancelled') {
+            return false;
+        }
+
+        if (in_array($session->status, ['in_progress', 'completed'], true)) {
+            return true;
+        }
+
+        return ((int) $session->confirmed_parent_count + (int) $session->confirmed_child_count) > 0;
     }
 
     /**
@@ -330,9 +395,9 @@ class EpcisDocument extends Model
     public function floorReceiveStatusColor(): ?string
     {
         return match ($this->floorReceiveStatusLabel()) {
-            'Received' => 'success',
-            'Partially Received' => 'warning',
-            'Receive Blocked' => 'danger',
+            OperatorNouns::FLOOR_RECEIVED => 'success',
+            OperatorNouns::FLOOR_PARTIALLY_RECEIVED => 'warning',
+            OperatorNouns::FLOOR_RECEIVE_BLOCKED => 'danger',
             default => null,
         };
     }
@@ -381,18 +446,39 @@ class EpcisDocument extends Model
      * authored kind. Prefers persisted authored_kind; falls back to notes/filename
      * inference for pre-backfill rows (same path as directionDisplayLabel()).
      */
-    public function isSsccAuthoredKind(): bool
+    /**
+     * Persisted authored_kind, or notes/filename inference for pre-backfill outbound rows.
+     */
+    public function resolvedAuthoredKind(): ?EpcisAuthoredKind
     {
         $kind = $this->authored_kind;
 
-        if (! $kind instanceof EpcisAuthoredKind && $this->direction === 'outbound') {
-            $kind = EpcisAuthoredKind::inferAuthoredKindFromNotesAndFilename(
-                (string) $this->notes,
-                (string) $this->original_filename,
-            );
+        if ($kind instanceof EpcisAuthoredKind) {
+            return $kind;
         }
 
-        return in_array($kind, [
+        if ($this->direction !== 'outbound') {
+            return null;
+        }
+
+        return EpcisAuthoredKind::inferAuthoredKindFromNotesAndFilename(
+            (string) $this->notes,
+            (string) $this->original_filename,
+        );
+    }
+
+    /**
+     * Authored receiving is a custody attestation (direction=outbound + supplier partner),
+     * not a DSCSA outbound TI. Seller/sold-to must follow inbound mapping.
+     */
+    public function isAuthoredReceiving(): bool
+    {
+        return $this->resolvedAuthoredKind() === EpcisAuthoredKind::Receiving;
+    }
+
+    public function isSsccAuthoredKind(): bool
+    {
+        return in_array($this->resolvedAuthoredKind(), [
             EpcisAuthoredKind::SsccCommissioning,
             EpcisAuthoredKind::SsccAggregation,
             EpcisAuthoredKind::SsccDisaggregation,
@@ -898,9 +984,10 @@ class EpcisDocument extends Model
         $this->loadMissing(['tradingPartner', 'shipToPartner', 'shipFromSite', 'shipToSite']);
 
         // Outbound tradingPartner is the customer (sold-to), not the seller.
-        $isOutbound = $this->direction === 'outbound';
+        // Authored receiving is a custody attestation: tradingPartner is the supplier.
+        $isOutboundShipment = $this->direction === 'outbound' && ! $this->isAuthoredReceiving();
 
-        if ($isOutbound) {
+        if ($isOutboundShipment) {
             // Never use shipFromSite.tradingPartner as seller (org facilities have null partner).
             $sellerName = filled($this->ship_from_name)
                 ? (string) $this->ship_from_name
@@ -919,7 +1006,7 @@ class EpcisDocument extends Model
             : ($this->shipFromSite?->name !== null ? (string) $this->shipFromSite->name : null);
         $shipFromGln = $this->normalizeShippingGln($this->ship_from_gln);
 
-        if ($isOutbound) {
+        if ($isOutboundShipment) {
             // Outbound sold-to may still resolve via customer tradingPartner.
             $soldToName = filled($this->ship_to_name)
                 ? (string) $this->ship_to_name
@@ -930,12 +1017,19 @@ class EpcisDocument extends Model
                 ?? $this->normalizeShippingGln($this->shipToPartner?->gln)
                 ?? $this->normalizeShippingGln($this->tradingPartner?->gln);
         } else {
-            // Inbound tradingPartner is the seller — never use it as sold-to.
+            // Inbound / authored receiving: tradingPartner is the seller — never sold-to.
             $soldToName = filled($this->ship_to_name)
                 ? (string) $this->ship_to_name
                 : ($this->shipToPartner?->name !== null ? (string) $this->shipToPartner->name : null);
             $soldToGln = $this->normalizeShippingGln($this->receiver_gln)
                 ?? $this->normalizeShippingGln($this->shipToPartner?->gln);
+
+            if ($this->isAuthoredReceiving()) {
+                $soldToName ??= $this->outboundSellerTenantName();
+                $soldToGln ??= $this->normalizeShippingGln(
+                    TenantSettings::forTenant(function_exists('tenant') ? tenant() : null)->gln(),
+                );
+            }
         }
 
         $shipToName = filled($this->ship_to_site_name)

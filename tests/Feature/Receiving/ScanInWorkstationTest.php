@@ -23,7 +23,9 @@ use App\Models\TracingRequest;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ReceivingSessionProgress;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
@@ -60,6 +62,8 @@ class ScanInWorkstationTest extends TestCase
     private array $userIds = [];
 
     private ?bool $priorRequireTi = null;
+
+    private ?ReceivingEdgeMode $priorEdgeMode = null;
 
     #[Test]
     public function page_is_visible_when_receiving_supported(): void
@@ -166,6 +170,43 @@ class ScanInWorkstationTest extends TestCase
             $this->assertStringContainsString('scan-field', $blade);
             $this->assertStringContainsString('show-camera="false"', $blade);
             $this->assertStringContainsString('submit-action="confirmScan"', $blade);
+            $this->assertStringContainsString('receiving-session-progress-stats', $blade);
+            $this->assertStringNotContainsString('tp-scan-qty', $blade);
+            $this->assertStringNotContainsString('Confirmed {{ $this->confirmedLineCount() }}', $blade);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function session_header_shows_parent_child_progress_stats(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwnerUser());
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $session->forceFill([
+                'confirmed_parent_count' => 2,
+                'confirmed_child_count' => 10,
+            ])->save();
+
+            $progress = ReceivingSessionProgress::for(
+                $session->fresh(),
+                ReceivingPolicy::forTenant(tenant()),
+            );
+
+            Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+                ->assertSuccessful()
+                ->assertSee($progress->parentTypeLabel(), false)
+                ->assertSee($progress->childTypeLabel(), false)
+                ->assertSee($progress->parentProgressQuantity(), false)
+                ->assertSee($progress->childProgressQuantity(), false)
+                ->assertDontSee('Confirmed 12', false);
         } finally {
             $this->cleanup();
         }
@@ -174,11 +215,15 @@ class ScanInWorkstationTest extends TestCase
     #[Test]
     public function confirm_scan_creates_confirmed_line(): void
     {
-        $this->initializeDemo2Tenant();
+        $tenant = $this->initializeDemo2Tenant();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
+
+            // Unit barcode confirm — not sealed_parent (rejects SGTIN).
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
 
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.SI'.$suffix;
@@ -217,13 +262,66 @@ class ScanInWorkstationTest extends TestCase
     }
 
     #[Test]
-    public function open_recall_blocks_confirm_on_scan_in_only(): void
+    public function sealed_parent_scan_in_sscc_auto_confirms_children_from_policy(): void
     {
-        $this->initializeDemo2Tenant();
+        $tenant = $this->initializeDemo2Tenant();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
+
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::SealedParent);
+            $tenant->save();
+
+            $policy = ReceivingPolicy::forTenant($tenant);
+            $this->assertSame(ReceivingEdgeMode::SealedParent, $policy->edgeMode());
+            $this->assertTrue($policy->defaultAutoConfirmChildren());
+
+            $ingested = $this->ingestUniqueMinimalShippingFixture();
+            $siteId = $this->eligibleReceiveSiteId();
+            $this->assertNotNull($siteId, 'Demo2 needs an eligible receive site.');
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($ingested['document'], $siteId);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $parent = Epc::query()->where('epc_uri', $ingested['sscc_uri'])->firstOrFail();
+            $child = Epc::query()->where('epc_uri', $ingested['sgtin_uri'])->firstOrFail();
+            $this->epcIds[] = (int) $parent->getKey();
+            $this->epcIds[] = (int) $child->getKey();
+
+            $component = Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+                ->set('scan', $parent->epc_uri)
+                ->callAction('confirmScan')
+                ->assertHasNoActionErrors();
+
+            $this->assertContains(
+                $component->get('lastScanTone'),
+                ['ok', 'warn'],
+                (string) $component->get('lastScanMessage'),
+            );
+            $this->assertSame('confirmed', ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('epc_id', $parent->getKey())
+                ->value('status'), (string) $component->get('lastScanMessage'));
+            $this->assertSame('confirmed', ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('epc_id', $child->getKey())
+                ->value('status'), (string) $component->get('lastScanMessage'));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function open_recall_blocks_confirm_on_scan_in_only(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwnerUser());
+
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
 
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.RL'.$suffix;
@@ -265,6 +363,44 @@ class ScanInWorkstationTest extends TestCase
     }
 
     #[Test]
+    public function serialized_asn_rejects_gtin_lot_scan_without_confirming_lines(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwnerUser());
+
+            $ingested = $this->ingestUniqueMinimalShippingFixture();
+            $siteId = $this->eligibleReceiveSiteId();
+            $this->assertNotNull($siteId);
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($ingested['document'], $siteId);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $child = Epc::query()->where('epc_uri', $ingested['sgtin_uri'])->firstOrFail();
+            $this->epcIds[] = (int) $child->getKey();
+            $lot = $child->ilmd?->lot_number ?? '606412T';
+            $scan = '(01)'.$child->gtin14.'(10)'.$lot;
+
+            $component = Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+                ->set('scan', $scan)
+                ->callAction('confirmScan');
+
+            $this->assertStringContainsString('Scan the 2D serial', (string) $component->get('lastScanMessage'));
+            $this->assertSame(
+                0,
+                ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('status', 'confirmed')
+                    ->count(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function lot_level_scan_on_scan_first_asks_for_asn_or_2d(): void
     {
         $this->initializeDemo2Tenant();
@@ -292,11 +428,16 @@ class ScanInWorkstationTest extends TestCase
     #[Test]
     public function sscc_lists_cases_ticks_on_scan_and_complete_receives_only_confirmed(): void
     {
-        $this->initializeDemo2Tenant();
+        $tenant = $this->initializeDemo2Tenant();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
+
+            // Open count: parent scan does not auto-confirm children (case list tick UX).
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::OpenCount);
+            $tenant->save();
+            $this->assertFalse(ReceivingPolicy::forTenant($tenant)->defaultAutoConfirmChildren());
 
             $ingested = $this->ingestUniqueMinimalShippingFixture();
             $siteId = $this->eligibleReceiveSiteId();
@@ -323,29 +464,40 @@ class ScanInWorkstationTest extends TestCase
                 ->callAction('confirmScan')
                 ->assertHasNoActionErrors();
 
+            $this->assertContains(
+                $component->get('lastScanTone'),
+                ['ok', 'warn'],
+                (string) $component->get('lastScanMessage'),
+            );
             $this->assertSame('confirmed', ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->getKey())
                 ->where('epc_id', $parent->getKey())
-                ->value('status'));
+                ->value('status'), (string) $component->get('lastScanMessage'));
             $this->assertSame('expected', ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->getKey())
                 ->where('epc_id', $scannedChild->getKey())
-                ->value('status'));
+                ->value('status'), (string) $component->get('lastScanMessage'));
 
             $serials = $component->instance()->caseRows()->pluck('serial')->all();
             $this->assertContains($scannedChild->serial_number, $serials);
             $this->assertContains($leftover->serial_number, $serials);
-            $this->assertFalse($component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number)['confirmed']);
+            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
+            $this->assertNotNull($scannedRow);
+            $this->assertFalse($scannedRow['confirmed']);
 
             $component->set('scan', $scannedChild->epc_uri)->callAction('confirmScan');
-            $this->assertTrue($component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number)['confirmed']);
+            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
+            $this->assertNotNull($scannedRow);
+            $this->assertTrue($scannedRow['confirmed']);
 
             $scannedLineId = (int) ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->getKey())
                 ->where('epc_id', $scannedChild->getKey())
                 ->value('id');
             $component->call('removeCase', $scannedLineId);
-            $this->assertFalse($component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number)['confirmed']);
+            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
+            $this->assertNotNull($scannedRow);
+            $this->assertFalse($scannedRow['confirmed']);
 
             $component->set('scan', $scannedChild->epc_uri)
                 ->callAction('confirmScan')
@@ -385,11 +537,14 @@ class ScanInWorkstationTest extends TestCase
     #[Test]
     public function complete_clears_session_when_no_next_inbound(): void
     {
-        $this->initializeDemo2Tenant();
+        $tenant = $this->initializeDemo2Tenant();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
+
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
 
             $siteId = $this->eligibleReceiveSiteId();
             $this->assertNotNull($siteId, 'Demo2 needs an eligible receive site.');
@@ -434,11 +589,14 @@ class ScanInWorkstationTest extends TestCase
     #[Test]
     public function complete_opens_next_inbound_on_scan_in(): void
     {
-        $this->initializeDemo2Tenant();
+        $tenant = $this->initializeDemo2Tenant();
 
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
+
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
 
             $siteId = $this->eligibleReceiveSiteId();
             $this->assertNotNull($siteId, 'Demo2 needs an eligible receive site.');
@@ -601,8 +759,10 @@ class ScanInWorkstationTest extends TestCase
 
         $this->prepareDemo2ReceivingState();
 
-        $this->priorRequireTi = TenantSettings::forTenant($tenant)->requireTiForScanFirst();
-        TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+        $settings = TenantSettings::forTenant($tenant);
+        $this->priorRequireTi = $settings->requireTiForScanFirst();
+        $this->priorEdgeMode = $settings->receivingEdgeMode();
+        $settings->setRequireTiForScanFirst(false);
         $tenant->save();
 
         return $tenant;
@@ -627,10 +787,15 @@ class ScanInWorkstationTest extends TestCase
     {
         if (tenancy()->initialized) {
             $tenant = tenant();
-            if ($this->priorRequireTi !== null && $tenant !== null) {
-                TenantSettings::forTenant($tenant)->setRequireTiForScanFirst($this->priorRequireTi);
+            if ($tenant !== null) {
+                $settings = TenantSettings::forTenant($tenant);
+                if ($this->priorRequireTi !== null) {
+                    $settings->setRequireTiForScanFirst($this->priorRequireTi);
+                    $this->priorRequireTi = null;
+                }
+                $settings->setReceivingEdgeMode($this->priorEdgeMode);
+                $this->priorEdgeMode = null;
                 $tenant->save();
-                $this->priorRequireTi = null;
             }
 
             foreach ($this->requestIds as $requestId) {

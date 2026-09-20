@@ -24,6 +24,19 @@ class UnreceivedPartnerShipmentTest extends TestCase
     }
 
     #[Test]
+    public function leaves_our_authored_void_shipping_out_of_unreceived(): void
+    {
+        $meta = $this->partnerShippingMeta();
+        $meta['document_direction'] = 'outbound';
+        $meta['authored_kind'] = EpcisAuthoredKind::Shipping->value;
+        $meta['biz_step'] = 'urn:epcglobal:cbv:bizstep:void_shipping';
+        $meta['disposition'] = 'urn:epcglobal:cbv:disp:active';
+
+        $this->assertFalse(OutboundShipmentInTransit::matches($meta));
+        $this->assertFalse(UnreceivedPartnerShipment::matches($meta));
+    }
+
+    #[Test]
     public function leaves_our_own_handoffs_to_the_authored_predicate(): void
     {
         foreach ([EpcisAuthoredKind::Shipping, EpcisAuthoredKind::Transferring] as $kind) {

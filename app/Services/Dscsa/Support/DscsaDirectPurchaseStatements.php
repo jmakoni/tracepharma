@@ -24,6 +24,24 @@ final class DscsaDirectPurchaseStatements
         private readonly ResolveGlnToMasterData $resolveGln,
     ) {}
 
+    /**
+     * Outbound shipping TI emits a generated direct-purchase statement only
+     * for wholesaler tenants. Lean and full-history paths must share this gate.
+     */
+    public function outboundWholesalerDirectPurchaseStatement(?Tenant $tenant, bool $affirm, string $sellerName): ?string
+    {
+        if (! $affirm) {
+            return null;
+        }
+
+        $partnerType = $this->tenantProfileToPartnerType($tenant);
+        if ($partnerType !== PartnerType::Wholesaler) {
+            return null;
+        }
+
+        return $this->statementForSeller($partnerType, $sellerName);
+    }
+
     public function statementForSeller(PartnerType $partnerType, string $sellerName): ?string
     {
         $name = $this->displaySellerName($sellerName);

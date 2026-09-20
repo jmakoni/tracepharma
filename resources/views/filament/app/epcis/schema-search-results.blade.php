@@ -109,7 +109,7 @@
                                     <x-copyable-identifier :value="$instanceLabel" :title="filled($data['gtin14'] ?? null) ? 'Copy GTIN' : 'Copy SSCC'">
                                         @if ($instanceScan)
                                             <a
-                                                href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $instanceScan]) }}"
+                                                href="{{ \App\Filament\App\Pages\AssetTracking::getUrl(['scan' => $instanceScan], isAbsolute: false) }}"
                                             class="tp-trace-link"
                                         >{{ $instanceLabel ?? '—' }}</a>
                                         @else

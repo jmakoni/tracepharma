@@ -2,15 +2,16 @@
 
 namespace App\Filament\Support\Floor;
 
+use App\Filament\Notifications\Notification;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Transferring\TransferringSession;
 use App\Support\Floor\UnsubmittedSessionDelete;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Throwable;
 
 final class UnsubmittedSessionDeleteAction
@@ -63,17 +64,23 @@ final class UnsubmittedSessionDeleteAction
         string $redirectUrl,
     ): Action {
         return Action::make('deleteReceiving')
-            ->label('Delete receive')
+            ->label('Cancel')
             ->icon(Heroicon::OutlinedTrash)
             ->color('danger')
             ->visible($visible)
             ->requiresConfirmation()
-            ->modalHeading('Delete this receive permanently?')
-            ->modalDescription(fn (): string => self::modalDescription(
-                $confirmedCount(),
-                'receive session and all scan lines',
-            ))
-            ->modalSubmitActionLabel('Delete permanently')
+            ->modalHeading(fn (): string => $confirmedCount() === 0
+                ? 'Cancel this receive session?'
+                : 'Delete this receive permanently?')
+            ->modalDescription(fn (): string => $confirmedCount() === 0
+                ? 'Cancel this receive session? Nothing has been confirmed yet.'
+                : self::modalDescription(
+                    $confirmedCount(),
+                    'receive session and all scan lines',
+                ))
+            ->modalSubmitActionLabel(fn (): string => $confirmedCount() === 0
+                ? 'Cancel session'
+                : 'Delete permanently')
             ->schema(fn (): array => UnsubmittedSessionDelete::confirmPhraseSchema($confirmedCount()))
             ->action(function (array $data, ?Schema $schema = null) use ($confirmedCount, $delete, $redirectUrl): mixed {
                 UnsubmittedSessionDelete::assertFilamentConfirmPhrase(
@@ -193,7 +200,7 @@ final class UnsubmittedSessionDeleteAction
 
             return null;
         } catch (Throwable $e) {
-            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+            if ($e instanceof AuthorizationException) {
                 throw $e;
             }
 

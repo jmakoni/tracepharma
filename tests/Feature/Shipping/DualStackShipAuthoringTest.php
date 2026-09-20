@@ -6,6 +6,7 @@ namespace Tests\Feature\Shipping;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\GenerateReceivingEpcisEvents;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\GenerateShippingEpcisEvents;
@@ -164,7 +165,40 @@ class DualStackShipAuthoringTest extends TestCase
                 static fn (array $event): bool => ($event['type'] ?? null) === 'ObjectEvent'
                     && ($event['bizStep'] ?? null) === 'urn:epcglobal:cbv:bizstep:shipping',
             ));
-            $this->assertCount(1, $shippingEvents);
+            $this->assertNotEmpty($shippingEvents);
+            if (count($shippingEvents) > 1) {
+                $this->assertLessThan(
+                    (string) $shippingEvents[array_key_last($shippingEvents)]['eventTime'],
+                    (string) $shippingEvents[0]['eventTime'],
+                );
+            }
+
+            $eventList = $decoded['epcisBody']['eventList'];
+            $bizSteps = array_map(
+                static fn (array $event): string => (string) ($event['bizStep'] ?? ''),
+                $eventList,
+            );
+            $this->assertTrue(
+                collect($bizSteps)->contains(static fn (string $step): bool => str_contains($step, 'commissioning')),
+                'JSON-LD packed SSCC TI must replay commissioning.',
+            );
+            $this->assertTrue(
+                collect($bizSteps)->contains(static fn (string $step): bool => str_contains($step, 'packing')),
+                'JSON-LD packed SSCC TI must replay packing.',
+            );
+            $this->assertTrue(
+                collect($eventList)->contains(
+                    static fn (array $event): bool => ($event['type'] ?? null) === 'AggregationEvent',
+                ),
+                'JSON-LD packed SSCC TI must include the pack AggregationEvent.',
+            );
+            $this->assertTrue(
+                collect($eventList)->contains(
+                    static fn (array $event): bool => str_contains((string) ($event['eventTime'] ?? ''), '2026-06-18T23:27:32'),
+                ),
+                'JSON-LD pedigree must keep the manufacturer commission eventTime.',
+            );
+            $this->assertGreaterThan(count($shippingEvents), (int) $document->event_count);
         } finally {
             $this->cleanup($tenant);
         }
@@ -430,11 +464,17 @@ class DualStackShipAuthoringTest extends TestCase
             autoConfirmChildren: true,
         );
 
-        $session->fresh()->forceFill([
+        $session = $session->fresh();
+        $session->forceFill([
             'status' => 'completed',
             'completed_at' => now(),
             'receiving_events_generated_at' => $session->receiving_events_generated_at ?? now(),
         ])->save();
+
+        if ($session->receiving_epcis_document_id === null) {
+            app(GenerateReceivingEpcisEvents::class)->handle($session->fresh());
+            $session = $session->fresh();
+        }
 
         if ($session->receiving_epcis_document_id !== null) {
             $this->documentIds[] = (int) $session->receiving_epcis_document_id;
@@ -540,6 +580,17 @@ class DualStackShipAuthoringTest extends TestCase
 
         OutboundShippingScanLine::query()->whereIn('epc_id', $epcIds)->delete();
         TransferringScanLine::query()->whereIn('epc_id', $epcIds)->delete();
+
+        $shippingEventIds = DB::table('event_epcs')
+            ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+            ->whereIn('event_epcs.epc_id', $epcIds)
+            ->where('epcis_events.biz_step', 'like', '%shipping%')
+            ->pluck('epcis_events.id')
+            ->all();
+
+        if ($shippingEventIds !== []) {
+            DB::table('event_epcs')->whereIn('event_id', $shippingEventIds)->delete();
+        }
 
         $sessionIds = ReceivingScanLine::query()
             ->whereIn('epc_id', $epcIds)

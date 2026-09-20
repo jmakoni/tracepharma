@@ -19,6 +19,7 @@ final class CloseOpenToteReceiving
 {
     public function __construct(
         private readonly CompleteReceivingSession $completeReceivingSession,
+        private readonly FlagManualReceivingException $flagManualReceivingException,
     ) {}
 
     /**
@@ -81,6 +82,27 @@ final class CloseOpenToteReceiving
 
         $session = $result['session'];
         unset($result['session']);
+
+        if ($result['short_closed']) {
+            $unconfirmedChildEpcIds = ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('line_role', 'child')
+                ->where('parent_epc_id', $result['parent_epc_id'])
+                ->where('status', 'expected')
+                ->whereNotNull('epc_id')
+                ->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $this->flagManualReceivingException->ensureShortageFromShortClose(
+                $session,
+                $unconfirmedChildEpcIds,
+                $actor,
+                'Open-tote short-close left expected children unconfirmed.',
+            );
+        }
 
         if ($session->isReadyToCompleteInboundAsn()) {
             $session->forceFill([

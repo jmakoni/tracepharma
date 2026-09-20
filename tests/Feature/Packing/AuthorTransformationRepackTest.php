@@ -15,6 +15,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Tracing\BuildAssetTrace;
+use App\Support\Epcis\AuthoredEventTimezone;
 use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
@@ -70,6 +71,7 @@ class AuthorTransformationRepackTest extends TestCase
             $this->setProfile($tenant, TenantProfile::Prepackager);
             $this->configureOrganization($tenant);
             $site = $this->createSite($tenant);
+            $site->forceFill(['timezone' => 'America/Chicago'])->save();
             $this->actingAsWithSiteAccess($site);
 
             $input = $this->createEpc('IN');
@@ -111,6 +113,11 @@ class AuthorTransformationRepackTest extends TestCase
             $this->assertNotNull($output);
             $this->epcIds[] = (int) $output->getKey();
             $this->assertSame('outputEPC', $roles[(int) $output->getKey()] ?? null);
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $offset = AuthoredEventTimezone::offsetForSite($site->fresh());
+            $this->assertNotSame('+00:00', $offset);
+            $this->assertStringContainsString('<eventTimeZoneOffset>'.$offset.'</eventTimeZoneOffset>', $xml);
         } finally {
             $this->cleanup($tenant);
         }

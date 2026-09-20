@@ -89,6 +89,7 @@ class InboundConnectionIntegrationTest extends TestCase
             $xml = file_get_contents($fixture);
             $this->assertNotFalse($xml);
             $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+            $xml = str_replace('0096295000009', (string) $tenant->gln, $xml);
 
             $request = Request::create(
                 uri: '/api/webhooks/epcis/'.$tenant->id.'/'.$connection->id,
@@ -108,6 +109,9 @@ class InboundConnectionIntegrationTest extends TestCase
             );
 
             $this->assertSame(202, $response->getStatusCode());
+            if (! tenancy()->initialized) {
+                tenancy()->initialize($tenant);
+            }
             $payload = $response->getData(true);
             $this->assertArrayHasKey('document_id', $payload);
             $this->trackEpcisDocumentId((int) $payload['document_id']);

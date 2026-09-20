@@ -9,12 +9,17 @@ use App\Actions\Receiving\GenerateReceivingEpcisEvents;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Enums\TenantProfile;
+use App\Models\Disposition\DispositionScanLine;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Packing\PackingScanLine;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Tenant;
+use App\Models\Transferring\TransferringScanLine;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +52,8 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
 
     private ?bool $priorRequireTi = null;
 
+    private ?ReceivingEdgeMode $priorEdgeMode = null;
+
     #[Test]
     public function confirm_on_second_open_scan_first_session_is_rejected(): void
     {
@@ -73,7 +80,8 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
             $second = app(ConfirmReceivingScan::class)->handle($sessionB, $uri);
             $this->assertFalse($second['ok']);
             $this->assertSame('double_receive', $second['effect']);
-            $this->assertSame('Already confirmed on another open receive session.', $second['message']);
+            $this->assertStringContainsString('Already confirmed on another open receive session', $second['message']);
+            $this->assertStringContainsString('#'.$sessionA->getKey(), $second['message']);
 
             $this->assertSame(
                 0,
@@ -191,6 +199,8 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
 
         try {
             TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $this->priorEdgeMode = TenantSettings::forTenant($tenant)->receivingEdgeMode();
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::SealedParent);
             $tenant->save();
 
             $document = $this->ingestMinimalFixture();
@@ -201,6 +211,7 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
             $this->assertGreaterThan(0, $parentEpcId);
             $this->epcId = $parentEpcId;
             $this->releaseLeftoverReceivingSessionsForEpc($parentEpcId);
+            $this->releaseLeftoverCrossDomainReservationsForEpc($parentEpcId);
 
             $asnSession = app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
             $asnSession->forceFill(['site_id' => null])->save();
@@ -210,7 +221,7 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
             $this->sessionIds[] = (int) $scanFirst->getKey();
 
             $confirm = app(ConfirmReceivingScan::class)->handle($scanFirst, self::SSCC_URI);
-            $this->assertTrue($confirm['ok']);
+            $this->assertTrue($confirm['ok'], ($confirm['effect'] ?? '').': '.($confirm['message'] ?? ''));
             $this->assertSame((int) $asnSession->getKey(), (int) $confirm['reconciled_asn_session_id']);
 
             $asnLine = ReceivingScanLine::query()
@@ -250,9 +261,9 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
 
     private function resolveEligibleReceiveSiteId(): ?int
     {
-        $sites = app(EligibleReceiveSites::class)->options();
+        $site = EligibleReceiveSites::forOrganization()->reorder()->orderBy('id')->first();
 
-        return $sites === [] ? null : (int) array_key_first($sites);
+        return $site !== null ? (int) $site->getKey() : null;
     }
 
     /**
@@ -265,7 +276,7 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
     {
         $sessionIds = ReceivingScanLine::query()
             ->where('epc_id', $epcId)
-            ->whereIn('status', ['confirmed', 'unexpected', 'expected'])
+            ->whereIn('status', ['staged', 'confirmed', 'unexpected', 'expected'])
             ->whereHas('session', function ($query): void {
                 $query->where(function ($exclusive): void {
                     $exclusive
@@ -287,6 +298,69 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
             ReceivingScanLine::query()->where('receiving_session_id', $sessionId)->delete();
             ReceivingSession::query()->whereKey($sessionId)->delete();
         }
+    }
+
+    /**
+     * The shared fixture SSCC can also sit on an open ship/transfer/pack/disposition
+     * session. The exclusive gate now blocks those as well.
+     */
+    private function releaseLeftoverCrossDomainReservationsForEpc(int $epcId): void
+    {
+        OutboundShippingScanLine::query()
+            ->where('epc_id', $epcId)
+            ->where('status', 'confirmed')
+            ->whereHas('session', function ($query): void {
+                $query->where(function ($inner): void {
+                    $inner->whereIn('status', ['open', 'in_progress'])
+                        ->orWhere(function ($completed): void {
+                            $completed->where('status', 'completed')
+                                ->whereNull('shipping_events_generated_at');
+                        });
+                });
+            })
+            ->delete();
+
+        TransferringScanLine::query()
+            ->where('epc_id', $epcId)
+            ->whereIn('status', ['confirmed', 'received'])
+            ->whereHas('session', function ($query): void {
+                $query->where(function ($inner): void {
+                    $inner->whereIn('status', ['open', 'in_transit'])
+                        ->orWhere(function ($pending): void {
+                            $pending->where('status', 'completed')
+                                ->whereNull('receive_events_generated_at');
+                        });
+                });
+            })
+            ->delete();
+
+        PackingScanLine::query()
+            ->where('epc_id', $epcId)
+            ->whereIn('status', ['staged', 'confirmed'])
+            ->whereHas('session', function ($query): void {
+                $query->where(function ($inner): void {
+                    $inner->where('status', 'open')
+                        ->orWhere(function ($pending): void {
+                            $pending->where('status', 'completed')
+                                ->whereNull('packing_events_generated_at');
+                        });
+                });
+            })
+            ->delete();
+
+        DispositionScanLine::query()
+            ->where('epc_id', $epcId)
+            ->whereIn('status', ['staged', 'confirmed'])
+            ->whereHas('session', function ($query): void {
+                $query->where(function ($inner): void {
+                    $inner->where('status', 'open')
+                        ->orWhere(function ($pending): void {
+                            $pending->where('status', 'completed')
+                                ->whereNull('disposition_events_generated_at');
+                        });
+                });
+            })
+            ->delete();
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -368,9 +442,15 @@ class OneBarcodePerActiveReceivingSessionTest extends TestCase
 
             if ($this->priorRequireTi !== null) {
                 TenantSettings::forTenant($tenant)->setRequireTiForScanFirst($this->priorRequireTi);
-                $tenant->save();
                 $this->priorRequireTi = null;
             }
+
+            if ($this->priorEdgeMode !== null) {
+                TenantSettings::forTenant($tenant)->setReceivingEdgeMode($this->priorEdgeMode);
+                $this->priorEdgeMode = null;
+            }
+
+            $tenant->save();
 
             tenancy()->end();
         }

@@ -600,7 +600,7 @@ class ViewException extends ViewRecord
                             return;
                         }
                         $this->refreshRecord();
-                        Notification::make()->title('Cleared for distribution')->success()->send();
+                        Notification::make()->title('Hold cleared for distribution')->success()->send();
                     }),
                 'exception_clear',
                 requireReason: true,

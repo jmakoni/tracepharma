@@ -4,12 +4,14 @@ namespace App\Services\Integrations;
 
 use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\EpcisReceivedVia;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\InboundConnection;
 use App\Models\TradingPartner;
 use App\Rules\ValidGln;
-use App\Support\Epcis\SbdhHeaderExtractor;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\EpcisTempFile;
+use App\Support\Epcis\SbdhHeaderExtractor;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\Gs1\Sgln;
 
@@ -36,6 +38,7 @@ class InboundEpcisReceiver
         array $metadata = [],
     ): array {
         $tradingPartnerId = $this->resolveTradingPartnerId($connection, $content);
+        $this->assertReceiverBelongsToCurrentTenant($connection, $content, $receivedVia, $metadata);
         $filename = $this->normalizeFilename($originalFilename, $content);
 
         $path = EpcisTempFile::write($content, $filename, 'epcis_inbound_');
@@ -73,6 +76,42 @@ class InboundEpcisReceiver
             'document' => $document,
             'trading_partner_id' => $tradingPartnerId,
         ];
+    }
+
+    /**
+     * Hub vias already resolved the tenant from Receiver. Per-connection
+     * AS2, HTTPS, and tenant SFTP must not ingest another tenant's file.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    private function assertReceiverBelongsToCurrentTenant(
+        InboundConnection $connection,
+        string $content,
+        string $receivedVia,
+        array $metadata,
+    ): void {
+        if ($this->skipsCrossTenantReceiverGuard($receivedVia)) {
+            return;
+        }
+
+        try {
+            AssertInboundReceiverGln::assertBelongsToCurrentTenant($content);
+        } catch (InboundReceiverGlnRejected $exception) {
+            $this->logger->log($connection, 'receive', 'failed', $exception->getMessage(), array_merge($metadata, [
+                'received_via' => $receivedVia,
+            ]));
+
+            throw $exception;
+        }
+    }
+
+    private function skipsCrossTenantReceiverGuard(string $receivedVia): bool
+    {
+        return in_array($receivedVia, [
+            EpcisReceivedVia::As2Hub->value,
+            EpcisReceivedVia::HttpsWebhookHub->value,
+            EpcisReceivedVia::SftpHubPoll->value,
+        ], true);
     }
 
     private function resolveTradingPartnerId(InboundConnection $connection, string $content): ?int

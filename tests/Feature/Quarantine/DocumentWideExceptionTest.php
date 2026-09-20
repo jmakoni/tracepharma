@@ -121,6 +121,34 @@ class DocumentWideExceptionTest extends TestCase
     }
 
     #[Test]
+    public function displays_dash_for_gtin_when_epc_gtin14_is_null_even_if_company_prefix_present(): void
+    {
+        $tenant = Tenant::query()->findOrFail(self::DEMO2_TENANT_ID);
+        tenancy()->initialize($tenant);
+
+        try {
+            $epc = $this->makeEpc(substr((string) str()->uuid(), 0, 8), null, [
+                'gtin14' => null,
+                'sscc18' => null,
+                'company_prefix' => '030116',
+            ]);
+
+            $case = app(QuarantineService::class)->quarantineFromFindRecall(
+                epcIds: [$epc->id],
+                reason: 'Missing stored GTIN14',
+            );
+            $this->caseIds[] = (int) $case->getKey();
+
+            $rows = app(SupplierQuarantineTableBuilder::class)->identifierRows($case->fresh());
+            $this->assertNotEmpty($rows);
+            $this->assertSame('—', $rows->first()['gtin']);
+            $this->assertStringNotContainsString('0030116', (string) $rows->first()['gtin']);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function open_document_scoped_case_blocks_receiving_until_resolved(): void
     {
         $this->initializeDemo2Tenant();

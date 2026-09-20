@@ -128,7 +128,7 @@ final class CompleteOutboundShippingSession
                 }
 
                 throw new DomainException(
-                    'Shipment not sent — shipping EPCIS could not be authored: '.$e->getMessage(),
+                    'Ship order not sent — shipping EPCIS could not be authored: '.$e->getMessage(),
                     0,
                     $e,
                 );

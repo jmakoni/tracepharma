@@ -104,6 +104,35 @@ class DispenseCheckApiTest extends TestCase
     }
 
     #[Test]
+    public function rejects_dispense_check_when_gtin_fails_from_upc(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            config(['vrs.driver' => 'fake']);
+
+            $user = User::factory()->create();
+            $token = $user->createToken('dispense-test', [SanctumAbilities::VRS_DISPENSE_CHECK])->plainTextToken;
+
+            tenancy()->end();
+
+            $response = $this->tenantApiPost('/api/v1/dispense-check', $token, [
+                'gtin14' => '34374222669',
+                'serial' => 'BADPAD',
+            ]);
+
+            $response->assertStatus(422)
+                ->assertJsonPath('allowed', false);
+            $this->assertStringContainsString('GTIN', (string) $response->json('message'));
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->assertSame(0, Verification::query()->where('serial', 'BADPAD')->count());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function dispense_check_returns_allowed_for_verified_product(): void
     {
         $this->initializeDemo2Tenant();

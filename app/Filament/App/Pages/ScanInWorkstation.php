@@ -12,6 +12,7 @@ use App\Filament\Notifications\Notification;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\User;
@@ -21,10 +22,15 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Floor\UnsubmittedSessionDelete;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
+use App\Support\Receiving\ExpectedInboundOrderHeader;
+use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ReceivingSessionCompleteCopy;
+use App\Support\Receiving\ReceivingSessionProgress;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveLotLevelReceiveScan;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
@@ -63,6 +69,23 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
     /** @var 'ok'|'warn'|'error'|null */
     public ?string $lastScanTone = null;
+
+    /** Session-scoped seal ack after "Seal intact?" confirmation. */
+    public bool $sessionSealAcknowledged = false;
+
+    public function shouldAskSealIntact(): bool
+    {
+        if (! TenantSettings::forTenant(tenant())->requireSealQuestion()) {
+            return false;
+        }
+
+        return ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren();
+    }
+
+    public function sealAcknowledgedForConfirm(): bool
+    {
+        return ! $this->shouldAskSealIntact() || $this->sessionSealAcknowledged;
+    }
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -110,6 +133,10 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
 
         $this->loadSession($id);
+
+        if ($this->sessionId !== null && $this->preferFloorHud()) {
+            $this->redirect(ReceiveLayout::floorUrl($this->sessionId));
+        }
     }
 
     /**
@@ -130,7 +157,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
 
         return $this->sessionsQuery()
-            ->with(['document', 'tradingPartner', 'site'])
+            ->with(['document', 'document.inboundShipment', 'inboundShipment', 'tradingPartner', 'site'])
             ->whereKey($this->sessionId)
             ->first();
     }
@@ -164,6 +191,42 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             ->count();
     }
 
+    public function sessionProgress(): ?ReceivingSessionProgress
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return null;
+        }
+
+        return ReceivingSessionProgress::for($session, ReceivingPolicy::forTenant(tenant()));
+    }
+
+    public function expectedOrderShipment(): ?InboundShipment
+    {
+        $session = $this->session();
+
+        return $session !== null ? ExpectedInboundOrderHeader::shipmentFor($session) : null;
+    }
+
+    /**
+     * @return array{
+     *     po: ?string,
+     *     asn: ?string,
+     *     status: string,
+     *     parents_confirmed: int,
+     *     parents_expected: int,
+     *     eaches_confirmed: int,
+     *     eaches_expected: int
+     * }|null
+     */
+    public function expectedOrderHeader(): ?array
+    {
+        $session = $this->session();
+
+        return $session !== null ? ExpectedInboundOrderHeader::forSession($session) : null;
+    }
+
     public function contextSiteLabel(): string
     {
         $session = $this->session();
@@ -175,14 +238,29 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
     public function promptCopy(): array
     {
-        return ReceivingPolicy::forTenant(tenant())->promptCopy($this->session());
+        $session = $this->session();
+        $copy = ReceivingPolicy::forTenant(tenant())->promptCopy($session);
+
+        if ($session !== null) {
+            $complete = ReceivingSessionCompleteCopy::for($session);
+            $copy['completeTitle'] = $complete['title'];
+            $copy['completeBody'] = $complete['body'];
+            $copy['documentComplete'] = $complete['document_complete'];
+        }
+
+        return $copy;
     }
 
     public function confirmScanAction(): Action
     {
         return Action::make('confirmScan')
             ->label('Confirm')
+            ->requiresConfirmation(fn (): bool => $this->shouldAskSealIntact())
+            ->modalHeading('Seal intact?')
+            ->modalDescription('Confirm the outer seal is intact before receiving this sealed hierarchy.')
+            ->modalSubmitActionLabel('Seal intact')
             ->action(function (): void {
+                $this->sessionSealAcknowledged = true;
                 $session = $this->session();
                 if ($session === null) {
                     $this->flashScan('error', 'Open a receive session first.');
@@ -233,8 +311,9 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                         $session,
                         $scan,
                         auth()->id(),
-                        false,
+                        ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren(),
                         unpack: ReceivingPolicy::forTenant(tenant())->canUnpackAtReceive(),
+                        sealAcknowledged: $this->sealAcknowledgedForConfirm(),
                     );
                 } catch (InvalidArgumentException|DomainException $e) {
                     $this->flashScan('error', $e->getMessage());
@@ -265,28 +344,11 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                 ->color('primary')
                 ->visible(fn (): bool => $this->sessionId === null)
                 ->action(function (): void {
-                    try {
-                        $session = app(OpenScanFirstReceivingSession::class)->handle(
-                            openedBy: auth()->id(),
-                        );
-                    } catch (InvalidArgumentException|DomainException $e) {
-                        Notification::make()
-                            ->title('Could not open scan-first')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->ephemeral()->send();
-
-                        return;
-                    }
-
-                    $this->sessionId = (int) $session->getKey();
-                    $this->lastScanMessage = null;
-                    $this->lastScanTone = null;
-                    $this->scan = '';
+                    $this->startScanFirstFromPicker();
                 }),
             RegulatoryCompliance::apply(
                 Action::make('completeReceiving')
-                    ->label('Complete receive')
+                    ->label('Complete session')
                     ->icon(Heroicon::OutlinedCheckCircle)
                     ->color('primary')
                     ->visible(fn (): bool => $this->canCompleteManually())
@@ -321,9 +383,11 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                             return;
                         }
 
-                        $this->flashScan('ok', 'Receiving complete');
+                        $session = $session->fresh() ?? $session;
+                        $completeTitle = ReceivingSessionCompleteCopy::for($session)['title'];
+                        $this->flashScan('ok', $completeTitle);
                         Notification::make()
-                            ->title('Receiving complete')
+                            ->title($completeTitle)
                             ->success()
                             ->ephemeral()->send();
 
@@ -379,7 +443,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         $this->sessionId = (int) $next->getKey();
         $this->scan = '';
         Notification::make()
-            ->title('Opened next inbound')
+            ->title('Opened next receive session')
             ->success()
             ->ephemeral()->send();
     }
@@ -547,6 +611,39 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
     }
 
+    public function startScanFirstFromPicker(): void
+    {
+        try {
+            $session = app(OpenScanFirstReceivingSession::class)->handle(
+                openedBy: auth()->id(),
+            );
+        } catch (InvalidArgumentException|DomainException $e) {
+            Notification::make()
+                ->title('Could not open scan-first')
+                ->body($e->getMessage())
+                ->danger()
+                ->ephemeral()->send();
+
+            return;
+        }
+
+        if ($this->preferFloorHud()) {
+            $this->redirect(ReceiveLayout::floorUrl($session));
+
+            return;
+        }
+
+        $this->sessionId = (int) $session->getKey();
+        $this->lastScanMessage = null;
+        $this->lastScanTone = null;
+        $this->scan = '';
+    }
+
+    private function preferFloorHud(): bool
+    {
+        return function_exists('floorShell') && floorShell();
+    }
+
     private function loadSession(int $sessionId): void
     {
         $session = $this->sessionsQuery()
@@ -566,6 +663,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
         $this->sessionId = (int) $session->getKey();
         $this->scan = '';
+        $this->sessionSealAcknowledged = false;
     }
 
     private function clearSession(): void
@@ -574,6 +672,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         $this->scan = '';
         $this->lastScanMessage = null;
         $this->lastScanTone = null;
+        $this->sessionSealAcknowledged = false;
     }
 
     /**

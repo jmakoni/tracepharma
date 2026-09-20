@@ -26,8 +26,19 @@ class EpcisStoragePathTest extends TestCase
         config(['filesystems.disks.epcis_inbound.driver' => 's3']);
 
         $this->assertSame(
-            'inbound/a.xml',
+            'inbound/tenant-1/a.xml',
             EpcisStoragePath::onDisk('epcis_inbound', 'epcis/inbound/a.xml', 'tenant-1'),
+        );
+    }
+
+    #[Test]
+    public function s3_disk_keeps_unscoped_inbound_key_when_tenancy_is_off(): void
+    {
+        config(['filesystems.disks.epcis_inbound.driver' => 's3']);
+
+        $this->assertSame(
+            'inbound/a.xml',
+            EpcisStoragePath::onDisk('epcis_inbound', 'epcis/inbound/a.xml'),
         );
     }
 
@@ -52,6 +63,10 @@ class EpcisStoragePathTest extends TestCase
         $this->assertSame(
             'inbound/a.xml',
             EpcisStoragePath::onDisk('epcis_inbound', 'inbound/a.xml', 'tenant-1'),
+        );
+        $this->assertSame(
+            'inbound/tenant-1/a.xml',
+            EpcisStoragePath::onDisk('epcis_inbound', 'inbound/tenant-1/a.xml', 'tenant-1'),
         );
     }
 

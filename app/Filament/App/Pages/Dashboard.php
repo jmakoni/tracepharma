@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Enums\TenantProfile;
+use App\Filament\App\Pages\Concerns\InteractsWithFloorHome;
 use App\Filament\App\Widgets\CompliancePulseWidget;
 use App\Filament\App\Widgets\FloorQueueWidget;
 use App\Filament\App\Widgets\HomeAnalyticsBundleWidget;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Dashboard\ResolveDashboardWidgets;
+use App\Support\Gs1\Gs1IdentityStatus;
 use App\Support\TenantFeatures;
 use App\Support\TenantOnboarding;
 use App\Support\TenantSettings;
@@ -21,9 +23,12 @@ use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Widgets\Widget;
 use Filament\Widgets\WidgetConfiguration;
+use Illuminate\Contracts\View\View as ViewContract;
 
 class Dashboard extends BaseDashboard
 {
+    use InteractsWithFloorHome;
+
     /**
      * @var array<string, class-string<Widget>>
      */
@@ -44,17 +49,26 @@ class Dashboard extends BaseDashboard
 
     public function mount(): void
     {
-        if (! $this->shouldPromptOnboarding()) {
+        if ($this->shouldPromptOnboarding() && ! session()->get(self::ONBOARDING_REDIRECT_SESSION_KEY)) {
+            session()->put(self::ONBOARDING_REDIRECT_SESSION_KEY, true);
+
+            $this->redirect(OnboardingWizard::getUrl(panel: 'app'));
+
             return;
         }
 
-        if (session()->get(self::ONBOARDING_REDIRECT_SESSION_KEY)) {
-            return;
+    }
+
+    public function render(): ViewContract
+    {
+        if (floorShell()) {
+            return view('filament.app.pages.floor-home')
+                ->layout('layouts.floor-shell', [
+                    'livewire' => $this,
+                ]);
         }
 
-        session()->put(self::ONBOARDING_REDIRECT_SESSION_KEY, true);
-
-        $this->redirect(OnboardingWizard::getUrl(panel: 'app'));
+        return parent::render();
     }
 
     public function content(Schema $schema): Schema
@@ -63,6 +77,8 @@ class Dashboard extends BaseDashboard
             ->components([
                 View::make('filament.app.partials.onboarding-banner')
                     ->visible(fn (): bool => $this->shouldShowOnboardingBanner()),
+                View::make('filament.app.partials.identity-incomplete-banner')
+                    ->visible(fn (): bool => Gs1IdentityStatus::identityIncomplete()),
                 View::make('filament.app.partials.job-role-required-banner')
                     ->visible(fn (): bool => $this->shouldShowJobRoleRequiredBanner()),
                 View::make('filament.app.partials.buying-group-limited-banner')

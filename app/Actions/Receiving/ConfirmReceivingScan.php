@@ -2,17 +2,21 @@
 
 namespace App\Actions\Receiving;
 
+use App\Actions\Epcis\RecordOperationalEpcisException;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Transferring\ConfirmTransferringReceiveScan;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Quarantine\QuarantineHold;
+use App\Models\Receiving\InboundExpectedLine;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
+use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
@@ -20,12 +24,20 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\UnreceivedPartnerShipment;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
+use App\Support\Floor\FloorSessionType;
 use App\Support\Gs1\ElementString;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\FindOpenAsnSessionExpectingEpc;
 use App\Support\Receiving\FindOpenTransferReceiveSessionExpectingEpc;
+use App\Support\Receiving\InboundExpectedLineClaims;
 use App\Support\Receiving\ReceivingEdgeMode;
+use App\Support\Receiving\ReceivingPackShape;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ReceivingSessionProgress;
+use App\Support\Receiving\ResolveInboundAggregationChildEpcs;
+use App\Support\Receiving\ResolveLotLevelReceiveScan;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantSettings;
@@ -33,6 +45,7 @@ use App\Support\Transferring\RecomputeTransferReceivedCount;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -48,10 +61,13 @@ class ConfirmReceivingScan
         private readonly FindOpenTransferReceiveSessionExpectingEpc $findOpenTransferReceiveSessionExpectingEpc,
         private readonly ConfirmExpectedScanLineOnSession $confirmExpectedScanLineOnSession,
         private readonly EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
         private readonly SeedReceivingAsnParentChildren $seedReceivingAsnParentChildren,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly ResolveEpcLastKnownGln $resolveEpcLastKnownGln,
         private readonly CompensateTransferReceiveLine $compensateTransferReceiveLine,
+        private readonly RecordOperationalEpcisException $recordOperationalEpcisException,
+        private readonly ResolveInboundAggregationChildEpcs $resolveInboundAggregationChildEpcs,
     ) {}
 
     /**
@@ -76,8 +92,10 @@ class ConfirmReceivingScan
         ?int $userId = null,
         bool $autoConfirmChildren = false,
         bool $unpack = false,
+        bool $sealAcknowledged = false,
     ): array {
         $scan = ElementString::normalize($scan);
+        $scan = app(ResolveLotLevelReceiveScan::class)->handle($session, $scan);
         $session = $session->fresh() ?? $session;
 
         $actor = $this->resolveActor($userId);
@@ -87,6 +105,24 @@ class ConfirmReceivingScan
 
         if ($actor !== null) {
             $this->assertCanAccessSessionSite($actor, $session);
+        }
+
+        if (
+            $autoConfirmChildren
+            && ! $sealAcknowledged
+            && TenantSettings::forTenant(tenant())->requireSealQuestion()
+        ) {
+            return [
+                'ok' => false,
+                'message' => 'Confirm seal intact before receiving this sealed hierarchy.',
+                'line' => null,
+                'epc' => null,
+                'effect' => 'seal_ack_required',
+                'has_ti' => false,
+                'matched_asn_document_id' => null,
+                'matched_transfer_session_id' => null,
+                'ti_warning' => null,
+            ];
         }
 
         if ($session->isScanFirst()) {
@@ -150,6 +186,18 @@ class ConfirmReceivingScan
                 'has_ti' => false,
                 'matched_asn_document_id' => null,
                 'matched_transfer_session_id' => null,
+                'ti_warning' => null,
+                'reconciled_asn_session_id' => null,
+            ];
+        }
+
+        $scanLevelRejection = $this->scanLevelRejection($session, $epc);
+        if ($scanLevelRejection !== null) {
+            return [
+                ...$scanLevelRejection,
+                'has_ti' => false,
+                'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
                 'ti_warning' => null,
                 'reconciled_asn_session_id' => null,
             ];
@@ -290,23 +338,40 @@ class ConfirmReceivingScan
                     }
                 }
 
-                if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
-                    return [
-                        'ok' => false,
-                        'message' => 'Already confirmed on another open receive session.',
-                        'line' => null,
-                        'epc' => $epc,
-                        'effect' => 'double_receive',
-                        'has_ti' => $hasTi,
-                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
-                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
-                        'ti_warning' => $tiWarning,
-                        'reconciled_asn_session_id' => null,
-                    ];
+                $exclusiveBlock = $this->exclusiveBlockForReceiving($epc, $session, [
+                    'has_ti' => $hasTi,
+                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                    'ti_warning' => $tiWarning,
+                    'reconciled_asn_session_id' => null,
+                ]);
+                if ($exclusiveBlock !== null) {
+                    return $exclusiveBlock;
                 }
 
-                $lineRole = $epc->epc_type === 'sscc' ? 'parent' : 'child';
+                $lineRole = $this->scanFirstLineRole($session, $epc);
                 $now = now();
+
+                if ($lineRole === 'parent') {
+                    $matchedAsnIdForAgg = $context['matched_inbound_document_id'];
+                    $documentIdForChildren = $matchedAsnIdForAgg !== null ? (int) $matchedAsnIdForAgg : null;
+                    $missingAggregation = $this->missingAggregationRejection(
+                        $session,
+                        $epc,
+                        $autoConfirmChildren,
+                        $documentIdForChildren,
+                    );
+                    if ($missingAggregation !== null) {
+                        return [
+                            ...$missingAggregation,
+                            'has_ti' => $hasTi,
+                            'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                            'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                            'ti_warning' => $tiWarning,
+                            'reconciled_asn_session_id' => null,
+                        ];
+                    }
+                }
 
                 if ($line === null) {
                     $line = ReceivingScanLine::query()->create([
@@ -355,12 +420,8 @@ class ConfirmReceivingScan
                 }
 
                 $confirmedChildren = 0;
+                $seededChildEpcIds = [];
                 if ($lineRole === 'parent') {
-                    // Scope children to THIS scan's ASN match only. Sticky session
-                    // matched_epcis_document_id must not block open-link fallback for
-                    // later sealed parents that have no ASN match.
-                    $documentIdForChildren = $matchedAsnId !== null ? (int) $matchedAsnId : null;
-
                     $confirmedChildren = $this->seedAndConfirmChildrenForParent(
                         $session,
                         $epc,
@@ -369,7 +430,24 @@ class ConfirmReceivingScan
                         $autoConfirmChildren,
                         $now,
                     );
+                    if ($autoConfirmChildren) {
+                        $seededChildEpcIds = ReceivingScanLine::query()
+                            ->where('receiving_session_id', $session->getKey())
+                            ->where('parent_epc_id', $epc->getKey())
+                            ->where('status', 'confirmed')
+                            ->pluck('epc_id')
+                            ->map(fn ($id): int => (int) $id)
+                            ->all();
+                    }
                 }
+
+                $this->markShipmentExpectedConfirmed(
+                    $session,
+                    $epc,
+                    $userId,
+                    $autoConfirmChildren && $lineRole === 'parent',
+                    $seededChildEpcIds,
+                );
 
                 // Scan-first never auto-completes — operator must Complete manually.
 
@@ -633,7 +711,7 @@ class ConfirmReceivingScan
     /**
      * Seed (and optionally auto-confirm) aggregation children under a scanned SSCC
      * for scan-first receives. Uses the matched inbound ASN document when present;
-     * otherwise falls back to open aggregation links under the parent.
+     * from the matched inbound document only (no warehouse link fallback).
      *
      * @return int Newly confirmed child count for this parent
      */
@@ -645,41 +723,11 @@ class ConfirmReceivingScan
         bool $autoConfirmChildren,
         mixed $now,
     ): int {
-        if ($documentId !== null) {
-            $document = EpcisDocument::query()->find($documentId);
-
-            $childEpcIds = AggregationLink::query()
-                ->where('parent_epc_id', $parentEpc->getKey())
-                ->whereNull('valid_to')
-                ->whereIn('established_by_event_id', function ($query) use ($documentId, $document): void {
-                    $query->select('id')
-                        ->from('epcis_events')
-                        ->where('document_id', $documentId);
-
-                    if (
-                        $document !== null
-                        && Schema::hasColumn('epcis_events', 'ingest_generation')
-                        && Schema::hasColumn('epcis_documents', 'ingest_generation')
-                        && filled($document->getAttribute('ingest_generation'))
-                    ) {
-                        $query->where('ingest_generation', $document->getAttribute('ingest_generation'));
-                    }
-                })
-                ->pluck('child_epc_id')
-                ->map(fn ($id): int => (int) $id)
-                ->unique()
-                ->values()
-                ->all();
-        } else {
-            $childEpcIds = AggregationLink::query()
-                ->where('parent_epc_id', $parentEpc->getKey())
-                ->whereNull('valid_to')
-                ->pluck('child_epc_id')
-                ->map(fn ($id): int => (int) $id)
-                ->unique()
-                ->values()
-                ->all();
-        }
+        $childEpcIds = $this->resolveInboundAggregationChildEpcs->childEpcIdsForParent(
+            $session,
+            $parentEpc,
+            $documentId,
+        );
 
         if ($childEpcIds === []) {
             return 0;
@@ -910,6 +958,7 @@ class ConfirmReceivingScan
             ];
         }
 
+        // Transfer receive confirms the same SSCC/SGTIN units that shipped — not Receive SOP scan level.
         $principalBlock = $this->principalCustodyBlock($session, $epc);
         if ($principalBlock !== null) {
             $principalBlock['session_completed'] = false;
@@ -933,19 +982,25 @@ class ConfirmReceivingScan
             ];
         }
 
-        if ($line->status !== 'confirmed' && $this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
-            $other = $this->epcOnAnotherOpenReceivingSession->otherSession($epc, $session);
-            // Scan-first confirms at the destination are the intended source for
-            // OpenTransferReceivingSession backfill — do not treat as double receive.
-            if ($other === null || ! $other->isScanFirst()) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on another open receive session.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_receive',
-                    'session_completed' => false,
-                ];
+        if ($line->status !== 'confirmed') {
+            $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+            if ($block !== null) {
+                $allowScanFirstBackfill = $block->effect === 'double_receive'
+                    && $block->sessionType === FloorSessionType::Receiving;
+                if ($allowScanFirstBackfill) {
+                    $other = $this->epcOnAnotherOpenReceivingSession->otherSession($epc, $session);
+                    // Scan-first confirms at the destination are the intended source for
+                    // OpenTransferReceivingSession backfill — do not treat as double receive.
+                    $allowScanFirstBackfill = $other !== null && $other->isScanFirst();
+                }
+                if (! $allowScanFirstBackfill) {
+                    return [
+                        ...$block->toScanResult(),
+                        'line' => null,
+                        'epc' => $epc,
+                        'session_completed' => false,
+                    ];
+                }
             }
         }
 
@@ -1107,7 +1162,7 @@ class ConfirmReceivingScan
         }
 
         $message = $sessionCompleted
-            ? 'Received — transfer complete.'
+            ? 'Transfer receive complete'
             : 'Received at destination.';
 
         if ($completionError !== null) {
@@ -1144,7 +1199,7 @@ class ConfirmReceivingScan
         if ($transfer->status === 'completed') {
             return [
                 'ok' => true,
-                'message' => 'Transfer already received.',
+                'message' => 'Already received on this transfer',
                 'effect' => 'completed',
                 'session_completed' => true,
             ];
@@ -1204,7 +1259,7 @@ class ConfirmReceivingScan
         return [
             'ok' => true,
             'message' => $sessionCompleted
-                ? 'Received — transfer complete.'
+                ? 'Transfer receive complete'
                 : 'Received at destination.',
             'effect' => $sessionCompleted ? 'completed' : 'received',
             'session_completed' => $sessionCompleted,
@@ -1217,7 +1272,7 @@ class ConfirmReceivingScan
      *     message: string,
      *     line: ?ReceivingScanLine,
      *     epc: ?Epc,
-     *     effect: 'parent_confirmed'|'child_confirmed'|'unexpected'|'already_confirmed'|'not_in_session'|'quarantined'
+     *     effect: 'parent_confirmed'|'child_confirmed'|'unexpected'|'already_confirmed'|'already_received'|'not_in_session'|'quarantined'
      * }
      */
     private function confirmInboundAsn(
@@ -1239,6 +1294,23 @@ class ConfirmReceivingScan
                 'epc' => null,
                 'effect' => 'unexpected',
             ];
+        }
+
+        $scanLevelRejection = $this->scanLevelRejection($session, $epc);
+        if ($scanLevelRejection !== null) {
+            return $scanLevelRejection;
+        }
+
+        if (
+            ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()
+            && $epc->epc_type === 'sscc'
+            && ! ReceivingPackShape::isLogisticsPalletSscc($epc, $session)
+            && ! ReceivingPackShape::isCasePack($epc, $session)
+        ) {
+            $missingAggregation = $this->missingAggregationRejection($session, $epc, true);
+            if ($missingAggregation !== null) {
+                return $missingAggregation;
+            }
         }
 
         $result = DB::transaction(function () use ($session, $scan, $userId, $autoConfirmChildren, $epc, $mismatch): array {
@@ -1293,14 +1365,16 @@ class ConfirmReceivingScan
                 return $principalBlock;
             }
 
-            if ($this->epcOnAnotherOpenReceivingSession->exists($epc, $session)) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on another open receive session.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_receive',
-                ];
+            // Shipment-level already_received / claim checks before cross-session double-receive,
+            // so parallel ASN sessions see already_received for confirmed shipment lines.
+            $shipmentGate = $this->shipmentExpectedConfirmGate($session, $epc, $scan);
+            if ($shipmentGate !== null) {
+                return $shipmentGate;
+            }
+
+            $exclusiveBlock = $this->exclusiveBlockForReceiving($epc, $session);
+            if ($exclusiveBlock !== null) {
+                return $exclusiveBlock;
             }
 
             $line = ReceivingScanLine::query()
@@ -1309,9 +1383,93 @@ class ConfirmReceivingScan
                 ->lockForUpdate()
                 ->first();
 
+            // Parallel empty sessions: claim unclaimed shipment expected EPC onto this session.
+            if ($line === null
+                && Schema::hasTable('inbound_expected_lines')
+                && $session->inbound_shipment_id !== null
+            ) {
+                $expectedLine = InboundExpectedLine::query()
+                    ->where('inbound_shipment_id', $session->inbound_shipment_id)
+                    ->where('epc_id', $epc->getKey())
+                    ->whereIn('status', ['expected', 'confirmed'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($expectedLine !== null && $expectedLine->status === 'expected') {
+                    if (InboundExpectedLineClaims::isClaimedByOtherLiveSession(
+                        $expectedLine,
+                        (int) $session->getKey(),
+                    )) {
+                        return [
+                            'ok' => false,
+                            'message' => 'Already in another receive session.',
+                            'line' => null,
+                            'epc' => $epc,
+                            'effect' => 'claimed_other_session',
+                        ];
+                    }
+
+                    $epcId = (int) $epc->getKey();
+                    $claimed = $expectedLine->line_role === 'child'
+                        ? InboundExpectedLineClaims::claimExpectedChildren($session, [$epcId])
+                        : InboundExpectedLineClaims::claimExpectedParents($session, [$epcId]);
+                    if ($claimed !== []) {
+                        $line = ReceivingScanLine::query()->create([
+                            'receiving_session_id' => $session->getKey(),
+                            'epc_id' => $epc->getKey(),
+                            'parent_epc_id' => $expectedLine->parent_epc_id !== null
+                                ? (int) $expectedLine->parent_epc_id
+                                : null,
+                            'line_role' => $expectedLine->line_role === 'child' ? 'child' : 'parent',
+                            'status' => 'expected',
+                            'scan_raw' => $scan,
+                        ]);
+                        if ($line->line_role === 'parent') {
+                            $session->forceFill([
+                                'expected_parent_count' => (int) $session->expected_parent_count + 1,
+                            ])->save();
+                        } else {
+                            $session->forceFill([
+                                'expected_child_count' => (int) $session->expected_child_count + 1,
+                            ])->save();
+                        }
+                    }
+                }
+
+                if ($line === null && $expectedLine !== null && $expectedLine->status === 'confirmed'
+                    && app(EpcCustodyGate::class)->epcIdsInCustody([(int) $epc->getKey()]) === []) {
+                    $line = ReceivingScanLine::query()->create([
+                        'receiving_session_id' => $session->getKey(),
+                        'epc_id' => $epc->getKey(),
+                        'parent_epc_id' => $expectedLine->parent_epc_id !== null
+                            ? (int) $expectedLine->parent_epc_id
+                            : null,
+                        'line_role' => $expectedLine->line_role === 'child' ? 'child' : 'parent',
+                        'status' => 'expected',
+                        'scan_raw' => $scan,
+                    ]);
+                    if ($line->line_role === 'parent') {
+                        $session->forceFill([
+                            'expected_parent_count' => (int) $session->expected_parent_count + 1,
+                        ])->save();
+                    } else {
+                        $session->forceFill([
+                            'expected_child_count' => (int) $session->expected_child_count + 1,
+                        ])->save();
+                    }
+                }
+            }
+
             $openToteRejection = $this->openToteScanRejection($session, $line, $epc);
             if ($openToteRejection !== null) {
                 return $openToteRejection;
+            }
+
+            if ($line === null || $line->status === 'unexpected') {
+                $nestedCaseLine = $this->materializeCaseOnlyAsnNestedCaseLine($session, $epc, $line);
+                if ($nestedCaseLine !== null) {
+                    $line = $nestedCaseLine;
+                }
             }
 
             if ($line === null) {
@@ -1352,6 +1510,38 @@ class ConfirmReceivingScan
                     'epc' => $epc,
                     'effect' => 'unexpected',
                 ];
+            }
+
+            if (
+                $line->line_role === 'child'
+                && ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()
+                && ReceivingPackShape::isCasePack($epc, $session)
+            ) {
+                $outerParentId = $this->outerExpectedParentEpcIdForCase($session, $epc);
+                if ($outerParentId === null && $line->parent_epc_id !== null) {
+                    $linkedParentExists = ReceivingScanLine::query()
+                        ->where('receiving_session_id', $session->getKey())
+                        ->where('epc_id', $line->parent_epc_id)
+                        ->where('line_role', 'parent')
+                        ->whereIn('status', ['expected', 'confirmed'])
+                        ->exists();
+                    if ($linkedParentExists) {
+                        $outerParentId = (int) $line->parent_epc_id;
+                    }
+                }
+
+                if ($outerParentId !== null) {
+                    $line->forceFill([
+                        'line_role' => 'parent',
+                        'parent_epc_id' => $outerParentId,
+                    ])->save();
+
+                    $session->forceFill([
+                        'expected_parent_count' => (int) $session->expected_parent_count + 1,
+                    ])->save();
+
+                    return $this->confirmParent($session, $line->fresh(), $epc, $scan, $userId, $mismatch, $autoConfirmChildren);
+                }
             }
 
             if ($line->line_role === 'parent') {
@@ -1409,6 +1599,11 @@ class ConfirmReceivingScan
         ?array $mismatch,
         bool $autoConfirmChildren,
     ): array {
+        $missingAggregation = $this->missingAggregationRejection($session, $epc, $autoConfirmChildren);
+        if ($missingAggregation !== null) {
+            return $missingAggregation;
+        }
+
         $now = now();
 
         $line->forceFill([
@@ -1428,6 +1623,8 @@ class ConfirmReceivingScan
 
         $confirmedChildren = $seeded['confirmed_children'];
         $skippedQuarantined = $seeded['skipped_quarantined'];
+        $parentExpected = (int) ($seeded['parent_expected_children'] ?? count($seeded['child_epc_ids']));
+        $parentConfirmed = (int) ($seeded['parent_confirmed_children'] ?? $confirmedChildren);
 
         $sessionUpdates = [
             'status' => 'in_progress',
@@ -1442,11 +1639,23 @@ class ConfirmReceivingScan
 
         $session->forceFill($sessionUpdates)->save();
 
-        $this->releaseOpenToteLockIfChildrenDone($session->refresh());
-        $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
+        $session = $session->refresh();
+        $this->maybeCoverOuterPalletAfterCaseOnlyConfirm($session, $line->fresh());
 
-        $message = $confirmedChildren > 0
-            ? sprintf('Pallet confirmed · %d units', $confirmedChildren)
+        $this->releaseOpenToteLockIfChildrenDone($session);
+        $needsCompletion = $this->markSessionCompletedIfReady($session);
+
+        $this->markShipmentExpectedConfirmed(
+            $session,
+            $epc,
+            $userId,
+            $autoConfirmChildren,
+            $seeded['child_epc_ids'],
+        );
+
+        $childNoun = ReceivingSessionProgress::for($session)->childTypeLabel();
+        $message = $parentExpected > 0
+            ? sprintf('Pallet confirmed · %d of %d %s', $parentConfirmed, $parentExpected, $childNoun)
             : 'Pallet confirmed.';
 
         if ($skippedQuarantined > 0) {
@@ -1464,6 +1673,9 @@ class ConfirmReceivingScan
             'effect' => 'parent_confirmed',
             'needs_completion' => $needsCompletion,
             'skipped_quarantined_children' => $skippedQuarantined,
+            'parent_expected_children' => $parentExpected,
+            'parent_confirmed_children' => $parentConfirmed,
+            'parent_child_uom' => $childNoun,
         ];
     }
 
@@ -1505,6 +1717,8 @@ class ConfirmReceivingScan
         $this->releaseOpenToteLockIfChildrenDone($session->refresh());
         $needsCompletion = $this->markSessionCompletedIfReady($session->refresh());
 
+        $this->markShipmentExpectedConfirmed($session, $epc, $userId, false);
+
         return [
             'ok' => true,
             'message' => 'Unit confirmed.',
@@ -1513,6 +1727,593 @@ class ConfirmReceivingScan
             'epc' => $epc,
             'effect' => 'child_confirmed',
         ];
+    }
+
+    /**
+     * Shipment-level expected-line gate before ASN session confirm.
+     *
+     * @return array{ok: bool, message: string, line: ?ReceivingScanLine, epc: Epc, effect: string}|null
+     */
+    private function shipmentExpectedConfirmGate(ReceivingSession $session, Epc $epc, string $scan): ?array
+    {
+        if (! Schema::hasTable('inbound_expected_lines')
+            || ! Schema::hasColumn('receiving_sessions', 'inbound_shipment_id')
+            || $session->inbound_shipment_id === null) {
+            return null;
+        }
+
+        $shipmentId = (int) $session->inbound_shipment_id;
+        $epcId = (int) $epc->getKey();
+
+        $onThisShipment = InboundExpectedLine::query()
+            ->where('inbound_shipment_id', $shipmentId)
+            ->where('epc_id', $epcId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($onThisShipment !== null && $onThisShipment->status === 'confirmed') {
+            $inCustody = app(EpcCustodyGate::class)->epcIdsInCustody([$epcId]);
+            if ($inCustody !== []) {
+                return [
+                    'ok' => true,
+                    'message' => 'Already received.',
+                    'line' => ReceivingScanLine::query()
+                        ->where('receiving_session_id', $session->getKey())
+                        ->where('epc_id', $epcId)
+                        ->first(),
+                    'epc' => $epc,
+                    'effect' => 'already_received',
+                ];
+            }
+        }
+
+        if ($onThisShipment !== null
+            && InboundExpectedLineClaims::isClaimedByOtherLiveSession($onThisShipment, (int) $session->getKey())
+        ) {
+            return [
+                'ok' => false,
+                'message' => 'Already in another receive session.',
+                'line' => ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('epc_id', $epcId)
+                    ->first(),
+                'epc' => $epc,
+                'effect' => 'claimed_other_session',
+            ];
+        }
+
+        if ($onThisShipment !== null) {
+            return null;
+        }
+
+        $onOtherShipment = InboundExpectedLine::query()
+            ->where('epc_id', $epcId)
+            ->where('inbound_shipment_id', '!=', $shipmentId)
+            ->whereIn('status', ['expected', 'confirmed'])
+            ->exists();
+
+        if ($onOtherShipment) {
+            $isChildOfExpectedParent = InboundExpectedLine::query()
+                ->where('inbound_shipment_id', $shipmentId)
+                ->where('line_role', 'parent')
+                ->whereIn('status', ['expected', 'confirmed'])
+                ->whereIn('epc_id', function ($query) use ($epcId): void {
+                    $query->select('parent_epc_id')
+                        ->from('aggregation_links')
+                        ->where('child_epc_id', $epcId)
+                        ->whereNull('valid_to');
+                })
+                ->exists();
+
+            if ($isChildOfExpectedParent) {
+                return null;
+            }
+
+            $line = ReceivingScanLine::query()
+                ->where('receiving_session_id', $session->getKey())
+                ->where('epc_id', $epcId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($line === null) {
+                $line = ReceivingScanLine::query()->create([
+                    'receiving_session_id' => $session->getKey(),
+                    'epc_id' => $epcId,
+                    'parent_epc_id' => null,
+                    'line_role' => $epc->epc_type === 'sscc' ? 'parent' : 'child',
+                    'status' => 'unexpected',
+                    'scan_raw' => $scan,
+                ]);
+            } elseif ($line->status !== 'confirmed') {
+                $line->forceFill([
+                    'status' => 'unexpected',
+                    'scan_raw' => $scan,
+                ])->save();
+            }
+
+            return [
+                'ok' => false,
+                'message' => 'Barcode belongs to another ASN — logged as Unexpected.',
+                'line' => $line->fresh(),
+                'epc' => $epc,
+                'effect' => 'unexpected',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Mark matching inbound_expected_lines confirmed for this session's shipment.
+     *
+     * @param  list<int>  $seededChildEpcIds  Child EPC ids already resolved by SeedReceivingAsnParentChildren
+     */
+    public function markShipmentExpectedConfirmed(
+        ReceivingSession $session,
+        Epc $epc,
+        ?int $userId,
+        bool $autoConfirmChildren = false,
+        array $seededChildEpcIds = [],
+    ): void {
+        if (! $this->hasInboundExpectedLinesSchema()) {
+            return;
+        }
+
+        $shipmentId = $this->resolveShipmentIdForExpectedStamp($session, $epc);
+        if ($shipmentId === null) {
+            return;
+        }
+        $now = now();
+        $sessionId = (int) $session->getKey();
+
+        $line = InboundExpectedLine::query()
+            ->where('inbound_shipment_id', $shipmentId)
+            ->where('epc_id', $epc->getKey())
+            ->first();
+
+        if ($line !== null && $line->status === 'confirmed') {
+            // Seed already materialised children — still roll up. Otherwise nothing to do.
+            if (! $autoConfirmChildren || $seededChildEpcIds === []) {
+                return;
+            }
+        } elseif ($line !== null && $line->status === 'expected') {
+            $line->forceFill([
+                'status' => 'confirmed',
+                'confirmed_at' => $now,
+                'confirmed_by' => $userId,
+                'confirmed_receiving_session_id' => $sessionId,
+                'claimed_receiving_session_id' => null,
+            ])->save();
+        }
+
+        if ($autoConfirmChildren) {
+            if ($seededChildEpcIds !== []) {
+                // Seed already upserted children (often already confirmed). One UPDATE for stragglers.
+                InboundExpectedLine::query()
+                    ->where('inbound_shipment_id', $shipmentId)
+                    ->where(function ($query) use ($epc, $seededChildEpcIds): void {
+                        $query->where('parent_epc_id', $epc->getKey())
+                            ->orWhereIn('epc_id', $seededChildEpcIds);
+                    })
+                    ->where('status', 'expected')
+                    ->update([
+                        'status' => 'confirmed',
+                        'confirmed_at' => $now,
+                        'confirmed_by' => $userId,
+                        'confirmed_receiving_session_id' => $sessionId,
+                        'claimed_receiving_session_id' => null,
+                        'parent_epc_id' => $epc->getKey(),
+                        'line_role' => 'child',
+                        'updated_at' => $now,
+                    ]);
+            } else {
+                $this->ensureAndConfirmChildExpectedLines(
+                    $session,
+                    $epc,
+                    $userId,
+                    $now,
+                    $seededChildEpcIds,
+                    $shipmentId,
+                );
+            }
+        }
+
+        $shipment = InboundShipment::query()->find($shipmentId);
+        if ($shipment !== null) {
+            $shipment->refreshRollups();
+            $shipment->markCompleteIfDone();
+        }
+    }
+
+    private function hasInboundExpectedLinesSchema(): bool
+    {
+        static $ready = null;
+
+        return $ready ??= Schema::hasTable('inbound_expected_lines')
+            && Schema::hasColumn('receiving_sessions', 'inbound_shipment_id');
+    }
+
+    /**
+     * Confirm (and ensure) shipment expected child lines using Seed-returned child EPC ids
+     * and/or children already present under this parent — no AggregationLink re-crawl.
+     *
+     * @param  list<int>  $childEpcIds
+     */
+    /**
+     * File-path sessions stamp their linked shipment. Scan-first stamps the unique
+     * open ASN that still expects this EPC — same remaining-expected ledger.
+     * Two open ASNs expecting the same EPC is ambiguous; leave lines expected.
+     */
+    private function resolveShipmentIdForExpectedStamp(ReceivingSession $session, Epc $epc): ?int
+    {
+        if ($session->inbound_shipment_id !== null) {
+            return (int) $session->inbound_shipment_id;
+        }
+
+        $shipmentIds = InboundExpectedLine::query()
+            ->where('epc_id', $epc->getKey())
+            ->whereIn('status', ['expected', 'confirmed'])
+            ->whereHas('inboundShipment', function ($query): void {
+                $query->whereIn('status', ['expected', 'open']);
+            })
+            ->distinct()
+            ->pluck('inbound_shipment_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        return $shipmentIds->count() === 1 ? $shipmentIds->first() : null;
+    }
+
+    private function ensureAndConfirmChildExpectedLines(
+        ReceivingSession $session,
+        Epc $parentEpc,
+        ?int $userId,
+        mixed $now,
+        array $childEpcIds = [],
+        ?int $shipmentId = null,
+    ): void {
+        $shipmentId ??= $session->inbound_shipment_id !== null
+            ? (int) $session->inbound_shipment_id
+            : null;
+
+        if ($shipmentId === null) {
+            return;
+        }
+        $sessionId = (int) $session->getKey();
+        $parentEpcId = (int) $parentEpc->getKey();
+
+        // Confirm children already synced onto the shipment under this parent
+        // (addendum parents may live on other member documents than session.epcis_document_id).
+        InboundExpectedLine::query()
+            ->where('inbound_shipment_id', $shipmentId)
+            ->where('parent_epc_id', $parentEpcId)
+            ->where('line_role', 'child')
+            ->where('status', 'expected')
+            ->update([
+                'status' => 'confirmed',
+                'confirmed_at' => $now,
+                'confirmed_by' => $userId,
+                'confirmed_receiving_session_id' => $sessionId,
+                'claimed_receiving_session_id' => null,
+                'updated_at' => $now,
+            ]);
+
+        if ($childEpcIds === []) {
+            return;
+        }
+
+        $childEpcIds = array_values(array_unique(array_map('intval', $childEpcIds)));
+
+        $rows = [];
+        foreach ($childEpcIds as $childEpcId) {
+            $rows[] = [
+                'inbound_shipment_id' => $shipmentId,
+                'epc_id' => $childEpcId,
+                'parent_epc_id' => $parentEpcId,
+                'line_role' => 'child',
+                'status' => 'expected',
+                'source' => 'epcis_aggregation',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        // Unique (inbound_shipment_id, epc_id) — insert missing only; never clobber confirmed/cancelled.
+        InboundExpectedLine::query()->insertOrIgnore($rows);
+
+        InboundExpectedLine::query()
+            ->where('inbound_shipment_id', $shipmentId)
+            ->whereIn('epc_id', $childEpcIds)
+            ->whereNull('parent_epc_id')
+            ->update([
+                'parent_epc_id' => $parentEpcId,
+                'updated_at' => $now,
+            ]);
+
+        InboundExpectedLine::query()
+            ->where('inbound_shipment_id', $shipmentId)
+            ->whereIn('epc_id', $childEpcIds)
+            ->where('status', 'expected')
+            ->update([
+                'status' => 'confirmed',
+                'confirmed_at' => $now,
+                'confirmed_by' => $userId,
+                'confirmed_receiving_session_id' => $sessionId,
+                'claimed_receiving_session_id' => null,
+                'updated_at' => $now,
+            ]);
+    }
+
+    /**
+     * Reject scans that do not match the organization Receive SOP scan level.
+     *
+     * @return array{ok: false, message: string, line: null, epc: Epc, effect: string}|null
+     */
+    private function scanLevelRejection(ReceivingSession $session, Epc $epc): ?array
+    {
+        $policy = ReceivingPolicy::forTenant(tenant());
+        $message = $policy->scanLevelRejectionMessage($epc, $session);
+
+        if ($message === null) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'message' => $message,
+            'line' => null,
+            'epc' => $epc,
+            'effect' => $policy->operatorScansSsccOnly() ? 'sscc_only' : 'scan_level',
+        ];
+    }
+
+    /**
+     * Sealed parent / tote / case modes with auto-confirm must have AggregationLink children.
+     *
+     * @return array{ok: false, message: string, line: null, epc: Epc, effect: string}|null
+     */
+    private function missingAggregationRejection(
+        ReceivingSession $session,
+        Epc $epc,
+        bool $autoConfirmChildren,
+        ?int $preferredDocumentId = null,
+    ): ?array {
+        if (! $autoConfirmChildren) {
+            return null;
+        }
+
+        $policy = ReceivingPolicy::forTenant(tenant());
+        if (! $policy->requiresAggregationChildrenOnConfirm()) {
+            return null;
+        }
+
+        $childEpcIds = $this->resolveInboundAggregationChildEpcs->childEpcIdsForParent(
+            $session,
+            $epc,
+            $preferredDocumentId,
+        );
+
+        if ($childEpcIds !== []) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'message' => 'No aggregation children found for this barcode — cannot auto-confirm sealed receive',
+            'line' => null,
+            'epc' => $epc,
+            'effect' => 'missing_aggregation',
+        ];
+    }
+
+    private function scanFirstLineRole(ReceivingSession $session, Epc $epc): string
+    {
+        if ($epc->epc_type === 'sscc') {
+            return 'parent';
+        }
+
+        if (
+            ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()
+            && ReceivingPackShape::isCasePack($epc, $session)
+        ) {
+            return 'parent';
+        }
+
+        return 'child';
+    }
+
+    /**
+     * case_only ASN: nested case SSCC under an expected pallet becomes a confirmable parent line.
+     */
+    private function materializeCaseOnlyAsnNestedCaseLine(
+        ReceivingSession $session,
+        Epc $epc,
+        ?ReceivingScanLine $existing,
+    ): ?ReceivingScanLine {
+        if (! ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()) {
+            return null;
+        }
+
+        if (! ReceivingPackShape::isCasePack($epc, $session)) {
+            return null;
+        }
+
+        $outerParentId = $this->outerExpectedParentEpcIdForCase($session, $epc);
+        if ($outerParentId === null) {
+            return null;
+        }
+
+        if ($existing !== null) {
+            $existing->forceFill([
+                'line_role' => 'parent',
+                'parent_epc_id' => $outerParentId,
+                'status' => 'expected',
+                'scan_raw' => null,
+                'confirmed_at' => null,
+                'confirmed_by' => null,
+            ])->save();
+
+            $session->forceFill([
+                'expected_parent_count' => (int) $session->expected_parent_count + 1,
+            ])->save();
+
+            return $existing->fresh();
+        }
+
+        $line = ReceivingScanLine::query()->create([
+            'receiving_session_id' => $session->getKey(),
+            'epc_id' => $epc->getKey(),
+            'parent_epc_id' => $outerParentId,
+            'line_role' => 'parent',
+            'status' => 'expected',
+        ]);
+
+        $session->forceFill([
+            'expected_parent_count' => (int) $session->expected_parent_count + 1,
+        ])->save();
+
+        return $line;
+    }
+
+    private function outerExpectedParentEpcIdForCase(ReceivingSession $session, Epc $epc): ?int
+    {
+        $parentEpcIds = $this->resolveInboundAggregationChildEpcs->parentEpcIdsForChild($session, $epc);
+
+        if ($parentEpcIds === []) {
+            return null;
+        }
+
+        $outerParentId = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereIn('epc_id', $parentEpcIds)
+            ->where('line_role', 'parent')
+            ->whereIn('status', ['expected', 'confirmed'])
+            ->value('epc_id');
+
+        return $outerParentId !== null ? (int) $outerParentId : null;
+    }
+
+    /**
+     * After confirming a nested case under an ASN pallet, cover the outer pallet when
+     * every AggregationLink case sibling is confirmed — without seeding unscanned cases.
+     */
+    private function maybeCoverOuterPalletAfterCaseOnlyConfirm(
+        ReceivingSession $session,
+        ReceivingScanLine $confirmedCaseLine,
+    ): void {
+        if (! ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()) {
+            return;
+        }
+
+        $outerParentId = $confirmedCaseLine->parent_epc_id !== null
+            ? (int) $confirmedCaseLine->parent_epc_id
+            : null;
+
+        if ($outerParentId === null) {
+            return;
+        }
+
+        $outerParentLine = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('epc_id', $outerParentId)
+            ->where('line_role', 'parent')
+            ->where('status', 'expected')
+            ->lockForUpdate()
+            ->first();
+
+        if ($outerParentLine === null) {
+            return;
+        }
+
+        $outerParent = Epc::query()->find($outerParentId);
+        $siblingCaseIds = $outerParent instanceof Epc
+            ? $this->resolveInboundAggregationChildEpcs->childEpcIdsForParent($session, $outerParent)
+            : [];
+
+        $casePackSiblingIds = [];
+        if ($siblingCaseIds !== []) {
+            $siblings = Epc::query()->whereIn('id', $siblingCaseIds)->get()->keyBy(
+                fn (Epc $epc): int => (int) $epc->getKey(),
+            );
+
+            foreach ($siblingCaseIds as $childId) {
+                $child = $siblings->get($childId);
+                if ($child !== null && ReceivingPackShape::isCasePack($child, $session)) {
+                    $casePackSiblingIds[] = $childId;
+                }
+            }
+        }
+
+        if ($casePackSiblingIds === []) {
+            return;
+        }
+
+        $confirmedSiblingCount = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereIn('epc_id', $casePackSiblingIds)
+            ->where('line_role', 'parent')
+            ->where('status', 'confirmed')
+            ->count();
+
+        if ($confirmedSiblingCount < count($casePackSiblingIds)) {
+            return;
+        }
+
+        $now = now();
+        $outerParentLine->forceFill([
+            'status' => 'confirmed',
+            'confirmed_at' => $now,
+            'confirmed_by' => $confirmedCaseLine->confirmed_by,
+            'scan_raw' => $outerParentLine->scan_raw,
+        ])->save();
+
+        $session->forceFill([
+            'confirmed_parent_count' => (int) $session->confirmed_parent_count + 1,
+        ])->save();
+
+        Log::info('receiving.case_only.outer_pallet_covered', [
+            'receiving_session_id' => (int) $session->getKey(),
+            'outer_epc_id' => $outerParentId,
+            'confirmed_case_epc_id' => (int) $confirmedCaseLine->epc_id,
+            'epcis_document_id' => $session->epcis_document_id !== null
+                ? (int) $session->epcis_document_id
+                : null,
+            'inbound_shipment_id' => $session->inbound_shipment_id !== null
+                ? (int) $session->inbound_shipment_id
+                : null,
+            'confirmed_case_sibling_count' => count($casePackSiblingIds),
+        ]);
+
+        $documentId = $session->epcis_document_id !== null
+            ? (int) $session->epcis_document_id
+            : null;
+        if ($documentId !== null) {
+            $document = EpcisDocument::query()->find($documentId);
+            if ($document !== null) {
+                $this->recordOperationalEpcisException->handle(
+                    $document,
+                    'CASE_ONLY_PALLET_COVERED',
+                    sprintf(
+                        'Case-only receive auto-confirmed outer pallet EPC #%d without pallet scan after all nested case siblings were confirmed.',
+                        $outerParentId,
+                    ),
+                    epcId: $outerParentId,
+                );
+            }
+        }
+
+        $outerEpc = Epc::query()->find($outerParentId);
+        if ($outerEpc !== null) {
+            $this->markShipmentExpectedConfirmed(
+                $session->refresh(),
+                $outerEpc,
+                $confirmedCaseLine->confirmed_by !== null
+                    ? (int) $confirmedCaseLine->confirmed_by
+                    : null,
+                autoConfirmChildren: false,
+            );
+        }
     }
 
     /**
@@ -1648,6 +2449,11 @@ class ConfirmReceivingScan
             return false;
         }
 
+        // Parallel partial: operator must press Complete (never auto-flip on scan).
+        if (TenantSettings::forTenant(tenant())->allowParallelSessions()) {
+            return false;
+        }
+
         if (! $session->isReadyToCompleteInboundAsn()) {
             return false;
         }
@@ -1728,5 +2534,19 @@ class ConfirmReceivingScan
         $resolved = User::query()->find($userId);
 
         return $resolved instanceof User ? $resolved : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>|null
+     */
+    private function exclusiveBlockForReceiving(Epc $epc, ReceivingSession $session, array $extra = []): ?array
+    {
+        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+        if ($block === null) {
+            return null;
+        }
+
+        return array_merge($block->toScanResult(), ['line' => null, 'epc' => $epc], $extra);
     }
 }

@@ -6,8 +6,10 @@ use App\Actions\Disposition\EmitReturningEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
+use App\Filament\App\Pages\Concerns\InteractsWithDispositionWorkstationSession;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
+use App\Models\Disposition\DispositionScanLine;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
 use App\Models\User;
@@ -20,11 +22,12 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolvesFloorSitePrincipal;
 use App\Support\Disposition\SaleableReturnScorecardMetrics;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\EpcBarcodeDisplay;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Receiving\EligibleReceiveSites;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
@@ -41,6 +44,7 @@ use UnitEnum;
 
 class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithDispositionWorkstationSession;
     use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUturnLeft;
@@ -88,6 +92,22 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         return 'saleable-return';
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithDispositionWorkstationSession();
+        if ($this->dispositionSessionId !== null && $this->siteId === null) {
+            $session = $this->dispositionSession();
+            if ($session?->site_id !== null) {
+                $this->siteId = (int) $session->site_id;
+            }
+        }
+    }
+
+    protected function dispositionBizStep(): string
+    {
+        return 'saleable_return';
+    }
+
     public function getSubheading(): string|Htmlable|null
     {
         return 'Saleable return desk. VRS must pass before credit. Scorecard below shows VRS + returning EPCIS readiness.';
@@ -106,7 +126,6 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         ReceivingGate $receivingGate,
         EpcCustodyGate $custodyGate,
         ShippableEpcsAtSite $shippable,
-        EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
     ): void {
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
@@ -209,14 +228,6 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if ($epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-            $this->flash('error', 'Already confirmed on an open receive session.');
-            $this->scan = '';
-            $this->dispatch('focus-scan');
-
-            return;
-        }
-
         try {
             $custodyGate->assertInCustody($epc, 'returning', $principalId);
         } catch (InvalidArgumentException $exception) {
@@ -231,22 +242,25 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
             $this->siteId = (int) $site->getKey();
         }
 
-        $this->confirmed[] = [
-            'epc_id' => $epcId,
-            'label' => $this->epcLabel($epc),
-        ];
+        if ($this->refuseIfEpcReserved($epc, $scan)) {
+            return;
+        }
+
+        $session = $this->ensureDispositionSession($siteId);
+        if (! $this->stageDispositionScan($session, $scan, $epc)) {
+            return;
+        }
+
+        $this->hydrateDispositionListFromDatabase();
 
         $this->scan = '';
-        $this->flash('ok', 'Added '.$this->epcLabel($epc));
+        $this->flash('warn', 'Staged '.$this->epcLabel($epc).' — confirm to return.');
         $this->dispatch('focus-scan');
     }
 
     public function removeConfirmed(int $epcId): void
     {
-        $this->confirmed = array_values(array_filter(
-            $this->confirmed,
-            fn (array $row): bool => (int) $row['epc_id'] !== $epcId,
-        ));
+        $this->removeDispositionStaged($epcId);
 
         if ($this->confirmed === []) {
             $this->siteId = null;
@@ -255,7 +269,7 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
 
     public function clearConfirmed(): void
     {
-        $this->confirmed = [];
+        $this->clearDispositionSession();
         $this->siteId = null;
         $this->flash('ok', 'Cleared list.');
         $this->dispatch('focus-scan');
@@ -323,7 +337,7 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                             $shippable,
                             $receivingGate,
                             app(EpcCustodyGate::class),
-                            app(EpcOnAnotherOpenReceivingSession::class),
+                            app(EpcExclusiveSessionGate::class),
                         );
                         if ($eligibilityError !== null) {
                             $this->flash('error', $eligibilityError);
@@ -340,6 +354,7 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                             $result = $emit->handle($epcIds, $siteId, [
                                 'sync' => true,
                                 'dispatch' => true,
+                                'disposition_session' => $this->dispositionSession(),
                             ]);
                         } catch (InvalidArgumentException|Throwable $exception) {
                             $this->flash('error', $exception->getMessage());
@@ -355,6 +370,7 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                         $count = (int) ($result['returned_count'] ?? 0);
                         $message = "Returned {$count} EPC".($count === 1 ? '' : 's').'.';
 
+                        $this->completeDispositionSession();
                         $this->confirmed = [];
                         $this->siteId = null;
                         $this->flash($count > 0 ? 'ok' : 'warn', $message);
@@ -381,9 +397,12 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         ShippableEpcsAtSite $shippable,
         ReceivingGate $receivingGate,
         EpcCustodyGate $custodyGate,
-        EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        EpcExclusiveSessionGate $exclusiveGate,
     ): ?string {
         $principalId = $this->floorPrincipalId($siteId);
+        $except = $this->dispositionSession() !== null
+            ? ExclusiveSessionContext::forDisposition($this->dispositionSession())
+            : ExclusiveSessionContext::none();
 
         foreach ($epcIds as $epcId) {
             if (! $shippable->contains($siteId, $epcId, $principalId)) {
@@ -399,8 +418,8 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                 return 'An EPC is quarantined and cannot be returned.';
             }
 
-            if ($epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-                return 'An EPC is already confirmed on an open receive session.';
+            if ($exclusiveGate->check($epc, $except) !== null) {
+                return 'An EPC is reserved on another open work session.';
             }
 
             try {
@@ -409,11 +428,23 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                 return $exception->getMessage();
             }
 
-            $latestVrs = Verification::query()
+            $line = $this->dispositionSession() !== null
+                ? DispositionScanLine::query()
+                    ->where('disposition_session_id', $this->dispositionSession()->getKey())
+                    ->where('epc_id', $epcId)
+                    ->where('status', 'staged')
+                    ->first()
+                : null;
+
+            $vrsQuery = Verification::query()
                 ->where('gtin14', $epc->gtin14)
-                ->where('serial', $epc->serial_number)
-                ->latest('id')
-                ->value('status');
+                ->where('serial', $epc->serial_number);
+
+            if ($line?->created_at !== null) {
+                $vrsQuery->where('created_at', '>=', $line->created_at->copy()->subMinute());
+            }
+
+            $latestVrs = $vrsQuery->latest('id')->value('status');
 
             if ($latestVrs !== 'verified') {
                 return 'VRS must verify every unit before credit. Rescan to retry.';

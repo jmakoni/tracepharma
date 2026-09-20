@@ -9,11 +9,12 @@ use PHPUnit\Framework\TestCase;
 class GlnTest extends TestCase
 {
     #[Test]
-    public function normalizes_short_and_full_glns_to_thirteen_digits(): void
+    public function normalize_requires_a_mod10_gln(): void
     {
-        $this->assertSame('0010939000002', Gln::normalize('10939000002'));
         $this->assertSame('0010939110008', Gln::normalize('0010939110008'));
-        $this->assertSame('0010939110008', Gln::normalize('10939110008'));
+        $this->assertSame('0614141000005', Gln::normalize('0614 141-000005'));
+        $this->assertNull(Gln::normalize('10939000002'));
+        $this->assertNull(Gln::normalize('0010939000003'));
     }
 
     #[Test]

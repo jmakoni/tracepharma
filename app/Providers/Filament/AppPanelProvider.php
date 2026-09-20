@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsureLegalAcceptance;
 use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Http\Middleware\EnsureTenantIsActive;
+use App\Http\Middleware\RedirectUnmappedFloorShell;
 use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
@@ -54,6 +55,7 @@ class AppPanelProvider extends PanelProvider
             ->darkModeBrandLogo(asset('images/brand/logo-dark.svg'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('images/brand/logo-mark.svg'))
+            ->homeUrl(fn (): string => Dashboard::getUrl(panel: 'app'))
             ->colors([
                 'primary' => Color::hex('#51BC8F'),
                 'secondary' => Color::hex('#838589'),
@@ -81,6 +83,7 @@ class AppPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => implode('', [
+                    '<script src="'.e($this->versionedPublicJs('js/tp-floor-viewport.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>',
@@ -179,6 +182,7 @@ class AppPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                RedirectUnmappedFloorShell::class,
                 EnsureAccountIsUsable::class.':web',
                 EnsurePasswordChangeRequired::class,
                 EnsureLegalAcceptance::class,
@@ -188,6 +192,10 @@ class AppPanelProvider extends PanelProvider
                 fn (): string => view('filament.app.hooks.impersonation-banner')->render()
                     .view('filament.app.hooks.legal-acceptance-banner')->render()
                     .view('filament.app.hooks.tenant-announcement-banner')->render(),
+            )
+            ->renderHook(
+                PanelsRenderHook::BODY_START,
+                fn (): string => view('filament.app.partials.floor-desktop-gate')->render(),
             )
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,

@@ -52,6 +52,23 @@ final readonly class EpcClassUri implements Stringable
         throw new InvalidArgumentException('Invalid EPC class / IDPAT URI.');
     }
 
+    /**
+     * LGTIN class URI from an SGTIN instance and lot (same prefix / item ref).
+     */
+    public static function fromSgtinAndLot(SgtinUri $sgtin, string $lot): self
+    {
+        $lot = trim($lot);
+        if ($lot === '') {
+            throw new InvalidArgumentException('LGTIN lot is required.');
+        }
+
+        if (preg_match('/^urn:epc:id:sgtin:(\d+)\.(\d+)\./i', $sgtin->toString(), $matches) !== 1) {
+            throw new InvalidArgumentException('SGTIN URI does not encode a class partition.');
+        }
+
+        return self::fromString('urn:epc:class:lgtin:'.$matches[1].'.'.$matches[2].'.'.$lot);
+    }
+
     public function toString(): string
     {
         return $this->uri;

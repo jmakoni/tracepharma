@@ -9,6 +9,8 @@ use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\RecordOutboundDestIdentity;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Actions\Shipping\ValidateOutboundShippingSend;
+use App\Filament\App\Resources\OutboundShippingSessions\Concerns\InteractsWithOutboundShippingSessionHud;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingScanLine;
@@ -27,7 +29,6 @@ use App\Support\Shipping\OutboundShipReadiness;
 use App\Support\TenantFeatures;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -381,9 +382,10 @@ class PharmacyOutboundDesk extends Page implements HasKnowledgeBase
 
                         $session = $session->fresh() ?? $session;
                         $portalUrl = OutboundPortalPickupNotice::signedUrl($session);
-                        $this->flashScan('ok', 'Shipment sent');
+                        $copy = $this->shipCompleteCopyForDesk($session);
+                        $this->flashScan('ok', $copy['title']);
                         Notification::make()
-                            ->title('Shipment sent')
+                            ->title($copy['title'])
                             ->body($portalUrl !== null ? 'Customer portal: '.$portalUrl : null)
                             ->success()
                             ->send();
@@ -528,6 +530,28 @@ class PharmacyOutboundDesk extends Page implements HasKnowledgeBase
         }
 
         return true;
+    }
+
+    /**
+     * @return array{title: string, body: string, tone: 'success'|'warning'|'error'}
+     */
+    private function shipCompleteCopyForDesk(OutboundShippingSession $session): array
+    {
+        $session->loadMissing('epcisDocument');
+
+        $hud = new class($session)
+        {
+            use InteractsWithOutboundShippingSessionHud;
+
+            public function __construct(private OutboundShippingSession $record) {}
+
+            protected function outboundShippingSession(): OutboundShippingSession
+            {
+                return $this->record;
+            }
+        };
+
+        return $hud->shipCompleteCopy();
     }
 
     /**

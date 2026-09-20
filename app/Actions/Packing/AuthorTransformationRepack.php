@@ -14,6 +14,7 @@ use App\Models\Site;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Epcis\Outbound\Xml12Writer;
 use App\Support\Custody\PrincipalCustody;
+use App\Support\Epcis\AuthoredEventTimezone;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -112,7 +113,7 @@ final class AuthorTransformationRepack
 
         $transformationId = 'urn:uuid:'.(string) Str::uuid();
         $location = $this->resolveLocation->handle($siteId);
-        $xml = $this->buildXml($inputUris, $outputUris, $transformationId, $location['sgln_urn']);
+        $xml = $this->buildXml($inputUris, $outputUris, $transformationId, $location['sgln_urn'], $site);
 
         $uuid = (string) Str::uuid();
         $path = 'epcis/outbound/transformation-'.$uuid.'.xml';
@@ -208,8 +209,10 @@ final class AuthorTransformationRepack
         array $outputUris,
         string $transformationId,
         string $sglnUrn,
+        Site $site,
     ): string {
         $eventTime = htmlspecialchars(now()->utc()->format('Y-m-d\TH:i:s.v\Z'), ENT_XML1);
+        $timezoneOffset = htmlspecialchars(AuthoredEventTimezone::offsetForSite($site), ENT_XML1);
         $transformationIdXml = htmlspecialchars($transformationId, ENT_XML1);
         $sglnXml = htmlspecialchars($sglnUrn, ENT_XML1);
 
@@ -226,7 +229,7 @@ final class AuthorTransformationRepack
         $eventXml = <<<XML
             <TransformationEvent>
                 <eventTime>{$eventTime}</eventTime>
-                <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>
+                <eventTimeZoneOffset>{$timezoneOffset}</eventTimeZoneOffset>
                 <transformationID>{$transformationIdXml}</transformationID>
                 <inputEPCList>
 {$inputsXml}                </inputEPCList>
@@ -314,7 +317,7 @@ XML;
                 $event->forceFill([
                     'event_time' => now(),
                     'record_time' => now(),
-                    'event_timezone_offset' => '+00:00',
+                    'event_timezone_offset' => AuthoredEventTimezone::offsetForSite(Site::query()->find($siteId)),
                     'action' => 'ADD',
                     'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
                     'disposition' => 'urn:epcglobal:cbv:disp:active',
@@ -329,7 +332,7 @@ XML;
                     'event_type' => 'TransformationEvent',
                     'event_time' => now(),
                     'record_time' => now(),
-                    'event_timezone_offset' => '+00:00',
+                    'event_timezone_offset' => AuthoredEventTimezone::offsetForSite(Site::query()->find($siteId)),
                     'action' => 'ADD',
                     'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
                     'disposition' => 'urn:epcglobal:cbv:disp:active',

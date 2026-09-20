@@ -3,6 +3,7 @@
 namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Enums\EpcisGuideline;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Tenant;
@@ -41,7 +42,7 @@ class Epcis13IngestTest extends TestCase
     {
         config([
             'tracepharma.epcis.validation.default_profile' => 'gs1us_r12',
-            'tracepharma.epcis.validation.force_r13' => false,
+            'tracepharma.epcis.validation.force_r13' => true,
         ]);
 
         $path = base_path('tests/Fixtures/epcis/minimal_object_shipping_1.3.xml');
@@ -61,6 +62,7 @@ class Epcis13IngestTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
+            config(['tracepharma.epcis.validation.force_r13' => true]);
             $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping_1.3.xml');
             $tmp = tempnam(sys_get_temp_dir(), 'epcis13_');
             $this->assertNotFalse($tmp);
@@ -77,6 +79,12 @@ class Epcis13IngestTest extends TestCase
 
             $this->assertSame('1.3', $document->schema_version);
             $this->assertSame('validated', $document->status);
+            $this->assertSame(EpcisGuideline::R12, $document->dscsa_guideline_release);
+
+            $ctx = app(EpcisValidationProfileResolver::class)->resolve($document, 'inbound');
+            $this->assertFalse($ctx->r13Hard);
+            $this->assertSame(EpcisValidationProfile::Gs1UsR12, $ctx->profile);
+            $this->assertSame(EpcisGuideline::R12, $document->fresh()->dscsa_guideline_release);
 
             @unlink($tmp);
         } finally {

@@ -160,7 +160,7 @@ final class RetryOutboundEpcisTransmitAction
             ->color('warning')
             ->requiresConfirmation()
             ->modalDescription(
-                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates GS1 EPCIS 1.2 / GS1 US R1.3, then transmits again.',
+                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates EPCIS schema 1.2 XML against the partner’s GS1 US DSCSA guideline (R1.2 or R1.3), then transmits again.',
             )
             ->visible(fn (): bool => self::visible($document()))
             ->action(function () use ($document): void {
@@ -179,7 +179,7 @@ final class RetryOutboundEpcisTransmitAction
             ->color('warning')
             ->requiresConfirmation()
             ->modalDescription(
-                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates GS1 EPCIS 1.2 / GS1 US R1.3, then transmits again.',
+                'Mints a new InstanceIdentifier and a prepare-time filename. For shipping documents, rebuilds TI from the current open hierarchy (packing children filtered after unpack; ship eventTime unchanged). Replaces the stored / client-portal file, validates EPCIS schema 1.2 XML against the partner’s GS1 US DSCSA guideline (R1.2 or R1.3), then transmits again.',
             )
             ->visible(fn (EpcisDocument $record): bool => self::visible($record))
             ->action(fn (EpcisDocument $record) => self::retry($record));

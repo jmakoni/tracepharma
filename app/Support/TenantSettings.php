@@ -260,6 +260,90 @@ class TenantSettings
     }
 
     /**
+     * When true, ask "Seal intact?" before sealed-mode confirms that auto-confirm children.
+     * Default false.
+     */
+    public function requireSealQuestion(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.require_seal_question');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setRequireSealQuestion(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.require_seal_question', $enabled);
+    }
+
+    /**
+     * When true, show Accept remaining on the receive HUD for inbound ASN sessions.
+     * Default true.
+     */
+    public function allowAcceptRemaining(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.allow_accept_remaining');
+
+        if ($value === null) {
+            return true;
+        }
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAllowAcceptRemaining(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.allow_accept_remaining', $enabled);
+    }
+
+    /**
+     * When true, Accept remaining requires an operator reason (and seal ack when sealed SOP asks).
+     * Default false for back-compat.
+     */
+    public function requireAcceptRemainingReason(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.require_accept_remaining_reason');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setRequireAcceptRemainingReason(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.require_accept_remaining_reason', $enabled);
+    }
+
+    /**
+     * When true, multiple operators can open receive sessions on the same ASN.
+     * Default false (null/missing = false).
+     */
+    public function allowParallelSessions(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.allow_parallel_sessions');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAllowParallelSessions(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.allow_parallel_sessions', $enabled);
+    }
+
+    /**
+     * When true, show Receive all expected parents on inbound ASN receive HUD.
+     * Default false.
+     */
+    public function allowAutoReceiveWholeAsn(): bool
+    {
+        $value = data_get($this->settingsBag(), 'receiving.allow_auto_receive_whole_asn');
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setAllowAutoReceiveWholeAsn(bool $enabled): self
+    {
+        return $this->putNestedSetting('receiving.allow_auto_receive_whole_asn', $enabled);
+    }
+
+    /**
      * When true, Filament nav/actions also require Spatie job-role capability permissions.
      * Default off: profile features + site membership only.
      */
@@ -1587,7 +1671,17 @@ class TenantSettings
 
     public function setAutoCompleteAsnOnReady(bool $enabled): self
     {
-        return $this->putNestedSetting('receiving.auto_complete_asn_on_ready', $enabled);
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        // Legacy mistake: literal dotted key at settings root; remove if present.
+        unset($settings['receiving.auto_complete_asn_on_ready']);
+        data_set($settings, 'receiving.auto_complete_asn_on_ready', $enabled);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
     }
 
     /**
@@ -2017,6 +2111,11 @@ class TenantSettings
      *     auto_complete_asn_on_ready?: bool|null,
      *     auto_receive_from_cmo?: bool|null,
      *     receiving_edge_mode?: string|ReceivingEdgeMode|null,
+     *     require_seal_question?: bool|null,
+     *     allow_accept_remaining?: bool|null,
+     *     require_accept_remaining_reason?: bool|null,
+     *     allow_parallel_sessions?: bool|null,
+     *     allow_auto_receive_whole_asn?: bool|null,
      *     job_roles_enabled?: bool|null,
      *     client_print_bridge?: string|null,
      *     l3_enabled?: bool|null,
@@ -2087,6 +2186,11 @@ class TenantSettings
             'auto_complete_asn_on_ready',
             'auto_receive_from_cmo',
             'receiving_edge_mode',
+            'require_seal_question',
+            'allow_accept_remaining',
+            'require_accept_remaining_reason',
+            'allow_parallel_sessions',
+            'allow_auto_receive_whole_asn',
             'job_roles_enabled',
             'client_print_bridge',
             'l3_enabled',
@@ -2168,6 +2272,11 @@ class TenantSettings
                 'auto_complete_asn_on_ready' => $this->setAutoCompleteAsnOnReady((bool) $data[$key]),
                 'auto_receive_from_cmo' => $this->setAutoReceiveFromCmo((bool) $data[$key]),
                 'receiving_edge_mode' => $this->setReceivingEdgeMode($this->normalizeReceivingEdgeMode($data[$key])),
+                'require_seal_question' => $this->setRequireSealQuestion((bool) $data[$key]),
+                'allow_accept_remaining' => $this->setAllowAcceptRemaining((bool) $data[$key]),
+                'require_accept_remaining_reason' => $this->setRequireAcceptRemainingReason((bool) $data[$key]),
+                'allow_parallel_sessions' => $this->setAllowParallelSessions((bool) $data[$key]),
+                'allow_auto_receive_whole_asn' => $this->setAllowAutoReceiveWholeAsn((bool) $data[$key]),
                 'job_roles_enabled' => $this->setJobRolesEnabled((bool) $data[$key]),
                 'client_print_bridge' => $this->setClientPrintBridge(
                     is_string($data[$key]) || $data[$key] === null ? $data[$key] : null,

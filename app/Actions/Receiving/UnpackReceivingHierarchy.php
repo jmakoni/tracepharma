@@ -25,6 +25,7 @@ use App\Support\Gs1\Sgln;
 use App\Support\Gs1\SglnResolution;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ResolveInboundAggregationChildEpcs;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
@@ -55,6 +56,7 @@ final class UnpackReceivingHierarchy
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
         private readonly EpcCustodyGate $custodyGate,
         private readonly AssertAuthoredAggregationCandidate $assertCandidate,
+        private readonly ResolveInboundAggregationChildEpcs $resolveInboundAggregationChildEpcs,
     ) {}
 
     /**
@@ -363,13 +365,35 @@ final class UnpackReceivingHierarchy
             ? array_values(array_unique(array_map('intval', $childEpcIds)))
             : null;
 
-        $openLinksQuery = AggregationLink::query()
-            ->whereIn('parent_epc_id', $parentEpcIds)
-            ->whereNull('valid_to');
+        $inboundChildIds = [];
+        foreach ($parentEpcIds as $parentId) {
+            $parent = Epc::query()->find($parentId);
+            if (! $parent instanceof Epc) {
+                continue;
+            }
+
+            $inboundChildIds = array_merge(
+                $inboundChildIds,
+                $this->resolveInboundAggregationChildEpcs->childEpcIdsForParent($session, $parent),
+            );
+        }
+        $inboundChildIds = array_values(array_unique(array_map('intval', $inboundChildIds)));
+
+        if ($inboundChildIds === []) {
+            return ['first_event' => null, 'blocks' => [], 'closed_links' => 0];
+        }
 
         if ($childFilter !== null) {
-            $openLinksQuery->whereIn('child_epc_id', $childFilter);
+            $inboundChildIds = array_values(array_intersect($inboundChildIds, $childFilter));
+            if ($inboundChildIds === []) {
+                return ['first_event' => null, 'blocks' => [], 'closed_links' => 0];
+            }
         }
+
+        $openLinksQuery = AggregationLink::query()
+            ->whereIn('parent_epc_id', $parentEpcIds)
+            ->whereNull('valid_to')
+            ->whereIn('child_epc_id', $inboundChildIds);
 
         $openLinks = $openLinksQuery
             ->lockForUpdate()

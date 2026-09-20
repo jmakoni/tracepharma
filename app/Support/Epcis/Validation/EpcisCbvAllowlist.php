@@ -39,6 +39,7 @@ final class EpcisCbvAllowlist
         'packing',
         'shipping',
         'receiving',
+        'inspecting',
         'returning',
         'decommissioning',
     ];
@@ -92,6 +93,22 @@ final class EpcisCbvAllowlist
         }
 
         return false;
+    }
+
+    /**
+     * bizSteps allowed on R1.3 documents but not on R1.2.
+     */
+    public static function isR13OnlyBizStep(?string $bizStep): bool
+    {
+        if ($bizStep === null || trim($bizStep) === '') {
+            return false;
+        }
+
+        $normalized = strtolower(trim($bizStep));
+
+        return $normalized === 'inspecting'
+            || $normalized === 'urn:epcglobal:cbv:bizstep:inspecting'
+            || str_ends_with($normalized, ':inspecting');
     }
 
     public static function isAllowedDisposition(?string $disposition): bool

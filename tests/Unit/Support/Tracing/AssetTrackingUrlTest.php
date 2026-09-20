@@ -88,8 +88,9 @@ class AssetTrackingUrlTest extends TestCase
         $this->assertNotNull($url);
         $this->assertStringContainsString('asset-tracking', $url);
         $this->assertStringContainsString('scan=', $url);
+        $this->assertStringStartsWith('/', $url);
         $this->assertSame(
-            AssetTracking::getUrl(['scan' => 'urn:epc:id:sscc:030116.01001108185'], panel: 'app'),
+            AssetTracking::getUrl(['scan' => 'urn:epc:id:sscc:030116.01001108185'], isAbsolute: false, panel: 'app'),
             $url,
         );
     }

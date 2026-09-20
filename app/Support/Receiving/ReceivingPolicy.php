@@ -4,6 +4,7 @@ namespace App\Support\Receiving;
 
 use App\Enums\ReceivingSessionKind;
 use App\Enums\TenantProfile;
+use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use App\Support\TenantFeatures;
@@ -69,19 +70,90 @@ final class ReceivingPolicy
     {
         return match ($this->edgeMode()) {
             ReceivingEdgeMode::ToteLpn => ReceivingScanLevel::ToteOrCase,
+            ReceivingEdgeMode::CaseOnly, ReceivingEdgeMode::UnitsOnly => ReceivingScanLevel::Case,
             default => $this->profilePreferredScanLevel(),
         };
     }
 
     /**
-     * Whether the "sealed pallet" checkbox defaults to checked for this profile.
+     * Whether sealed parent/case scans auto-confirm AggregationLink children.
      */
     public function defaultAutoConfirmChildren(): bool
     {
         return match ($this->edgeMode()) {
-            ReceivingEdgeMode::SealedParent, ReceivingEdgeMode::ToteLpn => true,
-            ReceivingEdgeMode::OpenCount, ReceivingEdgeMode::OpenTote => false,
+            ReceivingEdgeMode::SealedParent,
+            ReceivingEdgeMode::ToteLpn,
+            ReceivingEdgeMode::CaseOnly => true,
+            ReceivingEdgeMode::OpenCount,
+            ReceivingEdgeMode::OpenTote,
+            ReceivingEdgeMode::UnitsOnly => false,
         };
+    }
+
+    /**
+     * Sealed-parent (SSCC) receive: operators scan outermost SSCC only.
+     */
+    public function operatorScansSsccOnly(): bool
+    {
+        return $this->edgeMode() === ReceivingEdgeMode::SealedParent;
+    }
+
+    public function operatorScansCaseOnly(): bool
+    {
+        return $this->edgeMode() === ReceivingEdgeMode::CaseOnly;
+    }
+
+    public function operatorScansUnitsOnly(): bool
+    {
+        return $this->edgeMode() === ReceivingEdgeMode::UnitsOnly;
+    }
+
+    /**
+     * Modes that require AggregationLink children when auto-confirming a pack.
+     */
+    public function requiresAggregationChildrenOnConfirm(): bool
+    {
+        return $this->defaultAutoConfirmChildren()
+            && in_array($this->edgeMode(), [
+                ReceivingEdgeMode::SealedParent,
+                ReceivingEdgeMode::ToteLpn,
+                ReceivingEdgeMode::CaseOnly,
+            ], true);
+    }
+
+    /**
+     * Plain-language rejection when the scanned EPC does not match Receive SOP.
+     */
+    public function scanLevelRejectionMessage(Epc $epc, ?ReceivingSession $session = null): ?string
+    {
+        return match ($this->edgeMode()) {
+            ReceivingEdgeMode::SealedParent => $epc->epc_type === 'sscc'
+                ? null
+                : 'Scan the pallet SSCC only',
+            ReceivingEdgeMode::CaseOnly => $this->caseOnlyRejectionMessage($epc, $session),
+            ReceivingEdgeMode::UnitsOnly => ReceivingPackShape::isSaleableUnit($epc, $session)
+                ? null
+                : 'Scan the unit 2D code',
+            default => null,
+        };
+    }
+
+    private function caseOnlyRejectionMessage(Epc $epc, ?ReceivingSession $session = null): ?string
+    {
+        if (ReceivingPackShape::isLogisticsPalletSscc($epc, $session) || ReceivingPackShape::isSaleableUnit($epc, $session)) {
+            return 'Scan the case, not the pallet and not the bottle';
+        }
+
+        if (! ReceivingPackShape::isCasePack($epc, $session)) {
+            // SSCC with no inbound case children is missing file packing, not a warehouse case.
+            if ($session !== null && $epc->epc_type === 'sscc') {
+                return null;
+            }
+
+            return 'Scan the case, not the pallet and not the bottle';
+        }
+
+        return null;
     }
 
     private function profilePreferredScanLevel(): ReceivingScanLevel
@@ -164,6 +236,25 @@ final class ReceivingPolicy
             ],
         };
 
+        if ($this->operatorScansSsccOnly()) {
+            $base['scanHelper'] = 'Scan pallet SSCC only — do not scan cases.';
+        }
+
+        if ($this->operatorScansCaseOnly()) {
+            $base['scanHelper'] = 'Scan the case — do not scan the pallet or bottle.';
+            $base['sealedPalletLabel'] = 'Sealed case — confirm all units when I scan it';
+            $base['sealedPalletHelper'] = 'Applies to the next case scan.';
+            $base['confirmLabelSealed'] = 'Confirm case + units';
+        }
+
+        if ($this->operatorScansUnitsOnly()) {
+            $base['scanHelper'] = 'Scan the unit 2D code only.';
+            $base['sealedPalletLabel'] = 'Units only — no sealed parent inference';
+            $base['sealedPalletHelper'] = 'Scan each saleable unit.';
+            $base['confirmLabelSealed'] = 'Confirm unit';
+            $base['confirmLabel'] = 'Confirm';
+        }
+
         $kind = $this->resolveKind($session);
         $sop = $this->edgeMode()->chipLabel();
         $copy = [
@@ -195,8 +286,9 @@ final class ReceivingPolicy
                 'confirmButton' => 'ADD',
                 'unexpectedTitle' => 'Could not confirm this barcode',
                 'unexpectedBody' => 'Barcode must already exist from prior EPCIS or commissioning. Check the label or raise an exception.',
-                'completeTitle' => 'Receiving complete',
-                'completeBody' => 'Confirmed units are received at this site. Receiving EPCIS events are authored on complete.',
+                // Overridden at render by ReceivingSessionCompleteCopy.
+                'completeTitle' => 'Session complete',
+                'completeBody' => 'Confirmed units received this session.',
             ],
             ReceivingSessionKind::TransferReceive => [
                 'scanHelper' => 'Scan SSCC or SGTIN to receive at destination',
@@ -204,17 +296,18 @@ final class ReceivingPolicy
                 'confirmButton' => 'RECEIVE',
                 'unexpectedTitle' => 'Not on this transfer',
                 'unexpectedBody' => 'Logged as unexpected. Confirm the label matches a shipped transfer line.',
-                'completeTitle' => 'Transfer receive complete',
-                'completeBody' => 'All transfer lines received. Destination receiving EPCIS is on the transfer document.',
+                'completeTitle' => 'Transfer complete',
+                'completeBody' => 'All expected lines on this transfer are confirmed. Destination receiving EPCIS is on the transfer document.',
             ],
             ReceivingSessionKind::InboundAsn => [
                 'scanHelper' => $scanHelper,
-                'kindHelper' => 'ASN receive: confirm expected pallets and units from the inbound file, then Complete receive.',
+                'kindHelper' => 'ASN receive: confirm expected pallets and units from the ASN / inbound files, then Complete session.',
                 'confirmButton' => 'RECEIVE',
                 'unexpectedTitle' => 'Not on this ASN — do not put away',
                 'unexpectedBody' => 'Logged as Unexpected below. Check the label or raise an exception.',
-                'completeTitle' => 'Receiving complete',
-                'completeBody' => 'All expected pallets and units are confirmed for this session.',
+                // Overridden at render by ReceivingSessionCompleteCopy.
+                'completeTitle' => 'Session complete',
+                'completeBody' => 'This receive session is complete.',
             ],
         };
     }

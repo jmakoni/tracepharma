@@ -21,6 +21,8 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Services\Tracing\BuildAssetTrace;
 use App\Support\Gs1\Sgln;
+use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ResolveInboundAggregationChildEpcs;
 use App\Support\TenantSettings;
 use DomainException;
 use Illuminate\Support\Carbon;
@@ -34,6 +36,7 @@ use Tests\TestCase;
 class GenerateReceivingEpcisEventsTest extends TestCase
 {
     use PreparesDemo2ReceivingState;
+
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -311,6 +314,319 @@ class GenerateReceivingEpcisEventsTest extends TestCase
                 'Unpacking must close the open aggregation link.',
             );
         } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function unpack_delete_closes_only_inbound_aggregation_children(): void
+    {
+        $this->initializeDemo2Tenant();
+        $extraEpcId = null;
+
+        try {
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $parent = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
+            $child = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+
+            $warehouseOnly = Epc::query()->create(Epc::materializeAttributesFromUri(
+                'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999),
+            ));
+            $extraEpcId = (int) $warehouseOnly->getKey();
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $warehouseOnly->getKey(),
+                'established_by_event_id' => null,
+                'link_type' => 'aggregation',
+                'valid_from' => now(),
+                'valid_to' => null,
+            ]);
+
+            $session = ReceivingSession::query()->create([
+                'epcis_document_id' => $document->getKey(),
+                'trading_partner_id' => $document->trading_partner_id,
+                'status' => 'completed',
+                'expected_parent_count' => 1,
+                'confirmed_parent_count' => 1,
+                'expected_child_count' => 1,
+                'confirmed_child_count' => 1,
+                'opened_at' => now(),
+                'completed_at' => now(),
+            ]);
+            $this->sessionId = (int) $session->getKey();
+
+            ReceivingScanLine::query()->insert([
+                [
+                    'receiving_session_id' => $session->getKey(),
+                    'epc_id' => $parent->getKey(),
+                    'parent_epc_id' => null,
+                    'line_role' => 'parent',
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'receiving_session_id' => $session->getKey(),
+                    'epc_id' => $child->getKey(),
+                    'parent_epc_id' => $parent->getKey(),
+                    'line_role' => 'child',
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            ]);
+
+            $result = app(GenerateReceivingEpcisEvents::class)->handle($session, null, unpack: true);
+
+            $this->assertTrue($result['generated']);
+            $this->receivingDocumentId = (int) $result['document']->getKey();
+
+            $this->assertFalse(
+                AggregationLink::query()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->where('child_epc_id', $child->getKey())
+                    ->whereNull('valid_to')
+                    ->exists(),
+                'Inbound packing children must be DELETE-unpacked.',
+            );
+            $this->assertTrue(
+                AggregationLink::query()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->where('child_epc_id', $warehouseOnly->getKey())
+                    ->whereNull('valid_to')
+                    ->exists(),
+                'Warehouse-only aggregation must stay open on inline unpack.',
+            );
+        } finally {
+            if ($extraEpcId !== null && tenancy()->initialized) {
+                AggregationLink::query()->where('child_epc_id', $extraEpcId)->delete();
+                Epc::query()->whereKey($extraEpcId)->delete();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function unpack_receiving_hierarchy_handle_closes_only_inbound_aggregation_children(): void
+    {
+        $this->initializeDemo2Tenant();
+        $extraEpcId = null;
+        $priorProfile = tenant()?->profile;
+
+        try {
+            tenant()?->forceFill(['profile' => TenantProfile::DrugWholesaler])->save();
+            $this->assertTrue(ReceivingPolicy::forTenant(tenant())->canUnpackAfterReceive());
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $parent = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
+            $child = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+
+            $warehouseOnly = Epc::query()->create(Epc::materializeAttributesFromUri(
+                'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999),
+            ));
+            $extraEpcId = (int) $warehouseOnly->getKey();
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $warehouseOnly->getKey(),
+                'established_by_event_id' => null,
+                'link_type' => 'aggregation',
+                'valid_from' => now(),
+                'valid_to' => null,
+            ]);
+
+            $session = ReceivingSession::query()->create([
+                'epcis_document_id' => $document->getKey(),
+                'trading_partner_id' => $document->trading_partner_id,
+                'status' => 'in_progress',
+                'expected_parent_count' => 1,
+                'confirmed_parent_count' => 1,
+                'expected_child_count' => 1,
+                'confirmed_child_count' => 1,
+                'opened_at' => now(),
+            ]);
+            $this->sessionId = (int) $session->getKey();
+
+            ReceivingScanLine::query()->insert([
+                [
+                    'receiving_session_id' => $session->getKey(),
+                    'epc_id' => $parent->getKey(),
+                    'parent_epc_id' => null,
+                    'line_role' => 'parent',
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                [
+                    'receiving_session_id' => $session->getKey(),
+                    'epc_id' => $child->getKey(),
+                    'parent_epc_id' => $parent->getKey(),
+                    'line_role' => 'child',
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            ]);
+
+            $completed = app(CompleteReceivingSession::class)->handle($session, null, unpack: false);
+            $this->assertNotNull($completed->receiving_events_generated_at);
+            $this->receivingDocumentId = (int) $completed->receiving_epcis_document_id;
+
+            $unpacked = app(UnpackReceivingHierarchy::class)->handle($session->fresh());
+            $this->assertTrue($unpacked['generated']);
+            if ($unpacked['document'] !== null) {
+                $this->unpackDocumentId = (int) $unpacked['document']->getKey();
+            }
+
+            $this->assertFalse(
+                AggregationLink::query()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->where('child_epc_id', $child->getKey())
+                    ->whereNull('valid_to')
+                    ->exists(),
+                'Inbound packing children must be DELETE-unpacked.',
+            );
+            $this->assertTrue(
+                AggregationLink::query()
+                    ->where('parent_epc_id', $parent->getKey())
+                    ->where('child_epc_id', $warehouseOnly->getKey())
+                    ->whereNull('valid_to')
+                    ->exists(),
+                'Warehouse-only aggregation must stay open on after-receive unpack.',
+            );
+
+            if ($unpacked['unpackEvent'] instanceof EpcisEvent) {
+                $this->assertFalse(
+                    DB::table('event_epcs')
+                        ->where('event_id', $unpacked['unpackEvent']->getKey())
+                        ->where('epc_id', $warehouseOnly->getKey())
+                        ->exists(),
+                    'DELETE childEPCs must omit warehouse-only URIs.',
+                );
+            }
+        } finally {
+            if ($extraEpcId !== null && tenancy()->initialized) {
+                AggregationLink::query()->where('child_epc_id', $extraEpcId)->delete();
+                Epc::query()->whereKey($extraEpcId)->delete();
+            }
+            if (tenancy()->initialized && $priorProfile !== null) {
+                tenant()?->forceFill(['profile' => $priorProfile])->save();
+            }
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function resolve_inbound_aggregation_child_epcs_ignores_warehouse_links_and_prior_ingest_generation(): void
+    {
+        $this->initializeDemo2Tenant();
+        $extraEpcIds = [];
+
+        try {
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $parent = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
+            $inboundChild = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
+
+            $warehouseOnly = Epc::query()->create(Epc::materializeAttributesFromUri(
+                'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999),
+            ));
+            $extraEpcIds[] = (int) $warehouseOnly->getKey();
+
+            AggregationLink::query()->create([
+                'parent_epc_id' => $parent->getKey(),
+                'child_epc_id' => $warehouseOnly->getKey(),
+                'established_by_event_id' => null,
+                'link_type' => 'aggregation',
+                'valid_from' => now(),
+                'valid_to' => null,
+            ]);
+
+            $session = ReceivingSession::query()->create([
+                'epcis_document_id' => $document->getKey(),
+                'trading_partner_id' => $document->trading_partner_id,
+                'status' => 'in_progress',
+                'expected_parent_count' => 1,
+                'confirmed_parent_count' => 0,
+                'opened_at' => now(),
+            ]);
+            $this->sessionId = (int) $session->getKey();
+
+            $resolver = app(ResolveInboundAggregationChildEpcs::class);
+            $children = $resolver->childEpcIdsForParent(
+                $session->fresh(),
+                $parent,
+                (int) $document->getKey(),
+            );
+            $parents = $resolver->parentEpcIdsForChild(
+                $session->fresh(),
+                $inboundChild,
+                (int) $document->getKey(),
+            );
+
+            $this->assertContains((int) $inboundChild->getKey(), $children);
+            $this->assertNotContains((int) $warehouseOnly->getKey(), $children);
+            $this->assertContains((int) $parent->getKey(), $parents);
+
+            if (
+                Schema::hasColumn('epcis_events', 'ingest_generation')
+                && Schema::hasColumn('epcis_documents', 'ingest_generation')
+                && filled($document->getAttribute('ingest_generation'))
+            ) {
+                $staleChild = Epc::query()->create(Epc::materializeAttributesFromUri(
+                    'urn:epc:id:sgtin:030116.0200116.'.(string) random_int(10_000_000_000_000, 99_999_999_999_999),
+                ));
+                $extraEpcIds[] = (int) $staleChild->getKey();
+
+                $staleEvent = EpcisEvent::query()->create([
+                    'document_id' => $document->getKey(),
+                    'event_type' => 'AggregationEvent',
+                    'action' => 'ADD',
+                    'event_time' => now(),
+                    'record_time' => now(),
+                    'ingest_generation' => ((int) $document->getAttribute('ingest_generation')) - 1,
+                ]);
+                AggregationLink::query()->create([
+                    'parent_epc_id' => $parent->getKey(),
+                    'child_epc_id' => $staleChild->getKey(),
+                    'established_by_event_id' => $staleEvent->getKey(),
+                    'link_type' => 'aggregation',
+                    'valid_from' => now(),
+                    'valid_to' => null,
+                ]);
+
+                $scoped = $resolver->childEpcIdsForParent(
+                    $session->fresh(),
+                    $parent,
+                    (int) $document->getKey(),
+                );
+                $this->assertNotContains((int) $staleChild->getKey(), $scoped);
+                $this->assertContains((int) $inboundChild->getKey(), $scoped);
+            }
+        } finally {
+            if ($extraEpcIds !== [] && tenancy()->initialized) {
+                AggregationLink::query()
+                    ->whereIn('child_epc_id', $extraEpcIds)
+                    ->delete();
+                EpcisEvent::query()
+                    ->whereIn('id', function ($query) use ($extraEpcIds): void {
+                        $query->select('established_by_event_id')
+                            ->from('aggregation_links')
+                            ->whereIn('child_epc_id', $extraEpcIds);
+                    })
+                    ->delete();
+                Epc::query()->whereKey($extraEpcIds)->delete();
+            }
             $this->cleanup();
         }
     }

@@ -77,6 +77,7 @@ class As2InboundConnectionIntegrationTest extends TestCase
             $this->assertStringContainsString('failed/failure', $rejected->getContent());
             $this->assertStringNotContainsString('decrypt certificate', $rejected->getContent());
             $this->assertSame(0, (int) $rejected->headers->get('X-Document-Id'));
+            $this->keepTenant($tenant);
             $this->assertSame(0, EpcisDocument::query()->where('inbound_connection_id', $connection->id)->count());
 
             $lab = $this->createAs2Connection(settings: [
@@ -92,6 +93,7 @@ class As2InboundConnectionIntegrationTest extends TestCase
             $documentId = (int) $accepted->headers->get('X-Document-Id');
             $this->assertGreaterThan(0, $documentId);
             $this->trackEpcisDocumentId($documentId);
+            $this->keepTenant($tenant);
             $this->assertDatabaseHas('epcis_documents', [
                 'id' => $documentId,
                 'inbound_connection_id' => $lab->id,
@@ -125,6 +127,7 @@ class As2InboundConnectionIntegrationTest extends TestCase
             $this->assertSame(200, $rejected->getStatusCode());
             $this->assertStringContainsString('failed/failure', $rejected->getContent());
             $this->assertSame(0, (int) $rejected->headers->get('X-Document-Id'));
+            $this->keepTenant($tenant);
             $this->assertSame(0, EpcisDocument::query()->where('inbound_connection_id', $lab->id)->count());
         } finally {
             $this->app->detectEnvironment(fn () => 'testing');
@@ -166,6 +169,7 @@ class As2InboundConnectionIntegrationTest extends TestCase
 
             $this->assertSame(200, $response->getStatusCode());
             $this->assertStringContainsString('processed', $response->getContent());
+            $this->keepTenant($tenant);
             $documentId = (int) $response->headers->get('X-Document-Id');
             $this->trackEpcisDocumentId($documentId);
             $this->assertSame(
@@ -319,6 +323,13 @@ class As2InboundConnectionIntegrationTest extends TestCase
         );
     }
 
+    private function keepTenant(Tenant $tenant): void
+    {
+        if (! tenancy()->initialized) {
+            tenancy()->initialize($tenant);
+        }
+    }
+
     private function uniqueFixtureXml(): string
     {
         $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
@@ -326,7 +337,11 @@ class As2InboundConnectionIntegrationTest extends TestCase
         $xml = file_get_contents($fixture);
         $this->assertNotFalse($xml);
 
-        return str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+        return str_replace(
+            '0096295000009',
+            (string) tenant()->gln,
+            str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml),
+        );
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Models\EpcisHubRoute;
 use App\Models\InboundConnection;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\SbdhHeaderExtractor;
 use App\Support\EpcisHub\EpcisHubPlatformConfig;
 use App\Support\Integrations\InboundConnectivityProbe;
@@ -40,10 +41,15 @@ class EpcisHubRouter
         }
 
         $parties = $this->sbdhExtractor->extract($content);
-        $receiverGln = $parties['receiver_gln'];
+        $receiverGln = AssertInboundReceiverGln::partyGlnFromIdentifier($parties['receiver_identifier']);
 
         if ($receiverGln === null) {
-            throw new RuntimeException('SBDH receiver GLN could not be determined from the payload.');
+            $stated = trim((string) ($parties['receiver_identifier'] ?? ''));
+            throw new RuntimeException(
+                AssertInboundReceiverGln::identifierIsNonZeroSglnExtension($stated)
+                    ? 'SBDH Receiver SGLN extension is not 0; hub will not route a sub-location as the party GLN.'
+                    : 'SBDH receiver GLN could not be determined from the payload.',
+            );
         }
 
         $tenant = $this->resolveTenant($provider, $receiverGln, $environment);

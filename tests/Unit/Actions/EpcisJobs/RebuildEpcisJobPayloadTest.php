@@ -112,13 +112,7 @@ class RebuildEpcisJobPayloadTest extends TestCase
 
         $this->app->instance(
             PrepareOutboundEpcisForRetransmit::class,
-            new class(
-                app(BuildFullHistoryShippingEpcisXml::class),
-                app(PersistEpcisXmlPayload::class),
-                app(RemintOutboundEpcisIdentityForRetransmit::class),
-                app(ValidateEpcis12Document::class),
-                app(AssertOutermostSsccHasChildren::class),
-            ) extends PrepareOutboundEpcisForRetransmit
+            new class(app(BuildFullHistoryShippingEpcisXml::class), app(PersistEpcisXmlPayload::class), app(RemintOutboundEpcisIdentityForRetransmit::class), app(ValidateEpcis12Document::class), app(AssertOutermostSsccHasChildren::class)) extends PrepareOutboundEpcisForRetransmit
             {
                 protected function assertGs1ValidOrFail(EpcisDocument $document): void
                 {
@@ -136,6 +130,60 @@ class RebuildEpcisJobPayloadTest extends TestCase
         $this->assertTrue(
             $job->messages()->where('message', 'like', '%Prepared outbound payload%')->exists(),
         );
+    }
+
+    #[Test]
+    public function remint_preserves_r12_gs1ushc_and_authority_gln_except_instance_identifier(): void
+    {
+        $this->initializeDemo2();
+
+        Storage::fake('local');
+        config(['tracepharma.epcis.authored_payload_disk' => 'local']);
+
+        $oldUuid = 'urn:uuid:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+        $path = EpcisStoragePath::onDisk('local', 'epcis/outbound/remint-r12-'.Str::lower(Str::random(6)).'.xml');
+        $originalXml = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($originalXml);
+        $originalXml = str_replace('11111111-2222-3333-4444-555555555555', $oldUuid, $originalXml);
+        Storage::disk('local')->put($path, $originalXml);
+
+        $document = EpcisDocument::query()->create([
+            'document_uuid' => $oldUuid,
+            'schema_version' => '1.2',
+            'creation_date' => now(),
+            'direction' => 'outbound',
+            'authored_kind' => EpcisAuthoredKind::Receiving,
+            'format' => 'xml',
+            'original_filename' => basename($path),
+            'payload_disk' => 'local',
+            'payload_path' => $path,
+            'file_sha256' => hash('sha256', $originalXml),
+            'status' => 'generated',
+            'received_at' => now(),
+            'event_count' => 0,
+            'epc_count' => 0,
+            'reprocess_count' => 0,
+            'notes' => 'r12 remint fixture',
+        ]);
+        $this->documentIds[] = (int) $document->getKey();
+
+        app(RemintOutboundEpcisIdentityForRetransmit::class)->handle($document);
+
+        $document->refresh();
+        $remintedXml = (string) Storage::disk('local')->get((string) $document->payload_path);
+
+        $this->assertNotSame($oldUuid, (string) $document->document_uuid);
+        $this->assertStringContainsString('Authority="GLN"', $remintedXml);
+        $this->assertStringNotContainsString('Authority="GS1"', $remintedXml);
+        $this->assertStringContainsString('<gs1ushc:dscsaTransactionStatement>', $remintedXml);
+        $this->assertStringContainsString('<gs1ushc:affirmTransactionStatement>true</gs1ushc:affirmTransactionStatement>', $remintedXml);
+
+        $normalize = static fn (string $xml): string => (string) preg_replace(
+            '/(<sbdh:InstanceIdentifier>)[^<]*(<\/sbdh:InstanceIdentifier>)/i',
+            '$1$2',
+            $xml,
+        );
+        $this->assertSame($normalize($originalXml), $normalize($remintedXml));
     }
 
     #[Test]

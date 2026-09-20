@@ -30,7 +30,7 @@ final class ScenarioMatrix
                 'fixture' => 'tests/Fixtures/epcis/minimal_object_shipping.xml',
                 'expect' => 'pass',
                 'uuid_placeholder' => '11111111-2222-3333-4444-555555555555',
-                'ig_note' => 'GS1 US Rx EPCIS R1.2 — minimal valid inbound pack',
+                'ig_note' => 'GS1 US DSCSA guideline R1.2 — minimal valid inbound pack',
             ],
             [
                 'id' => 'rx-r12-missing-locations',
@@ -38,7 +38,7 @@ final class ScenarioMatrix
                 'fixture' => 'tests/Fixtures/epcis/commissioning_sscc_missing_locations.xml',
                 'expect' => 'fail',
                 'uuid_placeholder' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-                'ig_note' => 'GS1 US Rx EPCIS R1.2 — expected catalog hard-fail (MISSING_MANDATORY_FIELD)',
+                'ig_note' => 'GS1 US DSCSA guideline R1.2 — expected catalog hard-fail (MISSING_MANDATORY_FIELD)',
             ],
             [
                 'id' => 'rx-schema-1-3-pack',
@@ -46,7 +46,7 @@ final class ScenarioMatrix
                 'fixture' => 'tests/Fixtures/epcis/minimal_object_shipping_1.3.xml',
                 'expect' => 'pass',
                 'uuid_placeholder' => '11111111-2222-3333-4444-555555555555',
-                'ig_note' => 'EPCIS 1.3 document accepted by TracePharma ingest/validation',
+                'ig_note' => 'EPCIS schema 1.3 document accepted by TracePharma ingest/validation (DSCSA guideline detected separately)',
             ],
             [
                 'id' => 'rx-r12-shipping-masterdata',
@@ -54,7 +54,7 @@ final class ScenarioMatrix
                 'fixture' => 'tests/Fixtures/epcis/minimal_with_shipping_refs.xml',
                 'expect' => 'pass',
                 'uuid_placeholder' => '22222222-3333-4444-5555-666666666666',
-                'ig_note' => 'GS1 US Rx EPCIS R1.2 — shipping + VocabularyElement master data',
+                'ig_note' => 'GS1 US DSCSA guideline R1.2 — shipping + VocabularyElement master data',
             ],
             [
                 'id' => 'rx-r12-3pl-four-party',
@@ -62,7 +62,7 @@ final class ScenarioMatrix
                 'fixture' => 'tests/Fixtures/epcis/shipping_3pl_four_party.xml',
                 'expect' => 'pass',
                 'uuid_placeholder' => '33333333-4444-5555-6666-777777777777',
-                'ig_note' => 'GS1 US Rx EPCIS R1.2 — four-party (3PL) source/destination pattern',
+                'ig_note' => 'GS1 US DSCSA guideline R1.2 — four-party (3PL) source/destination pattern',
             ],
         ];
     }

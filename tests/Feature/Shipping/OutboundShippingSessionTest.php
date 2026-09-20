@@ -18,9 +18,11 @@ use App\Actions\Shipping\ProcessWmsShipConfirm;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
 use App\Actions\Shipping\ValidateOutboundShippingSend;
+use App\Actions\Shipping\VoidOutboundShippingSession;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\OpenTransferringSession;
 use App\Enums\EpcisAuthoredKind;
+use App\Enums\EpcisGuideline;
 use App\Enums\ExceptionStatus;
 use App\Enums\FacilityType;
 use App\Enums\OutboundConformanceState;
@@ -58,6 +60,7 @@ use App\Services\Custody\EpcCustodyGate;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Epcis\AuthoredEventTimezone;
 use App\Support\Epcis\Validation\EpcisValidationFinding;
 use App\Support\Epcis\Validation\EpcisXsdValidator;
 use App\Support\Gs1\Sgln;
@@ -71,6 +74,7 @@ use Database\Seeders\ExceptionTypeSeeder;
 use DomainException;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -208,7 +212,8 @@ class OutboundShippingSessionTest extends TestCase
             $blocked = app(ConfirmOutboundShippingScan::class)->handle($shipSession, $uri);
             $this->assertFalse($blocked['ok']);
             $this->assertSame('on_open_receive', $blocked['effect']);
-            $this->assertSame('Already confirmed on an open receive session.', $blocked['message']);
+            $this->assertStringContainsString('Already confirmed on an open receive session', $blocked['message']);
+            $this->assertStringContainsString('#'.$receiveSession->getKey(), $blocked['message']);
             $this->assertSame(0, OutboundShippingScanLine::query()
                 ->where('outbound_shipping_session_id', $shipSession->getKey())
                 ->where('epc_id', $epc->getKey())
@@ -690,23 +695,27 @@ class OutboundShippingSessionTest extends TestCase
             $epcId = (int) $epc->getKey();
             $gate = app(EpcCustodyGate::class);
 
-            // We printed and commissioned this SSCC ourselves, and it is sitting at our dock.
-            $this->commissionSsccLabelFor($epc);
+            // Received inbound SSCC sitting at our dock. The tenant-issued label is
+            // applied after ship so shared-fixture pack ADDs cannot trip SSCC
+            // completeness (label + stale AggregationEvent history).
             $this->assertTrue($gate->isInCustody($epc));
             $this->assertContains($epcId, app(ShippableEpcsAtSite::class)->epcIds((int) $site->getKey()));
 
             $partner = $this->ensureDemoPartner();
             $completed = $this->completeShipOrderFor($site);
             $this->assertSame('completed', $completed->status);
+            $this->commissionSsccLabelFor($epc);
 
-            // The shipping event reads at our dock but comes to rest at the customer.
+            // The shipping event reads at our dock; GS1 US omits bizLocation so the
+            // column stays null. The customer is on destinationList.
             $shipping = EpcisEvent::query()
                 ->where('document_id', $completed->epcis_document_id)
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $this->assertSame($site->gln, $shipping->read_point_gln);
-            $this->assertSame($partner->gln, $shipping->biz_location_gln);
+            $this->assertNull($shipping->biz_location_gln);
 
             $authoredLocations = DB::table('event_locations')
                 ->where('event_id', $shipping->getKey())
@@ -732,7 +741,11 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertStringContainsString("<readPoint>\n          <id>{$shipFromSgln}</id>", (string) $xml);
 
             // GS1 US R1.3 / TraceLink: shipping ObjectEvents omit bizLocation.
-            $this->assertStringNotContainsString('<bizLocation>', (string) $xml);
+            // Full-history TI still replays manufacturer commission/pack bizLocation.
+            $this->assertDoesNotMatchRegularExpression(
+                '#<bizStep>urn:epcglobal:cbv:bizstep:shipping</bizStep>[\s\S]*?<bizLocation>#',
+                (string) $xml,
+            );
             $this->assertStringContainsString(
                 '<destination type="urn:epcglobal:cbv:sdt:location">'.$shipToSgln.'</destination>',
                 (string) $xml,
@@ -835,6 +848,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $completed->epcis_document_id)
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $this->assertFalse(
@@ -1011,6 +1025,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $shippedDocumentId)
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $this->assertFalse(
@@ -1400,6 +1415,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $sgtin = Epc::query()->where('epc_uri', self::SGTIN_URI)->firstOrFail();
@@ -1463,11 +1479,11 @@ class OutboundShippingSessionTest extends TestCase
             // SBDH: sender and receiver GLNs, and the product's InstanceIdentifier convention.
             $this->assertStringContainsString('<sbdh:StandardBusinessDocumentHeader>', $xml);
             $this->assertStringContainsString(
-                '<sbdh:Identifier Authority="GLN">'.$sellerGln.'</sbdh:Identifier>',
+                '<sbdh:Identifier Authority="GS1">'.$sellerGln.'</sbdh:Identifier>',
                 $xml,
             );
             $this->assertStringContainsString(
-                '<sbdh:Identifier Authority="GLN">'.$buyerGln.'</sbdh:Identifier>',
+                '<sbdh:Identifier Authority="GS1">'.$buyerGln.'</sbdh:Identifier>',
                 $xml,
             );
             $this->assertStringContainsString(
@@ -1523,6 +1539,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $transactions = DB::table('event_biz_transactions')
@@ -1553,6 +1570,278 @@ class OutboundShippingSessionTest extends TestCase
                 (int) $parties['destination:owning_party']->trading_partner_id,
             );
             $this->assertSame($shipToSgln, $parties['destination:location']->gln_uri);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function partner_ship_owning_party_is_facility_sgln_not_dock_extension(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $facilitySgln = Sgln::toUrn((string) $site->gln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '0');
+            $dockSgln = Sgln::toUrn((string) $site->gln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '1');
+            $this->assertNotNull($facilitySgln);
+            $this->assertNotNull($dockSgln);
+
+            $site->forceFill([
+                'sgln' => $dockSgln,
+                'timezone' => 'America/Chicago',
+            ])->save();
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-OWNING-DOCK',
+                'customer_po' => 'PO-OWNING-DOCK',
+                'dscsa_affirm' => true,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:owning_party">'.$facilitySgln.'</source>',
+                $xml,
+            );
+            $this->assertStringNotContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:owning_party">'.$dockSgln.'</source>',
+                $xml,
+            );
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:location">'.$dockSgln.'</source>',
+                $xml,
+            );
+
+            $offset = AuthoredEventTimezone::offsetForSite($site->fresh());
+            $this->assertNotSame('+00:00', $offset);
+            $this->assertStringContainsString('<eventTimeZoneOffset>'.$offset.'</eventTimeZoneOffset>', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function partner_ship_sbdh_sender_is_tenant_org_gln_not_site_gln(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $orgGln = $this->uniqueOrgGln(self::CORRECTIVE_COMPANY_PREFIX);
+            $this->assertNotSame((string) $site->gln, $orgGln);
+
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'gln' => $orgGln,
+                'company_prefix' => self::CORRECTIVE_COMPANY_PREFIX,
+            ]);
+
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-SBDH-ORG',
+                'customer_po' => 'PO-SBDH-ORG',
+                'dscsa_affirm' => true,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertStringContainsString(
+                '<sbdh:Identifier Authority="GS1">'.$orgGln.'</sbdh:Identifier>',
+                $xml,
+            );
+            $this->assertSame($orgGln, $document->sender_gln);
+            $this->assertNotSame((string) $site->gln, $document->sender_gln);
+            $this->assertStringNotContainsString(
+                '<sbdh:Sender>'."\n".'      <sbdh:Identifier Authority="GS1">'.$site->gln.'</sbdh:Identifier>',
+                $xml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function lean_ship_source_owning_party_collapses_dock_to_facility_sgln(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $facilitySgln = Sgln::toUrn((string) $site->gln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '0');
+            $dockSgln = Sgln::toUrn((string) $site->gln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '1');
+            $this->assertNotNull($facilitySgln);
+            $this->assertNotNull($dockSgln);
+            $site->forceFill(['sgln' => $dockSgln])->save();
+
+            $this->makeEpcShippableAtSite($site);
+            $partner = $this->ensureDemoPartner();
+
+            $sgtinId = (int) Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id');
+            AggregationLink::query()
+                ->where('child_epc_id', $sgtinId)
+                ->whereNull('valid_to')
+                ->update(['valid_to' => now()]);
+
+            $pedigreeEventIds = DB::table('epcis_events as e')
+                ->join('event_epcs as ee', 'ee.event_id', '=', 'e.id')
+                ->where('ee.epc_id', $sgtinId)
+                ->where(function ($query): void {
+                    $query->where('e.biz_step', 'like', '%:commissioning')
+                        ->orWhere('e.biz_step', 'like', '%:packing');
+                })
+                ->pluck('e.id');
+            if ($pedigreeEventIds->isNotEmpty()) {
+                DB::table('event_epcs')
+                    ->where('epc_id', $sgtinId)
+                    ->whereIn('event_id', $pedigreeEventIds)
+                    ->delete();
+            }
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+            $confirmed = app(ConfirmOutboundShippingScan::class)->handle($session, self::SGTIN_URI);
+            $this->assertTrue($confirmed['ok'], $confirmed['message']);
+
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-LEAN-DOCK',
+                'customer_po' => 'PO-LEAN-DOCK',
+                'dscsa_affirm' => true,
+            ]);
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->assertNotNull($completed->epcis_document_id);
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertSame(1, substr_count($xml, '<ObjectEvent>'));
+            $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:commissioning', $xml);
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:owning_party">'.$facilitySgln.'</source>',
+                $xml,
+            );
+            $this->assertStringNotContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:owning_party">'.$dockSgln.'</source>',
+                $xml,
+            );
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:location">'.$dockSgln.'</source>',
+                $xml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function full_history_source_owning_party_uses_org_facility_when_org_gln_differs_from_dock(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $dock = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $orgGln = $this->uniqueOrgGln(self::CORRECTIVE_COMPANY_PREFIX);
+            $this->assertNotSame((string) $dock->gln, $orgGln);
+
+            $corpSgln = Sgln::toUrn($orgGln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '0');
+            $dockSgln = Sgln::toUrn((string) $dock->gln, strlen(self::CORRECTIVE_COMPANY_PREFIX), '1');
+            $this->assertNotNull($corpSgln);
+            $this->assertNotNull($dockSgln);
+
+            $corp = Site::query()->create([
+                'name' => 'Corp Facility '.Str::random(6),
+                'gln' => $orgGln,
+                'sgln' => $corpSgln,
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+                'trading_partner_id' => null,
+            ]);
+            $this->siteIds[] = (int) $corp->getKey();
+
+            $dock->forceFill([
+                'sgln' => $dockSgln,
+                'is_headquarters' => false,
+            ])->save();
+
+            TenantSettings::forTenant(tenant())->saveOrganization([
+                'gln' => $orgGln,
+                'company_prefix' => self::CORRECTIVE_COMPANY_PREFIX,
+            ]);
+
+            $this->makeEpcShippableAtSite($dock->fresh());
+
+            $completed = $this->completeShipOrderWithReferences($dock->fresh(), [
+                'asn_number' => 'ASN-OWNING-ORG',
+                'customer_po' => 'PO-OWNING-ORG',
+                'dscsa_affirm' => true,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:owning_party">'.$corpSgln.'</source>',
+                $xml,
+            );
+            $this->assertStringContainsString(
+                '<source type="urn:epcglobal:cbv:sdt:location">'.$dockSgln.'</source>',
+                $xml,
+            );
+            $this->assertStringContainsString(
+                '<sbdh:Identifier Authority="GS1">'.$orgGln.'</sbdh:Identifier>',
+                $xml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function ship_fails_closed_when_organization_gln_missing_for_sbdh_sender(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $partner = $this->ensureDemoPartner();
+
+            TenantSettings::forTenant(tenant())->setGln(null);
+            tenant()->save();
+            $this->assertNull(TenantSettings::forTenant(tenant())->gln());
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+            $this->assertTrue(
+                app(ConfirmOutboundShippingScan::class)->handle($session, self::SSCC_URI)['ok'],
+            );
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-NO-ORG',
+                'customer_po' => 'PO-NO-ORG',
+                'dscsa_affirm' => true,
+            ]);
+
+            try {
+                app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+                $this->fail('Expected DomainException when organization GLN is missing.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('organization GLN is required for SBDH Sender', $e->getMessage());
+            }
+
+            $session = $session->fresh();
+            $this->assertNull($session->epcis_document_id);
         } finally {
             $this->cleanup($tenant);
         }
@@ -1591,6 +1880,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->firstOrFail();
 
             $this->assertTrue(
@@ -1673,6 +1963,10 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertTrue((bool) $completed->is_drop_shipment);
             $this->assertStringContainsString('dropShipment', $xml);
             $this->assertStringContainsString('<gs1ushc:dropShipment>', $xml);
+            $this->assertStringContainsString('bizstep:commissioning', $xml);
+            $this->assertStringContainsString('bizstep:packing', $xml);
+            $this->assertStringContainsString('<AggregationEvent>', $xml);
+            $this->assertStringContainsString('bizstep:shipping', $xml);
         } finally {
             $this->cleanup($tenant);
         }
@@ -1705,6 +1999,522 @@ class OutboundShippingSessionTest extends TestCase
         }
     }
 
+    #[Test]
+    public function outbound_shipping_to_r13_partner_emits_official_guideline_and_drop_shipment(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-R13-001',
+                'customer_po' => 'PO-R13-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertSame(EpcisGuideline::R13, $document->dscsa_guideline_release);
+            $this->assertStringContainsString(
+                '<gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>',
+                $xml,
+            );
+            $this->assertStringContainsString('<gs1ushc:dropShipment>false</gs1ushc:dropShipment>', $xml);
+            $this->assertStringContainsString('qualifier="ENTIRELY_DIRECT"', $xml);
+            $this->assertStringContainsString('Authority="GS1"', $xml);
+            $this->assertStringNotContainsString('Authority="GLN"', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function outbound_shipping_to_r12_partner_omits_guideline_version_and_drop_shipment(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-R12-001',
+                'customer_po' => 'PO-R12-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R12,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertSame(EpcisGuideline::R12, $document->dscsa_guideline_release);
+            $this->assertStringNotContainsString('guidelineVersion', $xml);
+            $this->assertStringNotContainsString('dropShipment', $xml);
+            $this->assertStringContainsString('<gs1ushc:directPurchase>true</gs1ushc:directPurchase>', $xml);
+            $this->assertStringNotContainsString('qualifier="ENTIRELY_DIRECT"', $xml);
+            $this->assertStringContainsString('Authority="GLN"', $xml);
+            $this->assertStringNotContainsString('Authority="GS1"', $xml);
+            $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:inspecting', $xml);
+            $this->assertCount(1, $this->shippingObjectEventXmls($xml));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function drop_shipment_to_r12_partner_fails_closed(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('GS1 US DSCSA guideline R1.3');
+
+            $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-R12-DROP',
+                'customer_po' => 'PO-R12-DROP',
+                'dscsa_affirm' => true,
+                'is_drop_shipment' => true,
+                'epcis_guideline' => EpcisGuideline::R12,
+            ]);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function ship_to_r12_partner_after_r13_inbound_omits_r13_only_header(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $this->ingestR13GuidelineDocument();
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-R12-AFTER-R13',
+                'customer_po' => 'PO-R12-AFTER-R13',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R12,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+
+            $this->assertSame(EpcisGuideline::R12, $document->dscsa_guideline_release);
+            $this->assertStringNotContainsString('guidelineVersion', $xml);
+            $this->assertStringNotContainsString('dropShipment', $xml);
+            $this->assertStringContainsString('<gs1ushc:directPurchase>true</gs1ushc:directPurchase>', $xml);
+            $this->assertStringNotContainsString('qualifier="ENTIRELY_DIRECT"', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function r13_partner_refuses_lot_level_outbound(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+            $partner = $this->ensureDemoPartner();
+            $partner->forceFill(['epcis_guideline' => EpcisGuideline::R13])->save();
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+
+            $result = app(ConfirmOutboundShippingScan::class)->handle(
+                $session->fresh(),
+                '(01)00301160200163(10)606412T',
+            );
+
+            $this->assertFalse($result['ok']);
+            $this->assertSame('lot_level_refused', $result['effect']);
+            $this->assertStringContainsString('R1.3', $result['message']);
+            $this->assertStringContainsString('lot-level', $result['message']);
+            $this->assertSame(0, OutboundShippingScanLine::query()
+                ->where('outbound_shipping_session_id', $session->getKey())
+                ->count());
+
+            $partner->forceFill(['epcis_guideline' => EpcisGuideline::R12])->save();
+            $r12 = app(ConfirmOutboundShippingScan::class)->handle(
+                $session->fresh(),
+                '(01)00301160200163(10)606412T',
+            );
+            $this->assertFalse($r12['ok']);
+            $this->assertSame('not_found', $r12['effect']);
+            $this->assertStringContainsString('Barcode not recognized', $r12['message']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function shipping_detail_event_time_precedes_shipping(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-DETAIL-001',
+                'customer_po' => 'PO-DETAIL-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $shippingEvents = $this->shippingObjectEventXmls($xml);
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertLessThan($shippingEvents[1]['event_time'], $shippingEvents[0]['event_time']);
+            $this->assertStringNotContainsString('directPurchase', $shippingEvents[0]['xml']);
+            $this->assertStringNotContainsString('transactionDate', $shippingEvents[0]['xml']);
+            $this->assertStringNotContainsString('dropShipment', $shippingEvents[0]['xml']);
+            $this->assertStringContainsString('directPurchase', $shippingEvents[1]['xml']);
+
+            $stored = EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderBy('event_time')
+                ->get();
+            $this->assertCount(2, $stored);
+            $this->assertTrue($stored[0]->event_time->lt($stored[1]->event_time));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function transaction_date_when_ship_over_24h_after_transfer(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $transferAt = now()->subDays(2)->utc()->startOfSecond();
+            $this->backdateReceivingEventsForSscc($transferAt);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-TXDATE-001',
+                'customer_po' => 'PO-TXDATE-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $shippingEvents = $this->shippingObjectEventXmls($xml);
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertStringNotContainsString('transactionDate', $shippingEvents[0]['xml']);
+            $this->assertStringContainsString(
+                '<gs1ushc:transactionDate>'.$transferAt->toDateString().'</gs1ushc:transactionDate>',
+                $shippingEvents[1]['xml'],
+            );
+
+            $shipTime = Carbon::parse($completed->completed_at)->utc()->format('Y-m-d\TH:i:s');
+            $this->assertStringContainsString($shipTime, $shippingEvents[1]['event_time']);
+            $this->assertStringNotContainsString($transferAt->toDateString(), $shippingEvents[1]['event_time']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function void_shipping_event_time_is_void_instant(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-VOID-001',
+                'customer_po' => 'PO-VOID-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $original = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $original->forceFill(['transmission_status' => 'sent'])->save();
+            $originalXml = (string) Storage::disk($original->payload_disk)->get($original->payload_path);
+            $shipTime = Carbon::parse($completed->completed_at)->utc()->format('Y-m-d\TH:i:s');
+            $this->assertStringContainsString($shipTime, $originalXml);
+            $this->assertStringNotContainsString('void_shipping', $originalXml);
+
+            $voidAt = Carbon::parse($completed->completed_at)->addHour();
+            Carbon::setTestNow($voidAt);
+
+            $voided = app(VoidOutboundShippingSession::class)
+                ->handle($completed->fresh(), auth()->id());
+
+            $this->assertNotNull($voided->voided_at);
+            $this->assertNotNull($voided->void_epcis_document_id);
+            $this->assertSame('completed', $voided->status);
+            $this->documentIds[] = (int) $voided->void_epcis_document_id;
+
+            $voidDoc = EpcisDocument::query()->findOrFail($voided->void_epcis_document_id);
+            $voidXml = (string) Storage::disk($voidDoc->payload_disk)->get($voidDoc->payload_path);
+            $this->assertStringContainsString('urn:epcglobal:cbv:bizstep:void_shipping', $voidXml);
+            $this->assertStringNotContainsString('<bizLocation>', $voidXml);
+            $this->assertMatchesRegularExpression(
+                '#<readPoint>\s*<id>urn:epc:id:sgln:[^<]+</id>#',
+                $voidXml,
+            );
+            $this->assertDoesNotMatchRegularExpression(
+                '#<readPoint>\s*<id>\d{13}</id>#',
+                $voidXml,
+            );
+            $this->assertStringContainsString('urn:epcglobal:cbv:er:incorrect_data', $voidXml);
+            $this->assertStringContainsString($voidAt->utc()->format('Y-m-d\TH:i:s'), $voidXml);
+            $this->assertStringNotContainsString($shipTime, $voidXml);
+            $this->assertSame([], $this->xsdFindings($voidXml));
+
+            $rereadOriginal = (string) Storage::disk($original->payload_disk)->get($original->payload_path);
+            $this->assertSame($originalXml, $rereadOriginal);
+            $this->assertStringNotContainsString('void_shipping', $rereadOriginal);
+
+            $sscc = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
+            $this->assertTrue(
+                QuarantineHold::query()
+                    ->where('epc_id', $sscc->id)
+                    ->where('reason', 'voided_shipment')
+                    ->where('status', 'open')
+                    ->exists(),
+            );
+
+            $voidType = ExceptionType::query()->where('code', 'VOID_SHIPPING')->first()
+                ?? ExceptionTypeSeeder::ensure('VOID_SHIPPING');
+            $errorType = ExceptionType::query()->where('code', 'ERROR_DECLARATION')->first()
+                ?? ExceptionTypeSeeder::ensure('ERROR_DECLARATION');
+            $this->assertNotNull($voidType);
+            $this->assertNotNull($errorType);
+            $this->assertTrue(
+                ExceptionCase::query()
+                    ->where('document_id', $voidDoc->getKey())
+                    ->where('exception_type_id', $voidType->getKey())
+                    ->exists(),
+                'Void shipping must open a VOID_SHIPPING case.',
+            );
+            $this->assertTrue(
+                ExceptionCase::query()
+                    ->where('document_id', $voidDoc->getKey())
+                    ->where('exception_type_id', $errorType->getKey())
+                    ->exists(),
+                'Writing error_declaration must open an ERROR_DECLARATION case.',
+            );
+
+            $blocked = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $blocked->getKey();
+            $scan = app(ConfirmOutboundShippingScan::class)->handle($blocked, self::SSCC_URI);
+            $this->assertFalse($scan['ok']);
+            $this->assertSame('quarantined', $scan['effect']);
+
+            QuarantineHold::query()
+                ->where('epc_id', $sscc->id)
+                ->where('reason', 'voided_shipment')
+                ->where('status', 'open')
+                ->update([
+                    'status' => 'released',
+                    'closed_at' => now(),
+                    'closed_reason' => 'Supervisor release',
+                ]);
+
+            $again = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $again->getKey();
+            $rescanned = app(ConfirmOutboundShippingScan::class)->handle($again, self::SSCC_URI);
+            $this->assertTrue($rescanned['ok'], $rescanned['message']);
+
+            $partner = $this->ensureDemoPartner();
+            app(UpdateOutboundShippingParty::class)->handle($again->fresh(), [
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($again->fresh(), [
+                'asn_number' => 'ASN-VOID-RESHIP',
+                'customer_po' => 'PO-VOID-RESHIP',
+                'dscsa_affirm' => true,
+            ]);
+
+            $reshot = app(CompleteOutboundShippingSession::class)->handle($again->fresh());
+            $this->assertNotNull($reshot->epcis_document_id);
+            $this->assertNotSame((int) $completed->epcis_document_id, (int) $reshot->epcis_document_id);
+            $this->documentIds[] = (int) $reshot->epcis_document_id;
+        } finally {
+            Carbon::setTestNow();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function void_shipping_corrective_event_id_cites_main_not_detail(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-VOID-MAIN',
+                'customer_po' => 'PO-VOID-MAIN',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $original = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $original->forceFill(['transmission_status' => 'sent'])->save();
+
+            $shippingEvents = EpcisEvent::query()
+                ->where('document_id', $original->getKey())
+                ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderBy('event_time')
+                ->get();
+            $this->assertGreaterThanOrEqual(2, $shippingEvents->count());
+            $detailId = (string) $shippingEvents->first()->event_id;
+            $mainId = (string) $shippingEvents->last()->event_id;
+            $this->assertNotSame($detailId, $mainId);
+
+            $voided = app(VoidOutboundShippingSession::class)
+                ->handle($completed->fresh(), auth()->id());
+            $this->assertNotNull($voided->void_epcis_document_id);
+            $this->documentIds[] = (int) $voided->void_epcis_document_id;
+
+            $voidDoc = EpcisDocument::query()->findOrFail($voided->void_epcis_document_id);
+            $voidXml = (string) Storage::disk($voidDoc->payload_disk)->get($voidDoc->payload_path);
+            $this->assertStringContainsString(
+                '<correctiveEventID>'.htmlspecialchars($mainId, ENT_XML1).'</correctiveEventID>',
+                $voidXml,
+            );
+            $this->assertStringNotContainsString(
+                '<correctiveEventID>'.htmlspecialchars($detailId, ENT_XML1).'</correctiveEventID>',
+                $voidXml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function void_send_failure_rolls_back_session_and_holds(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config(['tracepharma.epcis_jobs.enabled' => false]);
+
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-VOID-FAIL',
+                'customer_po' => 'PO-VOID-FAIL',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $original = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $original->forceFill(['transmission_status' => 'sent'])->save();
+            $originalXml = (string) Storage::disk($original->payload_disk)->get($original->payload_path);
+
+            $liveTenant = tenant() instanceof Tenant ? tenant() : $tenant;
+            TenantSettings::forTenant($liveTenant)->setKillSwitch(TenantKillSwitches::OUTBOUND_EPCIS, true);
+            $liveTenant->save();
+
+            try {
+                app(VoidOutboundShippingSession::class)->handle($completed->fresh(), auth()->id());
+                $this->fail('Expected DomainException when void outbound transmission fails.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('outbound transmission did not succeed', $e->getMessage());
+            }
+
+            $errorVoidIds = EpcisDocument::query()
+                ->where('status', 'error')
+                ->where('notes', 'like', '%void shipping%')
+                ->pluck('id')
+                ->all();
+            foreach ($errorVoidIds as $errorVoidId) {
+                $this->documentIds[] = (int) $errorVoidId;
+            }
+
+            $completed = $completed->fresh();
+            $this->assertNull($completed->voided_at);
+            $this->assertNull($completed->void_epcis_document_id);
+
+            $sscc = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
+            $this->assertFalse(
+                QuarantineHold::query()
+                    ->where('epc_id', $sscc->id)
+                    ->where('reason', 'voided_shipment')
+                    ->where('status', 'open')
+                    ->exists(),
+            );
+
+            $rereadOriginal = (string) Storage::disk($original->payload_disk)->get($original->payload_path);
+            $this->assertSame($originalXml, $rereadOriginal);
+        } finally {
+            $liveTenant = tenant() instanceof Tenant ? tenant() : $tenant;
+            TenantSettings::forTenant($liveTenant)->setKillSwitch(TenantKillSwitches::OUTBOUND_EPCIS, false);
+            $liveTenant->save();
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function can_void_requires_sent_original_document(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-VOID-SENT',
+                'customer_po' => 'PO-VOID-SENT',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $original = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $original->forceFill(['transmission_status' => 'failed'])->save();
+            $completed->unsetRelation('epcisDocument');
+
+            $this->assertFalse($completed->fresh()->canVoid());
+
+            try {
+                app(VoidOutboundShippingSession::class)->handle($completed->fresh(), auth()->id());
+                $this->fail('Expected DomainException when the original TI was not sent.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('cannot be voided', $e->getMessage());
+            }
+
+            $original->forceFill(['transmission_status' => 'sent'])->save();
+            $this->assertTrue($completed->fresh()->load('epcisDocument')->canVoid());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
     /**
      * GS1 EPCIS 1.2 XSD complaints about an authored payload, as descriptions.
      *
@@ -1727,11 +2537,48 @@ class OutboundShippingSessionTest extends TestCase
         }
     }
 
+    private function backdateReceivingEventsForSscc(Carbon $eventTime): void
+    {
+        $epcIds = Epc::query()
+            ->whereIn('epc_uri', [self::SSCC_URI, self::SGTIN_URI])
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $this->assertNotEmpty($epcIds);
+
+        $eventIds = DB::table('event_epcs')
+            ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+            ->whereIn('event_epcs.epc_id', $epcIds)
+            ->where('epcis_events.biz_step', 'like', '%receiving%')
+            ->pluck('epcis_events.id')
+            ->all();
+        $this->assertNotEmpty($eventIds);
+
+        EpcisEvent::query()->whereIn('id', $eventIds)->update(['event_time' => $eventTime]);
+    }
+
     /**
-     * Shipping event parties keyed by "{party_role}:{source_dest_type}".
-     *
-     * @return Collection<string, object>
+     * @return list<array{xml: string, event_time: string}>
      */
+    private function shippingObjectEventXmls(string $xml): array
+    {
+        preg_match_all('/<ObjectEvent>.*?<\/ObjectEvent>/s', $xml, $matches);
+
+        $events = [];
+        foreach ($matches[0] as $eventXml) {
+            if (! str_contains($eventXml, 'urn:epcglobal:cbv:bizstep:shipping')) {
+                continue;
+            }
+            preg_match('/<eventTime>([^<]+)<\/eventTime>/', $eventXml, $time);
+            $events[] = [
+                'xml' => $eventXml,
+                'event_time' => $time[1] ?? '',
+            ];
+        }
+
+        return $events;
+    }
+
     private function shippingPartiesByType(EpcisEvent $shipping): Collection
     {
         return DB::table('event_parties')
@@ -1752,7 +2599,13 @@ class OutboundShippingSessionTest extends TestCase
      */
     private function completeShipOrderWithReferences(Site $site, array $references): OutboundShippingSession
     {
+        $guideline = $references['epcis_guideline'] ?? null;
+        unset($references['epcis_guideline']);
+
         $partner = $this->ensureDemoPartner();
+        if ($guideline instanceof EpcisGuideline) {
+            $partner->forceFill(['epcis_guideline' => $guideline])->save();
+        }
 
         $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
         $this->sessionIds[] = (int) $session->getKey();
@@ -2446,6 +3299,7 @@ class OutboundShippingSessionTest extends TestCase
             $shipping = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
                 ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderByDesc('event_time')
                 ->first();
             $this->assertNotNull($shipping);
             $this->assertSame('OBSERVE', $shipping->action);
@@ -4828,6 +5682,7 @@ class OutboundShippingSessionTest extends TestCase
                 'sgln' => self::DEMO_PARTNER_SGLN,
                 'partner_type' => PartnerType::Pharmacy,
                 'is_active' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
             ],
         );
 
@@ -4899,6 +5754,17 @@ class OutboundShippingSessionTest extends TestCase
         OutboundShippingScanLine::query()->whereIn('epc_id', $epcIds)->delete();
         TransferringScanLine::query()->whereIn('epc_id', $epcIds)->delete();
 
+        $shippingEventIds = DB::table('event_epcs')
+            ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+            ->whereIn('event_epcs.epc_id', $epcIds)
+            ->where('epcis_events.biz_step', 'like', '%shipping%')
+            ->pluck('epcis_events.id')
+            ->all();
+
+        if ($shippingEventIds !== []) {
+            DB::table('event_epcs')->whereIn('event_id', $shippingEventIds)->delete();
+        }
+
         $sessionIds = ReceivingScanLine::query()
             ->whereIn('epc_id', $epcIds)
             ->distinct()
@@ -4938,6 +5804,34 @@ class OutboundShippingSessionTest extends TestCase
             'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
         ));
         $this->assertStringNotContainsString('@php($shipComplete', $viewBlade);
+        $this->assertStringContainsString('scanner-progress-stats', $viewBlade);
+        $this->assertStringNotContainsString('stat-title">Confirmed</div>', $viewBlade);
+    }
+
+    private function ingestR13GuidelineDocument(): EpcisDocument
+    {
+        $fixture = base_path('tests/Fixtures/epcis/shipping_direct_purchase_entirely_direct.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_r13_');
+        $this->assertNotFalse($tmp);
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace('22222222-3333-4444-5555-666666666666', (string) Str::uuid(), $xml);
+        file_put_contents($tmp, $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => basename($fixture),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+            $this->assertSame(EpcisGuideline::R13, $document->dscsa_guideline_release);
+
+            return $document;
+        } finally {
+            @unlink($tmp);
+        }
     }
 
     private function ingestMinimalFixture(): EpcisDocument
@@ -5010,6 +5904,8 @@ class OutboundShippingSessionTest extends TestCase
             }
 
             if ($this->documentIds !== []) {
+                QuarantineHold::query()->whereIn('document_id', $this->documentIds)->delete();
+
                 if (Schema::hasTable('document_epcs')) {
                     DB::table('document_epcs')
                         ->whereIn('document_id', $this->documentIds)
@@ -5037,6 +5933,7 @@ class OutboundShippingSessionTest extends TestCase
             }
 
             if ($this->epcIds !== []) {
+                QuarantineHold::query()->whereIn('epc_id', $this->epcIds)->delete();
                 AggregationLink::query()
                     ->where(function ($query): void {
                         $query->whereIn('parent_epc_id', $this->epcIds)

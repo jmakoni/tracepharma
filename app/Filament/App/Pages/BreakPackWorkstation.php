@@ -6,10 +6,13 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Labeling\BreakPalletAndReship;
 use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
+use App\Enums\PackingSessionKind;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccReshipMode;
 use App\Enums\TenantProfile;
+use App\Filament\App\Pages\Concerns\InteractsWithPackingWorkstationSession;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
@@ -32,7 +35,6 @@ use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -45,6 +47,7 @@ use UnitEnum;
 
 class BreakPackWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithPackingWorkstationSession;
     use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;
@@ -86,6 +89,17 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithPackingWorkstationSession();
+        $this->restoreBreakPackSessionState();
+    }
+
+    protected function packingSessionKind(): PackingSessionKind
+    {
+        return PackingSessionKind::BreakPack;
+    }
+
     /**
      * Pharmacy break-pack stays Operations Hub–only (no sidebar), even with warehouse tools.
      */
@@ -101,6 +115,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
     public function getSubheading(): string|Htmlable|null
     {
         return 'Break children from a source pallet and commission a new parent SSCC under your organization company prefix.';
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->confirmBreakPackAction(),
+        ];
     }
 
     public function tenantNameDisplay(): string
@@ -163,7 +187,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             }
 
             if ($epcId === $this->parentEpcId) {
-                $this->flash('ok', 'Parent confirmed.');
+                $this->flash('warn', 'Parent locked — select children, then confirm break & pack.');
                 $this->scan = '';
                 $this->dispatch('focus-scan');
 
@@ -250,10 +274,49 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
                 $selected,
                 fn (int $id): bool => $id !== $childId,
             ));
+            $this->removePackingStagedChild($childId);
         } else {
+            if (! $this->reservePackingChildByEpcId($childId)) {
+                return;
+            }
+
             $selected[] = $childId;
             $this->selectedChildIds = array_values(array_unique($selected));
         }
+    }
+
+    public function deselectChild(int $childId): void
+    {
+        $this->selectedChildIds = array_values(array_filter(
+            array_map('intval', $this->selectedChildIds),
+            fn (int $id): bool => $id !== $childId,
+        ));
+        $this->removePackingStagedChild($childId);
+    }
+
+    /**
+     * @return list<array{epc_id: int, label: string, type: string, can_remove: bool}>
+     */
+    public function selectedScanRows(): array
+    {
+        $rows = [];
+        foreach (array_map('intval', $this->selectedChildIds) as $id) {
+            if (! array_key_exists($id, $this->openChildren)) {
+                continue;
+            }
+            $rows[] = [
+                'epc_id' => $id,
+                'identifier' => $this->openChildren[$id],
+                'label' => $this->openChildren[$id],
+                'type' => '',
+                'scanned_at' => '—',
+                'urn' => '—',
+                'present' => true,
+                'can_remove' => true,
+            ];
+        }
+
+        return $rows;
     }
 
     public function clearParent(): void
@@ -265,6 +328,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
 
     private function resetParentState(): void
     {
+        $this->clearPackingSessionState();
         $this->parentEpcId = null;
         $this->parentLabel = null;
         $this->parentUrn = null;
@@ -523,6 +587,8 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        $this->completePackingSession();
+
         Notification::make()
             ->title('Break & pack complete')
             ->body($modeNote.' Batch #'.$batch->getKey().'.')
@@ -585,6 +651,10 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        if ($this->refuseIfEpcReserved($parent, (string) $parent->epc_uri, 'error')) {
+            return;
+        }
+
         $this->parentEpcId = (int) $parent->getKey();
         $this->parentLabel = $this->epcLabel($parent);
         $this->parentUrn = (string) $parent->epc_uri;
@@ -592,13 +662,44 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         $this->selectedChildIds = [];
         $this->sourceDocumentId = $this->resolveSourceDocumentId($parent);
 
+        $session = $this->ensurePackingSession($siteId);
+        $this->persistPackingSessionParent($session);
+        if (! $this->reservePackingParentScan($session, $parent)) {
+            $this->clearPackingSessionState();
+            $this->parentEpcId = null;
+            $this->parentLabel = null;
+            $this->parentUrn = null;
+            $this->openChildren = [];
+            $this->selectedChildIds = [];
+            $this->sourceDocumentId = null;
+
+            return;
+        }
+
         if ($this->openChildren === []) {
             $this->flash('warn', 'Parent loaded — no open children.');
         } elseif ($this->sourceDocumentId !== null) {
-            $this->flash('ok', 'Parent loaded from inbound document #'.$this->sourceDocumentId.'.');
+            $this->flash('warn', 'Parent loaded from inbound document #'.$this->sourceDocumentId.'. Select children, then confirm.');
         } else {
             $this->flash('warn', 'Parent loaded — source document unknown; confirm will unpack then pack.');
         }
+    }
+
+    private function restoreBreakPackSessionState(): void
+    {
+        $session = $this->packingSession();
+        if ($session === null) {
+            return;
+        }
+
+        if ($session->parent_epc_id !== null) {
+            $parent = Epc::query()->find($session->parent_epc_id);
+            if ($parent instanceof Epc) {
+                $this->loadParent($parent, app(ShippableEpcsAtSite::class));
+            }
+        }
+
+        $this->hydrateSelectedChildIdsFromPackingSession();
     }
 
     private function resolveSourceDocumentId(Epc $parent): ?int

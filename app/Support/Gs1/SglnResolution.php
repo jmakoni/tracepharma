@@ -96,9 +96,8 @@ final class SglnResolution
     /**
      * Encode a GLN using only the length of a known GS1 Company Prefix (6–11).
      *
-     * Used as a last resort for organization facilities whose GLN is not issued
-     * under the organization prefix or a sibling facility prefix. Do not use this
-     * for partner locations — their split has to come from the SGLN they publish.
+     * Unit-test helper only. Production authoring and master-data save must not
+     * call this — a GLN does not encode where the prefix ends.
      *
      * @param  string  $extension  the sub-location this URN already named, if any
      */

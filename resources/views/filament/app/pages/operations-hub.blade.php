@@ -1,5 +1,8 @@
 <x-filament-panels::page>
     <div class="flex flex-col gap-4">
+        @if (\App\Support\Gs1\Gs1IdentityStatus::identityIncomplete())
+            @include('filament.app.partials.identity-incomplete-banner')
+        @endif
         <div class="alert">
             <span>
                 Profile-gated operations for this tenant. Scan a barcode to jump to Receive, Asset Tracking, Verify, or Find / Recall.
@@ -59,45 +62,43 @@
             </div>
         @endif
 
-        @if (\App\Support\TenantFeatures::forTenant(tenant())->supportsReceiving() && ($activeSessions = $this->activeReceivingSessions())->isNotEmpty())
+        @if (($openWork = $this->openWorkItems())->isNotEmpty())
             <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <h2 class="card-title text-base">Active receive sessions</h2>
+                        <h2 class="card-title text-base">Open work</h2>
                         @if ($url = $this->resourceIndexUrl(\App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource::class))
-                            <a href="{{ $url }}" class="btn btn-ghost btn-sm">View all</a>
+                            <a href="{{ $url }}" class="btn btn-ghost btn-sm">View receive</a>
                         @endif
                     </div>
                     <p class="text-sm opacity-70">
-                        Open sessions at your selected site (up to 5).
+                        Unsubmitted sessions at your selected site (up to 10). Resume on desktop or floor.
                     </p>
                     <ul class="menu bg-base-200 rounded-box w-full">
-                        @foreach ($activeSessions as $session)
+                        @foreach ($openWork as $item)
                             <li>
                                 <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <div class="font-medium">
-                                            {{ $session->site?->name ?? 'Site #'.$session->site_id }}
-                                            · {{ $this->receivingSessionStatusLabel($session) }}
+                                            {{ $item['label'] }}
+                                            · #{{ $item['id'] }}
                                         </div>
                                         <div class="text-sm opacity-70 font-normal">
-                                            @if ($session->document?->asn_number)
-                                                ASN {{ $session->document->asn_number }}
-                                            @else
-                                                {{ $session->session_kind instanceof \App\Enums\ReceivingSessionKind
-                                                    ? $session->session_kind->badgeLabel()
-                                                    : ucfirst(str_replace('_', ' ', (string) $session->session_kind)) }}
+                                            {{ $item['detail'] }}
+                                            @if ($item['opened_at'])
+                                                · opened {{ $item['opened_at']->diffForHumans() }}
                                             @endif
-                                            · opened {{ $session->opened_at?->diffForHumans() }}
                                         </div>
                                     </div>
-                                    <a href="{{ $this->receivingSessionUrl($session) }}" class="btn btn-primary btn-sm gap-2">
-                                        <x-filament::icon
-                                            icon="heroicon-o-arrow-top-right-on-square"
-                                            class="h-4 w-4"
-                                        />
-                                        Open
-                                    </a>
+                                    @if (filled($item['url']))
+                                        <a href="{{ $item['url'] }}" class="btn btn-primary btn-sm gap-2">
+                                            <x-filament::icon
+                                                icon="heroicon-o-arrow-top-right-on-square"
+                                                class="h-4 w-4"
+                                            />
+                                            Open
+                                        </a>
+                                    @endif
                                 </div>
                             </li>
                         @endforeach

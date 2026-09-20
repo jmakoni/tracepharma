@@ -20,14 +20,14 @@ final class DashboardLinks
                 return null;
             }
 
-            return $page::getUrl(panel: 'app');
+            return $page::getUrl(isAbsolute: false, panel: 'app');
         } catch (Throwable) {
             return null;
         }
     }
 
     /**
-     * @param  class-string<Resource>  $resource
+     * @param  class-string<resource>  $resource
      */
     public static function resourceIndexUrl(string $resource): ?string
     {
@@ -43,14 +43,14 @@ final class DashboardLinks
                 return null;
             }
 
-            return $resource::getUrl('index', panel: 'app');
+            return $resource::getUrl('index', isAbsolute: false, panel: 'app');
         } catch (Throwable) {
             return null;
         }
     }
 
     /**
-     * @param  class-string<Resource>  $resource
+     * @param  class-string<resource>  $resource
      */
     public static function resourceViewUrl(string $resource, int $recordId): ?string
     {
@@ -59,7 +59,7 @@ final class DashboardLinks
                 return null;
             }
 
-            return $resource::getUrl('view', ['record' => $recordId], panel: 'app');
+            return $resource::getUrl('view', ['record' => $recordId], isAbsolute: false, panel: 'app');
         } catch (Throwable) {
             return null;
         }

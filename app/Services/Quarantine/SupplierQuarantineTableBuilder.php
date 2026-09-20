@@ -4,15 +4,14 @@ namespace App\Services\Quarantine;
 
 use App\Enums\ExceptionStatus;
 use App\Models\Epcis\Epc;
-use App\Models\Fda\FdaProductPackaging;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionCase;
+use App\Models\Fda\FdaProductPackaging;
 use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Support\Catalog\DisplayName;
 use App\Support\Epcis\ShipmentReference;
 use App\Support\Exceptions\AssortmentFromCatalog;
-use App\Support\Gs1\Gtin;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -287,13 +286,6 @@ final class SupplierQuarantineTableBuilder
             $candidates[] = (string) $epc->gtin14;
         }
 
-        if (filled($epc->company_prefix) && filled($epc->item_reference)) {
-            $body13 = '0'.$epc->company_prefix.$epc->item_reference;
-            if (strlen($body13) === 13 && ctype_digit($body13)) {
-                $candidates[] = $body13.Gtin::checkDigit($body13);
-            }
-        }
-
         return $this->firstPackagingHit($candidates);
     }
 
@@ -303,13 +295,7 @@ final class SupplierQuarantineTableBuilder
             return null;
         }
 
-        $candidates = [$gtin14];
-        $body13 = '0'.substr($gtin14, 1, 12);
-        if (ctype_digit($body13)) {
-            $candidates[] = $body13.Gtin::checkDigit($body13);
-        }
-
-        return $this->firstPackagingHit($candidates);
+        return $this->firstPackagingHit([$gtin14]);
     }
 
     /**

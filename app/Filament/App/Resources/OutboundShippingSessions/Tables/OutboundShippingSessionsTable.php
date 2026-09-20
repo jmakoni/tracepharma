@@ -23,13 +23,23 @@ class OutboundShippingSessionsTable
             ->columns([
                 TextColumn::make('status')
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => OutboundShippingSessionStatus::label($state))
-                    ->color(fn (?string $state): string => match ($state) {
-                        'completed' => 'success',
-                        'in_progress' => 'info',
-                        'open' => 'warning',
-                        'cancelled' => 'gray',
-                        default => 'gray',
+                    ->formatStateUsing(function (?string $state, OutboundShippingSession $record): string {
+                        $label = OutboundShippingSessionStatus::label($state);
+
+                        return $record->isVoided() ? $label.' · Voided' : $label;
+                    })
+                    ->color(function (?string $state, OutboundShippingSession $record): string {
+                        if ($record->isVoided()) {
+                            return 'warning';
+                        }
+
+                        return match ($state) {
+                            'completed' => 'success',
+                            'in_progress' => 'info',
+                            'open' => 'warning',
+                            'cancelled' => 'gray',
+                            default => 'gray',
+                        };
                     })
                     ->sortable(),
                 TextColumn::make('site.name')

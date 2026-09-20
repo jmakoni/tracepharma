@@ -5,9 +5,11 @@ namespace App\Filament\App\Pages;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Labeling\AttachChildrenToExistingSscc;
 use App\Actions\Labeling\GenerateSsccLabelBatch;
+use App\Enums\PackingSessionKind;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccLabelBatchStatus;
 use App\Enums\TenantProfile;
+use App\Filament\App\Pages\Concerns\InteractsWithPackingWorkstationSession;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
 use App\Models\Epcis\AggregationLink;
@@ -45,6 +47,7 @@ use UnitEnum;
 
 class PackWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithPackingWorkstationSession;
     use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
@@ -90,6 +93,16 @@ class PackWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithPackingWorkstationSession();
+    }
+
+    protected function packingSessionKind(): PackingSessionKind
+    {
+        return PackingSessionKind::Pack;
+    }
+
     /**
      * Pharmacy packing stays Operations Hub–only (no sidebar), even with warehouse tools.
      */
@@ -109,6 +122,16 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         }
 
         return 'Break a case on Unpack, then scan bottles here. Confirm pack commissions a new SSCC, or scan an already generated SSCC to continue packing.';
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->confirmPackAction(),
+        ];
     }
 
     public function tenantNameDisplay(): string
@@ -237,41 +260,33 @@ class PackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
-        if (! app(AcquirePackChildLocks::class)->softReserve($epcId)) {
-            $this->flash('warn', 'Another operator is packing this unit. Try again shortly.');
-            $this->scan = '';
-            $this->dispatch('focus-scan');
-            $this->dispatch('scan-result', tone: 'warn');
-
+        if ($this->refuseIfEpcReserved($epc, $scan)) {
             return;
         }
 
-        $this->children[] = [
-            'epc_id' => $epcId,
-            'label' => $this->epcLabel($epc),
-        ];
+        $packSession = $this->ensurePackingSession($siteId);
+        if (! $this->stagePackingChildScan($packSession, $scan)) {
+            return;
+        }
+
+        $this->hydratePackingChildrenFromDatabase();
+        $this->persistPackingSessionParent($packSession);
 
         $this->scan = '';
-        $this->flash('ok', 'Added '.$this->epcLabel($epc));
+        $this->flash('warn', 'Staged '.$this->epcLabel($epc).' — confirm to commission.');
         $this->dispatch('focus-scan');
         $this->dispatch('scan-result', tone: 'ok');
     }
 
     public function removeChild(int $epcId): void
     {
-        app(AcquirePackChildLocks::class)->releaseSoftReserve($epcId);
-
-        $this->children = array_values(array_filter(
-            $this->children,
-            fn (array $row): bool => (int) $row['epc_id'] !== $epcId,
-        ));
+        $this->removePackingStagedChild($epcId);
     }
 
     public function clearChildren(): void
     {
-        app(AcquirePackChildLocks::class)->releaseSoftReserves($this->childIds());
-
         $this->releaseBoundParentSoftReserve();
+        $this->clearPackingSessionState();
         $this->children = [];
         $this->lockedCommissionSiteId = null;
         $this->parentLabelId = null;
@@ -426,6 +441,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
 
         $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
 
+        $this->completePackingSession();
         $this->children = [];
         $this->lockedCommissionSiteId = null;
 
@@ -557,6 +573,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
 
         $this->inheritPrincipalOntoPackedBatch($batch, $childIds);
 
+        $this->completePackingSession();
         $this->children = [];
 
         if ($batch->hasErrors()) {
@@ -942,7 +959,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         }
 
         if ($this->parentLabelId !== null && (int) $this->parentLabelId === (int) $label->getKey()) {
-            $this->flash('ok', 'Already bound to SSCC '.$label->sscc_18.'.');
+            $this->flash('warn', 'Already bound to SSCC '.$label->sscc_18.'.');
             $this->scan = '';
             $this->dispatch('scan-result', tone: 'ok');
 
@@ -967,6 +984,10 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         }
 
         $parentEpc = $this->parentEpcForLabel($label);
+        if ($parentEpc instanceof Epc && $this->refuseIfEpcReserved($parentEpc, (string) $label->sscc_18, 'error')) {
+            return;
+        }
+
         if ($parentEpc instanceof Epc && ! app(AcquirePackChildLocks::class)->softReserve((int) $parentEpc->getKey())) {
             $this->flash('warn', 'Another operator is packing this SSCC. Try again shortly.');
             $this->scan = '';
@@ -978,8 +999,24 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         $this->parentLabelId = (int) $label->getKey();
         $this->parentSscc18 = (string) $label->sscc_18;
         $this->parentUrn = (string) $label->sscc_urn;
+
+        $siteId = $this->lockedCommissionSiteId ?? $this->resolvePackingSiteId();
+        if ($siteId !== null) {
+            $session = $this->ensurePackingSession($siteId);
+            $this->persistPackingSessionParent($session);
+            if ($parentEpc instanceof Epc && ! $this->reservePackingParentScan($session, $parentEpc)) {
+                $this->releaseBoundParentSoftReserve();
+                $this->clearPackingSessionState();
+                $this->parentLabelId = null;
+                $this->parentSscc18 = null;
+                $this->parentUrn = null;
+
+                return;
+            }
+        }
+
         $this->scan = '';
-        $this->flash('ok', 'Bound parent SSCC '.$label->sscc_18.'. Scan children to add.');
+        $this->flash('warn', 'Bound parent SSCC '.$label->sscc_18.'. Scan children to add.');
         $this->dispatch('scan-result', tone: 'ok');
     }
 

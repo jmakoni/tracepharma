@@ -4,6 +4,7 @@ namespace Tests\Feature\Epcis;
 
 use App\Actions\Epcis\ReplaceEpcisDocumentPayload;
 use App\Actions\Epcis\VoidEpcisDocument;
+use App\Enums\EpcisGuideline;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Tenant;
@@ -87,6 +88,7 @@ class ReplaceAndVoidEpcisDocumentTest extends TestCase
             $xml = file_get_contents($fixture);
             $this->assertNotFalse($xml);
             $xml = str_replace('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', (string) str()->uuid(), $xml);
+            $xml = str_replace('0860249001509', (string) tenant()->gln, $xml);
             file_put_contents($tmp, $xml);
 
             $updated = app(ReplaceEpcisDocumentPayload::class)->handle($document, $tmp, [
@@ -102,6 +104,40 @@ class ReplaceAndVoidEpcisDocumentTest extends TestCase
             $this->assertSame('error', $updated->status);
 
             @unlink($tmp);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function replace_rejects_r13_payload_on_r12_document(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $document = $this->makeErrorDocument([
+                'dscsa_guideline_release' => EpcisGuideline::R12,
+            ]);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_r13_');
+            $this->assertNotFalse($tmp);
+            file_put_contents(
+                $tmp,
+                '<epcis:EPCISDocument><gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion></epcis:EPCISDocument>',
+            );
+
+            try {
+                app(ReplaceEpcisDocumentPayload::class)->handle($document, $tmp, [
+                    'original_filename' => 'corrected_r13.xml',
+                    'sync' => true,
+                ]);
+                $this->fail('Expected DomainException when replace would change the stored release.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('R1.3', $e->getMessage());
+                $this->assertStringContainsString('R1.2', $e->getMessage());
+            } finally {
+                @unlink($tmp);
+            }
         } finally {
             $this->cleanup();
         }

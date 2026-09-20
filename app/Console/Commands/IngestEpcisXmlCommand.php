@@ -4,7 +4,9 @@ namespace App\Console\Commands;
 
 use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Enums\EpcisReceivedVia;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Models\Tenant;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use Illuminate\Console\Command;
 
 class IngestEpcisXmlCommand extends Command
@@ -43,6 +45,24 @@ class IngestEpcisXmlCommand extends Command
         tenancy()->initialize($tenant);
 
         try {
+            $direction = (string) $this->option('direction');
+            if ($direction === 'inbound') {
+                $content = file_get_contents($path);
+                if ($content === false) {
+                    $this->error('Unable to read EPCIS XML.');
+
+                    return self::FAILURE;
+                }
+
+                try {
+                    AssertInboundReceiverGln::assertBelongsToCurrentTenant($content);
+                } catch (InboundReceiverGlnRejected $e) {
+                    $this->error($e->getMessage());
+
+                    return self::FAILURE;
+                }
+            }
+
             $sync = (bool) $this->option('sync');
             $document = $receive->handle($path, [
                 'direction' => (string) $this->option('direction'),

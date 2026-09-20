@@ -27,16 +27,20 @@ class RunProductVerificationTransportTest extends TestCase
     }
 
     /**
-     * DSCSA: being unable to reach the VRS is not evidence that product is suspect, so a
-     * transport failure must not open a High severity case or quarantine the EPC.
+     * Transport timeout files an investigation case so the unit is not auto-released,
+     * but it is not a suspect verdict — do not open a hold from timeout alone.
      */
     #[Test]
-    public function transport_failures_do_not_open_a_verification_exception(): void
+    public function transport_failures_open_a_case_without_a_hold(): void
     {
         foreach (['unavailable', 'error'] as $status) {
-            $this->assertFalse(
+            $this->assertTrue(
                 $this->shouldOpenException($status),
-                $status.' must not open a quarantine case.',
+                $status.' must open a case so the scan is not auto-released.',
+            );
+            $this->assertFalse(
+                $this->shouldOpenHold($status),
+                $status.' must not quarantine on transport timeout.',
             );
         }
 
@@ -45,10 +49,15 @@ class RunProductVerificationTransportTest extends TestCase
                 $this->shouldOpenException($status),
                 $status.' is a responder verdict and must open a case.',
             );
+            $this->assertTrue(
+                $this->shouldOpenHold($status),
+                $status.' must open a hold, including identity-only fails.',
+            );
         }
 
         foreach (['verified', 'deferred'] as $status) {
             $this->assertFalse($this->shouldOpenException($status));
+            $this->assertFalse($this->shouldOpenHold($status));
         }
     }
 
@@ -56,6 +65,14 @@ class RunProductVerificationTransportTest extends TestCase
     {
         $action = (new \ReflectionClass(RunProductVerification::class))->newInstanceWithoutConstructor();
         $method = new \ReflectionMethod(RunProductVerification::class, 'shouldOpenException');
+
+        return (bool) $method->invoke($action, $status);
+    }
+
+    private function shouldOpenHold(string $status): bool
+    {
+        $action = (new \ReflectionClass(RunProductVerification::class))->newInstanceWithoutConstructor();
+        $method = new \ReflectionMethod(RunProductVerification::class, 'shouldOpenHold');
 
         return (bool) $method->invoke($action, $status);
     }

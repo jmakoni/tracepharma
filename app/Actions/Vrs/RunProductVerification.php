@@ -3,6 +3,7 @@
 namespace App\Actions\Vrs;
 
 use App\Actions\Epcis\ResolveEpcFromScan;
+use App\Actions\Quarantine\OpenQuarantineHold;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
 use App\Exceptions\VrsConfigurationException;
@@ -20,6 +21,7 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Gs1\ElementString;
+use App\Support\Gs1\Gs1DigitalLinkScan;
 use App\Support\Vrs\AssertVrsDriverReady;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -65,6 +67,11 @@ final class RunProductVerification
      */
     public function handle(string $scan, ?User $actor = null): array
     {
+        $digitalLinkElement = Gs1DigitalLinkScan::toElementString($scan);
+        if ($digitalLinkElement !== null) {
+            $scan = $digitalLinkElement;
+        }
+
         $normalized = ElementString::normalize($scan);
 
         if ($normalized === '') {
@@ -143,6 +150,7 @@ final class RunProductVerification
                 $epc,
                 $result['message'],
                 $actor,
+                $this->shouldOpenHold($result['status']),
             );
             $verification->forceFill(['exception_id' => $exceptionId])->save();
         }
@@ -157,10 +165,8 @@ final class RunProductVerification
     }
 
     /**
-     * A transport failure carries no information about the product, so it must not open a
-     * High severity case or quarantine the EPC — that would strand good stock every time
-     * the VRS is down. The Verification row keeps the attempt on the audit trail and the
-     * operator is told to rescan.
+     * Transport timeout is not a suspect verdict. File a case so the scan is not
+     * auto-released; do not open a hold from timeout alone.
      */
     public static function isTransportFailure(string $status): bool
     {
@@ -169,10 +175,12 @@ final class RunProductVerification
 
     private function shouldOpenException(string $status): bool
     {
-        if (self::isTransportFailure($status)) {
-            return false;
-        }
+        return self::isTransportFailure($status)
+            || in_array($status, ['failed', 'suspect'], true);
+    }
 
+    private function shouldOpenHold(string $status): bool
+    {
         return in_array($status, ['failed', 'suspect'], true);
     }
 
@@ -358,11 +366,12 @@ final class RunProductVerification
         ?Epc $epc,
         string $reason,
         ?User $actor,
+        bool $openHold = true,
     ): int {
         $type = $this->exceptions->resolveType('VERIFICATION_FAILED');
         $epcIds = $epc !== null ? [(int) $epc->getKey()] : [];
 
-        $case = DB::transaction(function () use ($type, $verification, $reason, $epcIds, $actor, $epc): ExceptionCase {
+        $case = DB::transaction(function () use ($type, $verification, $reason, $epcIds, $actor, $epc, $openHold): ExceptionCase {
             $case = $this->exceptions->create([
                 'exception_type_id' => $type->getKey(),
                 'document_id' => null,
@@ -373,7 +382,7 @@ final class RunProductVerification
                 'status' => ExceptionStatus::New->value,
             ], $epcIds, $actor);
 
-            if ($epcIds !== []) {
+            if ($openHold && $epcIds !== []) {
                 $this->quarantine->openForCase(
                     $case,
                     $epcIds,
@@ -382,10 +391,27 @@ final class RunProductVerification
                 );
             }
 
+            if ($openHold && $epcIds === []) {
+                app(OpenQuarantineHold::class)->handle(
+                    reason: $reason,
+                    epc: null,
+                    exception: $case,
+                    actor: $actor,
+                    severity: 'error',
+                    meta: [
+                        'source' => 'vrs_identity',
+                        'gtin14' => $verification->gtin14,
+                        'serial' => $verification->serial,
+                    ],
+                );
+            }
+
             return $case;
         });
 
-        $this->manufacturerNotifier->notifyIfApplicable($verification, $case);
+        if ($openHold) {
+            $this->manufacturerNotifier->notifyIfApplicable($verification, $case);
+        }
 
         return (int) $case->getKey();
     }

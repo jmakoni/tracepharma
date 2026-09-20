@@ -3,6 +3,8 @@
 namespace App\Actions\Receiving;
 
 use App\Models\Epcis\Epc;
+use App\Models\Receiving\InboundExpectedLine;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Transferring\TransferringSession;
@@ -10,10 +12,14 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\ReceivingPackShape;
+use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ResolveInboundAggregationChildEpcs;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Undo a single floor scan line: unconfirm an ASN parent (and drop its children)
@@ -113,6 +119,8 @@ final class UnconfirmReceivingScanLine
                     ])->save();
                 }
 
+                $this->revertShipmentExpectedLines($session, [$epcId]);
+
                 if ($session->isTransferReceive() && $session->transferring_session_id !== null) {
                     $epc = Epc::query()->find($epcId);
                     $transfer = TransferringSession::query()->find($session->transferring_session_id);
@@ -127,6 +135,9 @@ final class UnconfirmReceivingScanLine
 
             if ($line->line_role === 'parent' && $line->status === 'confirmed') {
                 $parentEpcId = (int) $line->epc_id;
+                $outerParentId = $line->parent_epc_id !== null
+                    ? (int) $line->parent_epc_id
+                    : null;
 
                 $confirmedChildrenRemoved = ReceivingScanLine::query()
                     ->where('receiving_session_id', $session->getKey())
@@ -134,6 +145,14 @@ final class UnconfirmReceivingScanLine
                     ->where('parent_epc_id', $parentEpcId)
                     ->where('status', 'confirmed')
                     ->count();
+
+                $childEpcIds = ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('line_role', 'child')
+                    ->where('parent_epc_id', $parentEpcId)
+                    ->pluck('epc_id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
 
                 ReceivingScanLine::query()
                     ->where('receiving_session_id', $session->getKey())
@@ -170,6 +189,15 @@ final class UnconfirmReceivingScanLine
                         'expected_child_count' => $expectedChildCount,
                         'completed_at' => null,
                     ])->save();
+                }
+
+                $this->revertShipmentExpectedLines($session, array_values(array_unique([
+                    $parentEpcId,
+                    ...$childEpcIds,
+                ])));
+
+                if ($outerParentId !== null) {
+                    $this->uncoverOuterPalletIfIncomplete($session->refresh(), $outerParentId);
                 }
 
                 if ($session->isTransferReceive() && $session->transferring_session_id !== null) {
@@ -212,6 +240,137 @@ final class UnconfirmReceivingScanLine
         }
 
         return $session->refresh();
+    }
+
+    /**
+     * Undo within an open session must put expected-order lines back to expected
+     * so re-scan confirms again (and Day-2 already_received stays accurate).
+     *
+     * @param  list<int>  $epcIds
+     */
+    private function revertShipmentExpectedLines(ReceivingSession $session, array $epcIds): void
+    {
+        if ($epcIds === []
+            || ! Schema::hasTable('inbound_expected_lines')
+            || ! Schema::hasColumn('receiving_sessions', 'inbound_shipment_id')) {
+            return;
+        }
+
+        // Confirm clears the live claim; undo must reclaim for this session so a parallel
+        // opener cannot take the serial while this session still holds the expected line.
+        // Scan-first stamps a unique open ASN without linking inbound_shipment_id —
+        // revert by confirmed_receiving_session_id so undo still reopens those lines.
+        $updates = [
+            'status' => 'expected',
+            'confirmed_at' => null,
+            'confirmed_by' => null,
+            'confirmed_receiving_session_id' => null,
+            'updated_at' => now(),
+        ];
+
+        if (Schema::hasColumn('inbound_expected_lines', 'claimed_receiving_session_id')) {
+            $updates['claimed_receiving_session_id'] = $session->inbound_shipment_id !== null
+                ? $session->getKey()
+                : null;
+        }
+
+        $query = InboundExpectedLine::query()
+            ->whereIn('epc_id', $epcIds)
+            ->where('status', 'confirmed')
+            ->where('confirmed_receiving_session_id', $session->getKey());
+
+        if ($session->inbound_shipment_id !== null) {
+            $query->where('inbound_shipment_id', $session->inbound_shipment_id);
+        }
+
+        $shipmentIds = (clone $query)->distinct()->pluck('inbound_shipment_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        $query->update($updates);
+
+        foreach ($shipmentIds as $shipmentId) {
+            InboundShipment::query()->find($shipmentId)?->refreshRollups();
+        }
+    }
+
+    /**
+     * Case-only SOP auto-covers the outer pallet when all nested cases are confirmed.
+     * Unconfirming a nested case must uncover that pallet when siblings are no longer complete.
+     */
+    private function uncoverOuterPalletIfIncomplete(ReceivingSession $session, int $outerParentId): void
+    {
+        if (! ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()) {
+            return;
+        }
+
+        $outerParentLine = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('epc_id', $outerParentId)
+            ->where('line_role', 'parent')
+            ->where('status', 'confirmed')
+            ->lockForUpdate()
+            ->first();
+
+        if ($outerParentLine === null) {
+            return;
+        }
+
+        // Operator-scanned pallet (has scan_raw) is not an auto-cover — leave it alone.
+        if (filled($outerParentLine->scan_raw)) {
+            return;
+        }
+
+        $outerParent = Epc::query()->find($outerParentId);
+        $siblingCaseIds = $outerParent instanceof Epc
+            ? app(ResolveInboundAggregationChildEpcs::class)->childEpcIdsForParent($session, $outerParent)
+            : [];
+
+        $casePackSiblingIds = [];
+        foreach ($siblingCaseIds as $childId) {
+            $child = Epc::query()->find($childId);
+            if ($child !== null && ReceivingPackShape::isCasePack($child, $session)) {
+                $casePackSiblingIds[] = $childId;
+            }
+        }
+
+        if ($casePackSiblingIds === []) {
+            return;
+        }
+
+        $confirmedSiblingCount = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereIn('epc_id', $casePackSiblingIds)
+            ->where('line_role', 'parent')
+            ->where('status', 'confirmed')
+            ->count();
+
+        if ($confirmedSiblingCount >= count($casePackSiblingIds)) {
+            return;
+        }
+
+        $outerParentLine->forceFill([
+            'status' => 'expected',
+            'confirmed_at' => null,
+            'confirmed_by' => null,
+            'scan_raw' => null,
+            'ilmd_mismatch_json' => null,
+        ])->save();
+
+        $session->forceFill([
+            'confirmed_parent_count' => max(0, (int) $session->confirmed_parent_count - 1),
+            'completed_at' => null,
+        ])->save();
+
+        $this->revertShipmentExpectedLines($session, [$outerParentId]);
+
+        Log::info('receiving.case_only.outer_pallet_uncovered', [
+            'receiving_session_id' => (int) $session->getKey(),
+            'outer_epc_id' => $outerParentId,
+            'confirmed_case_sibling_count' => $confirmedSiblingCount,
+            'case_sibling_count' => count($casePackSiblingIds),
+        ]);
     }
 
     private function assertCanAccessSessionSite(User $user, ReceivingSession $session): void

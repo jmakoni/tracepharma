@@ -7,9 +7,12 @@ use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisDocumentProductClass;
+use App\Models\Epcis\EpcisException;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Support\Epcis\EpcisXmlReader;
+use Database\Seeders\ExceptionTypeSeeder;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -195,6 +198,127 @@ XML;
         }
     }
 
+    #[Test]
+    public function fda_ndc_11_with_dashed_value_is_exception_not_rewritten(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('INVALID_NDC_IDENTIFICATION_SHAPE');
+
+        try {
+            $document = $this->ingestVocabNdcDocument(
+                identification: '0001-0123-45',
+                typeCode: 'FDA_NDC_11',
+                serial: 'VOCABNDC0002',
+            );
+
+            $this->assertNdcShapeException($document, '0001-0123-45');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function us_fda_ndc_with_eleven_digit_cms_value_is_exception(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('INVALID_NDC_IDENTIFICATION_SHAPE');
+
+        try {
+            $document = $this->ingestVocabNdcDocument(
+                identification: '00116200116',
+                typeCode: 'US_FDA_NDC',
+                serial: 'VOCABNDC0003',
+            );
+
+            $this->assertNdcShapeException($document, '00116200116');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    private function ingestVocabNdcDocument(string $identification, string $typeCode, string $serial): EpcisDocument
+    {
+        $uuid = (string) str()->uuid();
+        $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1" xmlns:sbdh="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader" xmlns:cbvmda="urn:epcglobal:cbv:mda" schemaVersion="1.2" creationDate="2026-07-15T20:15:49.056Z">
+  <EPCISHeader>
+    <sbdh:StandardBusinessDocumentHeader>
+      <sbdh:HeaderVersion>1.0</sbdh:HeaderVersion>
+      <sbdh:Sender><sbdh:Identifier Authority="GLN">0301160000009</sbdh:Identifier></sbdh:Sender>
+      <sbdh:Receiver><sbdh:Identifier Authority="GLN">0096295000009</sbdh:Identifier></sbdh:Receiver>
+      <sbdh:DocumentIdentification>
+        <sbdh:Standard>EPCglobal</sbdh:Standard>
+        <sbdh:TypeVersion>1.0</sbdh:TypeVersion>
+        <sbdh:InstanceIdentifier>{$uuid}</sbdh:InstanceIdentifier>
+        <sbdh:Type>Events</sbdh:Type>
+        <sbdh:CreationDateAndTime>2026-07-15T20:15:49.056Z</sbdh:CreationDateAndTime>
+      </sbdh:DocumentIdentification>
+    </sbdh:StandardBusinessDocumentHeader>
+    <extension>
+      <EPCISMasterData>
+        <VocabularyList>
+          <Vocabulary type="urn:epcglobal:epcis:vtype:EPCClass">
+            <VocabularyElementList>
+              <VocabularyElement id="urn:epc:idpat:sgtin:030116.0200116.*">
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">{$identification}</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">{$typeCode}</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#regulatedProductName">Chlorhexidine Gluconate 0.12% Oral Rinse, USP</attribute>
+              </VocabularyElement>
+            </VocabularyElementList>
+          </Vocabulary>
+        </VocabularyList>
+      </EPCISMasterData>
+    </extension>
+  </EPCISHeader>
+  <EPCISBody>
+    <EventList>
+      <ObjectEvent>
+        <eventTime>2026-06-18T23:27:32.897Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sgtin:030116.0200116.{$serial}</epc>
+        </epcList>
+        <action>ADD</action>
+        <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+      </ObjectEvent>
+    </EventList>
+  </EPCISBody>
+</epcis:EPCISDocument>
+XML;
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_ndc_shape_');
+        $this->assertNotFalse($tmp);
+        file_put_contents($tmp, $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'vocab_ndc_shape.xml',
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            return $document;
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    private function assertNdcShapeException(EpcisDocument $document, string $rawValue): void
+    {
+        $open = EpcisException::query()
+            ->where('document_id', $document->id)
+            ->where('status', 'open')
+            ->where('exception_type', 'INVALID_NDC_IDENTIFICATION_SHAPE')
+            ->get();
+
+        $this->assertCount(1, $open);
+
+        $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+        $this->assertStringContainsString($rawValue, $stored);
+    }
+
     private function initializeDemo2Tenant(): Tenant
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -234,12 +358,15 @@ XML;
         }
 
         if ($this->documentId !== null) {
+            EpcisException::query()->where('document_id', $this->documentId)->delete();
             EpcisDocument::query()->whereKey($this->documentId)->delete();
         }
 
-        $epc = Epc::query()->where('epc_uri', 'urn:epc:id:sgtin:030116.0200116.VOCABNDC0001')->first();
-        if ($epc !== null) {
-            $epc->delete();
+        foreach (['VOCABNDC0001', 'VOCABNDC0002', 'VOCABNDC0003'] as $serial) {
+            $epc = Epc::query()->where('epc_uri', 'urn:epc:id:sgtin:030116.0200116.'.$serial)->first();
+            if ($epc !== null) {
+                $epc->delete();
+            }
         }
 
         if ($this->productId !== null) {

@@ -202,6 +202,26 @@ final class Ndc
     }
 
     /**
+     * True when the value is already an 11-digit CMS NDC-11 (no dashes).
+     */
+    public static function isCmsNdc11(?string $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        return preg_match('/^\d{11}$/', trim($value)) === 1;
+    }
+
+    /**
+     * True when the value is an FDA listing 10-digit dashed NDC (4-4-2 / 5-3-2 / 5-4-1).
+     */
+    public static function isFdaListingDashed(?string $value): bool
+    {
+        return $value !== null && $value !== '' && self::isFdaTenDigitDashed($value);
+    }
+
+    /**
      * True when the value is already an FDA label-style 10-digit dashed NDC.
      */
     private static function isFdaTenDigitDashed(string $value): bool

@@ -6,6 +6,7 @@ use App\Actions\Epcis\ReplaceEpcisDocumentPayload;
 use App\Actions\Epcis\ReprocessEpcisDocument;
 use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Filament\App\Resources\Exceptions\Pages\ViewException;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
@@ -15,6 +16,7 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionRootCause;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseEditor;
 use App\Support\Filesystem\SafeFilename;
@@ -117,6 +119,20 @@ final class CorrectDocumentActions
                             ->send();
 
                         return;
+                    }
+
+                    if ((string) $document->direction !== 'outbound') {
+                        try {
+                            AssertInboundReceiverGln::assertBelongsToCurrentTenant($file->get());
+                        } catch (InboundReceiverGlnRejected $e) {
+                            Notification::make()
+                                ->title('Upload rejected')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
                     }
 
                     $originalFilename = SafeFilename::forUpload($file->getClientOriginalName(), 'corrected.xml');

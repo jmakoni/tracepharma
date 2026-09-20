@@ -10,9 +10,12 @@
 
                 <x-slot:qty>
                     @if ($this->confirmed !== [])
-                        <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
-                            Confirmed {{ count($this->confirmed) }}
-                        </span>
+                        @include('filament.app.partials.scanner-progress-stats', [
+                            'stats' => [
+                                ['title' => 'Confirmed', 'value' => count($this->confirmed)],
+                            ],
+                            'class' => 'stats stats-horizontal bg-base-200 shadow',
+                        ])
                     @endif
                 </x-slot:qty>
 

@@ -30,6 +30,7 @@ final class EpcisValidationSeverityMap
         'GTIN_SERIAL_MISMATCH' => 'error',
         'INVALID_EPC_URI' => 'error',
         'UNSUPPORTED_EPC_TYPE' => 'warning',
+        'INVALID_NDC_IDENTIFICATION_SHAPE' => 'error',
 
         // Event Structure & Content
         'MISSING_MANDATORY_FIELD' => 'error',
@@ -80,7 +81,9 @@ final class EpcisValidationSeverityMap
         'ENCODING_ERROR' => 'warning',
         'MISSING_SOURCE_DESTINATION' => 'error',
         'MISSING_BIZ_TRANSACTION' => 'warning',
+        'CASE_ONLY_PALLET_COVERED' => 'info',
         'ASN_SHIPMENT_FILE_ADDED' => 'warning',
+        'ASN_SHIPMENT_CORRECTED' => 'warning',
         'ASN_SHIPMENT_PO_MISMATCH' => 'warning',
         'DESTINATION_OWNING_PARTY_MISMATCH' => 'warning',
         'DESTINATION_LOCATION_MISMATCH' => 'warning',
@@ -88,12 +91,16 @@ final class EpcisValidationSeverityMap
 
         // Process & DSCSA Compliance
         'MISSING_COMMISSIONING' => 'critical',
-        'SERIAL_SHIPPED_NOT_COMMISSIONED' => 'critical',
+        'SERIAL_SHIPPED_NOT_COMMISSIONED' => 'error',
+        'VOID_SHIPPING' => 'error',
+        'ERROR_DECLARATION' => 'warning',
+        'INBOUND_RECEIVER_REJECTED' => 'error',
         'DECOMMISSIONED_SERIAL_SHIPPED' => 'critical',
         'SUSPECT_PRODUCT' => 'critical',
         'VERIFICATION_FAILED' => 'error',
         'RETURNS_NOT_LINKED' => 'error',
         'DROP_SHIPMENT_INDICATOR_MISSING' => 'warning',
+        'MIXED_DSCSA_GUIDELINE_RELEASE' => 'error',
         'OWNERSHIP_TRANSFER_UNCLEAR' => 'error',
 
         // System / Operational
@@ -138,6 +145,7 @@ final class EpcisValidationSeverityMap
         'DUPLICATE_TRANSMISSION' => 'warning',
         'FILE_SIZE_EXCEEDED' => 'warning',
         'UNSUPPORTED_EPC_TYPE' => 'warning',
+        'INVALID_NDC_IDENTIFICATION_SHAPE' => 'warning',
         'INVALID_COMPANY_PREFIX' => 'warning',
         'RETURNS_NOT_LINKED' => 'warning',
     ];

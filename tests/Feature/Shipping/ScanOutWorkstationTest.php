@@ -135,6 +135,9 @@ class ScanOutWorkstationTest extends TestCase
                 ->assertSee('Scan barcode')
                 ->assertSee('Customer')
                 ->assertSee('Send')
+                ->assertSeeHtml('bg-base-200')
+                ->assertSeeHtml('stat-title')
+                ->assertSee('Confirmed')
                 ->set('wizardStep', 2)
                 ->assertSee('Outbound connection')
                 ->set('wizardStep', 3)
@@ -145,6 +148,8 @@ class ScanOutWorkstationTest extends TestCase
             $blade = File::get(resource_path('views/filament/app/pages/scan-out-workstation.blade.php'));
             $scanPartial = File::get(resource_path('views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php'));
             $this->assertStringContainsString('outbound-ship-wizard-step-scan', $blade);
+            $this->assertStringContainsString('scanner-progress-stats', $blade);
+            $this->assertStringNotContainsString('tp-scan-qty', $blade);
             $this->assertStringContainsString('scan-field', $scanPartial);
             $this->assertStringContainsString('useScanFieldComponent', $scanPartial);
             $this->assertStringContainsString('submit-action="confirmScan"', $scanPartial);

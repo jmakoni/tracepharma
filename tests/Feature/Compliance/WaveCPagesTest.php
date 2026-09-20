@@ -123,6 +123,9 @@ class WaveCPagesTest extends TestCase
             Livewire::test(OnHandList::class)
                 ->set('siteId', $site->getKey())
                 ->assertSuccessful()
+                ->assertSee('NEARLOT', false)
+                ->assertSee('FARLOT', false)
+                ->call('setActiveTab', 'serials')
                 ->assertSee($near['serial'], false)
                 ->assertSee($far['serial'], false);
         } finally {

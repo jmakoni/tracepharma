@@ -7,9 +7,11 @@ use App\Actions\Receiving\CloseOpenToteReceiving;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
+use App\Enums\ExceptionStatus;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -50,6 +52,9 @@ class OpenToteReceivingTest extends TestCase
 
     /** @var list<int> */
     private array $extraEpcIds = [];
+
+    /** @var list<int> */
+    private array $caseIds = [];
 
     private ?bool $priorRequireTi = null;
 
@@ -405,6 +410,107 @@ class OpenToteReceivingTest extends TestCase
     }
 
     #[Test]
+    public function open_tote_short_close_creates_shortage_exception_for_unconfirmed_children(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setEdgeMode($tenant, ReceivingEdgeMode::OpenTote);
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+            $siteId = $this->resolveEligibleReceiveSiteId();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
+            $this->sessionId = (int) $session->getKey();
+
+            $otherParent = $this->createSsccParentLine($session, 'expected');
+            $this->createChildLine($session, (int) $otherParent->epc_id);
+            $session->increment('expected_parent_count');
+            $session->increment('expected_child_count');
+
+            $policy = ReceivingPolicy::forTenant($tenant);
+
+            $parentConfirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                self::SSCC_URI,
+                null,
+                $policy->defaultAutoConfirmChildren(),
+            );
+            $this->assertTrue($parentConfirm['ok'], $parentConfirm['message'] ?? 'parent confirm failed');
+
+            $childEpcId = (int) Epc::query()->where('epc_uri', self::SGTIN_URI)->value('id');
+            $child = ReceivingScanLine::query()
+                ->where('receiving_session_id', $this->sessionId)
+                ->where('epc_id', $childEpcId)
+                ->first();
+            $this->assertNotNull($child);
+            $this->assertSame('expected', $child->status);
+
+            $closed = app(CloseOpenToteReceiving::class)->handle($session->fresh());
+            $this->assertTrue($closed['short_closed']);
+            $this->assertSame('expected', $child->fresh()->status);
+            $this->assertNotSame('completed', $session->fresh()->status);
+
+            $case = $this->openShortageCaseForSession((int) $session->getKey());
+            $this->assertNotNull($case, 'Short-close must open an investigable shortage exception.');
+            $this->caseIds[] = (int) $case->getKey();
+            $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', $case->type?->code);
+            $this->assertTrue(
+                $case->epcs()->whereKey($childEpcId)->exists(),
+                'Shortage case must document the unconfirmed expected child EPC.',
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function inbound_asn_short_close_complete_ensures_shortage_when_expected_lines_remain(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setEdgeMode($tenant, ReceivingEdgeMode::SealedParent);
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+            $siteId = $this->resolveEligibleReceiveSiteId();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document, $siteId);
+            $this->sessionId = (int) $session->getKey();
+
+            $otherParent = $this->createSsccParentLine($session, 'expected');
+            $otherChild = $this->createChildLine($session, (int) $otherParent->epc_id);
+            $session->increment('expected_parent_count');
+            $session->increment('expected_child_count');
+
+            $policy = ReceivingPolicy::forTenant($tenant);
+            $confirm = app(ConfirmReceivingScan::class)->handle(
+                $session,
+                self::SSCC_URI,
+                null,
+                $policy->defaultAutoConfirmChildren(),
+            );
+            $this->assertTrue($confirm['ok'], $confirm['message'] ?? 'parent confirm failed');
+
+            $session = app(CompleteReceivingSession::class)->handle($session->fresh(), shortClose: true);
+            $this->assertSame('completed', $session->fresh()->status);
+            $this->assertSame('expected', $otherParent->fresh()->status);
+            $this->assertSame('expected', $otherChild->fresh()->status);
+
+            $case = $this->openShortageCaseForSession((int) $session->getKey());
+            $this->assertNotNull($case, 'Short-close complete must ensure a shortage exception when expected lines remain.');
+            $this->caseIds[] = (int) $case->getKey();
+            $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', $case->type?->code);
+            $this->assertTrue($case->epcs()->whereKey((int) $otherParent->epc_id)->exists()
+                || $case->epcs()->whereKey((int) $otherChild->epc_id)->exists());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function sealed_parent_sessions_never_write_active_parent_epc_id(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -527,6 +633,29 @@ class OpenToteReceivingTest extends TestCase
         return $sites === [] ? null : (int) array_key_first($sites);
     }
 
+    private function openShortageCaseForSession(int $sessionId): ?ExceptionCase
+    {
+        return ExceptionCase::query()
+            ->with('type')
+            ->whereNotIn('status', [
+                ExceptionStatus::Resolved->value,
+                ExceptionStatus::Closed->value,
+                ExceptionStatus::Cancelled->value,
+            ])
+            ->whereHas('type', fn ($q) => $q->where('code', 'PARTIAL_SHIPMENT_UNDECLARED'))
+            ->whereHas('activities', function ($query) use ($sessionId): void {
+                $query->where(function ($meta) use ($sessionId): void {
+                    $meta->where('meta->receiving_session_id', $sessionId)
+                        ->orWhere('meta->receiving_session_id', (string) $sessionId);
+                })->where(function ($meta): void {
+                    $meta->where('meta->manual_exception_type', 'shortage')
+                        ->orWhere('meta->source', 'short_close');
+                });
+            })
+            ->latest('id')
+            ->first();
+    }
+
     private function initializeDemo2Tenant(): Tenant
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -581,6 +710,14 @@ class OpenToteReceivingTest extends TestCase
         if ($this->holdIds !== []) {
             QuarantineHold::query()->whereIn('id', $this->holdIds)->delete();
             $this->holdIds = [];
+        }
+
+        if ($this->caseIds !== []) {
+            $caseIds = $this->caseIds;
+            DB::table('exception_epcs')->whereIn('exception_id', $caseIds)->delete();
+            DB::table('exception_activities')->whereIn('exception_id', $caseIds)->delete();
+            ExceptionCase::query()->whereIn('id', $caseIds)->delete();
+            $this->caseIds = [];
         }
 
         if ($this->sessionId !== null) {

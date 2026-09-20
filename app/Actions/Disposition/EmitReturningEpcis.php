@@ -8,16 +8,16 @@ use App\Actions\Labeling\PersistAuthoredSsccEpcis;
 use App\Actions\Outbound\GenerateDispositionEpcisDocument;
 use App\Actions\Outbound\GenerateDispositionObjectEvent;
 use App\Enums\EpcisAuthoredKind;
+use App\Models\Disposition\DispositionSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Receiving\ReceivingGate;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Disposition\AcquireReturningEpcLocks;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
-use App\Support\Shipping\EpcOnOpenShippingSession;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Transferring\EpcOnOpenTransferringSession;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -30,9 +30,7 @@ final class EmitReturningEpcis
         private readonly EpcCustodyGate $custodyGate,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly AcquireReturningEpcLocks $returnLocks,
-        private readonly EpcOnOpenShippingSession $epcOnOpenShippingSession,
-        private readonly EpcOnOpenTransferringSession $epcOnOpenTransferringSession,
-        private readonly EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
     ) {}
 
     /**
@@ -114,22 +112,9 @@ final class EmitReturningEpcis
                 );
             }
 
-            if ($this->epcOnOpenShippingSession->exists($epc)) {
-                throw new InvalidArgumentException(
-                    'Cannot return — this unit is already confirmed on an open ship order.',
-                );
-            }
-
-            if ($this->epcOnOpenTransferringSession->exists($epc)) {
-                throw new InvalidArgumentException(
-                    'Cannot return — this unit is already confirmed on an open or in-transit transfer.',
-                );
-            }
-
-            if ($this->epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-                throw new InvalidArgumentException(
-                    'Cannot return — this unit is already confirmed on an open receive session.',
-                );
+            $block = $this->exclusiveGate->check($epc, $this->exceptContext($options));
+            if ($block !== null) {
+                throw new InvalidArgumentException($block->dispositionRefusal('return'));
             }
 
             $uris[] = (string) $epc->epc_uri;
@@ -161,5 +146,17 @@ final class EmitReturningEpcis
             'returned_count' => count($uris),
             'path' => $path,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function exceptContext(array $options): ExclusiveSessionContext
+    {
+        $session = $options['disposition_session'] ?? null;
+
+        return $session instanceof DispositionSession
+            ? ExclusiveSessionContext::forDisposition($session)
+            : ExclusiveSessionContext::none();
     }
 }

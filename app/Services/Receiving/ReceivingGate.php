@@ -12,7 +12,6 @@ use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Exceptions\ExceptionReceiveImpactMap;
-use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\TenantSettings;
 
 final class ReceivingGate
@@ -41,10 +40,7 @@ final class ReceivingGate
             ->whereHas('type', function ($query) use ($blockingImpacts, $blockingCodes): void {
                 $query->where(function ($inner) use ($blockingImpacts, $blockingCodes): void {
                     $inner->whereIn('receive_impact', $blockingImpacts)
-                        ->orWhere(function ($legacy) use ($blockingCodes): void {
-                            $legacy->whereNull('receive_impact')
-                                ->whereIn('code', $blockingCodes);
-                        });
+                        ->orWhereIn('code', $blockingCodes);
                 });
             })
             ->with('type:id,name,code,receive_impact')
@@ -55,16 +51,43 @@ final class ReceivingGate
             $code = $case->type?->code;
             if (
                 is_string($code)
-                && in_array($code, ['MISSING_DSCSA_STATEMENT', 'MISSING_BIZ_TRANSACTION'], true)
-                && CmoOwnProductInbound::applies($document)
+                && ! ExceptionReceiveImpactMap::forCodeOnDocument($code, $document)->blocksReceiving()
             ) {
-                return $this->blockingDestinationGlnMismatchCase($document);
+                return $this->blockingHardGatedMissingBizTransaction($document)
+                    ?? $this->blockingDestinationGlnMismatchCase($document);
             }
 
             return $case;
         }
 
-        return $this->blockingDestinationGlnMismatchCase($document);
+        return $this->blockingHardGatedMissingBizTransaction($document)
+            ?? $this->blockingDestinationGlnMismatchCase($document);
+    }
+
+    /**
+     * Soft-seeded MISSING_BIZ_TRANSACTION still blocks when the opt-in hard gate is on
+     * and document-aware impact is HardBlocking (both PO and ASN empty, non-CMO).
+     */
+    private function blockingHardGatedMissingBizTransaction(EpcisDocument $document): ?ExceptionCase
+    {
+        if (! (bool) config('tracepharma.epcis.hard_gate_missing_biz_transaction', false)) {
+            return null;
+        }
+
+        if (! ExceptionReceiveImpactMap::forCodeOnDocument('MISSING_BIZ_TRANSACTION', $document)->blocksReceiving()) {
+            return null;
+        }
+
+        return ExceptionCase::query()
+            ->open()
+            ->where('document_id', $document->getKey())
+            ->whereDoesntHave('epcs')
+            ->whereHas('type', function ($query): void {
+                $query->where('code', 'MISSING_BIZ_TRANSACTION');
+            })
+            ->with('type:id,name,code,receive_impact')
+            ->orderBy('id')
+            ->first();
     }
 
     /**

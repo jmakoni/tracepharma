@@ -5,6 +5,7 @@ namespace App\Actions\Receiving;
 use App\Actions\Transferring\GenerateTransferringReceiveEpcisEvents;
 use App\Jobs\Receiving\NotifyWmsReceiveConfirm;
 use App\Models\Epcis\Epc;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Transferring\TransferringScanLine;
@@ -16,7 +17,10 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\OutboundShipmentInTransit;
 use App\Support\Logging\RedactsUrls;
+use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
+use App\Support\Receiving\ExpectedInboundOrderHeader;
+use App\Support\Receiving\InboundExpectedLineClaims;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\TenantSettings;
 use DomainException;
@@ -35,6 +39,10 @@ use Throwable;
  * - scan_first: manual complete — marks completed when confirmed lines exist, then GenerateReceivingEpcisEvents
  * - transfer_receive: completes linked transfer + GenerateTransferringReceiveEpcisEvents
  *
+ * Session complete is independent of the expected order (InboundShipment). Completing
+ * a Day-1 session does not force the shipment complete when remaining expected lines
+ * exist; rollups are refreshed so status stays open until the order is done.
+ *
  * If receiving EPCIS authoring fails (e.g. SGLN cannot be built), the session is
  * reverted from completed → open so operators are not stuck with a "done" session
  * that has no custody events.
@@ -46,6 +54,8 @@ final class CompleteReceivingSession
         private readonly GenerateTransferringReceiveEpcisEvents $generateTransferringReceiveEpcisEvents,
         private readonly ReceivingGate $receivingGate,
         private readonly ResolveReceiveScanContext $resolveReceiveScanContext,
+        private readonly FlagManualReceivingException $flagManualReceivingException,
+        private readonly ReconcileInboundExpectedLinesFromCustody $reconcileInboundExpectedLinesFromCustody,
     ) {}
 
     public function handle(
@@ -74,6 +84,7 @@ final class CompleteReceivingSession
         try {
             $this->assertDocumentNotBlockedByOpenException($session);
             $this->assertScanFirstTiWhenRequired($session);
+            $this->assertScanFirstTsWhenRequired($session);
             if (! $shortClose) {
                 $this->assertOpenToteMayComplete($session);
             }
@@ -96,11 +107,12 @@ final class CompleteReceivingSession
         if ($session->status !== 'completed' && (
             $session->isScanFirst()
             || ($shortClose && $session->isInboundAsn())
-            || ($session->isInboundAsn() && $session->isReadyToCompleteInboundAsn())
+            || ($session->isInboundAsn() && $session->canOperatorCompleteInboundAsn())
         )) {
             // Scan-first always marks complete here. Inbound ASN marks complete when
-            // ready (explicit Complete receive) or via Scan In short-close. Locked so
-            // a concurrent last-confirm auto-complete and operator Complete do not race.
+            // the operator may Complete (full session ready, or parallel partial with
+            // ≥1 confirmed) or via Scan In short-close. Locked so a concurrent
+            // last-confirm auto-complete and operator Complete do not race.
             $session = DB::transaction(function () use ($session): ReceivingSession {
                 $locked = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
@@ -143,7 +155,61 @@ final class CompleteReceivingSession
             $this->dispatchWmsReceiveConfirm($session->refresh());
         }
 
-        return $session->refresh();
+        $session = $session->refresh();
+        $this->reconcileCustodyOntoAsn($session);
+        // Session-only complete: refresh order rollups; do not force shipment complete.
+        ExpectedInboundOrderHeader::refreshShipmentRollups($session);
+        InboundExpectedLineClaims::releaseUnconfirmedForSession($session);
+
+        if ($shortClose && $session->isInboundAsn()) {
+            $this->ensureShortageForRemainingExpected($session, $actor);
+        }
+
+        return $session;
+    }
+
+    private function reconcileCustodyOntoAsn(ReceivingSession $session): void
+    {
+        $shipment = ExpectedInboundOrderHeader::shipmentFor($session);
+        if ($shipment !== null) {
+            $this->reconcileInboundExpectedLinesFromCustody->handle($shipment);
+
+            return;
+        }
+
+        $epcIds = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->whereNotNull('epc_id')
+            ->pluck('epc_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        $this->reconcileInboundExpectedLinesFromCustody->handleForEpcIds($epcIds);
+    }
+
+    /**
+     * Short-close / partial session complete with leftover expected lines must leave
+     * an investigable shortage case. Session complete ≠ ASN/order complete.
+     */
+    private function ensureShortageForRemainingExpected(ReceivingSession $session, ?User $actor): void
+    {
+        $hasRemainingExpected = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('status', 'expected')
+            ->whereNotNull('epc_id')
+            ->exists();
+
+        if (! $hasRemainingExpected) {
+            return;
+        }
+
+        $this->flagManualReceivingException->ensureShortageFromShortClose(
+            $session,
+            null,
+            $actor,
+            'Short-close left expected lines unconfirmed on this receiving session.',
+        );
     }
 
     /**
@@ -239,6 +305,31 @@ final class CompleteReceivingSession
                 'Close tote or record shortage — expected units remain on a confirmed tote.',
             );
         }
+    }
+
+    private function assertScanFirstTsWhenRequired(ReceivingSession $session): void
+    {
+        if (! $session->isScanFirst()) {
+            return;
+        }
+
+        if (! config('tracepharma.epcis.enforce_ts_for_receiving')) {
+            return;
+        }
+
+        $documentId = $session->matched_epcis_document_id ?? $session->epcis_document_id;
+        if ($documentId === null) {
+            return;
+        }
+
+        $document = EpcisDocument::query()->find($documentId);
+        if ($document === null || (bool) $document->dscsa_affirm || CmoOwnProductInbound::applies($document)) {
+            return;
+        }
+
+        throw new DomainException(
+            'Cannot complete scan-first receive: matched inbound file lacks DSCSA transaction statement affirmation (TS).',
+        );
     }
 
     private function assertScanFirstTiWhenRequired(ReceivingSession $session): void
@@ -396,6 +487,8 @@ final class CompleteReceivingSession
 
             $this->markTransferReceiveSessionEventsGenerated($session, $transfer->fresh() ?? $transfer);
         }
+
+        $this->reconcileCustodyOntoAsn($session->refresh());
 
         return $session->refresh();
     }

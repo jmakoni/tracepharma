@@ -18,6 +18,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Dashboard\DashboardWidgetCatalog;
 use App\Support\Gs1\GlnRules;
+use App\Support\Gs1\Gs1IdentityStatus;
 use App\Support\Gs1\Sgln;
 use App\Support\Places\UsState;
 use App\Support\Receiving\EligibleReceiveSites;
@@ -39,6 +40,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -118,6 +120,11 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'auto_complete_asn_on_ready' => $settings->autoCompleteAsnOnReady(),
             'auto_receive_from_cmo' => $settings->autoReceiveFromCmo(),
             'receiving_edge_mode' => ReceivingPolicy::forTenant($tenant)->edgeMode()->value,
+            'allow_parallel_sessions' => $settings->allowParallelSessions(),
+            'require_seal_question' => $settings->requireSealQuestion(),
+            'allow_accept_remaining' => $settings->allowAcceptRemaining(),
+            'require_accept_remaining_reason' => $settings->requireAcceptRemainingReason(),
+            'allow_auto_receive_whole_asn' => $settings->allowAutoReceiveWholeAsn(),
             'job_roles_enabled' => $settings->jobRolesEnabled(),
             'compliance_contact_name' => $settings->complianceContactName(),
             'compliance_contact_email' => $settings->complianceContactEmail(),
@@ -183,11 +190,13 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             )),
                         GlnRules::input('gln', 'Company GLN')
                             ->nullable()
-                            ->helperText('13-digit GS1 Global Location Number for your company.'),
+                            ->live(onBlur: true)
+                            ->helperText('13-digit GS1 Global Location Number from your GS1 certificate. Paired with GCP below — do not type an SGLN URN here.'),
                         TextInput::make('company_prefix')
                             ->label('Company prefix (GCP)')
                             ->maxLength(11)
                             ->nullable()
+                            ->live(onBlur: true)
                             ->rules(['nullable', 'regex:/^\d{6,11}$/'])
                             ->rule(function (): \Closure {
                                 return function (string $attribute, mixed $value, \Closure $fail): void {
@@ -201,7 +210,15 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                                     }
                                 };
                             })
-                            ->helperText('6–11 digit GS1 Company Prefix used for SGLNs and SSCC number ranges. Ranges must match this GCP.'),
+                            ->helperText('From your GS1 Company Prefix Certificate (6–11 digits). Required to derive SGLN and issue SSCCs. A 13-digit GLN does not encode where the prefix ends — never compute this from the GLN.'),
+                        Placeholder::make('company_sgln_preview')
+                            ->label('Company SGLN (derived)')
+                            ->content(fn (Get $get): string => Gs1IdentityStatus::companySglnPreview(
+                                is_string($get('gln')) ? $get('gln') : null,
+                                is_string($get('company_prefix')) ? $get('company_prefix') : null,
+                            ))
+                            ->helperText('Built from Company GLN and GCP. There is no tenant SGLN column — do not type a URN here.')
+                            ->columnSpanFull(),
                         Toggle::make('allow_assign_partner_glns_from_prefix')
                             ->label('Allow assign partner GLNs from our prefix')
                             ->helperText('When on, trading partners and their sites may use GLNs issued under your GS1 Company Prefix; SGLNs for those locations are derived from your prefix. When off, partner GLNs must use the partner\'s own GS1 identity — record their stated SGLN from EPCIS.')
@@ -271,6 +288,26 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->options(ReceivingEdgeMode::options())
                             ->native(false)
                             ->helperText('Overrides the profile default for sealed vs open-count receive.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Toggle::make('allow_parallel_sessions')
+                            ->label('Allow parallel / partial receive on one ASN')
+                            ->helperText('When on, each opener starts an empty session and claims serials on scan; Complete Receive posts confirmed lines after ≥1 scan (same ASN can be split across people or shifts). When off (default), second opener resumes the existing open session and Complete waits until this session’s expected lines are done.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Toggle::make('require_seal_question')
+                            ->label('Ask seal intact before sealed confirm')
+                            ->helperText('When on, Confirm asks “Seal intact?” before sealed-mode receives that auto-confirm children.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Toggle::make('allow_accept_remaining')
+                            ->label('Allow Accept remaining on receive HUD')
+                            ->helperText('When on (default), inbound ASN sessions can accept remaining expected lines from the HUD.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Toggle::make('require_accept_remaining_reason')
+                            ->label('Require reason for Accept remaining')
+                            ->helperText('When on, operators must enter a reason before confirming unscanned expected lines via Accept remaining. Also required when seal-intact is asked in sealed SOP.')
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
+                        Toggle::make('allow_auto_receive_whole_asn')
+                            ->label('Allow receive all expected parents on ASN')
+                            ->helperText('When on, inbound ASN sessions can confirm all remaining expected parent lines in one action.')
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsReceiving()),
                     ]),
                 Section::make('Inbound EPCIS')
@@ -669,6 +706,11 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
         if (TenantFeatures::forTenant(tenant())->supportsReceiving()) {
             $organization['require_ti_for_scan_first'] = (bool) ($data['require_ti_for_scan_first'] ?? false);
             $organization['receiving_edge_mode'] = $data['receiving_edge_mode'] ?? null;
+            $organization['allow_parallel_sessions'] = (bool) ($data['allow_parallel_sessions'] ?? false);
+            $organization['require_seal_question'] = (bool) ($data['require_seal_question'] ?? false);
+            $organization['allow_accept_remaining'] = (bool) ($data['allow_accept_remaining'] ?? true);
+            $organization['require_accept_remaining_reason'] = (bool) ($data['require_accept_remaining_reason'] ?? false);
+            $organization['allow_auto_receive_whole_asn'] = (bool) ($data['allow_auto_receive_whole_asn'] ?? false);
         }
 
         $settings = TenantSettings::forTenant(tenant());

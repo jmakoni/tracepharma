@@ -21,6 +21,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingScanLine;
@@ -198,7 +199,7 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertNotNull($event);
             $this->eventIds[] = (int) $event->getKey();
             $this->assertSame('DELETE', $event->action);
-            $this->assertStringContainsString('decommissioning', (string) $event->biz_step);
+            $this->assertStringContainsString('destroying', (string) $event->biz_step);
             $this->assertStringContainsString('destroyed', (string) $event->disposition);
 
             $this->assertFalse(app(EpcCustodyGate::class)->isInCustody($epc->fresh()));
@@ -384,7 +385,7 @@ class DispositionWorkstationsTest extends TestCase
                 ->first();
             $this->assertNotNull($event);
             $this->eventIds[] = (int) $event->getKey();
-            $this->assertStringContainsString('decommissioning', (string) $event->biz_step);
+            $this->assertStringContainsString('destroying', (string) $event->biz_step);
 
             $type = ExceptionType::query()->where('code', 'BROKEN_AGGREGATION')->firstOrFail();
             $case = ExceptionCase::query()
@@ -833,6 +834,77 @@ class DispositionWorkstationsTest extends TestCase
     }
 
     #[Test]
+    public function commission_refuses_epc_under_open_quarantine_hold(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $epc = $this->createEpc();
+            $this->receiveAtSite($site, $epc);
+            $this->openHold($epc);
+
+            try {
+                app(EmitCommissioningEpcisForEpcs::class)->handle(
+                    [(int) $epc->getKey()],
+                    (int) $site->getKey(),
+                    ['sync' => true, 'dispatch' => true],
+                );
+                $this->fail('Expected commission to refuse an EPC under an open quarantine hold.');
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('quarantine hold', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function commission_refuses_epc_with_terminal_disposition(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $epc = $this->createEpc();
+            $this->receiveAtSite($site, $epc);
+            $this->seedDispositionEvent(
+                $site,
+                $epc,
+                action: 'OBSERVE',
+                bizStep: 'urn:epcglobal:cbv:bizstep:destroying',
+                disposition: 'urn:epcglobal:cbv:disp:destroyed',
+                eventTime: now(),
+            );
+
+            try {
+                app(EmitCommissioningEpcisForEpcs::class)->handle(
+                    [(int) $epc->getKey()],
+                    (int) $site->getKey(),
+                    ['sync' => true, 'dispatch' => true],
+                );
+                $this->fail('Expected commission to refuse a destroyed EPC.');
+            } catch (InvalidArgumentException $e) {
+                $this->assertTrue(
+                    str_contains(strtolower($e->getMessage()), 'destroyed')
+                    || str_contains(strtolower($e->getMessage()), 'not on hand'),
+                    $e->getMessage(),
+                );
+            }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function overlapping_return_sets_serialize_on_shared_epc(): void
     {
         Storage::fake('local');
@@ -1232,7 +1304,8 @@ class DispositionWorkstationsTest extends TestCase
                 $this->assertNotNull($event, $reason->value);
                 $this->eventIds[] = (int) $event->getKey();
                 $this->assertSame('DELETE', $event->action, $reason->value);
-                $this->assertStringContainsString('decommissioning', (string) $event->biz_step, $reason->value);
+                $expectedStep = $reason === DecommissionReason::Destroyed ? 'destroying' : 'decommissioning';
+                $this->assertStringContainsString($expectedStep, (string) $event->biz_step, $reason->value);
                 $this->assertSame($reason->dispositionUri(), (string) $event->disposition, $reason->value);
 
                 $extension = is_array($event->extension_json) ? $event->extension_json : [];
@@ -1503,6 +1576,12 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertCount(8, $component->instance()->confirmed);
 
             $component
+                ->assertSeeHtml('bg-base-200')
+                ->assertSeeHtml('stat-title')
+                ->assertSee('Confirmed')
+                ->assertDontSeeHtml('tp-scan-qty');
+
+            $component
                 ->mountAction('confirmDecommission')
                 ->assertFormFieldExists('approver_email')
                 ->assertFormFieldExists('approver_password');
@@ -1634,6 +1713,17 @@ class DispositionWorkstationsTest extends TestCase
             disposition: 'urn:epcglobal:cbv:disp:in_progress',
             eventTime: now()->subMinute(),
         );
+    }
+
+    private function openHold(Epc $epc, string $reason = 'suspect'): void
+    {
+        QuarantineHold::query()->create([
+            'epc_id' => $epc->getKey(),
+            'reason' => $reason,
+            'status' => 'open',
+            'severity' => 'warning',
+            'opened_at' => now(),
+        ]);
     }
 
     private function seedDispositionEvent(
@@ -1794,6 +1884,7 @@ class DispositionWorkstationsTest extends TestCase
         }
 
         if ($this->epcIds !== []) {
+            QuarantineHold::query()->whereIn('epc_id', $this->epcIds)->delete();
             DB::table('event_epcs')->whereIn('epc_id', $this->epcIds)->delete();
             if (DB::getSchemaBuilder()->hasTable('document_epcs')) {
                 DB::table('document_epcs')->whereIn('epc_id', $this->epcIds)->delete();

@@ -47,6 +47,26 @@ XML;
     }
 
     #[Test]
+    public function extracts_r12_authority_sgln_without_rewriting_identifier(): void
+    {
+        $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<StandardBusinessDocumentHeader xmlns="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader">
+  <Sender><Identifier Authority="sGLN">0301160000009</Identifier></Sender>
+  <Receiver><Identifier Authority="sGLN">0096295000009</Identifier></Receiver>
+</StandardBusinessDocumentHeader>
+<epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1"><EPCISBody/></epcis:EPCISDocument>
+XML;
+
+        $parties = app(SbdhHeaderExtractor::class)->extract($xml);
+
+        $this->assertSame('0301160000009', $parties['sender_gln']);
+        $this->assertSame('0096295000009', $parties['receiver_gln']);
+        $this->assertSame('0301160000009', $parties['sender_identifier']);
+        $this->assertSame('0096295000009', $parties['receiver_identifier']);
+    }
+
+    #[Test]
     public function returns_empty_parties_for_non_xml(): void
     {
         $parties = app(SbdhHeaderExtractor::class)->extract('not xml');

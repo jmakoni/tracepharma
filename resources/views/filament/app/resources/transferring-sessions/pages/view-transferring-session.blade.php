@@ -1,5 +1,11 @@
 <x-filament-panels::page>
     <div class="flex flex-col gap-4">
+        @include('filament.app.partials.transfer-layout-switch', [
+            'mode' => 'desktop',
+            'desktopUrl' => $this->desktopTransferUrl(),
+            'floorUrl' => $this->floorTransferUrl(),
+        ])
+
         <div
             x-data="{ flashTone: null }"
             x-on:scan-result.window="
@@ -40,22 +46,20 @@
                 </div>
 
                 @if (! $this->isInTransit())
-                    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
-                        <div class="stat">
-                            <div class="stat-title">Confirmed</div>
-                            <div class="stat-value text-2xl">
-                                {{ (int) $this->getRecord()->confirmed_count }}
-                            </div>
-                        </div>
-                        @if ($this->isCompleted())
-                            <div class="stat">
-                                <div class="stat-title">Received</div>
-                                <div class="stat-value text-2xl">
-                                    {{ (int) $this->getRecord()->received_count }}
-                                </div>
-                            </div>
-                        @endif
-                    </div>
+                    @include('filament.app.partials.scanner-progress-stats', [
+                        'stats' => array_values(array_filter([
+                            [
+                                'title' => 'Confirmed',
+                                'value' => (int) $this->getRecord()->confirmed_count,
+                            ],
+                            $this->isCompleted()
+                                ? [
+                                    'title' => 'Received',
+                                    'value' => (int) $this->getRecord()->received_count,
+                                ]
+                                : null,
+                        ])),
+                    ])
                 @endif
 
                 @if ($this->lastScanMessage && ! $this->isInTransit())
@@ -135,7 +139,7 @@
                     </div>
                 @else
                     <form
-                        wire:submit.prevent="stageScan"
+                        wire:submit.prevent="confirmScanInput"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
@@ -151,7 +155,7 @@
                                     type="text"
                                     wire:model.live.blur="scan"
                                     x-ref="scanInput"
-                                    x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
+                                    x-on:keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"
                                     autocomplete="off"
                                     class="tp-scan-input min-h-14 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-base shadow-sm outline-none transition duration-75 placeholder:text-gray-400 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/20 dark:border-white/20 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500"
                                     placeholder="Scan SSCC or SGTIN"

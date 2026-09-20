@@ -130,7 +130,7 @@ final class PartnerOnboardingKit
         $lines = [
             "TracePharma partner onboarding — {$name}",
             '',
-            'Send EPCIS 1.2 (DSCSA) to this tenant using one of:',
+            'Send EPCIS schema 1.2 XML (GS1 US DSCSA guidelines R1.2/R1.3) to this tenant using one of:',
             "- HTTPS webhook (per inbound connection on {$domain})",
             '- SFTP poll (configure host credentials after invite)',
             '- EPCIS hub (Systech / UniTrace) when enabled by TracePharma ops',
