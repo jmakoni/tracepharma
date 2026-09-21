@@ -204,6 +204,18 @@ final class ShippingTiTsFragments
         return $indent.'<gs1ushc:transactionDate>'.self::e($date)."</gs1ushc:transactionDate>\n";
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public static function transactionDateExtensionJson(string $date): array
+    {
+        if ($date === '') {
+            return [];
+        }
+
+        return ['gs1ushc:transactionDate' => $date];
+    }
+
     public static function guidelineVersionXml(EpcisGuideline $guideline, string $indent = '    '): string
     {
         if ($guideline !== EpcisGuideline::R13) {

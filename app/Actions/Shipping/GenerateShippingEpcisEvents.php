@@ -268,6 +268,7 @@ final class GenerateShippingEpcisEvents
                     directPurchaseStatement: $directPurchaseStatement,
                     guideline: $guideline,
                     pedigreeEvents: $pedigreeEvents,
+                    transactionDate: $transactionDate,
                 );
                 $eventCount = $this->jsonLdEventListCount($payload);
             } elseif ($includeFullHistory) {
@@ -1316,6 +1317,7 @@ final class GenerateShippingEpcisEvents
         ?string $directPurchaseStatement = null,
         EpcisGuideline $guideline = EpcisGuideline::R13,
         array $pedigreeEvents = [],
+        ?string $transactionDate = null,
     ): string {
         $parties = $tiTs['parties'];
 
@@ -1360,6 +1362,10 @@ final class GenerateShippingEpcisEvents
             $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson($directPurchaseStatement));
         } elseif ($directPurchaseStatement !== null && $directPurchaseStatement !== '' && $guideline === EpcisGuideline::R12) {
             $event['gs1ushc:directPurchase'] = true;
+        }
+
+        if ($transactionDate !== null && $transactionDate !== '') {
+            $event = array_merge($event, ShippingTiTsFragments::transactionDateExtensionJson($transactionDate));
         }
 
         $detail = $event;

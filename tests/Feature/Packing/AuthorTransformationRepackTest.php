@@ -124,6 +124,60 @@ class AuthorTransformationRepackTest extends TestCase
     }
 
     #[Test]
+    public function prepackager_authors_transformation_event_with_transforming_biz_step(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Prepackager);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            $input = $this->createEpc('IN');
+            $this->receiveAtSite($site, $input);
+
+            $outputUri = 'urn:epc:id:sgtin:0399991.000001.'.(string) random_int(100000000, 999999999);
+
+            $result = app(AuthorTransformationRepack::class)->handle(
+                siteId: (int) $site->getKey(),
+                inputEpcIds: [(int) $input->getKey()],
+                outputUris: [$outputUri],
+                options: ['sync' => true, 'dispatch' => true],
+            );
+
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $event = EpcisEvent::query()
+                ->where('document_id', $result['document']->getKey())
+                ->where('event_type', 'TransformationEvent')
+                ->first();
+            $this->assertNotNull($event);
+            $this->eventIds[] = (int) $event->getKey();
+            $this->assertSame('urn:epcglobal:cbv:bizstep:transforming', (string) $event->biz_step);
+
+            $output = Epc::query()->where('epc_uri', $outputUri)->first();
+            $this->assertNotNull($output);
+            $this->epcIds[] = (int) $output->getKey();
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertStringContainsString(
+                '<bizStep>urn:epcglobal:cbv:bizstep:transforming</bizStep>',
+                $xml,
+            );
+            $this->assertStringNotContainsString(
+                '<bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>',
+                $xml,
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function direct_persist_fallback_reuses_incomplete_transformation_event(): void
     {
         Storage::fake('local');

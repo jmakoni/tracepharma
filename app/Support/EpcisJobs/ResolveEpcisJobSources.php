@@ -57,7 +57,8 @@ final class ResolveEpcisJobSources
             EpcisAuthoredKind::SsccDisaggregation => $this->sscc($docId, $document, $kind),
             EpcisAuthoredKind::Decommissioning,
             EpcisAuthoredKind::Returning,
-            EpcisAuthoredKind::Commissioning => $this->disposition($document, $kind),
+            EpcisAuthoredKind::Commissioning,
+            EpcisAuthoredKind::Transformation => $this->disposition($document, $kind),
         };
     }
 

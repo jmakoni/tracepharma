@@ -24,6 +24,7 @@ use App\Models\AtpLicense;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
 use App\Models\OutboundConnection;
 use App\Models\Quarantine\QuarantineHold;
@@ -41,6 +42,7 @@ use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Gs1\Sgln;
 use App\Support\TenantSettings;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -251,6 +253,64 @@ class DualStackShipAuthoringTest extends TestCase
                 isset($shippingEvents[1]['directPurchase']) || isset($shippingEvents[1]['gs1ushc:directPurchase']),
                 'Main shipping event must keep the purchase statement.',
             );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function json_ld_transaction_date_when_ship_over_24h_after_transfer(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config([
+                'tracepharma.epcis.accept_20' => true,
+                'tracepharma.epcis_jobs.enabled' => false,
+            ]);
+            TenantSettings::forTenant($tenant)->setEpcisAccept20(true);
+            $tenant->save();
+
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+
+            $site = $this->createShipSite($tenant);
+            $this->makeEpcShippableAtSite($site);
+
+            $transferAt = now()->subDays(2)->utc()->startOfSecond();
+            $this->backdateReceivingEventsForSscc($transferAt);
+
+            $partner = $this->ensureDemoPartner();
+            $partner->forceFill(['epcis_guideline' => EpcisGuideline::R13])->save();
+            $connection = $this->createHttpsConnection([
+                'epcis_document_version' => '2.0',
+            ]);
+
+            $document = $this->authorShippingDocument($site, $partner, $connection);
+            $payload = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+
+            $shippingEvents = array_values(array_filter(
+                $decoded['epcisBody']['eventList'],
+                static fn (array $event): bool => ($event['type'] ?? null) === 'ObjectEvent'
+                    && ($event['bizStep'] ?? null) === 'urn:epcglobal:cbv:bizstep:shipping',
+            ));
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertArrayNotHasKey('transactionDate', $shippingEvents[0]);
+            $this->assertArrayNotHasKey('gs1ushc:transactionDate', $shippingEvents[0]);
+            $this->assertSame(
+                $transferAt->toDateString(),
+                $shippingEvents[1]['gs1ushc:transactionDate'] ?? $shippingEvents[1]['transactionDate'] ?? null,
+            );
+
+            $shipTime = Carbon::parse($document->creation_date ?? now())->utc()->toDateString();
+            $this->assertStringNotContainsString(
+                $transferAt->toDateString(),
+                (string) $shippingEvents[1]['eventTime'],
+            );
+            $this->assertNotSame($transferAt->toDateString(), $shipTime);
         } finally {
             $this->cleanup($tenant);
         }
@@ -531,6 +591,26 @@ class DualStackShipAuthoringTest extends TestCase
         if ($session->receiving_epcis_document_id !== null) {
             $this->documentIds[] = (int) $session->receiving_epcis_document_id;
         }
+    }
+
+    private function backdateReceivingEventsForSscc(Carbon $eventTime): void
+    {
+        $epcIds = Epc::query()
+            ->whereIn('epc_uri', [self::SSCC_URI, self::SGTIN_URI])
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $this->assertNotEmpty($epcIds);
+
+        $eventIds = DB::table('event_epcs')
+            ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+            ->whereIn('event_epcs.epc_id', $epcIds)
+            ->where('epcis_events.biz_step', 'like', '%receiving%')
+            ->pluck('epcis_events.id')
+            ->all();
+        $this->assertNotEmpty($eventIds);
+
+        EpcisEvent::query()->whereIn('id', $eventIds)->update(['event_time' => $eventTime]);
     }
 
     private function ensureDemoPartner(): TradingPartner

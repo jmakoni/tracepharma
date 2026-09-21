@@ -235,7 +235,7 @@ final class AuthorTransformationRepack
 {$inputsXml}                </inputEPCList>
                 <outputEPCList>
 {$outputsXml}                </outputEPCList>
-                <bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>
+                <bizStep>urn:epcglobal:cbv:bizstep:transforming</bizStep>
                 <disposition>urn:epcglobal:cbv:disp:active</disposition>
                 <readPoint><id>{$sglnXml}</id></readPoint>
                 <bizLocation><id>{$sglnXml}</id></bizLocation>
@@ -319,7 +319,7 @@ XML;
                     'record_time' => now(),
                     'event_timezone_offset' => AuthoredEventTimezone::offsetForSite(Site::query()->find($siteId)),
                     'action' => 'ADD',
-                    'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                    'biz_step' => 'urn:epcglobal:cbv:bizstep:transforming',
                     'disposition' => 'urn:epcglobal:cbv:disp:active',
                     'read_point_gln' => $gln,
                     'biz_location_gln' => $gln,
@@ -334,7 +334,7 @@ XML;
                     'record_time' => now(),
                     'event_timezone_offset' => AuthoredEventTimezone::offsetForSite(Site::query()->find($siteId)),
                     'action' => 'ADD',
-                    'biz_step' => 'urn:epcglobal:cbv:bizstep:commissioning',
+                    'biz_step' => 'urn:epcglobal:cbv:bizstep:transforming',
                     'disposition' => 'urn:epcglobal:cbv:disp:active',
                     'read_point_gln' => $gln,
                     'biz_location_gln' => $gln,

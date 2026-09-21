@@ -14,10 +14,14 @@ All notable releases of TracePharma are documented here.
 - **R1.2 shipping detail** — Lean and full-history ship now author a business-transaction detail ObjectEvent whose `eventTime` precedes shipping (R1.2 errata + R1.3).
 - **JSON-LD inbound DSCSA detect** — `DetectDscsaGuidelineRelease` reads JSON-LD `guidelineVersion` / NDC type codes, not XML-only.
 - **Receive authoring** — Custody receive XML is no longer scheduled for partner transmit.
+- **Transform/repack bizStep** — Authored `TransformationEvent` uses CBV `transforming`, not `commissioning`.
+- **SOAP unwrap** — Inbound SOAP may wrap `EPCISDocument` in one Body operation element (`Body/Op/EPCISDocument`).
 
 ### Fixed
 
 - **JSON-LD R1.3 detail** — The earlier shipping event no longer copies `directPurchase` from the main event.
+- **JSON-LD `transactionDate`** — Main shipping event emits `gs1ushc:transactionDate` when ship is more than 24h after transfer (same rule as XML).
+- **Transform transmit jobs** — `EpcisAuthoredKind::Transformation` maps to `outbound_transformation` so jobs-on enqueue no longer throws.
 
 ## [1.8.0] — 2026-09-20
 

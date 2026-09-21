@@ -35,6 +35,7 @@ final class EpcisCbvAllowlist
         'urn:epcglobal:cbv:bizstep:decommissioning',
         'urn:epcglobal:cbv:bizstep:destroying',
         'urn:epcglobal:cbv:bizstep:returning',
+        'urn:epcglobal:cbv:bizstep:transforming',
         'commissioning',
         'packing',
         'shipping',
@@ -42,6 +43,7 @@ final class EpcisCbvAllowlist
         'inspecting',
         'returning',
         'decommissioning',
+        'transforming',
     ];
 
     /**

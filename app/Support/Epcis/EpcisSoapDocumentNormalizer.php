@@ -131,6 +131,14 @@ final class EpcisSoapDocumentNormalizer
 
             if ($this->isEpcisDocumentElement($child)) {
                 $matches[] = $child;
+
+                continue;
+            }
+
+            foreach ($child->childNodes as $nested) {
+                if ($nested instanceof DOMElement && $this->isEpcisDocumentElement($nested)) {
+                    $matches[] = $nested;
+                }
             }
         }
 
