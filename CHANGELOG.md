@@ -16,6 +16,8 @@ All notable releases of TracePharma are documented here.
 - **Receive authoring** — Custody receive XML is no longer scheduled for partner transmit.
 - **Transform/repack bizStep** — Authored `TransformationEvent` uses CBV `transforming`, not `commissioning`.
 - **SOAP unwrap** — Inbound SOAP may wrap `EPCISDocument` in one Body operation element (`Body/Op/EPCISDocument`).
+- **Commission / SSCC SBDH** — Self-authored commission-all and SSCC commission emit SBDH. EPCClass vocab includes dosage/strength/manufacturer/netContent when product master has them (lean ship too).
+- **Outbound purchase extensions** — R1.3 ship derives `PARTIALLY_DIRECT` + `indirectPurchaseEPCs` and `receivedDirectPurchaseFromPrevWhlsDist` from inbound documents (no new UI).
 
 ### Fixed
 

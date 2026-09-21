@@ -23,9 +23,10 @@ final class OutboundEpcisXmlBuilder
         ?string $senderGln = null,
         ?string $receiverGln = null,
         EpcisGuideline $guideline = EpcisGuideline::R12,
+        ?string $masterDataXml = null,
     ): string {
         $escapedTime = htmlspecialchars($eventTime, ENT_XML1);
-        $header = $this->buildEpcisHeaderXml($correlationId, $eventTime, $senderGln, $receiverGln, $guideline);
+        $header = $this->buildEpcisHeaderXml($correlationId, $eventTime, $senderGln, $receiverGln, $guideline, $masterDataXml);
 
         return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -48,6 +49,7 @@ XML;
         ?string $senderGln = null,
         ?string $receiverGln = null,
         EpcisGuideline $guideline = EpcisGuideline::R12,
+        ?string $masterDataXml = null,
     ): string {
         if ($correlationId === null || trim($correlationId) === '') {
             return '';
@@ -57,10 +59,11 @@ XML;
         $escaped = htmlspecialchars($trimmed, ENT_XML1);
         $sbdhCreationDate = htmlspecialchars($creationDate ?? now()->toIso8601String(), ENT_XML1);
         [$resolvedSender, $resolvedReceiver] = $this->requireRealGlns($senderGln, $receiverGln);
+        $master = $masterDataXml !== null && trim($masterDataXml) !== '' ? $masterDataXml : '';
 
         return <<<XML
     <EPCISHeader>
-{$this->sbdhXml($resolvedSender, $resolvedReceiver, $trimmed, $sbdhCreationDate, $guideline)}        <tracepharma:OutboundCorrelation>{$escaped}</tracepharma:OutboundCorrelation>
+{$this->sbdhXml($resolvedSender, $resolvedReceiver, $trimmed, $sbdhCreationDate, $guideline)}{$master}        <tracepharma:OutboundCorrelation>{$escaped}</tracepharma:OutboundCorrelation>
     </EPCISHeader>
 
 XML;

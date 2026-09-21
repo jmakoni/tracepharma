@@ -153,6 +153,9 @@ final class ShippingTiTsFragments
         ];
     }
 
+    /**
+     * @param  list<string>  $indirectPurchaseEpcs
+     */
     public static function sourceDestinationExtensionXml(
         string $sourceOwningSgln,
         string $sourceLocationSgln,
@@ -160,6 +163,10 @@ final class ShippingTiTsFragments
         string $destLocationSgln,
         ?string $directPurchaseStatement = null,
         EpcisGuideline $guideline = EpcisGuideline::R13,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         // Core EPCIS 1.2 ObjectEventExtensionType allows sourceList/destinationList
         // then optional nested <extension> (##local only). GS1 US HC directPurchase
@@ -177,22 +184,65 @@ final class ShippingTiTsFragments
             "        </extension>\n";
 
         if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
-            $xml .= self::directPurchaseXml($directPurchaseStatement, $guideline);
+            $xml .= self::directPurchaseXml(
+                $directPurchaseStatement,
+                $guideline,
+                $directPurchaseQualifier,
+                $indirectPurchaseEpcs,
+            );
+        }
+
+        if ($guideline === EpcisGuideline::R13 && $prevWholesalerStatement !== null && $prevWholesalerStatement !== '') {
+            $xml .= self::receivedPrevWholesalerXml($prevWholesalerStatement, $prevWholesalerQualifier);
         }
 
         return $xml;
     }
 
-    public static function directPurchaseXml(string $statement, EpcisGuideline $guideline = EpcisGuideline::R13): string
-    {
+    /**
+     * @param  list<string>  $indirectPurchaseEpcs
+     */
+    public static function directPurchaseXml(
+        string $statement,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        string $qualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+    ): string {
         if ($guideline === EpcisGuideline::R12) {
             return "        <gs1ushc:directPurchase>true</gs1ushc:directPurchase>\n";
         }
 
+        $qualifier = strtoupper($qualifier);
+        $indirectXml = '';
+        if ($qualifier === 'PARTIALLY_DIRECT' && $indirectPurchaseEpcs !== []) {
+            $indirectXml = "          <gs1ushc:indirectPurchaseEPCs>\n";
+            foreach ($indirectPurchaseEpcs as $uri) {
+                $uri = trim((string) $uri);
+                if ($uri === '') {
+                    continue;
+                }
+                $indirectXml .= '            <epc>'.self::e($uri)."</epc>\n";
+            }
+            $indirectXml .= "          </gs1ushc:indirectPurchaseEPCs>\n";
+        }
+
         return
-            "        <gs1ushc:directPurchase qualifier=\"ENTIRELY_DIRECT\">\n".
+            '        <gs1ushc:directPurchase qualifier="'.self::e($qualifier)."\">\n".
             '          <gs1ushc:directPurchaseStatement>'.self::e($statement)."</gs1ushc:directPurchaseStatement>\n".
+            $indirectXml.
             "        </gs1ushc:directPurchase>\n";
+    }
+
+    public static function receivedPrevWholesalerXml(
+        string $statement,
+        string $qualifier = 'ENTIRELY_DIRECT',
+    ): string {
+        $qualifier = strtoupper($qualifier);
+
+        return
+            '        <gs1ushc:receivedDirectPurchaseFromPrevWhlsDist qualifier="'.self::e($qualifier)."\">\n".
+            '          <gs1ushc:receivedDirectPurchaseFromPrevWhlsDistStatement>'.self::e($statement)."</gs1ushc:receivedDirectPurchaseFromPrevWhlsDistStatement>\n".
+            "        </gs1ushc:receivedDirectPurchaseFromPrevWhlsDist>\n";
     }
 
     public static function transactionDateXml(string $date, string $indent = '        '): string
@@ -226,14 +276,40 @@ final class ShippingTiTsFragments
     }
 
     /**
+     * @param  list<string>  $indirectPurchaseEpcs
      * @return array<string, mixed>
      */
-    public static function directPurchaseExtensionJson(string $statement): array
-    {
+    public static function directPurchaseExtensionJson(
+        string $statement,
+        string $qualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+    ): array {
+        $qualifier = strtoupper($qualifier);
+        $payload = [
+            'qualifier' => $qualifier,
+            'directPurchaseStatement' => $statement,
+        ];
+
+        if ($qualifier === 'PARTIALLY_DIRECT' && $indirectPurchaseEpcs !== []) {
+            $payload['indirectPurchaseEPCs'] = array_values(array_filter(
+                array_map(static fn (string $uri): string => trim($uri), $indirectPurchaseEpcs),
+            ));
+        }
+
+        return ['directPurchase' => $payload];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function receivedPrevWholesalerExtensionJson(
+        string $statement,
+        string $qualifier = 'ENTIRELY_DIRECT',
+    ): array {
         return [
-            'directPurchase' => [
-                'qualifier' => 'ENTIRELY_DIRECT',
-                'directPurchaseStatement' => $statement,
+            'receivedDirectPurchaseFromPrevWhlsDist' => [
+                'qualifier' => strtoupper($qualifier),
+                'receivedDirectPurchaseFromPrevWhlsDistStatement' => $statement,
             ],
         ];
     }

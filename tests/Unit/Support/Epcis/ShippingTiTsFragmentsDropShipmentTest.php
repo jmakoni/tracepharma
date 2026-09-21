@@ -79,6 +79,33 @@ class ShippingTiTsFragmentsDropShipmentTest extends TestCase
     }
 
     #[Test]
+    public function r13_partially_direct_includes_indirect_purchase_epcs(): void
+    {
+        $xml = ShippingTiTsFragments::directPurchaseXml(
+            'Seller statement',
+            EpcisGuideline::R13,
+            'PARTIALLY_DIRECT',
+            ['urn:epc:id:sgtin:030116.0200116.10000082001560'],
+        );
+
+        $this->assertStringContainsString('qualifier="PARTIALLY_DIRECT"', $xml);
+        $this->assertStringContainsString('<gs1ushc:indirectPurchaseEPCs>', $xml);
+        $this->assertStringContainsString('urn:epc:id:sgtin:030116.0200116.10000082001560', $xml);
+    }
+
+    #[Test]
+    public function r13_received_prev_wholesaler_emits_entirely_direct(): void
+    {
+        $xml = ShippingTiTsFragments::receivedPrevWholesalerXml(
+            'Seller affirms receipt of directly purchased statement from previous wholesaler distributor for the indicated product(s).',
+        );
+
+        $this->assertStringContainsString('receivedDirectPurchaseFromPrevWhlsDist', $xml);
+        $this->assertStringContainsString('qualifier="ENTIRELY_DIRECT"', $xml);
+        $this->assertStringContainsString('previous wholesaler distributor', $xml);
+    }
+
+    #[Test]
     public function r13_sbdh_authority_is_gs1(): void
     {
         $xml = ShippingTiTsFragments::sbdhXml(

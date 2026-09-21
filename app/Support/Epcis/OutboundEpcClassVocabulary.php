@@ -64,7 +64,10 @@ final class OutboundEpcClassVocabulary
         $elements = '';
         foreach ($patterns as $parsed) {
             $idpat = 'urn:epc:idpat:sgtin:'.$parsed['company_prefix'].'.'.$parsed['indicator_digit'].$parsed['item_reference'].'.*';
-            $product = Product::query()->where('gtin', $parsed['gtin14'])->first();
+            $product = Product::query()
+                ->with(['tradingPartner', 'fdaProductPackaging'])
+                ->where('gtin', $parsed['gtin14'])
+                ->first();
             $ndc11 = Ndc::toNdc11($product?->ndc11)
                 ?? Ndc::derive($product?->package_ndc, $product?->ndc);
             $name = filled($product?->name) ? (string) $product->name : 'Trade item '.$parsed['gtin14'];
@@ -84,6 +87,24 @@ final class OutboundEpcClassVocabulary
             }
             $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#regulatedProductName">'.self::e($name)."</attribute>\n";
 
+            $manufacturer = self::usableMasterText($product?->tradingPartner?->name);
+            $dosage = self::usableMasterText($product?->dosage_form);
+            $strength = self::usableMasterText($product?->strength);
+            $netContent = self::usableMasterText($product?->fdaProductPackaging?->net_content_description);
+
+            if ($manufacturer !== null) {
+                $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#manufacturerOfTradeItemPartyName">'.self::e($manufacturer)."</attribute>\n";
+            }
+            if ($dosage !== null) {
+                $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#dosageFormType">'.self::e($dosage)."</attribute>\n";
+            }
+            if ($strength !== null) {
+                $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#strengthDescription">'.self::e($strength)."</attribute>\n";
+            }
+            if ($netContent !== null) {
+                $attrs .= '                <attribute id="urn:epcglobal:cbv:mda#netContentDescription">'.self::e($netContent)."</attribute>\n";
+            }
+
             $elements .=
                 '              <VocabularyElement id="'.self::e($idpat)."\">\n".
                 $attrs.
@@ -96,6 +117,21 @@ final class OutboundEpcClassVocabulary
             $elements.
             "            </VocabularyElementList>\n".
             "          </Vocabulary>\n";
+    }
+
+    private static function usableMasterText(?string $value): ?string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        $normalized = strtolower($text);
+        if (in_array($normalized, ['n/a', 'na', 'unknown', 'none'], true)) {
+            return null;
+        }
+
+        return $text;
     }
 
     private static function e(string $value): string

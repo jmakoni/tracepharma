@@ -19,6 +19,8 @@ use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Product;
+use App\Support\Gs1\Sgtin;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
 use App\Models\Quarantine\QuarantineHold;
@@ -157,6 +159,59 @@ class DispositionWorkstationsTest extends TestCase
             $this->assertStringContainsString('commissioning', (string) $event->biz_step);
             $this->assertStringContainsString('active', (string) $event->disposition);
         } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function commission_all_xml_includes_sbdh_and_epcclass_master_data(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+        $productId = null;
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $epc = $this->createEpc();
+            $parsed = Sgtin::fromUrn((string) $epc->epc_uri);
+            $this->assertNotNull($parsed);
+
+            $product = Product::query()->create([
+                'gtin' => $parsed['gtin14'],
+                'name' => 'Commission CBV Product',
+                'dosage_form' => 'TABLET',
+                'strength' => '10 mg',
+                'ndc11' => '00116402316',
+                'is_active' => true,
+            ]);
+            $productId = (int) $product->getKey();
+
+            $this->receiveAtSite($site, $epc);
+
+            $result = app(EmitCommissioningEpcisForEpcs::class)->handle(
+                [(int) $epc->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => true],
+            );
+
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertStringContainsString('<sbdh:StandardBusinessDocumentHeader>', $xml);
+            $this->assertStringContainsString('<sbdh:Identifier Authority="GLN">', $xml);
+            $this->assertStringContainsString('urn:epcglobal:epcis:vtype:EPCClass', $xml);
+            $this->assertStringContainsString('dosageFormType', $xml);
+            $this->assertStringContainsString('>TABLET</attribute>', $xml);
+            $this->assertStringContainsString('strengthDescription', $xml);
+            $this->assertStringContainsString('>10 mg</attribute>', $xml);
+        } finally {
+            if ($productId !== null) {
+                Product::query()->whereKey($productId)->delete();
+            }
             $this->cleanup($tenant);
         }
     }

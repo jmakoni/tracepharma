@@ -57,6 +57,7 @@ use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Notifications\CustomerPortalShipNotification;
 use App\Services\Custody\EpcCustodyGate;
+use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
 use App\Services\Epcis\Contracts\OutboundEpcisTransmitter;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
@@ -2277,6 +2278,64 @@ class OutboundShippingSessionTest extends TestCase
             $shipTime = Carbon::parse($completed->completed_at)->utc()->format('Y-m-d\TH:i:s');
             $this->assertStringContainsString($shipTime, $shippingEvents[1]['event_time']);
             $this->assertStringNotContainsString($transferAt->toDateString(), $shippingEvents[1]['event_time']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function outbound_r13_emits_partially_direct_and_prev_wholesaler_from_inbound(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $epcIds = Epc::query()
+                ->whereIn('epc_uri', [self::SSCC_URI, self::SGTIN_URI])
+                ->pluck('id')
+                ->all();
+            $this->assertNotEmpty($epcIds);
+
+            $inboundIds = DB::table('event_epcs')
+                ->join('epcis_events', 'epcis_events.id', '=', 'event_epcs.event_id')
+                ->join('epcis_documents', 'epcis_documents.id', '=', 'epcis_events.document_id')
+                ->whereIn('event_epcs.epc_id', $epcIds)
+                ->where('epcis_documents.direction', 'inbound')
+                ->distinct()
+                ->pluck('epcis_documents.id')
+                ->all();
+            $this->assertNotEmpty($inboundIds);
+
+            EpcisDocument::query()->whereIn('id', $inboundIds)->each(function (EpcisDocument $document): void {
+                $document->forceFill([
+                    'direct_purchase_qualifier' => 'PARTIALLY_DIRECT',
+                    'direct_purchase_indirect_epc_uris' => [self::SGTIN_URI],
+                    'received_prev_wholesaler_qualifier' => 'ENTIRELY_DIRECT',
+                    'received_prev_wholesaler_statement' => DscsaDirectPurchaseStatements::RECEIVED_PREV_WHOLESALER_DEFAULT,
+                ])->save();
+            });
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-PARTIAL-001',
+                'customer_po' => 'PO-PARTIAL-001',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R13,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $shippingEvents = $this->shippingObjectEventXmls($xml);
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertStringNotContainsString('PARTIALLY_DIRECT', $shippingEvents[0]['xml']);
+            $this->assertStringNotContainsString('receivedDirectPurchaseFromPrevWhlsDist', $shippingEvents[0]['xml']);
+            $this->assertStringContainsString('qualifier="PARTIALLY_DIRECT"', $shippingEvents[1]['xml']);
+            $this->assertStringContainsString('<gs1ushc:indirectPurchaseEPCs>', $shippingEvents[1]['xml']);
+            $this->assertStringContainsString(self::SGTIN_URI, $shippingEvents[1]['xml']);
+            $this->assertStringContainsString('receivedDirectPurchaseFromPrevWhlsDist', $shippingEvents[1]['xml']);
+            $this->assertStringContainsString('previous wholesaler distributor', $shippingEvents[1]['xml']);
         } finally {
             $this->cleanup($tenant);
         }

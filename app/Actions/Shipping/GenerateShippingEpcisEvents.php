@@ -20,6 +20,7 @@ use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
+use App\Services\Dscsa\Support\ResolveOutboundDscsaPurchaseExtensions;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisDocumentWriter;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
@@ -106,6 +107,7 @@ final class GenerateShippingEpcisEvents
         private readonly OutboundEpcisWriterResolver $writerResolver,
         private readonly JsonLd20Writer $jsonLd20Writer,
         private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
+        private readonly ResolveOutboundDscsaPurchaseExtensions $purchaseExtensions,
         private readonly AssertAuthoredObjectEventCandidate $assertObjectEventCandidate,
     ) {}
 
@@ -243,7 +245,16 @@ final class GenerateShippingEpcisEvents
             );
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 
-            $directPurchaseStatement = $this->resolveOutboundDirectPurchaseStatement((bool) $session->dscsa_affirm);
+            $purchase = $this->purchaseExtensions->handle(
+                $epcIds,
+                (bool) $session->dscsa_affirm,
+                tenant() instanceof Tenant ? tenant() : null,
+            );
+            $directPurchaseStatement = $purchase['statement'] ?? null;
+            $directPurchaseQualifier = $purchase['qualifier'] ?? 'ENTIRELY_DIRECT';
+            $indirectPurchaseEpcs = $purchase['indirect_uris'] ?? [];
+            $prevWholesalerStatement = $purchase['prev_wholesaler_statement'] ?? null;
+            $prevWholesalerQualifier = $purchase['prev_wholesaler_qualifier'] ?? 'ENTIRELY_DIRECT';
 
             $payloadPath = (string) $document->payload_path;
             $eventCount = 2;
@@ -269,6 +280,10 @@ final class GenerateShippingEpcisEvents
                     guideline: $guideline,
                     pedigreeEvents: $pedigreeEvents,
                     transactionDate: $transactionDate,
+                    directPurchaseQualifier: $directPurchaseQualifier,
+                    indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                    prevWholesalerStatement: $prevWholesalerStatement,
+                    prevWholesalerQualifier: $prevWholesalerQualifier,
                 );
                 $eventCount = $this->jsonLdEventListCount($payload);
             } elseif ($includeFullHistory) {
@@ -301,6 +316,10 @@ final class GenerateShippingEpcisEvents
                     directPurchaseStatement: $directPurchaseStatement,
                     guideline: $guideline,
                     transactionDate: $transactionDate,
+                    directPurchaseQualifier: $directPurchaseQualifier,
+                    indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                    prevWholesalerStatement: $prevWholesalerStatement,
+                    prevWholesalerQualifier: $prevWholesalerQualifier,
                 );
             }
 
@@ -1318,6 +1337,10 @@ final class GenerateShippingEpcisEvents
         EpcisGuideline $guideline = EpcisGuideline::R13,
         array $pedigreeEvents = [],
         ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $parties = $tiTs['parties'];
 
@@ -1359,7 +1382,17 @@ final class GenerateShippingEpcisEvents
         }
 
         if ($directPurchaseStatement !== null && $directPurchaseStatement !== '' && $guideline === EpcisGuideline::R13) {
-            $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson($directPurchaseStatement));
+            $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson(
+                $directPurchaseStatement,
+                $directPurchaseQualifier,
+                $indirectPurchaseEpcs,
+            ));
+            if ($prevWholesalerStatement !== null && $prevWholesalerStatement !== '') {
+                $event = array_merge($event, ShippingTiTsFragments::receivedPrevWholesalerExtensionJson(
+                    $prevWholesalerStatement,
+                    $prevWholesalerQualifier,
+                ));
+            }
         } elseif ($directPurchaseStatement !== null && $directPurchaseStatement !== '' && $guideline === EpcisGuideline::R12) {
             $event['gs1ushc:directPurchase'] = true;
         }
@@ -1375,6 +1408,8 @@ final class GenerateShippingEpcisEvents
             $detail['directPurchase'],
             $detail['gs1ushc:directPurchase'],
             $detail['gs1ushc:directPurchaseStatement'],
+            $detail['receivedDirectPurchaseFromPrevWhlsDist'],
+            $detail['gs1ushc:receivedDirectPurchaseFromPrevWhlsDist'],
             $detail['gs1ushc:transactionDate'],
             $detail['transactionDate'],
         );
@@ -1429,6 +1464,10 @@ final class GenerateShippingEpcisEvents
         ?string $directPurchaseStatement = null,
         EpcisGuideline $guideline = EpcisGuideline::R13,
         ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $eventsXml = '';
@@ -1454,6 +1493,10 @@ final class GenerateShippingEpcisEvents
             directPurchaseStatement: $directPurchaseStatement,
             guideline: $guideline,
             transactionDate: $transactionDate,
+            directPurchaseQualifier: $directPurchaseQualifier,
+            indirectPurchaseEpcs: $indirectPurchaseEpcs,
+            prevWholesalerStatement: $prevWholesalerStatement,
+            prevWholesalerQualifier: $prevWholesalerQualifier,
         );
 
         return
@@ -1488,6 +1531,10 @@ final class GenerateShippingEpcisEvents
         ?string $directPurchaseStatement,
         EpcisGuideline $guideline,
         ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $eventTimeXml = $eventTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $recordTimeXml = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
@@ -1531,6 +1578,10 @@ final class GenerateShippingEpcisEvents
                 destLocationSgln: $parties['dest_location']['sgln'],
                 directPurchaseStatement: $directPurchaseStatement,
                 guideline: $guideline,
+                directPurchaseQualifier: $directPurchaseQualifier,
+                indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                prevWholesalerStatement: $prevWholesalerStatement,
+                prevWholesalerQualifier: $prevWholesalerQualifier,
             ).
             $transactionDateXml.
             '      </ObjectEvent>';

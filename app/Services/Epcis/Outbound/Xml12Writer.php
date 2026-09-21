@@ -31,7 +31,15 @@ final class Xml12Writer implements OutboundEpcisDocumentWriter
         ?string $correlationId = null,
         ?string $senderGln = null,
         ?string $receiverGln = null,
+        ?string $masterDataXml = null,
     ): string {
-        return $this->builder->buildDocument($eventTime, $eventsPayload, $correlationId, $senderGln, $receiverGln);
+        return $this->builder->buildDocument(
+            $eventTime,
+            $eventsPayload,
+            $correlationId,
+            $senderGln,
+            $receiverGln,
+            masterDataXml: $masterDataXml,
+        );
     }
 }

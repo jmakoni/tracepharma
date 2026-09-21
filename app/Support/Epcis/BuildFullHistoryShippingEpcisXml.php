@@ -12,6 +12,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
+use App\Services\Dscsa\Support\ResolveOutboundDscsaPurchaseExtensions;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Ndc;
@@ -40,6 +41,7 @@ final class BuildFullHistoryShippingEpcisXml
     public function __construct(
         private readonly ResolveOwningPartySite $resolveOwningPartySite,
         private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
+        private readonly ResolveOutboundDscsaPurchaseExtensions $purchaseExtensions,
         private readonly ExtractPriorPedigreeXml $extractPriorPedigreeXml,
     ) {}
 
@@ -92,7 +94,12 @@ final class BuildFullHistoryShippingEpcisXml
         }
 
         $instanceId = SbdhInstanceIdentifier::uuid();
-        $directPurchaseStatement = $this->resolveDirectPurchaseStatement($session);
+        $purchase = $this->purchaseExtensions->handle(
+            $ssccIds,
+            (bool) $session->dscsa_affirm,
+            $tenant,
+        ) ?? [];
+        $directPurchaseStatement = $purchase['statement'] ?? null;
         $senderGln = $this->resolveSbdhSenderGln($session, $tenant);
         $guideline ??= ResolveOutboundEpcisGuideline::forPartner($session->tradingPartner);
 
@@ -108,6 +115,10 @@ final class BuildFullHistoryShippingEpcisXml
             directPurchaseStatement: $directPurchaseStatement,
             guideline: $guideline,
             transactionDate: $transactionDate,
+            directPurchaseQualifier: $purchase['qualifier'] ?? 'ENTIRELY_DIRECT',
+            indirectPurchaseEpcs: $purchase['indirect_uris'] ?? [],
+            prevWholesalerStatement: $purchase['prev_wholesaler_statement'] ?? null,
+            prevWholesalerQualifier: $purchase['prev_wholesaler_qualifier'] ?? 'ENTIRELY_DIRECT',
         );
 
         $filename = OutboundEpcisFilename::forShippingEvent($tenant, $shipEventTime);
@@ -524,6 +535,10 @@ final class BuildFullHistoryShippingEpcisXml
         ?string $directPurchaseStatement = null,
         EpcisGuideline $guideline = EpcisGuideline::R13,
         ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $creationDate = $shipEventTime->copy()->addSeconds(4)->format('Y-m-d\TH:i:s.v\Z');
 
@@ -557,6 +572,10 @@ final class BuildFullHistoryShippingEpcisXml
             directPurchaseStatement: $directPurchaseStatement,
             guideline: $guideline,
             transactionDate: $transactionDate,
+            directPurchaseQualifier: $directPurchaseQualifier,
+            indirectPurchaseEpcs: $indirectPurchaseEpcs,
+            prevWholesalerStatement: $prevWholesalerStatement,
+            prevWholesalerQualifier: $prevWholesalerQualifier,
         );
 
         $locationXml = $this->mergedLocationVocabularyXml(
@@ -825,6 +844,10 @@ final class BuildFullHistoryShippingEpcisXml
         ?string $directPurchaseStatement = null,
         EpcisGuideline $guideline = EpcisGuideline::R13,
         ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $recordTime = $eventTime->copy()->addSeconds(3);
         $epcXml = collect($ssccUris)
@@ -864,6 +887,10 @@ final class BuildFullHistoryShippingEpcisXml
                 destLocationSgln: $parties['dest_location']['sgln'],
                 directPurchaseStatement: $directPurchaseStatement,
                 guideline: $guideline,
+                directPurchaseQualifier: $directPurchaseQualifier,
+                indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                prevWholesalerStatement: $prevWholesalerStatement,
+                prevWholesalerQualifier: $prevWholesalerQualifier,
             ).
             ($transactionDate !== null && $transactionDate !== ''
                 ? ShippingTiTsFragments::transactionDateXml($transactionDate)

@@ -40,7 +40,12 @@ final class EmitSsccBatchCommissioningEpcis
             ? (int) $options['site_id']
             : null;
         $siteId ??= $batch->commission_site_id !== null ? (int) $batch->commission_site_id : null;
-        $xml = $this->documentGenerator->forBatch($batch, $pending, siteId: $siteId);
+        $xml = $this->documentGenerator->forBatch(
+            $batch,
+            $pending,
+            correlationId: (string) Str::uuid(),
+            siteId: $siteId,
+        );
         $path = 'epcis/outbound/sscc-batch-'.$batch->getKey().'-commission-'.Str::uuid().'.xml';
 
         $sync = (bool) ($options['sync'] ?? false);

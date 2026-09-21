@@ -145,13 +145,13 @@ final class EmitCommissioningEpcisForEpcs
             $uris[] = (string) $epc->epc_uri;
         }
 
+        $uuid = (string) Str::uuid();
         $xml = $this->documentGenerator->execute(
             $uris,
             GenerateDispositionObjectEvent::KIND_COMMISSIONING,
             $siteId,
+            $uuid,
         );
-
-        $uuid = (string) Str::uuid();
         $path = 'epcis/outbound/commission-all-'.$uuid.'.xml';
         $sync = (bool) ($options['sync'] ?? true);
 

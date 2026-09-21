@@ -151,6 +151,29 @@ class ShippingEpcisTradeItemIdentificationTest extends TestCase
         }
     }
 
+    #[Test]
+    public function lean_path_epcclass_includes_populated_cbv_master_data(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $gtin14 = '00301164023165';
+            $this->createProduct($gtin14, ndc11: '00116402316');
+            $epcs = collect([$this->sgtinEpcForGtin($gtin14)]);
+
+            $xml = OutboundEpcClassVocabulary::xml($epcs, EpcisGuideline::R12);
+
+            $this->assertStringContainsString('dosageFormType', $xml);
+            $this->assertStringContainsString('>SYRUP</attribute>', $xml);
+            $this->assertStringContainsString('strengthDescription', $xml);
+            $this->assertStringContainsString('>6.25mg/5mL</attribute>', $xml);
+            $this->assertStringNotContainsString('manufacturerOfTradeItemPartyName', $xml);
+            $this->assertStringNotContainsString('netContentDescription', $xml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function epcClassVocabularyXml(string $gtin14, EpcisGuideline $guideline = EpcisGuideline::R12): string
     {
         $method = new ReflectionMethod(BuildFullHistoryShippingEpcisXml::class, 'epcClassVocabularyXml');

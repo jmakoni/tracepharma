@@ -6,11 +6,14 @@ namespace App\Actions\Outbound;
 
 use App\Domain\Epcis\Enums\EpcisAction;
 use App\Domain\Epcis\EpcisEventFactory;
+use App\Enums\EpcisGuideline;
+use App\Models\Epcis\Epc;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Services\Epcis\Outbound\Xml12Writer;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\OutboundCorrelationGlns;
+use App\Support\Epcis\OutboundEpcClassVocabulary;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -66,12 +69,20 @@ final class GenerateDispositionEpcisDocument
 
         [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
 
+        $epcs = Epc::query()
+            ->whereIn('epc_uri', array_values(array_filter(array_map(
+                static fn (string $uri): string => trim($uri),
+                $epcUris,
+            ))))
+            ->get();
+
         return $this->xml12Writer->buildDocument(
             now()->toIso8601String(),
             $events,
             $correlationId,
             $senderGln,
             $receiverGln,
+            OutboundEpcClassVocabulary::masterDataXml($epcs, EpcisGuideline::R12),
         );
     }
 
