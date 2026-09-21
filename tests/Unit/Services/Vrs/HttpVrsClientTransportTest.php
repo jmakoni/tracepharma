@@ -154,6 +154,42 @@ class HttpVrsClientTransportTest extends TestCase
     }
 
     #[Test]
+    public function lms_verification_response_unwraps_to_verified(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response([
+                'verificationResponse' => [
+                    'verified' => true,
+                    'message' => 'LMS ok',
+                ],
+            ], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('verified', $result['status']);
+        $this->assertStringContainsString('LMS ok', $result['message']);
+    }
+
+    #[Test]
+    public function lms_not_in_network_reason_returns_unavailable(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response([
+                'verificationResponse' => [
+                    'verified' => false,
+                    'reasonCode' => 'not_in_network',
+                    'message' => 'No VRS coverage for this GTIN',
+                ],
+            ], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('unavailable', $result['status']);
+    }
+
+    #[Test]
     public function placeholder_base_url_is_rejected(): void
     {
         config(['vrs.http.base_url' => 'https://vrs.example.com']);

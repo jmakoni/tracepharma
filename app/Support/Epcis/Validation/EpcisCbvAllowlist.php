@@ -35,6 +35,7 @@ final class EpcisCbvAllowlist
         'urn:epcglobal:cbv:bizstep:decommissioning',
         'urn:epcglobal:cbv:bizstep:destroying',
         'urn:epcglobal:cbv:bizstep:returning',
+        'urn:epcglobal:cbv:bizstep:dispensing',
         'urn:epcglobal:cbv:bizstep:transforming',
         'commissioning',
         'packing',
@@ -42,6 +43,7 @@ final class EpcisCbvAllowlist
         'receiving',
         'inspecting',
         'returning',
+        'dispensing',
         'decommissioning',
         'transforming',
     ];
@@ -58,6 +60,8 @@ final class EpcisCbvAllowlist
         'urn:epcglobal:cbv:disp:decommissioned',
         'urn:epcglobal:cbv:disp:reserved',
         'urn:epcglobal:cbv:disp:retail_sold',
+        'urn:epcglobal:cbv:disp:dispensed',
+        'urn:epcglobal:cbv:disp:damaged',
         'urn:epcglobal:cbv:disp:returned',
         'urn:epcglobal:cbv:disp:expired',
         'urn:epcglobal:cbv:disp:recalled',
@@ -69,6 +73,8 @@ final class EpcisCbvAllowlist
         'active',
         'in_progress',
         'in_transit',
+        'dispensed',
+        'damaged',
     ];
 
     public static function isAllowedAction(?string $action): bool

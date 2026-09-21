@@ -22,6 +22,10 @@ final class GenerateDispositionObjectEvent
 
     public const KIND_RETURNING = 'returning';
 
+    public const KIND_DISPENSING = 'dispensing';
+
+    public const KIND_INSPECTING = 'inspecting';
+
     public function __construct(
         private readonly ResolveSsccAuthoredLocation $resolveLocation,
         private readonly AssertAuthoredObjectEventCandidate $assertCandidate,
@@ -33,8 +37,25 @@ final class GenerateDispositionObjectEvent
      */
     public function execute(string $epcUri, string $kind, ?int $siteId = null, ?array $settings = null): string
     {
-        $epcUri = trim($epcUri);
-        if ($epcUri === '') {
+        return $this->executeGroup([$epcUri], $kind, $siteId, $settings);
+    }
+
+    /**
+     * @param  list<string>  $epcUris
+     * @param  self::KIND_*  $kind
+     * @param  array{sgln_urn?: string, disposition?: string}|null  $settings
+     */
+    public function executeGroup(array $epcUris, string $kind, ?int $siteId = null, ?array $settings = null): string
+    {
+        $uris = [];
+        foreach ($epcUris as $epcUri) {
+            $uri = trim((string) $epcUri);
+            if ($uri !== '') {
+                $uris[] = $uri;
+            }
+        }
+
+        if ($uris === []) {
             throw new InvalidArgumentException('EPC URI is required for disposition ObjectEvent.');
         }
 
@@ -55,11 +76,21 @@ final class GenerateDispositionObjectEvent
                 'returning',
                 'returned',
             ],
+            self::KIND_DISPENSING => [
+                EpcisAction::Observe,
+                'dispensing',
+                'dispensed',
+            ],
+            self::KIND_INSPECTING => [
+                EpcisAction::Observe,
+                'inspecting',
+                'active',
+            ],
             default => throw new InvalidArgumentException("Unsupported disposition kind [{$kind}]."),
         };
 
         $this->assertCandidate->handle(
-            epcList: [$epcUri],
+            epcList: $uris,
             action: $action,
             bizStep: $bizStep,
             disposition: $disposition,
@@ -72,19 +103,21 @@ final class GenerateDispositionObjectEvent
             ENT_XML1,
         );
         $eventTime = htmlspecialchars(now()->toIso8601String(), ENT_XML1);
-        $epc = htmlspecialchars($epcUri, ENT_XML1);
+        $epcXml = '';
+        foreach ($uris as $uri) {
+            $epcXml .= '                    <epc>'.htmlspecialchars($uri, ENT_XML1)."</epc>\n";
+        }
         $actionXml = htmlspecialchars($action->value, ENT_XML1);
         $bizStepXml = htmlspecialchars('urn:epcglobal:cbv:bizstep:'.$bizStep, ENT_XML1);
         $dispositionXml = htmlspecialchars('urn:epcglobal:cbv:disp:'.$disposition, ENT_XML1);
-        $ilmdXml = $this->commissioningIlmdXml($kind, $epcUri);
+        $ilmdXml = $this->commissioningIlmdXml($kind, $uris);
 
         return <<<XML
             <ObjectEvent>
                 <eventTime>{$eventTime}</eventTime>
                 <eventTimeZoneOffset>{$timezoneOffset}</eventTimeZoneOffset>
                 <epcList>
-                    <epc>{$epc}</epc>
-                </epcList>
+{$epcXml}                </epcList>
                 <action>{$actionXml}</action>
                 <bizStep>{$bizStepXml}</bizStep>
                 <disposition>{$dispositionXml}</disposition>
@@ -148,15 +181,20 @@ XML;
 
     /**
      * Commission-all SGTINs must carry CBV MDA lot/expiry when ILMD is on the EPC.
+     *
+     * @param  list<string>  $epcUris
      */
-    private function commissioningIlmdXml(string $kind, string $epcUri): string
+    private function commissioningIlmdXml(string $kind, array $epcUris): string
     {
         if ($kind !== self::KIND_COMMISSIONING) {
             return '';
         }
 
-        $epc = Epc::query()->where('epc_uri', $epcUri)->first();
-        if (! $epc instanceof Epc || $epc->epc_type !== 'sgtin') {
+        $epc = Epc::query()
+            ->whereIn('epc_uri', $epcUris)
+            ->where('epc_type', 'sgtin')
+            ->first();
+        if (! $epc instanceof Epc) {
             return '';
         }
 

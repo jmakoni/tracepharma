@@ -8,6 +8,7 @@ use App\Services\Atp\OciWalletClient;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\Epcis\EpcisSubscriptionUrl;
 use App\Support\TenantSettings;
+use App\Support\Vrs\Gs1LmsEnvelope;
 use App\Support\Vrs\VrsLogCorrelation;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -132,13 +133,13 @@ final class HttpVrsClient implements VrsClient
     ): array {
         // A plain array_filter() drops falsy values, which would silently strip a
         // legitimate serial or lot of "0" — keep every value except null/empty string.
-        $request = array_filter([
-            'gtin' => $gtin14,
-            'serial' => $serial,
-            'lot' => $lot,
-            'expiry' => $expiryYymmdd,
-            'requestor_gln' => $this->requestorGln(),
-        ], fn ($value): bool => $value !== null && $value !== '');
+        $request = Gs1LmsEnvelope::buildVerificationRequest(
+            $gtin14,
+            $serial,
+            $lot,
+            $expiryYymmdd,
+            $this->requestorGln(),
+        );
 
         $baseUrl = (string) config('vrs.http.base_url');
         $path = (string) config('vrs.http.verify_path', '/api/v1/verify');
@@ -173,7 +174,7 @@ final class HttpVrsClient implements VrsClient
 
             $httpStatus = $response->status();
             $rawBody = Str::limit((string) $response->body(), 2000);
-            $body = $response->json();
+            $body = Gs1LmsEnvelope::unwrapResponse($response->json());
             $httpEvidence = [
                 'http_status' => $httpStatus,
                 'http_body' => $rawBody,
@@ -329,7 +330,6 @@ final class HttpVrsClient implements VrsClient
 
         return filled($gln) ? (string) $gln : null;
     }
-
 
     /**
      * Best-effort OCI wallet present for outbound VRS. Failures are logged and

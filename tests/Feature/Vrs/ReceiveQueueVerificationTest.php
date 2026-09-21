@@ -3,6 +3,8 @@
 namespace Tests\Feature\Vrs;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\CompleteReceivingSession;
+use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Enums\TenantProfile;
@@ -12,14 +14,18 @@ use App\Filament\App\Resources\ReceivingSessions\Pages\ViewReceivingSession;
 use App\Jobs\Vrs\RunProductVerificationJob;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\Verification;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\TenantSettings;
+use DomainException;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -39,6 +45,9 @@ class ReceiveQueueVerificationTest extends TestCase
     private ?int $documentId = null;
 
     private ?int $epcId = null;
+
+    /** @var list<int> */
+    private array $verificationIds = [];
 
     private static bool $demo2TenantReady = false;
 
@@ -168,6 +177,133 @@ class ReceiveQueueVerificationTest extends TestCase
         }
     }
 
+    #[Test]
+    public function complete_is_blocked_while_vrs_is_pending(): void
+    {
+        Bus::fake();
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            config([
+                'vrs.driver' => 'fake',
+                'vrs.hard_gate_receive_complete' => true,
+            ]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            $this->forcePharmacyProfile();
+
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GP'.random_int(10000000, 99999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirmed = app(ConfirmReceivingScan::class)->handle($session, $uri, userId: (int) $user->getKey());
+            $this->assertTrue($confirmed['ok'] ?? false, (string) ($confirmed['message'] ?? 'confirm failed'));
+
+            $this->expectException(DomainException::class);
+            $this->expectExceptionMessage('VRS pending');
+
+            app(CompleteReceivingSession::class)->handle(
+                ReceivingSession::query()->findOrFail($session->getKey()),
+                (int) $user->getKey(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function complete_succeeds_after_vrs_verified(): void
+    {
+        Bus::fake();
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            config([
+                'vrs.driver' => 'fake',
+                'vrs.hard_gate_receive_complete' => true,
+            ]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            $this->forcePharmacyProfile();
+
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GV'.random_int(10000000, 99999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirmed = app(ConfirmReceivingScan::class)->handle($session, $uri, userId: (int) $user->getKey());
+            $this->assertTrue($confirmed['ok'] ?? false, (string) ($confirmed['message'] ?? 'confirm failed'));
+
+            $verification = Verification::query()->create([
+                'gtin14' => $epc->gtin14,
+                'serial' => $epc->serial_number,
+                'status' => 'verified',
+                'verified_at' => now(),
+                'message' => 'ok',
+            ]);
+            $this->verificationIds[] = (int) $verification->getKey();
+
+            $completed = app(CompleteReceivingSession::class)->handle(
+                ReceivingSession::query()->findOrFail($session->getKey()),
+                (int) $user->getKey(),
+            );
+
+            $this->assertSame('completed', $completed->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function complete_not_blocked_when_vrs_driver_is_null(): void
+    {
+        Bus::fake();
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            config([
+                'vrs.driver' => 'null',
+                'vrs.hard_gate_receive_complete' => true,
+            ]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            $this->forcePharmacyProfile();
+
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GN'.random_int(10000000, 99999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirmed = app(ConfirmReceivingScan::class)->handle($session, $uri, userId: (int) $user->getKey());
+            $this->assertTrue($confirmed['ok'] ?? false, (string) ($confirmed['message'] ?? 'confirm failed'));
+
+            $completed = app(CompleteReceivingSession::class)->handle(
+                ReceivingSession::query()->findOrFail($session->getKey()),
+                (int) $user->getKey(),
+            );
+
+            $this->assertSame('completed', $completed->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function ingestMinimalFixture(): EpcisDocument
     {
         $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
@@ -188,6 +324,14 @@ class ReceiveQueueVerificationTest extends TestCase
             ]);
         } finally {
             @unlink($tmp);
+        }
+    }
+
+    private function forcePharmacyProfile(): void
+    {
+        $tenant = tenant();
+        if ($tenant instanceof Tenant) {
+            $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
         }
     }
 
@@ -241,19 +385,35 @@ class ReceiveQueueVerificationTest extends TestCase
     {
         if (tenancy()->initialized) {
             if ($this->sessionId !== null) {
+                $session = ReceivingSession::query()->find($this->sessionId);
+                $authoredId = $session?->receiving_epcis_document_id;
                 ReceivingScanLine::query()->where('receiving_session_id', $this->sessionId)->delete();
                 ReceivingSession::query()->whereKey($this->sessionId)->delete();
                 $this->sessionId = null;
+                if ($authoredId) {
+                    $this->documentId = (int) $authoredId;
+                }
             }
 
             if ($this->documentId !== null) {
                 $documentId = $this->documentId;
                 ReceivingSession::query()->where('epcis_document_id', $documentId)->delete();
+                $eventIds = EpcisEvent::query()->where('document_id', $documentId)->pluck('id');
+                DB::table('event_epcs')->whereIn('event_id', $eventIds)->delete();
+                DB::table('document_epcs')->where('document_id', $documentId)->delete();
+                EpcisEvent::query()->where('document_id', $documentId)->delete();
                 EpcisDocument::query()->whereKey($documentId)->delete();
                 $this->documentId = null;
             }
 
+            if ($this->verificationIds !== []) {
+                Verification::query()->whereIn('id', $this->verificationIds)->delete();
+                $this->verificationIds = [];
+            }
+
             if ($this->epcId !== null) {
+                DB::table('document_epcs')->where('epc_id', $this->epcId)->delete();
+                DB::table('event_epcs')->where('epc_id', $this->epcId)->delete();
                 Epc::query()->whereKey($this->epcId)->delete();
                 $this->epcId = null;
             }

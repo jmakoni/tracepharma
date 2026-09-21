@@ -74,6 +74,7 @@ class IngestDscsaShippingExtensionsTest extends TestCase
                 (string) $document->received_prev_wholesaler_statement,
             );
             $this->assertNotEmpty($document->direct_purchase_indirect_epc_uris);
+            $this->assertNotEmpty($document->received_prev_wholesaler_indirect_epc_uris);
         } finally {
             $this->cleanup();
         }

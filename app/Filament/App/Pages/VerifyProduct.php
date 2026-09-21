@@ -2,6 +2,7 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Actions\Disposition\EmitDispensingEpcis;
 use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
@@ -9,6 +10,7 @@ use App\Filament\App\Resources\Verifications\VerificationResource;
 use App\Filament\Notifications\Notification;
 use App\Models\User;
 use App\Models\Verification;
+use App\Support\Auth\CurrentSite;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
@@ -21,6 +23,7 @@ use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
+use Throwable;
 use UnitEnum;
 
 class VerifyProduct extends Page implements HasKnowledgeBase
@@ -133,6 +136,14 @@ class VerifyProduct extends Page implements HasKnowledgeBase
 
         try {
             $result = $verification->handle($scan, auth()->user());
+
+            if ($result['verification']->status === 'verified') {
+                try {
+                    app(EmitDispensingEpcis::class)->maybeForVerifiedScan($scan, CurrentSite::id());
+                } catch (Throwable) {
+                    // Verification already persisted; dispense EPCIS is best-effort.
+                }
+            }
 
             $this->scan = '';
             $this->lastVerificationId = (int) $result['verification']->getKey();

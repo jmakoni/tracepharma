@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Disposition\EmitDispensingEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
@@ -10,12 +11,14 @@ use App\Http\Requests\Api\V1\DispenseCheckRequest;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Auth\CurrentSite;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
+use Throwable;
 
 final class DispenseCheckController extends Controller
 {
@@ -44,6 +47,13 @@ final class DispenseCheckController extends Controller
 
         $record = $result['verification'];
         $allowed = $record->status === 'verified';
+        if ($allowed) {
+            try {
+                app(EmitDispensingEpcis::class)->maybeForVerifiedScan($scan, CurrentSite::id());
+            } catch (Throwable) {
+                // Dispense check already succeeded; authored EPCIS is best-effort.
+            }
+        }
         $message = $record->message;
         $status = $record->status;
         $exceptionId = $result['exception_id'];

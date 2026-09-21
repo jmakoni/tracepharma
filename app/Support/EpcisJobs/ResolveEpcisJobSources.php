@@ -58,7 +58,9 @@ final class ResolveEpcisJobSources
             EpcisAuthoredKind::Decommissioning,
             EpcisAuthoredKind::Returning,
             EpcisAuthoredKind::Commissioning,
-            EpcisAuthoredKind::Transformation => $this->disposition($document, $kind),
+            EpcisAuthoredKind::Transformation,
+            EpcisAuthoredKind::Dispensing,
+            EpcisAuthoredKind::Inspecting => $this->disposition($document, $kind),
         };
     }
 

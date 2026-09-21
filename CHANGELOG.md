@@ -18,6 +18,11 @@ All notable releases of TracePharma are documented here.
 - **SOAP unwrap** — Inbound SOAP may wrap `EPCISDocument` in one Body operation element (`Body/Op/EPCISDocument`).
 - **Commission / SSCC SBDH** — Self-authored commission-all and SSCC commission emit SBDH. EPCClass vocab includes dosage/strength/manufacturer/netContent when product master has them (lean ship too).
 - **Outbound purchase extensions** — R1.3 ship derives `PARTIALLY_DIRECT` + `indirectPurchaseEPCs` and `receivedDirectPurchaseFromPrevWhlsDist` from inbound documents (no new UI).
+- **Commission grouping** — Commission-all authors one ObjectEvent per GTIN-14 + lot + expiry (packaging level is in GTIN-14). Same-lot serials share one `eventTime` and one ILMD. Each SSCC stays its own event.
+- **Inbound prev-wholesaler PARTIALLY_DIRECT** — R1.3 shipping with `receivedDirectPurchaseFromPrevWhlsDist` qualifier `PARTIALLY_DIRECT` now requires `prevReceivedinDirectPurchaseEPCs` (same rule as `indirectPurchaseEPCs` on `directPurchase`). Payload bytes are not rewritten.
+- **VRS LMS envelope** — HTTP requestor emits GS1 Lightweight Messaging `verificationRequest`. Responder accepts LMS or flat JSON. EPCIS capture still rejects LMS.
+- **Receive VRS hard gate** — Complete receive waits for VRS `verified` on confirmed SGTINs when VRS is configured (`vrs.hard_gate_receive_complete`).
+- **Dispense / inspect ObjectEvents** — Verify Product and dispense-check author `dispensing`/`dispensed` after verified. Suspect decommission authors an `inspecting` ObjectEvent first.
 
 ### Fixed
 

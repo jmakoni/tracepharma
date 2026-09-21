@@ -1288,7 +1288,7 @@ final class EpcisCatalogBusinessRules
     }
 
     /**
-     * R1.3 PARTIALLY_DIRECT requires indirectPurchaseEPCs. Do not rewrite XML.
+     * R1.3 PARTIALLY_DIRECT requires the matching indirect-EPC list. Do not rewrite XML.
      *
      * @param  list<EpcisValidationFinding>  $findings
      */
@@ -1299,11 +1299,40 @@ final class EpcisCatalogBusinessRules
             return;
         }
 
-        if (preg_match('/<(?:[\w.-]+:)?directPurchase\b[^>]*\bqualifier\s*=\s*"PARTIALLY_DIRECT"/i', $xml) !== 1) {
+        $this->requireIndirectListForPartiallyDirect(
+            $ctx,
+            $findings,
+            $xml,
+            'directPurchase',
+            'indirectPurchaseEPCs',
+        );
+        $this->requireIndirectListForPartiallyDirect(
+            $ctx,
+            $findings,
+            $xml,
+            'receivedDirectPurchaseFromPrevWhlsDist',
+            'prevReceivedinDirectPurchaseEPCs',
+        );
+    }
+
+    /**
+     * @param  list<EpcisValidationFinding>  $findings
+     */
+    private function requireIndirectListForPartiallyDirect(
+        EpcisValidationContext $ctx,
+        array &$findings,
+        string $xml,
+        string $blockLocalName,
+        string $listLocalName,
+    ): void {
+        $block = preg_quote($blockLocalName, '/');
+        $list = preg_quote($listLocalName, '/');
+
+        if (preg_match('/<(?:[\w.-]+:)?'.$block.'\b[^>]*\bqualifier\s*=\s*"PARTIALLY_DIRECT"/i', $xml) !== 1) {
             return;
         }
 
-        if (preg_match('/<(?:[\w.-]+:)?indirectPurchaseEPCs\b/i', $xml) === 1) {
+        if (preg_match('/<(?:[\w.-]+:)?'.$list.'\b/i', $xml) === 1) {
             return;
         }
 
@@ -1311,7 +1340,7 @@ final class EpcisCatalogBusinessRules
             $findings,
             $ctx,
             'MISSING_MANDATORY_FIELD',
-            'GS1 US DSCSA guideline R1.3: directPurchase qualifier PARTIALLY_DIRECT requires indirectPurchaseEPCs.',
+            'GS1 US DSCSA guideline R1.3: '.$blockLocalName.' qualifier PARTIALLY_DIRECT requires '.$listLocalName.'.',
         );
     }
 

@@ -4,6 +4,8 @@ namespace Tests\Feature\Disposition;
 
 use App\Actions\Disposition\EmitCommissioningEpcisForEpcs;
 use App\Actions\Disposition\EmitDecommissioningEpcis;
+use App\Actions\Disposition\EmitDispensingEpcis;
+use App\Actions\Disposition\EmitInspectingEpcis;
 use App\Actions\Disposition\EmitReturningEpcis;
 use App\Enums\DecommissionReason;
 use App\Enums\EpcisAuthoredKind;
@@ -17,12 +19,12 @@ use App\Filament\App\Pages\DecommissionWorkstation;
 use App\Filament\App\Pages\ReturnWorkstation;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
+use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
-use App\Models\Product;
-use App\Support\Gs1\Sgtin;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
+use App\Models\Product;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -47,6 +49,7 @@ use App\Support\Disposition\AssertDecommissionMassApproval;
 use App\Support\Epcis\EpcHasCommissioningEvent;
 use App\Support\Epcis\EpcisCacheLock;
 use App\Support\Gs1\Gtin;
+use App\Support\Gs1\Sgtin;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\Shipping\SsccShipCompletenessException;
@@ -212,6 +215,172 @@ class DispositionWorkstationsTest extends TestCase
             if ($productId !== null) {
                 Product::query()->whereKey($productId)->delete();
             }
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function commission_all_groups_same_gtin_lot_into_one_object_event(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $first = $this->createEpc();
+            $second = $this->createEpc();
+            $this->attachIlmd($first, 'LOT-GROUP', '2027-06-30');
+            $this->attachIlmd($second, 'LOT-GROUP', '2027-06-30');
+            $this->receiveAtSite($site, $first);
+            $this->receiveAtSite($site, $second);
+
+            $result = app(EmitCommissioningEpcisForEpcs::class)->handle(
+                [(int) $first->getKey(), (int) $second->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => true],
+            );
+
+            $this->assertSame(2, $result['commissioned_count']);
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $events = EpcisEvent::query()
+                ->where('document_id', $result['document']->getKey())
+                ->where('event_type', 'ObjectEvent')
+                ->get();
+            $this->assertCount(1, $events);
+            $this->eventIds[] = (int) $events->first()->getKey();
+
+            $roles = DB::table('event_epcs')
+                ->where('event_id', $events->first()->getKey())
+                ->get(['epc_id', 'role']);
+            $this->assertEqualsCanonicalizing(
+                [(int) $first->getKey(), (int) $second->getKey()],
+                $roles->pluck('epc_id')->map(fn ($id): int => (int) $id)->all(),
+            );
+            $this->assertSame(['epcList'], $roles->pluck('role')->unique()->values()->all());
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertSame(1, substr_count($xml, '<ObjectEvent>'));
+            $this->assertSame(2, substr_count($xml, '<epc>'.$first->epc_uri.'</epc>') + substr_count($xml, '<epc>'.$second->epc_uri.'</epc>'));
+            $this->assertStringContainsString('LOT-GROUP', $xml);
+            $this->assertTrue(app(EpcHasCommissioningEvent::class)->for((int) $first->getKey()));
+            $this->assertTrue(app(EpcHasCommissioningEvent::class)->for((int) $second->getKey()));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function commission_all_splits_different_lots_into_two_object_events(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $first = $this->createEpc();
+            $second = $this->createEpc();
+            $this->attachIlmd($first, 'LOT-A', '2027-06-30');
+            $this->attachIlmd($second, 'LOT-B', '2027-06-30');
+            $this->receiveAtSite($site, $first);
+            $this->receiveAtSite($site, $second);
+
+            $result = app(EmitCommissioningEpcisForEpcs::class)->handle(
+                [(int) $first->getKey(), (int) $second->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => true],
+            );
+
+            $this->assertSame(2, $result['commissioned_count']);
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $events = EpcisEvent::query()
+                ->where('document_id', $result['document']->getKey())
+                ->where('event_type', 'ObjectEvent')
+                ->get();
+            $this->assertCount(2, $events);
+            foreach ($events as $event) {
+                $this->eventIds[] = (int) $event->getKey();
+            }
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertSame(2, substr_count($xml, '<ObjectEvent>'));
+            $this->assertStringContainsString('LOT-A', $xml);
+            $this->assertStringContainsString('LOT-B', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function dispense_authors_dispensing_object_event(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Pharmacy);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $epc = $this->createEpc();
+            $this->receiveAtSite($site, $epc);
+
+            $result = app(EmitDispensingEpcis::class)->handle(
+                [(int) $epc->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => false],
+            );
+
+            $this->assertSame(1, $result['dispensed_count']);
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertStringContainsString('urn:epcglobal:cbv:bizstep:dispensing', $xml);
+            $this->assertStringContainsString('urn:epcglobal:cbv:disp:dispensed', $xml);
+            $this->assertSame(1, substr_count($xml, '<ObjectEvent>'));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function inspect_authors_inspecting_object_event(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Manufacturer);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $epc = $this->createEpc();
+            $this->receiveAtSite($site, $epc);
+
+            $result = app(EmitInspectingEpcis::class)->handle(
+                [(int) $epc->getKey()],
+                (int) $site->getKey(),
+                ['sync' => true, 'dispatch' => false],
+            );
+
+            $this->assertSame(1, $result['inspected_count']);
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertStringContainsString('urn:epcglobal:cbv:bizstep:inspecting', $xml);
+            $this->assertSame(1, substr_count($xml, '<ObjectEvent>'));
+        } finally {
             $this->cleanup($tenant);
         }
     }
@@ -1747,6 +1916,16 @@ class DispositionWorkstationsTest extends TestCase
         $this->epcIds[] = (int) $epc->getKey();
 
         return $epc;
+    }
+
+    private function attachIlmd(Epc $epc, string $lot, string $expiry): void
+    {
+        EpcIlmd::query()->create([
+            'epc_id' => $epc->getKey(),
+            'gtin14' => $epc->gtin14,
+            'lot_number' => $lot,
+            'expiry_date' => $expiry,
+        ]);
     }
 
     private function createSsccEpc(string $companyPrefix, string $serialReference): Epc

@@ -3,6 +3,7 @@
 namespace App\Filament\App\Pages;
 
 use App\Actions\Disposition\EmitDecommissioningEpcis;
+use App\Actions\Disposition\EmitInspectingEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Enums\DecommissionReason;
 use App\Filament\App\Pages\Concerns\InteractsWithDispositionWorkstationSession;
@@ -342,6 +343,17 @@ class DecommissionWorkstation extends Page implements HasKnowledgeBase
                         }
 
                         try {
+                            if ($reason === DecommissionReason::SuspectIllegitimate) {
+                                try {
+                                    app(EmitInspectingEpcis::class)->handle($epcIds, $siteId, [
+                                        'sync' => true,
+                                        'dispatch' => false,
+                                    ]);
+                                } catch (Throwable) {
+                                    // Inspect is advisory; decommission still proceeds.
+                                }
+                            }
+
                             $result = $emit->handle($epcIds, $siteId, [
                                 'sync' => true,
                                 'dispatch' => true,

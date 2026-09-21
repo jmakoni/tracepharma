@@ -101,6 +101,45 @@ class VrsResponderWebhookTest extends TestCase
     }
 
     #[Test]
+    public function responder_verifies_known_serial_from_lms_envelope(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->configureTenantResponderKey($tenant);
+
+        try {
+            $uri = 'urn:epc:id:sgtin:030116.0200116.LMS'.random_int(100000, 999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcIds[] = (int) $epc->getKey();
+
+            tenancy()->end();
+
+            $response = $this->postJson(
+                '/api/webhooks/vrs/'.self::DEMO2_TENANT_ID,
+                [
+                    'verificationRequest' => [
+                        'gtin' => $epc->gtin14,
+                        'serialNumber' => $epc->serial_number,
+                    ],
+                ],
+                ['X-Vrs-Api-Key' => self::RESPONDER_KEY],
+            );
+
+            $response->assertOk()
+                ->assertJson([
+                    'status' => 'verified',
+                    'found' => true,
+                    'gtin14' => $epc->gtin14,
+                    'serial' => $epc->serial_number,
+                ]);
+
+            tenancy()->initialize(Tenant::query()->find(self::DEMO2_TENANT_ID));
+            $this->verificationIds[] = (int) $response->json('verification_id');
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function responder_fails_when_request_lot_does_not_match_ilmd(): void
     {
         $tenant = $this->initializeDemo2Tenant();

@@ -3,6 +3,7 @@
 namespace App\Actions\Receiving;
 
 use App\Actions\Transferring\GenerateTransferringReceiveEpcisEvents;
+use App\Actions\Vrs\AssertReceivingVrsComplete;
 use App\Jobs\Receiving\NotifyWmsReceiveConfirm;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -56,6 +57,7 @@ final class CompleteReceivingSession
         private readonly ResolveReceiveScanContext $resolveReceiveScanContext,
         private readonly FlagManualReceivingException $flagManualReceivingException,
         private readonly ReconcileInboundExpectedLinesFromCustody $reconcileInboundExpectedLinesFromCustody,
+        private readonly AssertReceivingVrsComplete $assertReceivingVrsComplete,
     ) {}
 
     public function handle(
@@ -82,6 +84,7 @@ final class CompleteReceivingSession
         }
 
         try {
+            $this->assertReceivingVrsComplete->handle($session);
             $this->assertDocumentNotBlockedByOpenException($session);
             $this->assertScanFirstTiWhenRequired($session);
             $this->assertScanFirstTsWhenRequired($session);

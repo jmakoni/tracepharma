@@ -1962,6 +1962,56 @@ class ValidateEpcis12DocumentTest extends TestCase
     }
 
     #[Test]
+    public function partially_direct_prev_wholesaler_without_indirect_epcs_raises_finding_and_preserves_bytes(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/shipping_mixed_direct_indirect.xml');
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_prev_pd_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('22222222-3333-4444-5555-666666666666', (string) str()->uuid(), $xml);
+            $xml = (string) preg_replace(
+                '/\s*<(?:[\w.-]+:)?prevReceivedinDirectPurchaseEPCs\b[^>]*>.*?<\/(?:[\w.-]+:)?prevReceivedinDirectPurchaseEPCs>/s',
+                '',
+                $xml,
+            );
+            file_put_contents($tmp, $xml);
+            $expectedSha = hash('sha256', $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'partially-direct-prev-missing-indirect.xml',
+                ]);
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->documentId = (int) $document->getKey();
+            $document->refresh();
+            $this->assertSame($expectedSha, (string) $document->file_sha256);
+            $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertSame($expectedSha, hash('sha256', $stored));
+            $this->assertStringNotContainsString('prevReceivedinDirectPurchaseEPCs', $stored);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MISSING_MANDATORY_FIELD')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'prevReceivedinDirectPurchaseEPCs')),
+                'Expected open MISSING_MANDATORY_FIELD for PARTIALLY_DIRECT prev-wholesaler without prevReceivedinDirectPurchaseEPCs',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function event_time_without_timezone_offset_raises_finding_and_does_not_invent_z(): void
     {
         $this->initializeDemo2Tenant();

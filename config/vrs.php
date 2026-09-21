@@ -9,6 +9,9 @@ $defaultDriver = $appEnv === 'production' ? 'null' : 'fake';
 return [
     'driver' => env('VRS_DRIVER', $defaultDriver),
 
+    // When true (default), Complete receive waits for VRS `verified` on confirmed SGTINs.
+    'hard_gate_receive_complete' => (bool) env('VRS_HARD_GATE_RECEIVE', true),
+
     'http' => [
         // Production HttpVrsClient — set VRS_BASE_URL and VRS_API_KEY when wiring a live VRS.
         'base_url' => env('VRS_BASE_URL', 'https://vrs.example.com'),

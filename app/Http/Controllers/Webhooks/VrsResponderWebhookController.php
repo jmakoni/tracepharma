@@ -13,8 +13,10 @@ use App\Support\Tenancy\TenantAccess;
 use App\Support\Tenancy\TenantRunner;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use App\Support\Vrs\Gs1LmsEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Throwable;
 
 final class VrsResponderWebhookController
@@ -44,14 +46,17 @@ final class VrsResponderWebhookController
                 return $rejection;
             }
 
-            $data = $request->validate([
-                'gtin14' => ['nullable', 'string', 'max:14'],
-                'gtin' => ['nullable', 'string', 'max:14'],
-                'serial' => ['required', 'string', 'max:255'],
-                'lot' => ['nullable', 'string', 'max:255'],
-                'expiry' => ['nullable', 'string', 'max:16'],
-                'expiry_yymmdd' => ['nullable', 'string', 'max:6'],
-            ]);
+            $data = Validator::make(
+                Gs1LmsEnvelope::normalizeInboundRequest($request->all()),
+                [
+                    'gtin14' => ['nullable', 'string', 'max:14'],
+                    'gtin' => ['nullable', 'string', 'max:14'],
+                    'serial' => ['required', 'string', 'max:255'],
+                    'lot' => ['nullable', 'string', 'max:255'],
+                    'expiry' => ['nullable', 'string', 'max:16'],
+                    'expiry_yymmdd' => ['nullable', 'string', 'max:6'],
+                ],
+            )->validate();
 
             $gtin = $data['gtin14'] ?? $data['gtin'] ?? null;
             if (! filled($gtin)) {
