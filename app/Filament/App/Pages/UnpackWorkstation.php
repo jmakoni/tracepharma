@@ -108,8 +108,14 @@ class UnpackWorkstation extends Page implements HasKnowledgeBase
         return 'Break a case here. Build a mixed SSCC on Pack.';
     }
 
-    public function processScan(ResolveEpcFromScan $resolveEpcFromScan): void
+    public function processScan(?string $raw = null): void
     {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $resolveEpcFromScan = app(ResolveEpcFromScan::class);
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
         $this->showPostUnpackHandoff = false;

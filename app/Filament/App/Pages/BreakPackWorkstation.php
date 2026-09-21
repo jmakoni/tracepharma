@@ -17,6 +17,7 @@ use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Packing\PackingScanLine;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
@@ -33,6 +34,7 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
+use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -137,11 +139,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         return (string) (TenantSsccSettings::resolve()['company_prefix'] ?? 'Configure in Organization settings');
     }
 
-    public function processScan(
-        ResolveEpcFromScan $resolveEpcFromScan,
-        EpcCustodyGate $custodyGate,
-        ShippableEpcsAtSite $shippable,
-    ): void {
+    public function processScan(?string $raw = null): void
+    {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $resolveEpcFromScan = app(ResolveEpcFromScan::class);
+        $custodyGate = app(EpcCustodyGate::class);
+        $shippable = app(ShippableEpcsAtSite::class);
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 
@@ -168,6 +175,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             if (array_key_exists($epcId, $this->openChildren)) {
                 // Deselecting is always allowed; only adding a child to the pack needs custody.
                 $selecting = ! in_array($epcId, array_map('intval', $this->selectedChildIds), true);
+
+                // Camera passes $raw and often re-decodes the same child within cooldown.
+                // Re-toggle would deselect; keep selection stable for camera re-fires.
+                if (! $selecting && $raw !== null) {
+                    $this->scan = '';
+                    $this->dispatch('focus-scan');
+                    $this->dispatch('scan-result', tone: 'ok');
+
+                    return;
+                }
 
                 if ($selecting) {
                     if (! $this->passesOnHandGate($shippable, $epcId)) {
@@ -294,23 +311,70 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         $this->removePackingStagedChild($childId);
     }
 
-    /**
-     * @return list<array{epc_id: int, label: string, type: string, can_remove: bool}>
-     */
     public function selectedScanRows(): array
     {
+        $ids = array_values(array_filter(
+            array_map('intval', $this->selectedChildIds),
+            fn (int $id): bool => array_key_exists($id, $this->openChildren),
+        ));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $lines = collect();
+        if ($this->packingSessionId !== null) {
+            $lines = PackingScanLine::query()
+                ->where('packing_session_id', $this->packingSessionId)
+                ->whereIn('epc_id', $ids)
+                ->where('status', 'staged')
+                ->where('line_role', 'child')
+                ->with(['epc.ilmd'])
+                ->get()
+                ->keyBy(fn (PackingScanLine $line): int => (int) $line->epc_id);
+        }
+
+        $missingIds = array_values(array_filter(
+            $ids,
+            fn (int $id): bool => ! $lines->has($id),
+        ));
+        $epcs = $missingIds === []
+            ? collect()
+            : Epc::query()
+                ->whereIn('id', $missingIds)
+                ->with('ilmd')
+                ->get()
+                ->keyBy(fn (Epc $epc): int => (int) $epc->getKey());
+
         $rows = [];
-        foreach (array_map('intval', $this->selectedChildIds) as $id) {
-            if (! array_key_exists($id, $this->openChildren)) {
-                continue;
+        foreach ($ids as $id) {
+            $line = $lines->get($id);
+            $epc = $line instanceof PackingScanLine && $line->epc instanceof Epc
+                ? $line->epc
+                : $epcs->get($id);
+
+            if ($epc instanceof Epc) {
+                $display = Gs1DualDisplay::forEpc($epc);
+                $identifier = ($display['gs1_barcode'] ?? '') !== '' && $display['gs1_barcode'] !== '—'
+                    ? $display['gs1_barcode']
+                    : ($this->openChildren[$id] ?? $display['primary']);
+                $urn = ($display['urn'] ?? '') !== '' ? $display['urn'] : '—';
+            } else {
+                $identifier = $this->openChildren[$id] ?? '—';
+                $urn = '—';
             }
+
             $rows[] = [
                 'epc_id' => $id,
-                'identifier' => $this->openChildren[$id],
-                'label' => $this->openChildren[$id],
+                'identifier' => $identifier,
+                'label' => $identifier,
                 'type' => '',
-                'scanned_at' => '—',
-                'urn' => '—',
+                'scanned_at' => $line instanceof PackingScanLine
+                    ? ($line->confirmed_at?->format('Y-m-d H:i:s')
+                        ?? $line->created_at?->format('Y-m-d H:i:s')
+                        ?? '—')
+                    : '—',
+                'urn' => $urn,
                 'present' => true,
                 'can_remove' => true,
             ];

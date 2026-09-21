@@ -200,6 +200,23 @@ class PackWorkstationTest extends TestCase
     }
 
     #[Test]
+    public function floor_workstation_blades_wire_camera_confirm_method(): void
+    {
+        $blades = [
+            'views/filament/app/pages/mobile-pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-break-pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-unpack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-verify-product.blade.php' => 'verifyScan',
+        ];
+
+        foreach ($blades as $path => $method) {
+            $blade = File::get(resource_path($path));
+            $this->assertStringContainsString("tpFloorReceiveConfig('{$method}')", $blade, $path);
+            $this->assertStringNotContainsString('confirmScanInput', $blade, $path);
+        }
+    }
+
+    #[Test]
     public function desktop_pack_shows_confirm_action_when_children_are_staged(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -564,6 +581,42 @@ class PackWorkstationTest extends TestCase
             } finally {
                 $held->release();
             }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function break_pack_selected_rows_show_scan_time_and_transcoded_urn(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent, $child] = $this->seedOpenHierarchy($site);
+
+            $component = Livewire::test(BreakPackWorkstation::class)
+                ->set('scan', (string) $parent->epc_uri)
+                ->call('processScan')
+                ->assertSet('parentEpcId', (int) $parent->getKey())
+                ->call('toggleChild', (int) $child->getKey());
+
+            $rows = $component->instance()->selectedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame((int) $child->getKey(), $rows[0]['epc_id']);
+            $this->assertNotSame('—', $rows[0]['scanned_at'], 'Scan time should come from the packing scan line.');
+            $this->assertNotSame('—', $rows[0]['urn'], 'Transcoded Value should be the EPC URN.');
+            $this->assertSame((string) $child->epc_uri, $rows[0]['urn']);
+            $this->assertNotSame('', trim((string) $rows[0]['identifier']));
         } finally {
             $this->cleanup($tenant);
         }

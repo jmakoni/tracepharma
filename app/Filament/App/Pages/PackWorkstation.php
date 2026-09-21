@@ -64,7 +64,7 @@ class PackWorkstation extends Page implements HasKnowledgeBase
 
     public string $scan = '';
 
-    /** @var list<array{epc_id: int, label: string}> */
+    /** @var list<array{epc_id: int, label: string, identifier?: string, scanned_at?: string, urn?: string, present?: bool}> */
     #[Locked]
     public array $children = [];
 
@@ -144,11 +144,16 @@ class PackWorkstation extends Page implements HasKnowledgeBase
         return (string) (TenantSsccSettings::resolve()['company_prefix'] ?? 'Configure in Organization settings');
     }
 
-    public function processScan(
-        ResolveEpcFromScan $resolveEpcFromScan,
-        EpcCustodyGate $custodyGate,
-        ShippableEpcsAtSite $shippable,
-    ): void {
+    public function processScan(?string $raw = null): void
+    {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $resolveEpcFromScan = app(ResolveEpcFromScan::class);
+        $custodyGate = app(EpcCustodyGate::class);
+        $shippable = app(ShippableEpcsAtSite::class);
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 

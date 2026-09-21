@@ -87,7 +87,7 @@ final class StagePackingScan
         }
 
         try {
-            return DB::transaction(function () use ($session, $scan, $epc, $lineRole): array {
+            return DB::transaction(function () use ($session, $scan, $epc, $lineRole, $userId): array {
                 PackingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
                 $line = PackingScanLine::query()->updateOrCreate(
@@ -99,6 +99,8 @@ final class StagePackingScan
                         'line_role' => $lineRole,
                         'status' => 'staged',
                         'scan_raw' => $scan,
+                        'confirmed_at' => now(),
+                        'confirmed_by' => $userId,
                     ],
                 );
 

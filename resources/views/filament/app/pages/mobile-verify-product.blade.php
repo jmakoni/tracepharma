@@ -29,7 +29,7 @@
 
     <div
         class="tp-floor-receive tp-floor-verify"
-        x-data="tpFloorReceive(@js(\App\Support\Floor\FloorCameraScanAlpine::tpFloorReceiveConfig()))"
+        x-data="tpFloorReceive(@js(\App\Support\Floor\FloorCameraScanAlpine::tpFloorReceiveConfig('verifyScan')))"
         x-on:destroy="stopCamera()"
         @keydown.escape.window="if (cameraOn) { stopCamera() }"
         x-on:focus-scan.window="if (!cameraOn) { $nextTick(() => $refs.scanInput?.focus()) }"

@@ -107,8 +107,14 @@ class VerifyProduct extends Page implements HasKnowledgeBase
         return app(VerificationScorecardMetrics::class)->handle();
     }
 
-    public function verifyScan(RunProductVerification $verification): void
+    public function verifyScan(?string $raw = null): void
     {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $verification = app(RunProductVerification::class);
+
         $scan = ElementString::normalize(trim((string) $this->scan));
         $this->scan = $scan;
 

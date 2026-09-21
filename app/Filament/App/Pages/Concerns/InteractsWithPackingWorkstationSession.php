@@ -16,6 +16,7 @@ use App\Support\Floor\EpcExclusiveBlock;
 use App\Support\Floor\EpcExclusiveSessionGate;
 use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Floor\ResolveOpenFloorSessionUrl;
+use App\Support\Tracing\Gs1DualDisplay;
 use Livewire\Attributes\Locked;
 
 trait InteractsWithPackingWorkstationSession
@@ -162,10 +163,26 @@ trait InteractsWithPackingWorkstationSession
 
         $this->children = $lines->map(function (PackingScanLine $line): array {
             $epc = $line->epc;
+            if ($epc instanceof Epc) {
+                $display = Gs1DualDisplay::forEpc($epc);
+                $identifier = ($display['gs1_barcode'] ?? '') !== '' && $display['gs1_barcode'] !== '—'
+                    ? $display['gs1_barcode']
+                    : $this->epcLabel($epc);
+                $urn = ($display['urn'] ?? '') !== '' ? $display['urn'] : '—';
+            } else {
+                $identifier = '#'.$line->epc_id;
+                $urn = '—';
+            }
 
             return [
                 'epc_id' => (int) $line->epc_id,
-                'label' => $epc instanceof Epc ? $this->epcLabel($epc) : '#'.$line->epc_id,
+                'label' => $identifier,
+                'identifier' => $identifier,
+                'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s')
+                    ?? $line->created_at?->format('Y-m-d H:i:s')
+                    ?? '—',
+                'urn' => $urn,
+                'present' => true,
             ];
         })->values()->all();
 
