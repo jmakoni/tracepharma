@@ -4,9 +4,11 @@ namespace Tests\Feature\Shipping;
 
 use App\Enums\EpcisGuideline;
 use App\Enums\TenantProfile;
+use App\Models\Epcis\Epc;
 use App\Models\Product;
 use App\Models\Tenant;
 use App\Support\Epcis\BuildFullHistoryShippingEpcisXml;
+use App\Support\Epcis\OutboundEpcClassVocabulary;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -107,6 +109,48 @@ class ShippingEpcisTradeItemIdentificationTest extends TestCase
         }
     }
 
+    #[Test]
+    public function lean_path_epcclass_emits_fda_ndc_11_for_r12(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            // Sgtin::fromUrn recomputes the check digit; 00301164023161 is not a valid GTIN-14.
+            $gtin14 = '00301164023165';
+            $this->createProduct($gtin14, ndc11: '00116402316');
+            $epcs = collect([$this->sgtinEpcForGtin($gtin14)]);
+
+            $xml = OutboundEpcClassVocabulary::xml($epcs, EpcisGuideline::R12);
+
+            $this->assertStringContainsString('FDA_NDC_11', $xml);
+            $this->assertStringContainsString('>00116402316</attribute>', $xml);
+            $this->assertStringNotContainsString('US_FDA_NDC', $xml);
+            $this->assertStringNotContainsString('>'.$gtin14.'</attribute>', $xml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function lean_path_epcclass_emits_us_fda_ndc_for_r13(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $gtin14 = '00301164023165';
+            $this->createProduct($gtin14, ndc11: '00116402316', packageNdc: '0116-4023-16');
+            $epcs = collect([$this->sgtinEpcForGtin($gtin14)]);
+
+            $xml = OutboundEpcClassVocabulary::xml($epcs, EpcisGuideline::R13);
+
+            $this->assertStringContainsString('US_FDA_NDC', $xml);
+            $this->assertStringContainsString('>0116-4023-16</attribute>', $xml);
+            $this->assertStringNotContainsString('FDA_NDC_11', $xml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function epcClassVocabularyXml(string $gtin14, EpcisGuideline $guideline = EpcisGuideline::R12): string
     {
         $method = new ReflectionMethod(BuildFullHistoryShippingEpcisXml::class, 'epcClassVocabularyXml');
@@ -125,6 +169,14 @@ class ShippingEpcisTradeItemIdentificationTest extends TestCase
             null,
             $guideline,
         );
+    }
+
+    private function sgtinEpcForGtin(string $gtin14): Epc
+    {
+        $serial = (string) random_int(100000000, 999999999);
+        $uri = 'urn:epc:id:sgtin:030116.'.substr($gtin14, 0, 1).substr($gtin14, 7, 6).'.'.$serial;
+
+        return new Epc(Epc::materializeAttributesFromUri($uri));
     }
 
     private function createProduct(string $gtin14, ?string $ndc11, ?string $packageNdc = null): Product

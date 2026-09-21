@@ -36,6 +36,8 @@ class GenerateSsccCommissioningEventTest extends TestCase
             '<eventTimeZoneOffset>'.AuthoredEventTimezone::offsetForSite(null).'</eventTimeZoneOffset>',
             $xml,
         );
+        $this->assertStringNotContainsString('<ilmd>', $xml);
+        $this->assertStringNotContainsString('lotNumber', $xml);
     }
 
     #[Test]

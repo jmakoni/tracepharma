@@ -4,6 +4,10 @@ All notable releases of TracePharma are documented here.
 
 ## Unreleased
 
+### Added
+
+- **GS1/QA P3 tests** — Lean-path EPCClass NDC (R1.2 `FDA_NDC_11` / R1.3 `US_FDA_NDC`), SSCC commission has no ILMD, saleable-return verified complete, VRS `not_in_network` → `unavailable`, and R1.3 transitional `FDA_NDC_11` ingest is not MIXED.
+
 ## [1.8.0] — 2026-09-20
 
 Floor shell + DSCSA dual-release + GS1/QA remediations: mobile floor Home/Find and camera scan pace, expected inbound / parallel ASN receive, packing and disposition sessions, R1.2/R1.3 per partner, void shipping, and partner-TI / hub / VRS invert fixes from the GS1 US dual-release review.

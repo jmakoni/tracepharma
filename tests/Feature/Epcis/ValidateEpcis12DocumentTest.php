@@ -2127,12 +2127,49 @@ XML;
                 ->first();
             $this->assertNotNull($class);
             $this->assertSame('473 mL', $class->net_content);
+        } finally {
+            $this->cleanup();
+        }
+    }
 
-            $this->assertNotSame(
-                'error',
-                $document->fresh()->status,
-                (string) $document->fresh()->error_message,
+    #[Test]
+    public function r13_guideline_version_with_fda_ndc_11_is_not_mixed_reject(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $vocab = <<<'XML'
+    <extension>
+      <EPCISMasterData>
+        <VocabularyList>
+          <Vocabulary type="urn:epcglobal:epcis:vtype:EPCClass">
+            <VocabularyElementList>
+              <VocabularyElement id="urn:epc:idpat:sgtin:030116.0200116.*">
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">00116200116</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">FDA_NDC_11</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#manufacturerOfTradeItemPartyName">Xttrium</attribute>
+              </VocabularyElement>
+            </VocabularyElementList>
+          </Vocabulary>
+        </VocabularyList>
+      </EPCISMasterData>
+    </extension>
+XML;
+
+            [$document] = $this->ingestMutatedMinimalShipping(
+                '</sbdh:StandardBusinessDocumentHeader>',
+                "</sbdh:StandardBusinessDocumentHeader>\n".$vocab
+                ."\n    <gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>",
             );
+
+            $mixed = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MIXED_DSCSA_GUIDELINE_RELEASE')
+                ->count();
+
+            $this->assertSame(0, $mixed, 'R1.3 guidelineVersion + transitional FDA_NDC_11 must not be MIXED.');
+            $this->assertNotSame('error', $document->fresh()->status, (string) $document->fresh()->error_message);
         } finally {
             $this->cleanup();
         }
