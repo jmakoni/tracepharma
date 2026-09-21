@@ -228,4 +228,57 @@ XML;
         $this->assertFalse($detection->mixed);
         $this->assertSame(EpcisGuideline::R12, $detection->release);
     }
+
+    #[Test]
+    public function json_ld_guideline_version_is_r13(): void
+    {
+        $json = json_encode([
+            'type' => 'EPCISDocument',
+            'gs1ushc:guidelineVersion' => 'GS1 US DSCSA R1.3',
+            'epcisBody' => ['eventList' => []],
+        ], JSON_THROW_ON_ERROR);
+
+        $detection = DetectDscsaGuidelineRelease::fromJson($json);
+
+        $this->assertFalse($detection->mixed);
+        $this->assertSame(EpcisGuideline::R13, $detection->release);
+    }
+
+    #[Test]
+    public function json_ld_us_fda_ndc_is_r13(): void
+    {
+        $json = json_encode([
+            'type' => 'EPCISDocument',
+            'epcisBody' => [
+                'eventList' => [[
+                    'additionalTradeItemIdentificationTypeCode' => 'US_FDA_NDC',
+                ]],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $detection = DetectDscsaGuidelineRelease::fromJson($json);
+
+        $this->assertFalse($detection->mixed);
+        $this->assertSame(EpcisGuideline::R13, $detection->release);
+    }
+
+    #[Test]
+    public function from_path_detects_json_ld_r13_payload(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'dscsa20_');
+        $this->assertNotFalse($path);
+        file_put_contents($path, json_encode([
+            'type' => 'EPCISDocument',
+            'gs1ushc:guidelineVersion' => 'GS1 US DSCSA R1.3',
+        ], JSON_THROW_ON_ERROR));
+
+        try {
+            $detection = DetectDscsaGuidelineRelease::fromPath($path);
+
+            $this->assertFalse($detection->mixed);
+            $this->assertSame(EpcisGuideline::R13, $detection->release);
+        } finally {
+            @unlink($path);
+        }
+    }
 }

@@ -14,6 +14,7 @@ use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\EpcisJob;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -100,6 +101,9 @@ class GenerateReceivingEpcisEventsTest extends TestCase
             $this->assertFalse((bool) $receivingDocument->dscsa_affirm);
             $this->assertStringContainsString('Generated receiving', (string) $receivingDocument->notes);
             $this->assertSame('Generated receiving', $receivingDocument->directionDisplayLabel());
+            $this->assertSame(0, EpcisJob::query()->where('epcis_document_id', $receivingDocument->getKey())->count());
+            $this->assertNotSame('queued', $receivingDocument->transmission_status);
+            $this->assertNotSame('sent', $receivingDocument->transmission_status);
 
             $payload = Storage::disk($receivingDocument->payload_disk)->get($receivingDocument->payload_path);
             $this->assertIsString($payload);
@@ -154,6 +158,37 @@ class GenerateReceivingEpcisEventsTest extends TestCase
                 )->count(),
                 'Second call must not create a duplicate authored receiving document.',
             );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function authored_receive_is_not_scheduled_for_partner_transmit(): void
+    {
+        $this->initializeDemo2Tenant();
+        config(['tracepharma.epcis_jobs.enabled' => true]);
+
+        try {
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $this->sessionId = (int) $session->getKey();
+
+            app(ConfirmReceivingScan::class)->handle($session, self::SSCC_URI, userId: null, autoConfirmChildren: true);
+
+            $session->refresh();
+            if ($session->status !== 'completed') {
+                $session = app(CompleteReceivingSession::class)->handle($session);
+            }
+
+            $receivingDocument = EpcisDocument::query()->findOrFail($session->receiving_epcis_document_id);
+            $this->receivingDocumentId = (int) $receivingDocument->getKey();
+
+            $this->assertSame(0, EpcisJob::query()->where('epcis_document_id', $receivingDocument->getKey())->count());
+            $this->assertNotSame('queued', $receivingDocument->fresh()->transmission_status);
+            $this->assertNotSame('sent', $receivingDocument->fresh()->transmission_status);
         } finally {
             $this->cleanup();
         }

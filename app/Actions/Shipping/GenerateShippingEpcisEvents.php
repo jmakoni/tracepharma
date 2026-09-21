@@ -215,21 +215,19 @@ final class GenerateShippingEpcisEvents
             // readPoint is the dock the unit was scanned at. GS1 US shipping ObjectEvents
             // omit bizLocation; the customer rides on destinationList. Custody for shipped
             // stock is OutboundShipmentInTransit (shipping + in_transit), not bizLocation.
-            if ($guideline === EpcisGuideline::R13) {
-                $detailEvent = $this->persistShippingObjectEvent(
-                    document: $document,
-                    session: $session,
-                    eventTime: $eventTime->clone()->subSecond(),
-                    recordTime: $recordTime,
-                    timezoneOffset: $timezoneOffset,
-                    eventUuid: (string) Str::uuid(),
-                    fromLocation: $fromLocation,
-                    shipTo: $shipTo,
-                    epcIds: $epcIds,
-                    tiTs: $tiTs,
-                );
-                unset($detailEvent);
-            }
+            $detailEvent = $this->persistShippingObjectEvent(
+                document: $document,
+                session: $session,
+                eventTime: $eventTime->clone()->subSecond(),
+                recordTime: $recordTime,
+                timezoneOffset: $timezoneOffset,
+                eventUuid: (string) Str::uuid(),
+                fromLocation: $fromLocation,
+                shipTo: $shipTo,
+                epcIds: $epcIds,
+                tiTs: $tiTs,
+            );
+            unset($detailEvent);
 
             $shippingEvent = $this->persistShippingObjectEvent(
                 document: $document,
@@ -248,7 +246,7 @@ final class GenerateShippingEpcisEvents
             $directPurchaseStatement = $this->resolveOutboundDirectPurchaseStatement((bool) $session->dscsa_affirm);
 
             $payloadPath = (string) $document->payload_path;
-            $eventCount = $guideline === EpcisGuideline::R13 ? 2 : 1;
+            $eventCount = 2;
 
             if ($isJson20) {
                 $pedigreeEvents = [];
@@ -1364,19 +1362,22 @@ final class GenerateShippingEpcisEvents
             $event['gs1ushc:directPurchase'] = true;
         }
 
-        $events = [$event];
-        if ($guideline === EpcisGuideline::R13) {
-            $detail = $event;
-            $detail['eventID'] = 'urn:uuid:'.(string) Str::uuid();
-            $detail['eventTime'] = $eventTime->clone()->subSecond()->utc()->format(DateTimeInterface::ATOM);
-            unset($detail['gs1ushc:directPurchase'], $detail['gs1ushc:directPurchaseStatement'], $detail['gs1ushc:transactionDate']);
-            foreach (array_keys($detail) as $key) {
-                if (is_string($key) && str_starts_with($key, 'gs1ushc:')) {
-                    unset($detail[$key]);
-                }
+        $detail = $event;
+        $detail['eventID'] = 'urn:uuid:'.(string) Str::uuid();
+        $detail['eventTime'] = $eventTime->clone()->subSecond()->utc()->format(DateTimeInterface::ATOM);
+        unset(
+            $detail['directPurchase'],
+            $detail['gs1ushc:directPurchase'],
+            $detail['gs1ushc:directPurchaseStatement'],
+            $detail['gs1ushc:transactionDate'],
+            $detail['transactionDate'],
+        );
+        foreach (array_keys($detail) as $key) {
+            if (is_string($key) && str_starts_with($key, 'gs1ushc:')) {
+                unset($detail[$key]);
             }
-            $events = [$detail, $event];
         }
+        $events = [$detail, $event];
 
         if ($pedigreeEvents !== []) {
             $events = [...$pedigreeEvents, ...$events];
@@ -1426,18 +1427,16 @@ final class GenerateShippingEpcisEvents
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $eventsXml = '';
 
-        if ($guideline === EpcisGuideline::R13) {
-            $eventsXml .= $this->shippingObjectEventXml(
-                epcsById: $epcsById,
-                eventTime: $eventTime->clone()->subSecond(),
-                recordTime: $recordTime,
-                timezoneOffset: $timezoneOffset,
-                eventUuid: (string) Str::uuid(),
-                tiTs: $tiTs,
-                directPurchaseStatement: null,
-                guideline: $guideline,
-            )."\n";
-        }
+        $eventsXml .= $this->shippingObjectEventXml(
+            epcsById: $epcsById,
+            eventTime: $eventTime->clone()->subSecond(),
+            recordTime: $recordTime,
+            timezoneOffset: $timezoneOffset,
+            eventUuid: (string) Str::uuid(),
+            tiTs: $tiTs,
+            directPurchaseStatement: null,
+            guideline: $guideline,
+        )."\n";
 
         $eventsXml .= $this->shippingObjectEventXml(
             epcsById: $epcsById,

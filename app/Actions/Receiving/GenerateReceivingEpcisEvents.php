@@ -18,7 +18,6 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
-use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Gs1\Sgln;
 use App\Support\Gs1\SglnResolution;
 use App\Support\Receiving\ReceivingPolicy;
@@ -39,6 +38,7 @@ use Throwable;
  *
  * This is operational custody attestation for the receiver's repository — not
  * DSCSA TI/TS (seller affirmation stays on the inbound shipping document).
+ * The payload is not scheduled for partner transmit.
  *
  * Idempotent per session: once receiving_events_generated_at is set, subsequent
  * calls return the already-generated document/events without re-emitting.
@@ -57,7 +57,6 @@ final class GenerateReceivingEpcisEvents
 
     public function __construct(
         private readonly SyncDocumentEpcsFromEvents $syncDocumentEpcsFromEvents,
-        private readonly ScheduleOutboundEpcisTransmission $scheduleOutboundTransmission,
         private readonly PersistEpcisXmlPayload $persistEpcisXmlPayload,
         private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly UnpackReceivingHierarchy $unpackReceivingHierarchy,
@@ -242,10 +241,6 @@ final class GenerateReceivingEpcisEvents
                 'generated' => true,
             ];
         });
-
-        if ($built['generated']) {
-            $this->scheduleOutboundTransmission->afterPersist($built['document'], true);
-        }
 
         return $built;
     }

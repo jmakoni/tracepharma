@@ -11,6 +11,13 @@ All notable releases of TracePharma are documented here.
 ### Changed
 
 - **Floor pack camera** — Mobile pack / break-pack / unpack / verify call `processScan` / `verifyScan` with the decoded barcode. Camera re-fire on an already-selected break-pack child stays selected. Packing scan lines stamp `confirmed_at` so selected rows show scan time and transcoded URN.
+- **R1.2 shipping detail** — Lean and full-history ship now author a business-transaction detail ObjectEvent whose `eventTime` precedes shipping (R1.2 errata + R1.3).
+- **JSON-LD inbound DSCSA detect** — `DetectDscsaGuidelineRelease` reads JSON-LD `guidelineVersion` / NDC type codes, not XML-only.
+- **Receive authoring** — Custody receive XML is no longer scheduled for partner transmit.
+
+### Fixed
+
+- **JSON-LD R1.3 detail** — The earlier shipping event no longer copies `directPurchase` from the main event.
 
 ## [1.8.0] — 2026-09-20
 

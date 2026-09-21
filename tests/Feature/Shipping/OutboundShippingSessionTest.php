@@ -2059,7 +2059,11 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertStringContainsString('Authority="GLN"', $xml);
             $this->assertStringNotContainsString('Authority="GS1"', $xml);
             $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:inspecting', $xml);
-            $this->assertCount(1, $this->shippingObjectEventXmls($xml));
+            $shippingEvents = $this->shippingObjectEventXmls($xml);
+            $this->assertCount(2, $shippingEvents);
+            $this->assertLessThan($shippingEvents[1]['event_time'], $shippingEvents[0]['event_time']);
+            $this->assertStringNotContainsString('directPurchase', $shippingEvents[0]['xml']);
+            $this->assertStringContainsString('<gs1ushc:directPurchase>true</gs1ushc:directPurchase>', $shippingEvents[1]['xml']);
         } finally {
             $this->cleanup($tenant);
         }
@@ -2157,6 +2161,45 @@ class OutboundShippingSessionTest extends TestCase
             $this->assertFalse($r12['ok']);
             $this->assertSame('not_found', $r12['effect']);
             $this->assertStringContainsString('Barcode not recognized', $r12['message']);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function shipping_detail_event_time_precedes_shipping_for_r12(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            $site = $this->createShipSite($tenant, self::CORRECTIVE_COMPANY_PREFIX);
+            $this->makeEpcShippableAtSite($site);
+
+            $completed = $this->completeShipOrderWithReferences($site, [
+                'asn_number' => 'ASN-DETAIL-R12',
+                'customer_po' => 'PO-DETAIL-R12',
+                'dscsa_affirm' => true,
+                'epcis_guideline' => EpcisGuideline::R12,
+            ]);
+
+            $document = EpcisDocument::query()->findOrFail($completed->epcis_document_id);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $shippingEvents = $this->shippingObjectEventXmls($xml);
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertLessThan($shippingEvents[1]['event_time'], $shippingEvents[0]['event_time']);
+            $this->assertStringNotContainsString('directPurchase', $shippingEvents[0]['xml']);
+            $this->assertStringNotContainsString('transactionDate', $shippingEvents[0]['xml']);
+            $this->assertStringNotContainsString('guidelineVersion', $xml);
+            $this->assertStringContainsString('<gs1ushc:directPurchase>true</gs1ushc:directPurchase>', $shippingEvents[1]['xml']);
+
+            $stored = EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->where('biz_step', 'urn:epcglobal:cbv:bizstep:shipping')
+                ->orderBy('event_time')
+                ->get();
+            $this->assertCount(2, $stored);
+            $this->assertTrue($stored[0]->event_time->lt($stored[1]->event_time));
         } finally {
             $this->cleanup($tenant);
         }

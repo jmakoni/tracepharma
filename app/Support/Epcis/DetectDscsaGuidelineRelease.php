@@ -24,9 +24,69 @@ final class DetectDscsaGuidelineRelease
             return DscsaGuidelineDetection::r12();
         }
 
-        $xml = @file_get_contents($absolutePath);
+        $payload = @file_get_contents($absolutePath);
 
-        return self::fromXml($xml === false ? '' : $xml);
+        return self::fromPayload($payload === false ? '' : $payload);
+    }
+
+    public static function fromPayload(string $payload): DscsaGuidelineDetection
+    {
+        $trimmed = ltrim($payload);
+
+        if ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+            return self::fromJson($payload);
+        }
+
+        return self::fromXml($payload);
+    }
+
+    public static function fromJson(string $json): DscsaGuidelineDetection
+    {
+        $r12 = [];
+        $r13 = [];
+
+        if (self::jsonHasGuidelineVersionR13($json)) {
+            $r13[] = 'guidelineVersion';
+        }
+
+        if (self::jsonHasTypeCode($json, 'US_FDA_NDC')) {
+            $r13[] = 'US_FDA_NDC';
+        }
+
+        if (self::jsonHasTypeCode($json, 'FDA_NDC_11')) {
+            $r12[] = 'FDA_NDC_11';
+        }
+
+        if (preg_match('/"?dropShipment"?\s*:/i', $json) === 1) {
+            $r13[] = 'dropShipment';
+        }
+
+        $hasQualifier = (bool) preg_match(
+            '/"qualifier"\s*:\s*"(?:ENTIRELY_DIRECT|ENTIRELY_INDIRECT|PARTIALLY_DIRECT)"/i',
+            $json,
+        );
+        $hasBoolean = self::jsonHasBooleanDirectPurchase($json);
+
+        if ($hasQualifier) {
+            $r13[] = 'directPurchase@qualifier';
+        }
+
+        if ($hasBoolean) {
+            $r12[] = 'directPurchase@boolean';
+        }
+
+        $exclusiveNdc = in_array('FDA_NDC_11', $r12, true) && in_array('US_FDA_NDC', $r13, true);
+        $exclusivePurchase = $hasQualifier && $hasBoolean;
+
+        if ($exclusiveNdc || $exclusivePurchase) {
+            return DscsaGuidelineDetection::mixed($r12, $r13);
+        }
+
+        if ($r13 !== []) {
+            return DscsaGuidelineDetection::r13($r12, $r13);
+        }
+
+        return DscsaGuidelineDetection::r12($r12, $r13, self::isLotLevelPayload($json));
     }
 
     public static function isR12LotOnlyShape(?DscsaGuidelineDetection $detection): bool
@@ -191,5 +251,31 @@ final class DetectDscsaGuidelineRelease
         }
 
         return false;
+    }
+
+    private static function jsonHasGuidelineVersionR13(string $json): bool
+    {
+        if (! preg_match('/guidelineVersion"\s*:\s*"([^"]+)"/i', $json, $match)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\bR1\.3\b/', strtoupper($match[1]));
+    }
+
+    private static function jsonHasTypeCode(string $json, string $code): bool
+    {
+        return (bool) preg_match(
+            '/additionalTradeItemIdentificationTypeCode"\s*:\s*"'.preg_quote($code, '/').'"/i',
+            $json,
+        );
+    }
+
+    private static function jsonHasBooleanDirectPurchase(string $json): bool
+    {
+        if (preg_match('/"qualifier"\s*:\s*"(?:ENTIRELY_DIRECT|ENTIRELY_INDIRECT|PARTIALLY_DIRECT)"/i', $json) === 1) {
+            return false;
+        }
+
+        return (bool) preg_match('/directPurchase"\s*:\s*(true|false|1|0)\b/i', $json);
     }
 }

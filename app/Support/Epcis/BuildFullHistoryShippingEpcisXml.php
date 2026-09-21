@@ -535,19 +535,17 @@ final class BuildFullHistoryShippingEpcisXml
 
         $events = $pedigree['event_xml'];
         $timezoneOffset = AuthoredEventTimezone::offsetForSite($session->site, $shipEventTime);
-        if ($guideline === EpcisGuideline::R13) {
-            $events[] = $this->shippingXml(
-                eventTime: $shipEventTime->copy()->subSecond(),
-                eventId: 'urn:uuid:'.(string) Str::uuid(),
-                ssccUris: $ssccUris,
-                parties: $parties,
-                po: $po,
-                asn: $asn,
-                timezoneOffset: $timezoneOffset,
-                directPurchaseStatement: null,
-                guideline: $guideline,
-            );
-        }
+        $events[] = $this->shippingXml(
+            eventTime: $shipEventTime->copy()->subSecond(),
+            eventId: 'urn:uuid:'.(string) Str::uuid(),
+            ssccUris: $ssccUris,
+            parties: $parties,
+            po: $po,
+            asn: $asn,
+            timezoneOffset: $timezoneOffset,
+            directPurchaseStatement: null,
+            guideline: $guideline,
+        );
         $events[] = $this->shippingXml(
             eventTime: $shipEventTime,
             eventId: $shippingEventId,

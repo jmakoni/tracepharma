@@ -13,6 +13,7 @@ use App\Actions\Shipping\GenerateShippingEpcisEvents;
 use App\Actions\Shipping\OpenOutboundShippingSession;
 use App\Actions\Shipping\UpdateOutboundShippingParty;
 use App\Actions\Shipping\UpdateOutboundShippingReferences;
+use App\Enums\EpcisGuideline;
 use App\Enums\FacilityType;
 use App\Enums\OutboundTransport;
 use App\Enums\PartnerType;
@@ -199,6 +200,57 @@ class DualStackShipAuthoringTest extends TestCase
                 'JSON-LD pedigree must keep the manufacturer commission eventTime.',
             );
             $this->assertGreaterThan(count($shippingEvents), (int) $document->event_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function json_ld_r13_detail_shipping_event_omits_direct_purchase(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            config([
+                'tracepharma.epcis.accept_20' => true,
+                'tracepharma.epcis_jobs.enabled' => false,
+            ]);
+            TenantSettings::forTenant($tenant)->setEpcisAccept20(true);
+            $tenant->save();
+
+            Http::fake([
+                'https://partner.example/epcis' => Http::response('OK', 202),
+            ]);
+
+            $site = $this->createShipSite($tenant);
+            $this->makeEpcShippableAtSite($site);
+            $partner = $this->ensureDemoPartner();
+            $partner->forceFill(['epcis_guideline' => EpcisGuideline::R13])->save();
+            $connection = $this->createHttpsConnection([
+                'epcis_document_version' => '2.0',
+            ]);
+
+            $document = $this->authorShippingDocument($site, $partner, $connection);
+            $payload = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+
+            $shippingEvents = array_values(array_filter(
+                $decoded['epcisBody']['eventList'],
+                static fn (array $event): bool => ($event['type'] ?? null) === 'ObjectEvent'
+                    && ($event['bizStep'] ?? null) === 'urn:epcglobal:cbv:bizstep:shipping',
+            ));
+
+            $this->assertCount(2, $shippingEvents);
+            $this->assertLessThan(
+                (string) $shippingEvents[1]['eventTime'],
+                (string) $shippingEvents[0]['eventTime'],
+            );
+            $this->assertArrayNotHasKey('directPurchase', $shippingEvents[0]);
+            $this->assertArrayNotHasKey('gs1ushc:directPurchase', $shippingEvents[0]);
+            $this->assertTrue(
+                isset($shippingEvents[1]['directPurchase']) || isset($shippingEvents[1]['gs1ushc:directPurchase']),
+                'Main shipping event must keep the purchase statement.',
+            );
         } finally {
             $this->cleanup($tenant);
         }
