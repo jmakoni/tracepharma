@@ -165,8 +165,8 @@ class MobileFloorReceivingTest extends TestCase
                 ->assertSee('Shortage 0')
                 ->assertSee('No data 0')
                 ->assertSee('Quarantine 0')
-                ->assertDontSee('Overage')
-                ->assertDontSee('Damaged')
+                ->assertSee('Overage 0')
+                ->assertSee('Damaged 0')
                 ->assertDontSee('Staged scans')
                 ->assertDontSeeHtml('wire:click="confirmStagedScans"')
                 ->assertSee('Just scanned')
@@ -288,9 +288,10 @@ class MobileFloorReceivingTest extends TestCase
                 'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
             ));
 
-            foreach (['Overage', 'Damaged'] as $forbidden) {
-                $this->assertStringNotContainsString($forbidden, $blade);
-            }
+            $this->assertStringContainsString('Overage {{ $exceptionBadges[\'overage\'] }}', $blade);
+            $this->assertStringContainsString('Damaged {{ $exceptionBadges[\'damaged\'] }}', $blade);
+            $this->assertStringNotContainsString("mountAction('reportDamaged')", $blade);
+            $this->assertStringNotContainsString('Report Damaged', $blade);
             $this->assertStringContainsString("mountAction('closeTransferWithShortage')", $blade);
             $this->assertStringContainsString('Close with shortage', $blade);
             $this->assertStringContainsString('floor-scan-input', $blade);

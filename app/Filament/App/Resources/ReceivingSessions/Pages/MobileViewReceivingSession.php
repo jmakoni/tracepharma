@@ -81,6 +81,7 @@ class MobileViewReceivingSession extends ViewRecord
                 'retryReceiveEpcis',
                 'resetScans',
                 'unpackHierarchy',
+                'flagDamaged',
                 'cancelReceiving',
                 'deleteReceiving',
                 'attachInvoice',

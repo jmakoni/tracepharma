@@ -20,9 +20,10 @@ final class DeleteReceivingSession
 {
     public function __construct(
         private readonly RevertTransferReceiveReceivingMarks $revertTransferReceiveReceivingMarks,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
-    public function handle(ReceivingSession $session, ?int $actorId = null): void
+    public function handle(ReceivingSession $session, ?int $actorId = null, ?string $reason = null): void
     {
         if (! JobRoleAccess::allows(Permissions::NavReceive)) {
             throw new DomainException('Receiving is not authorized for your job role.');
@@ -33,7 +34,11 @@ final class DeleteReceivingSession
             $this->assertCanAccessSessionSite($user, $session);
         }
 
-        DB::transaction(function () use ($session): void {
+        $refuseReason = filled($reason)
+            ? trim((string) $reason)
+            : 'Operator cancelled receive.';
+
+        DB::transaction(function () use ($session, $user, $refuseReason): void {
             $session = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
             if ($session->receiving_events_generated_at !== null || $session->receiving_epcis_document_id !== null) {
@@ -43,6 +48,12 @@ final class DeleteReceivingSession
             if (! in_array($session->status, ['open', 'in_progress'], true)) {
                 throw new DomainException("Cannot delete receive with status [{$session->status}].");
             }
+
+            $this->authorReceiveSessionException->refused(
+                $session,
+                $refuseReason,
+                $user instanceof User ? $user : null,
+            );
 
             if ($session->isTransferReceive()) {
                 if ($session->transferring_session_id !== null) {

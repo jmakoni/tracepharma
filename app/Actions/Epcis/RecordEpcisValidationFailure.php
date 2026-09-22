@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Epcis;
 
+use App\Actions\Receiving\AuthorReceiveSessionException;
 use App\Domain\Epcis\Validation\ValidationFailure;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
@@ -38,6 +39,7 @@ final class RecordEpcisValidationFailure
 
     public function __construct(
         private readonly RecordOperationalEpcisException $recorder,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
     /**
@@ -69,15 +71,35 @@ final class RecordEpcisValidationFailure
                 $fill['severity'] = 'error';
             }
             $existing->forceFill($fill)->save();
+            $this->inheritLateFailed($document, $catalogCode, $blocking);
 
             return $existing;
         }
 
-        return $this->recorder->handle(
+        $recorded = $this->recorder->handle(
             document: $document,
             exceptionType: $catalogCode,
             description: $description,
             severity: $blocking ? 'error' : 'warning',
+        );
+        $this->inheritLateFailed($document, $catalogCode, $blocking);
+
+        return $recorded;
+    }
+
+    private function inheritLateFailed(EpcisDocument $document, string $catalogCode, bool $blocking): void
+    {
+        if (
+            ! $blocking
+            || (string) ($document->direction ?? '') !== 'inbound'
+            || ! in_array($catalogCode, ['INGESTION_PARSE_ERROR', 'INTERNAL_VALIDATION_FAILED'], true)
+        ) {
+            return;
+        }
+
+        $this->authorReceiveSessionException->inheritLateFailedFromDocument(
+            $document,
+            'schema_rejected_inbound_epcis',
         );
     }
 

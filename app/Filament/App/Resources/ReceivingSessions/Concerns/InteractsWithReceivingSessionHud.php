@@ -3,6 +3,7 @@
 namespace App\Filament\App\Resources\ReceivingSessions\Concerns;
 
 use App\Actions\Receiving\AttachReceivingSessionInvoice;
+use App\Actions\Receiving\AuthorReceiveSessionException;
 use App\Actions\Receiving\CancelReceivingSession;
 use App\Actions\Receiving\CloseOpenToteReceiving;
 use App\Actions\Receiving\CompleteReceivingSession;
@@ -537,7 +538,7 @@ trait InteractsWithReceivingSessionHud
     }
 
     /**
-     * @return array{shortage: int, no_data: int, quarantine: int}
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
      */
     public function receiveExceptionBadgeCounts(): array
     {
@@ -1524,6 +1525,39 @@ trait InteractsWithReceivingSessionHud
         return $record->canCancel();
     }
 
+    public function canFlagDamaged(): bool
+    {
+        /** @var ReceivingSession $record */
+        $record = $this->getRecord();
+
+        return in_array($record->status, ['open', 'in_progress'], true)
+            && $this->damagedEpcOptions() !== [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function damagedEpcOptions(): array
+    {
+        /** @var ReceivingSession $record */
+        $record = $this->getRecord();
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $record->getKey())
+            ->whereNotNull('epc_id')
+            ->whereIn('status', ['expected', 'confirmed', 'unexpected'])
+            ->with('epc:id,epc_uri,gtin14,serial_number,sscc18')
+            ->orderBy('id')
+            ->get()
+            ->mapWithKeys(function (ReceivingScanLine $line): array {
+                $epc = $line->epc;
+                $label = $epc?->epc_uri ?? ('EPC #'.$line->epc_id);
+
+                return [(int) $line->epc_id => $label];
+            })
+            ->all();
+    }
+
     public function canHardDeleteReceiving(): bool
     {
         /** @var ReceivingSession $record */
@@ -2267,6 +2301,55 @@ trait InteractsWithReceivingSessionHud
                 requireReason: true,
             ),
             RegulatoryCompliance::apply(
+                Action::make('flagDamaged')
+                    ->label('Damaged')
+                    ->icon(Heroicon::OutlinedExclamationTriangle)
+                    ->color('warning')
+                    ->visible(fn (): bool => $this->canFlagDamaged())
+                    ->modalHeading('Flag damaged product?')
+                    ->modalDescription('Opens a DAMAGED exception and quarantines the selected serials. They are not confirmed as sellable.')
+                    ->modalSubmitActionLabel('Flag damaged')
+                    ->schema([
+                        CheckboxList::make('epc_ids')
+                            ->label('Serials')
+                            ->options(fn (): array => $this->damagedEpcOptions())
+                            ->required(),
+                        Textarea::make('notes')
+                            ->label('Notes')
+                            ->rows(2),
+                    ])
+                    ->action(function (array $data): void {
+                        $this->authorize('update', $this->getRecord());
+                        /** @var ReceivingSession $session */
+                        $session = $this->getRecord();
+                        $epcIds = array_values(array_filter(
+                            array_map('intval', $data['epc_ids'] ?? []),
+                            fn (int $id): bool => $id > 0,
+                        ));
+                        if ($epcIds === []) {
+                            return;
+                        }
+
+                        app(AuthorReceiveSessionException::class)->damaged(
+                            $session,
+                            $epcIds,
+                            auth()->user(),
+                            filled($data['notes'] ?? null)
+                                ? (string) $data['notes']
+                                : 'Operator flagged damaged product on this receive.',
+                        );
+
+                        Notification::make()
+                            ->title('Damaged flagged')
+                            ->warning()
+                            ->ephemeral()->send();
+
+                        $this->dispatch('focus-scan');
+                    }),
+                'receiving_flag_damaged',
+                requireReason: false,
+            ),
+            RegulatoryCompliance::apply(
                 Action::make('cancelReceiving')
                     ->label('Cancel receive')
                     ->icon(Heroicon::OutlinedXMark)
@@ -2276,13 +2359,18 @@ trait InteractsWithReceivingSessionHud
                     ->modalHeading('Cancel this receive?')
                     ->modalDescription('Marks the session cancelled and removes it from Active receives. Scan history is kept. This cannot undo receiving EPCIS after completion.')
                     ->modalSubmitActionLabel('Cancel receive')
-                    ->action(function (): void {
+                    ->action(function (array $data): void {
                         $this->authorize('update', $this->getRecord());
                         /** @var ReceivingSession $session */
                         $session = $this->getRecord();
+                        $reason = trim((string) ($data['compliance_reason'] ?? $data['reason'] ?? ''));
 
                         try {
-                            app(CancelReceivingSession::class)->handle($session, auth()->id());
+                            app(CancelReceivingSession::class)->handle(
+                                $session,
+                                auth()->id(),
+                                $reason !== '' ? $reason : null,
+                            );
                         } catch (DomainException $e) {
                             Notification::make()
                                 ->title('Cancel blocked')

@@ -63,6 +63,12 @@
                     <span class="badge badge-ghost">Shortage {{ $exceptionBadges['shortage'] }}</span>
                     <span class="badge badge-ghost">No data {{ $exceptionBadges['no_data'] }}</span>
                     <span class="badge badge-ghost">Quarantine {{ $exceptionBadges['quarantine'] }}</span>
+                    <span class="badge badge-ghost">Mismatch {{ $exceptionBadges['mismatch'] }}</span>
+                    <span class="badge badge-ghost">Overage {{ $exceptionBadges['overage'] }}</span>
+                    <span class="badge badge-ghost">Wrong site {{ $exceptionBadges['wrong_site'] }}</span>
+                    <span class="badge badge-ghost">Document hold {{ $exceptionBadges['document_hold'] }}</span>
+                    <span class="badge badge-ghost">Wrong item {{ $exceptionBadges['wrong_item'] }}</span>
+                    <span class="badge badge-ghost">Damaged {{ $exceptionBadges['damaged'] }}</span>
                 </div>
 
                 @if ($lockedTote = $this->openToteLockedParentLabel())
@@ -261,6 +267,17 @@
                         wire:loading.attr="disabled"
                     >
                         Close with shortage
+                    </button>
+                @endif
+
+                @if ($this->canFlagDamaged())
+                    <button
+                        type="button"
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--warning min-h-14"
+                        wire:click="mountAction('flagDamaged')"
+                        wire:loading.attr="disabled"
+                    >
+                        Flag damage
                     </button>
                 @endif
 
