@@ -6,6 +6,7 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\DeleteReceivingSession;
+use App\Actions\Receiving\HoldFilelessScanFirstReceivingSession;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
 use App\Filament\Notifications\Notification;
@@ -396,6 +397,48 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                 'receiving_complete_scan_first',
                 requireReason: false,
             ),
+            Action::make('completeToHold')
+                ->label('Complete to hold — waiting for EPCIS')
+                ->icon(Heroicon::OutlinedPauseCircle)
+                ->color('warning')
+                ->visible(fn (): bool => $this->canCompleteToHold())
+                ->requiresConfirmation()
+                ->modalHeading('Complete to hold — waiting for EPCIS')
+                ->modalDescription('Clears the gun and holds confirmed serials until inbound EPCIS arrives. Does not author a sellable receiving document. Complete still requires a file.')
+                ->modalSubmitActionLabel('Complete to hold')
+                ->action(function (): void {
+                    $session = $this->session();
+                    if ($session === null) {
+                        return;
+                    }
+
+                    if (! $this->assertSessionSiteAccess($session)) {
+                        return;
+                    }
+
+                    try {
+                        $held = app(HoldFilelessScanFirstReceivingSession::class)->handle(
+                            $session,
+                            auth()->id(),
+                        );
+                    } catch (InvalidArgumentException|DomainException $e) {
+                        Notification::make()
+                            ->title('Complete to hold blocked')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->ephemeral()->send();
+
+                        return;
+                    }
+
+                    $this->flashScan('ok', 'Held — waiting for EPCIS');
+                    Notification::make()
+                        ->title('Held — waiting for EPCIS')
+                        ->success()
+                        ->ephemeral()->send();
+
+                    $this->openNextInboundIfAvailable($held);
+                }),
             UnsubmittedSessionDeleteAction::forReceivingHud(
                 fn (): bool => $this->session()?->canHardDelete() ?? false,
                 function (): int {
@@ -452,11 +495,16 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
     {
         $session = $this->session();
 
-        if ($session === null || $session->status === 'completed') {
+        if ($session === null || in_array($session->status, ['completed', 'held'], true)) {
             return false;
         }
 
         return $this->confirmedLineCount() > 0;
+    }
+
+    public function canCompleteToHold(): bool
+    {
+        return $this->session()?->canCompleteToHold() ?? false;
     }
 
     /**

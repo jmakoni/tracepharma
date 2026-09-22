@@ -11,6 +11,7 @@ use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\ConfirmRemainingExpectedReceivingLines;
 use App\Actions\Receiving\CopyConfirmedReceivingScansToSession;
 use App\Actions\Receiving\DeleteReceivingSession;
+use App\Actions\Receiving\HoldFilelessScanFirstReceivingSession;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\PropagateScanFirstConfirmsToAsnSession;
 use App\Actions\Receiving\ResetReceivingSessionScans;
@@ -495,6 +496,11 @@ trait InteractsWithReceivingSessionHud
         return $this->getRecord()->status === 'cancelled';
     }
 
+    public function isHeld(): bool
+    {
+        return $this->getRecord()->status === 'held';
+    }
+
     public function isScanFirst(): bool
     {
         return $this->getRecord()->isScanFirst();
@@ -523,6 +529,7 @@ trait InteractsWithReceivingSessionHud
         return match ($this->getRecord()->status) {
             'completed' => 'success',
             'in_progress' => 'warning',
+            'held' => 'warning',
             default => 'outline',
         };
     }
@@ -661,7 +668,7 @@ trait InteractsWithReceivingSessionHud
 
     public function canCompleteManually(): bool
     {
-        if ($this->isCompleted()) {
+        if ($this->isCompleted() || $this->isHeld()) {
             return false;
         }
 
@@ -697,9 +704,18 @@ trait InteractsWithReceivingSessionHud
         return false;
     }
 
+    public function canCompleteToHold(): bool
+    {
+        if ($this->isCompleted()) {
+            return false;
+        }
+
+        return $this->getRecord()->canCompleteToHold();
+    }
+
     public function completeDisabledReason(): ?string
     {
-        if ($this->isCompleted() || $this->canCompleteManually()) {
+        if ($this->isCompleted() || $this->isHeld() || $this->canCompleteManually()) {
             return null;
         }
 
@@ -2076,6 +2092,45 @@ trait InteractsWithReceivingSessionHud
                 'receiving_complete_scan_first',
                 requireReason: false,
             ),
+            Action::make('completeToHold')
+                ->label('Complete to hold — waiting for EPCIS')
+                ->icon(Heroicon::OutlinedPauseCircle)
+                ->color('warning')
+                ->visible(fn (): bool => $this->canCompleteToHold())
+                ->requiresConfirmation()
+                ->modalHeading('Complete to hold — waiting for EPCIS')
+                ->modalDescription('Holds confirmed serials until inbound EPCIS arrives. Does not author a sellable receiving document. Complete still requires a file.')
+                ->modalSubmitActionLabel('Complete to hold')
+                ->action(function (): void {
+                    $this->authorize('update', $this->getRecord());
+                    /** @var ReceivingSession $session */
+                    $session = $this->getRecord();
+
+                    try {
+                        app(HoldFilelessScanFirstReceivingSession::class)->handle(
+                            $session,
+                            auth()->id(),
+                        );
+                    } catch (InvalidArgumentException|DomainException $e) {
+                        Notification::make()
+                            ->title('Complete to hold blocked')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->ephemeral()->send();
+
+                        return;
+                    }
+
+                    $this->getRecord()->refresh()->loadMissing(['document', 'document.inboundShipment', 'inboundShipment', 'tradingPartner', 'site', 'matchedDocument', 'transferringSession', 'activeParentEpc']);
+
+                    Notification::make()
+                        ->title('Held — waiting for EPCIS')
+                        ->success()
+                        ->ephemeral()->send();
+
+                    $this->dispatch('receiving-scan-lines-updated')
+                        ->to(ScanLinesRelationManager::class);
+                }),
             RegulatoryCompliance::apply(
                 Action::make('closeTransferWithShortage')
                     ->label('Close with shortage')

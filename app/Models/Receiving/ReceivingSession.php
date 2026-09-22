@@ -260,6 +260,34 @@ class ReceivingSession extends Model
         return $this->session_kind === ReceivingSessionKind::ScanFirst;
     }
 
+    /**
+     * File-less scan-first may Complete to hold when sellable Complete is
+     * hard-blocked by missing inbound EPCIS.
+     */
+    public function canCompleteToHold(): bool
+    {
+        if (! $this->isScanFirst()) {
+            return false;
+        }
+
+        if ($this->epcis_document_id !== null || $this->matched_epcis_document_id !== null) {
+            return false;
+        }
+
+        if (! in_array($this->status, ['open', 'in_progress'], true)) {
+            return false;
+        }
+
+        if (TenantSettings::forTenant(tenant())->allowScanFirstCompleteWithoutFile()) {
+            return false;
+        }
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->getKey())
+            ->where('status', 'confirmed')
+            ->exists();
+    }
+
     public function isTransferReceive(): bool
     {
         return $this->session_kind === ReceivingSessionKind::TransferReceive;

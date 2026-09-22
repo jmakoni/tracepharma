@@ -18,7 +18,9 @@
     @php
         $childTypeLabel = $this->childTypeLabel();
         $canComplete = $this->canCompleteManually();
+        $canCompleteToHold = $this->canCompleteToHold();
         $isCompleted = $this->isCompleted();
+        $isHeld = $this->isHeld();
         $showAccept = $this->canAcceptRemaining() && $this->acceptRemainingEnabled();
         $scanPlaceholder = $this->floorScanPlaceholder();
     @endphp
@@ -111,6 +113,14 @@
                         Back to receives
                     </a>
                 @endif
+            </div>
+        @elseif ($isHeld)
+            <div class="tp-floor-receive__complete">
+                <div class="tp-floor-receive__complete-title">Complete to hold — waiting for EPCIS</div>
+                <p class="tp-floor-receive__complete-body">Confirmed serials are held, not sellable. Complete still requires a file.</p>
+                <a href="{{ $this->receiveListUrl() }}" class="tp-floor-receive__complete-btn tp-floor-receive__complete-btn--ready tp-floor-receive__complete-exit">
+                    Back to receives
+                </a>
             </div>
         @else
             <div class="tp-floor-receive__stage">
@@ -245,6 +255,17 @@
                         wire:loading.attr="disabled"
                     >
                         Complete session
+                    </button>
+                @endif
+
+                @if ($canCompleteToHold)
+                    <button
+                        type="button"
+                        class="tp-floor-receive__footer-btn tp-floor-receive__footer-btn--neutral"
+                        wire:click="mountAction('completeToHold')"
+                        wire:loading.attr="disabled"
+                    >
+                        Complete to hold — waiting for EPCIS
                     </button>
                 @endif
 

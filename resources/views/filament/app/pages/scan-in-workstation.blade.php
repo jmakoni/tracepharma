@@ -48,6 +48,11 @@
                                 <div class="text-lg font-semibold">{{ $this->promptCopy()['completeTitle'] }}</div>
                                 <p class="text-sm">{{ $this->promptCopy()['completeBody'] }}</p>
                             </div>
+                        @elseif ($session?->status === 'held')
+                            <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                                <div class="text-lg font-semibold">Complete to hold — waiting for EPCIS</div>
+                                <p class="text-sm">Confirmed serials are held, not sellable. Complete still requires a file.</p>
+                            </div>
                         @else
                             <x-scan-field
                                 variant="desktop"
@@ -104,7 +109,7 @@
                 :rows="$confirmedRows"
                 :title="'Confirmed ('.$confirmedRows->count().')'"
                 empty="Scan barcodes to build the receive list."
-                :can-remove="$session?->status !== 'completed'"
+                :can-remove="! in_array($session?->status, ['completed', 'held'], true)"
                 remove-method="removeConfirmed"
                 id-key="line_id"
             />

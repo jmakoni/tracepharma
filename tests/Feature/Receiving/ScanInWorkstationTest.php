@@ -16,6 +16,7 @@ use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
@@ -23,6 +24,8 @@ use App\Models\TracingRequest;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Receiving\ReceiveExceptionTypes;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionProgress;
@@ -31,6 +34,7 @@ use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -501,6 +505,7 @@ class ScanInWorkstationTest extends TestCase
             $this->assertCount(1, $rows);
             $this->assertSame($ingested['sscc_uri'], $rows->first()['urn']);
             $component->assertDontSee('Cases in this SSCC', false);
+            $component->assertActionHidden('completeToHold');
 
             $component->callAction('completeReceiving')
                 ->assertHasNoActionErrors();
@@ -576,11 +581,59 @@ class ScanInWorkstationTest extends TestCase
                 ->where('epc_id', $epc->getKey())
                 ->value('status'));
 
+            $this->assertFalse(
+                TenantSettings::forTenant($tenant)->allowScanFirstCompleteWithoutFile(),
+                'File-less scan-first must stay hard-blocked by LATE_FAILED_EPCIS.',
+            );
+            $this->assertNull($session->fresh()?->epcis_document_id);
+            $this->assertNull($session->fresh()?->matched_epcis_document_id);
+
             $component->callAction('completeReceiving')
+                ->assertSet('sessionId', (int) $session->getKey())
+                ->assertSee('Scan barcode')
+                ->assertDontSee('No open receive sessions');
+
+            $session = $session->fresh();
+            $this->assertNotSame('completed', $session?->status);
+            $this->assertNull($session?->receiving_epcis_document_id);
+            $late = ReceiveSessionExceptionQuery::openCases(
+                $session,
+                [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+            )->first();
+            $this->assertNotNull($late);
+            $this->assertSame(ReceiveExceptionTypes::LATE_FAILED_EPCIS, $late->type?->code);
+
+            $productNoData = ReceiveSessionExceptionQuery::openCases(
+                $session,
+                [ReceiveExceptionTypes::PRODUCT_NO_DATA],
+            );
+            $openProductNoDataIds = $productNoData->pluck('id')->all();
+
+            $component->assertActionVisible('completeToHold');
+            $component->callAction('completeToHold')
                 ->assertSet('sessionId', null)
                 ->assertSee('startScanFirst')
-                ->assertSee('No open receive sessions')
-                ->assertDontSee('Scan barcode');
+                ->assertSee('No open receive sessions');
+
+            $session = $session->fresh();
+            $this->assertSame('held', $session?->status);
+            $this->assertNull($session?->receiving_epcis_document_id);
+            $this->assertNull($session?->completed_at);
+            $late = ReceiveSessionExceptionQuery::openCases(
+                $session,
+                [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+            )->first();
+            $this->assertNotNull($late);
+            $this->assertSame(
+                $openProductNoDataIds,
+                ReceiveSessionExceptionQuery::openCases(
+                    $session,
+                    [ReceiveExceptionTypes::PRODUCT_NO_DATA],
+                )->pluck('id')->all(),
+            );
+            $this->assertTrue(
+                QuarantineHold::query()->open()->where('epc_id', $epc->getKey())->exists(),
+            );
         } finally {
             $this->cleanup();
         }
@@ -621,8 +674,46 @@ class ScanInWorkstationTest extends TestCase
 
             $this->assertContains($component->get('lastScanTone'), ['ok', 'warn'], (string) $component->get('lastScanMessage'));
 
+            $this->assertFalse(
+                TenantSettings::forTenant($tenant)->allowScanFirstCompleteWithoutFile(),
+                'File-less scan-first must stay hard-blocked by LATE_FAILED_EPCIS.',
+            );
+            $this->assertNull($first->fresh()?->epcis_document_id);
+            $this->assertNull($first->fresh()?->matched_epcis_document_id);
+
             $component->callAction('completeReceiving')
+                ->assertSet('sessionId', (int) $first->getKey());
+
+            $this->assertNotSame('completed', $first->fresh()?->status);
+            $this->assertNotSame('completed', $second->fresh()?->status);
+            $late = ReceiveSessionExceptionQuery::openCases(
+                $first,
+                [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+            )->first();
+            $this->assertNotNull($late);
+            $this->assertSame(ReceiveExceptionTypes::LATE_FAILED_EPCIS, $late->type?->code);
+            $this->assertTrue(
+                ReceiveSessionExceptionQuery::openCases(
+                    $second,
+                    [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+                )->isEmpty(),
+            );
+
+            $component->assertActionVisible('completeToHold');
+            $component->callAction('completeToHold')
                 ->assertSet('sessionId', (int) $second->getKey());
+
+            $this->assertSame('held', $first->fresh()?->status);
+            $this->assertNotSame('completed', $first->fresh()?->status);
+            $this->assertNull($first->fresh()?->receiving_epcis_document_id);
+            $this->assertNotSame('held', $second->fresh()?->status);
+            $this->assertNotSame('completed', $second->fresh()?->status);
+            $this->assertNotNull(
+                ReceiveSessionExceptionQuery::openCases(
+                    $first,
+                    [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+                )->first(),
+            );
         } finally {
             $this->cleanup();
         }
@@ -803,12 +894,21 @@ class ScanInWorkstationTest extends TestCase
             }
             $this->requestIds = [];
 
+            $epcIds = array_values(array_unique(array_map(intval(...), $this->epcIds)));
+            if ($epcIds !== []) {
+                DB::table('quarantine_holds')->whereIn('epc_id', $epcIds)->delete();
+                if (Schema::hasTable('exception_epcs')) {
+                    DB::table('exception_epcs')->whereIn('epc_id', $epcIds)->delete();
+                }
+            }
+
             foreach ($this->sessionIds as $sessionId) {
                 $this->deleteReceivingSessionForIsolation($sessionId);
             }
             $this->sessionIds = [];
 
-            foreach ($this->epcIds as $epcId) {
+            foreach ($epcIds as $epcId) {
+                DB::table('quarantine_holds')->where('epc_id', $epcId)->delete();
                 ReceivingScanLine::query()->where('epc_id', $epcId)->delete();
                 EpcIlmd::query()->where('epc_id', $epcId)->delete();
                 if (! DB::table('event_epcs')->where('epc_id', $epcId)->exists()

@@ -65,6 +65,7 @@ class ReceivingSessionsTable
                     ->color(fn (?string $state): string => match ($state) {
                         'completed' => 'success',
                         'in_progress' => 'warning',
+                        'held' => 'warning',
                         'open' => 'gray',
                         default => 'gray',
                     })
@@ -143,6 +144,7 @@ class ReceivingSessionsTable
                     ->options([
                         'open' => ReceivingSessionStatus::label('open'),
                         'in_progress' => ReceivingSessionStatus::label('in_progress'),
+                        'held' => ReceivingSessionStatus::label('held'),
                         'completed' => ReceivingSessionStatus::label('completed'),
                         'cancelled' => ReceivingSessionStatus::label('cancelled'),
                     ]),

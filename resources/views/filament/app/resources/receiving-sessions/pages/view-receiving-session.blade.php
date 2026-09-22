@@ -195,6 +195,16 @@
                             @endif
                         </div>
                     </div>
+                @elseif ($this->isHeld())
+                    <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                        <div class="text-lg font-semibold">Complete to hold — waiting for EPCIS</div>
+                        <p class="text-sm">Confirmed serials are held, not sellable. Complete still requires a file. This session stays for Investigator until inbound EPCIS arrives.</p>
+                        <div class="mt-3">
+                            <a href="{{ $this->receiveListUrl() }}" class="btn btn-primary btn-sm">
+                                Back to receives
+                            </a>
+                        </div>
+                    </div>
                 @elseif ($this->isCancelled())
                     <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
                         <div class="text-lg font-semibold">Receive cancelled</div>
@@ -233,7 +243,7 @@
                             </div>
                         @endif
 
-                        @if ($this->canCloseOpenTote() || $this->canAcceptRemaining() || $this->canCompleteManually() || $this->canCloseTransferWithShortage())
+                        @if ($this->canCloseOpenTote() || $this->canAcceptRemaining() || $this->canCompleteManually() || $this->canCompleteToHold() || $this->canCloseTransferWithShortage())
                             <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                                 @if ($this->canCompleteManually())
                                     <button
@@ -243,6 +253,16 @@
                                         wire:loading.attr="disabled"
                                     >
                                         Complete session
+                                    </button>
+                                @endif
+                                @if ($this->canCompleteToHold())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn btn btn-warning min-h-14"
+                                        wire:click="mountAction('completeToHold')"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Complete to hold — waiting for EPCIS
                                     </button>
                                 @endif
                                 @if ($this->canCloseOpenTote())

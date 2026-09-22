@@ -77,6 +77,7 @@ class MobileViewReceivingSession extends ViewRecord
                 'closeOpenTote',
                 'acceptRemaining',
                 'completeReceiving',
+                'completeToHold',
                 'closeTransferWithShortage',
                 'retryReceiveEpcis',
                 'resetScans',
