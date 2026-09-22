@@ -22,6 +22,7 @@ use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Gs1\ElementString;
 use App\Support\Gs1\Gs1DigitalLinkScan;
+use App\Support\Receiving\LinkVerifyCaseToOpenReceive;
 use App\Support\Vrs\AssertVrsDriverReady;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -51,6 +52,7 @@ final class RunProductVerification
         private readonly ManufacturerVerificationNotifier $manufacturerNotifier,
         private readonly ResolveEpcLastKnownGln $lastKnownGln,
         private readonly AssertVrsDriverReady $assertVrsDriverReady,
+        private readonly LinkVerifyCaseToOpenReceive $linkVerifyCaseToOpenReceive,
     ) {}
 
     /**
@@ -382,12 +384,16 @@ final class RunProductVerification
                 'status' => ExceptionStatus::New->value,
             ], $epcIds, $actor);
 
+            $sessionMeta = $this->linkVerifyCaseToOpenReceive->stamp($case, $epcIds, $actor);
+
             if ($openHold && $epcIds !== []) {
                 $this->quarantine->openForCase(
                     $case,
                     $epcIds,
                     $reason,
                     $actor,
+                    null,
+                    $sessionMeta,
                 );
             }
 
