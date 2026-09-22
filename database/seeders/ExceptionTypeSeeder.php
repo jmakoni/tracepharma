@@ -135,6 +135,12 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('EXPIRED_PRODUCT_SHIPPED', 'Expired Product Shipped', ExceptionTypeCategory::Quantity, ExceptionSeverity::Critical, 'Product shipped after expiry date', 'unavailable_for_distribution'),
             $this->row('MIXED_EXPIRY_SAME_LOT', 'Mixed Expiry Dates in Same Lot', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'Different expiry dates for serials in same lot', 'data_issues'),
             $this->row('PARTIAL_SHIPMENT_UNDECLARED', 'Undeclared Partial Shipment', ExceptionTypeCategory::Quantity, ExceptionSeverity::Medium, 'Shipped quantity lower than commissioned without notice', 'data_no_product'),
+            $this->row('SHORTAGE', 'Shortage', ExceptionTypeCategory::Quantity, ExceptionSeverity::Medium, 'OS&D shortage on this receipt', 'data_no_product'),
+            $this->row('OVERAGE', 'Overage', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'OS&D overage on this receipt', 'product_no_data'),
+            $this->row('DATA_NO_PRODUCT', 'Data No Product', ExceptionTypeCategory::Process, ExceptionSeverity::Medium, 'Inbound serial/file with no physical scan', 'data_no_product'),
+            $this->row('PRODUCT_NO_DATA', 'Product No Data', ExceptionTypeCategory::Process, ExceptionSeverity::High, 'Physical product without matching inbound serial/file', 'product_no_data'),
+            $this->row('DAMAGED', 'Damaged', ExceptionTypeCategory::Process, ExceptionSeverity::Critical, 'OS&D damaged on this receipt', 'unavailable_for_distribution'),
+            $this->row('AGGREGATION_BREAK', 'Aggregation Break', ExceptionTypeCategory::Aggregation, ExceptionSeverity::High, 'Sealed parent has no inbound aggregation children', 'packaging_labeling'),
             $this->row('OVER_SHIPMENT', 'Over Shipment', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'Shipped quantity higher than available', 'product_no_data'),
 
             // Timing & Sequence

@@ -15,6 +15,9 @@ use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\ReceiveExceptionTypes;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
+use App\Support\Receiving\ReceivingIssueSessionLabel;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -27,6 +30,7 @@ final class FlagManualReceivingException
     public function __construct(
         private readonly ExceptionService $exceptions,
         private readonly QuarantineService $quarantine,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
     /**
@@ -57,7 +61,7 @@ final class FlagManualReceivingException
 
     /**
      * System path for open-tote / Scan In short-close: ensure an investigable
-     * PARTIAL_SHIPMENT_UNDECLARED shortage exists for unconfirmed expected EPCs.
+     * DATA_NO_PRODUCT case (undeclared-partial reason) for unconfirmed expected EPCs.
      * Allowed on open or completed sessions. Does not invent serials or confirm lines.
      * Idempotent per receiving session (attaches newly documented EPCs to an open case).
      *
@@ -117,7 +121,14 @@ final class FlagManualReceivingException
 
         $payload['epc_ids'] = $resolvedEpcIds;
 
-        return $this->createCase($session, 'shortage', $payload, $actor, 'short_close');
+        return $this->authorReceiveSessionException->dataNoProduct(
+            $session,
+            $resolvedEpcIds,
+            $actor,
+            is_string($payload['notes'] ?? null)
+                ? $payload['notes']
+                : 'Short-close left expected lines unconfirmed.',
+        );
     }
 
     /**
@@ -175,14 +186,16 @@ final class FlagManualReceivingException
                     ? 'Short-close shortage recorded ('.$type.').'
                     : 'Manual receiving issue reported ('.$type.').',
                 ExceptionActivityVisibility::Internal,
-                [
+                $this->issueMeta($session, [
                     'source' => $source,
                     'manual_exception_type' => $type,
-                    'receiving_session_id' => (int) $session->getKey(),
                     'notes' => $payload['notes'] ?? null,
                     'expected' => $payload['expected'] ?? null,
                     'actual' => $payload['actual'] ?? null,
-                ],
+                    'reason' => $type === 'shortage'
+                        ? ReceiveExceptionTypes::REASON_UNDECLARED_PARTIAL
+                        : null,
+                ]),
             );
 
             if ($quarantine && $epcIds !== []) {
@@ -195,7 +208,7 @@ final class FlagManualReceivingException
                     }),
                     $actor,
                     $session->document,
-                    ['receiving_session_id' => (int) $session->getKey()],
+                    $this->issueMeta($session),
                 );
             }
         });
@@ -205,26 +218,10 @@ final class FlagManualReceivingException
 
     private function findOpenShortageForSession(ReceivingSession $session): ?ExceptionCase
     {
-        $type = $this->exceptions->resolveType('PARTIAL_SHIPMENT_UNDECLARED');
-
-        return ExceptionCase::query()
-            ->where('exception_type_id', $type->getKey())
-            ->whereNotIn('status', [
-                ExceptionStatus::Resolved->value,
-                ExceptionStatus::Closed->value,
-                ExceptionStatus::Cancelled->value,
-            ])
-            ->whereHas('activities', function ($query) use ($session): void {
-                $query->where(function ($meta) use ($session): void {
-                    $meta->where('meta->receiving_session_id', (int) $session->getKey())
-                        ->orWhere('meta->receiving_session_id', (string) $session->getKey());
-                })->where(function ($meta): void {
-                    $meta->where('meta->manual_exception_type', 'shortage')
-                        ->orWhere('meta->source', 'short_close');
-                });
-            })
-            ->latest('id')
-            ->first();
+        return ReceiveSessionExceptionQuery::openCases(
+            $session,
+            ReceiveExceptionTypes::SHORT_CLOSE_REQUIRED,
+        )->first();
     }
 
     /**
@@ -249,17 +246,32 @@ final class FlagManualReceivingException
                 $actor,
                 'Short-close shortage updated with additional unconfirmed EPCs.',
                 ExceptionActivityVisibility::Internal,
-                [
+                $this->issueMeta($session, [
                     'source' => 'short_close',
                     'manual_exception_type' => 'shortage',
-                    'receiving_session_id' => (int) $session->getKey(),
                     'notes' => $notes,
                     'added_epc_ids' => $added,
-                ],
+                ]),
             );
         }
 
         return $case->fresh(['type', 'epcs', 'quarantineHolds']) ?? $case;
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function issueMeta(ReceivingSession $session, array $extra = []): array
+    {
+        $refs = ReceivingIssueSessionLabel::orderRefs($session);
+
+        return [
+            ...$extra,
+            'receiving_session_id' => (int) $session->getKey(),
+            'customer_po' => $refs['po'],
+            'asn_number' => $refs['asn'],
+        ];
     }
 
     private function assertSessionEligible(ReceivingSession $session, ?User $actor): void
@@ -318,7 +330,7 @@ final class FlagManualReceivingException
             );
 
         return [
-            'PARTIAL_SHIPMENT_UNDECLARED',
+            ReceiveExceptionTypes::SHORTAGE,
             'Shortage reported during receiving #'.$session->getKey(),
             $description,
             ExceptionSeverity::Medium,
@@ -357,7 +369,7 @@ final class FlagManualReceivingException
             );
 
         return [
-            'OVER_SHIPMENT',
+            ReceiveExceptionTypes::OVERAGE,
             'Overage reported during receiving #'.$session->getKey(),
             $description,
             ExceptionSeverity::High,
@@ -389,7 +401,7 @@ final class FlagManualReceivingException
             : 'Operator flagged damaged product on arrival after receive.';
 
         return [
-            'SUSPECT_PRODUCT',
+            ReceiveExceptionTypes::DAMAGED,
             'Damaged on arrival · receiving #'.$session->getKey(),
             $description,
             ExceptionSeverity::Critical,

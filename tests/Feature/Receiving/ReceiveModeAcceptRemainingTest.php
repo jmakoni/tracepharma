@@ -349,7 +349,7 @@ class ReceiveModeAcceptRemainingTest extends TestCase
             $this->assertGreaterThan(
                 0,
                 ExceptionCase::query()
-                    ->whereHas('type', fn ($q) => $q->where('code', 'PARTIAL_SHIPMENT_UNDECLARED'))
+                    ->whereHas('type', fn ($q) => $q->whereIn('code', ['DATA_NO_PRODUCT', 'SHORTAGE']))
                     ->count(),
             );
             $this->assertFalse(
@@ -421,10 +421,17 @@ class ReceiveModeAcceptRemainingTest extends TestCase
             );
 
             $shortage = ExceptionCase::query()
-                ->whereHas('type', fn ($q) => $q->where('code', 'PARTIAL_SHIPMENT_UNDECLARED'))
+                ->whereHas('type', fn ($q) => $q->whereIn('code', ['DATA_NO_PRODUCT', 'SHORTAGE']))
                 ->latest('id')
                 ->first();
             $this->assertNotNull($shortage);
+            $this->assertSame('DATA_NO_PRODUCT', $shortage->type?->code);
+            $this->assertTrue(
+                $shortage->activities()
+                    ->where('meta->reason', 'PARTIAL_SHIPMENT_UNDECLARED')
+                    ->exists(),
+                'Undeclared partial is a reason on DATA_NO_PRODUCT, not a dock type.',
+            );
             $this->assertTrue(
                 $shortage->epcs()->whereKey($secondParent->epc_id)->exists(),
                 'Shortage case must attach the unscanned parent EPC.',
@@ -535,7 +542,7 @@ class ReceiveModeAcceptRemainingTest extends TestCase
             $this->assertGreaterThan(
                 0,
                 ExceptionCase::query()
-                    ->whereHas('type', fn ($q) => $q->where('code', 'PARTIAL_SHIPMENT_UNDECLARED'))
+                    ->whereHas('type', fn ($q) => $q->whereIn('code', ['DATA_NO_PRODUCT', 'SHORTAGE']))
                     ->count(),
             );
         } finally {

@@ -41,6 +41,7 @@ use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\OutstandingReceiveTargets;
 use App\Support\Receiving\ReceiveLayout;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionCompleteCopy;
@@ -535,6 +536,14 @@ trait InteractsWithReceivingSessionHud
         return ReceivingSessionCompleteCopy::operatorScannedCount($record);
     }
 
+    /**
+     * @return array{shortage: int, no_data: int, quarantine: int}
+     */
+    public function receiveExceptionBadgeCounts(): array
+    {
+        return ReceiveSessionExceptionQuery::floorBadgeCounts($this->getRecord());
+    }
+
     public function sessionProgress(): ReceivingSessionProgress
     {
         return ReceivingSessionProgress::for(
@@ -559,7 +568,8 @@ trait InteractsWithReceivingSessionHud
      *     parents_confirmed: int,
      *     parents_expected: int,
      *     eaches_confirmed: int,
-     *     eaches_expected: int
+     *     eaches_expected: int,
+     *     child_type_label: string
      * }|null
      */
     public function expectedOrderHeader(): ?array

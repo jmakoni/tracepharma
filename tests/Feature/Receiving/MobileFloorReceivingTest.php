@@ -162,7 +162,9 @@ class MobileFloorReceivingTest extends TestCase
                 ->assertDontSee('Tap to Scan')
                 ->assertDontSee('Prefer floor layout')
                 ->assertDontSee('Break hierarchy after receive')
-                ->assertDontSee('Shortage')
+                ->assertSee('Shortage 0')
+                ->assertSee('No data 0')
+                ->assertSee('Quarantine 0')
                 ->assertDontSee('Overage')
                 ->assertDontSee('Damaged')
                 ->assertDontSee('Staged scans')
@@ -315,16 +317,16 @@ class MobileFloorReceivingTest extends TestCase
             $this->assertStringContainsString('floor-camera-overlay-counts', $overlay);
             $this->assertStringNotContainsString('acceptRemaining', $overlay);
             $this->assertMatchesRegularExpression(
-                '/tp-floor-receive__camera-title[\s\S]*Align barcode[\s\S]*tp-floor-receive__camera-stage[\s\S]*wire:ignore[\s\S]*tp-floor-qr-reader[\s\S]*tp-floor-camera-dock[\s\S]*floor-camera-overlay-counts[\s\S]*tp-floor-receive__camera-controls[\s\S]*floor-camera-scan-pace/',
+                '/tp-floor-receive__camera-title[\s\S]*Align barcode[\s\S]*tp-floor-receive__camera-stage[\s\S]*wire:ignore[\s\S]*tp-floor-qr-reader[\s\S]*tp-floor-camera-dock[\s\S]*floor-camera-overlay-counts[\s\S]*tp-floor-camera-chrome[\s\S]*aria-label="Torch"[\s\S]*aria-label="Scan settings"[\s\S]*Scan mode[\s\S]*Confidence[\s\S]*aria-label="Close camera"/',
                 $overlay,
             );
             $this->assertStringContainsString('tpFloorReceive(', $blade);
             $this->assertStringContainsString('vendor/html5-qrcode/html5-qrcode.min.js', $blade);
             $this->assertStringContainsString('data-tp-html5-qrcode="1"', $blade);
             $this->assertStringContainsString('tp-floor-receive.js', $blade);
-            $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+            $this->assertStringContainsString('wire:model="scan"', $blade);
             $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
-            $this->assertStringContainsString('wire:submit.prevent="confirmScanInput"', $blade);
+            $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
             $this->assertStringNotContainsString('staged-scan-panel', $blade);
             $this->assertStringContainsString('confirmed-scan-panel', $blade);
             $this->assertStringContainsString('Just scanned', File::get(resource_path(
@@ -339,7 +341,7 @@ class MobileFloorReceivingTest extends TestCase
             $this->assertStringNotContainsString('stageScan', $blade);
             $this->assertStringNotContainsString('confirmStagedScans', $blade);
             $this->assertStringNotContainsString('>Receive<', $blade);
-            $this->assertStringNotContainsString('wire:model="scan"', $blade);
+            $this->assertStringNotContainsString('wire:model.live.blur', $blade);
             $this->assertStringNotContainsString('[tabindex=\\"-1\\"]', $blade);
             $this->assertStringNotContainsString('Tap to Scan', $blade);
             $this->assertStringNotContainsString('Break hierarchy after receive', $blade);
@@ -678,7 +680,17 @@ class MobileFloorReceivingTest extends TestCase
 
     private function expectedParentProgressLabel(): string
     {
-        return match (ReceivingPolicy::forTenant(tenant())->preferredScanLevel()) {
+        $policy = ReceivingPolicy::forTenant(tenant());
+
+        if ($policy->operatorScansUnitsOnly()) {
+            return 'Units';
+        }
+
+        if ($policy->operatorScansSsccOnly()) {
+            return 'Pallets';
+        }
+
+        return match ($policy->preferredScanLevel()) {
             ReceivingScanLevel::Pallet => 'Pallets',
             ReceivingScanLevel::Case, ReceivingScanLevel::ToteOrCase => 'Cases',
         };
@@ -686,7 +698,13 @@ class MobileFloorReceivingTest extends TestCase
 
     private function expectedChildProgressLabel(): string
     {
-        return match (ReceivingPolicy::forTenant(tenant())->preferredScanLevel()) {
+        $policy = ReceivingPolicy::forTenant(tenant());
+
+        if ($policy->operatorScansSsccOnly()) {
+            return 'Cases';
+        }
+
+        return match ($policy->preferredScanLevel()) {
             ReceivingScanLevel::Pallet => 'Cases',
             ReceivingScanLevel::Case, ReceivingScanLevel::ToteOrCase => 'Units',
         };

@@ -22,6 +22,8 @@ use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\InboundExpectedLineClaims;
+use App\Support\Receiving\ReceiveExceptionTypes;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ResolveReceiveScanContext;
 use App\Support\TenantSettings;
 use DomainException;
@@ -86,10 +88,15 @@ final class CompleteReceivingSession
         try {
             $this->assertReceivingVrsComplete->handle($session);
             $this->assertDocumentNotBlockedByOpenException($session);
+            $this->assertSessionReceiveExceptionsAllowComplete($session);
             $this->assertScanFirstTiWhenRequired($session);
             $this->assertScanFirstTsWhenRequired($session);
             if (! $shortClose) {
                 $this->assertOpenToteMayComplete($session);
+            }
+            if ($shortClose && $session->isInboundAsn()) {
+                $this->ensureShortageForRemainingExpected($session, $actor);
+                $this->assertShortCloseHasShortageCase($session);
             }
         } catch (DomainException $e) {
             if (
@@ -163,10 +170,6 @@ final class CompleteReceivingSession
         // Session-only complete: refresh order rollups; do not force shipment complete.
         ExpectedInboundOrderHeader::refreshShipmentRollups($session);
         InboundExpectedLineClaims::releaseUnconfirmedForSession($session);
-
-        if ($shortClose && $session->isInboundAsn()) {
-            $this->ensureShortageForRemainingExpected($session, $actor);
-        }
 
         return $session;
     }
@@ -262,6 +265,50 @@ final class CompleteReceivingSession
         }
 
         SiteAccess::assertCanAccessSite($user, (int) $session->site_id);
+    }
+
+    private function assertSessionReceiveExceptionsAllowComplete(ReceivingSession $session): void
+    {
+        $blocking = ReceiveSessionExceptionQuery::openCases(
+            $session,
+            ReceiveExceptionTypes::HARD_BLOCK_COMPLETE,
+        )->first();
+
+        if ($blocking === null) {
+            return;
+        }
+
+        $type = $blocking->type?->code ?? 'exception';
+
+        throw new DomainException(
+            "Cannot complete receiving: open {$type} exception #{$blocking->getKey()} must be resolved first.",
+        );
+    }
+
+    private function assertShortCloseHasShortageCase(ReceivingSession $session): void
+    {
+        $hasRemainingExpected = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('status', 'expected')
+            ->whereNotNull('epc_id')
+            ->exists();
+
+        if (! $hasRemainingExpected) {
+            return;
+        }
+
+        $hasCase = ReceiveSessionExceptionQuery::openCases(
+            $session,
+            ReceiveExceptionTypes::SHORT_CLOSE_REQUIRED,
+        )->isNotEmpty();
+
+        if ($hasCase) {
+            return;
+        }
+
+        throw new DomainException(
+            'Cannot short-close: DATA_NO_PRODUCT or SHORTAGE exception is required for leftover expected lines.',
+        );
     }
 
     private function assertDocumentNotBlockedByOpenException(ReceivingSession $session): void

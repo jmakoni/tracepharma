@@ -455,7 +455,13 @@ class OpenToteReceivingTest extends TestCase
             $case = $this->openShortageCaseForSession((int) $session->getKey());
             $this->assertNotNull($case, 'Short-close must open an investigable shortage exception.');
             $this->caseIds[] = (int) $case->getKey();
-            $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', $case->type?->code);
+            $this->assertSame('DATA_NO_PRODUCT', $case->type?->code);
+            $this->assertTrue(
+                $case->activities()
+                    ->where('meta->reason', 'PARTIAL_SHIPMENT_UNDECLARED')
+                    ->exists(),
+                'Short-close DATA_NO_PRODUCT must carry undeclared-partial reason.',
+            );
             $this->assertTrue(
                 $case->epcs()->whereKey($childEpcId)->exists(),
                 'Shortage case must document the unconfirmed expected child EPC.',
@@ -502,7 +508,12 @@ class OpenToteReceivingTest extends TestCase
             $case = $this->openShortageCaseForSession((int) $session->getKey());
             $this->assertNotNull($case, 'Short-close complete must ensure a shortage exception when expected lines remain.');
             $this->caseIds[] = (int) $case->getKey();
-            $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', $case->type?->code);
+            $this->assertSame('DATA_NO_PRODUCT', $case->type?->code);
+            $this->assertTrue(
+                $case->activities()
+                    ->where('meta->reason', 'PARTIAL_SHIPMENT_UNDECLARED')
+                    ->exists(),
+            );
             $this->assertTrue($case->epcs()->whereKey((int) $otherParent->epc_id)->exists()
                 || $case->epcs()->whereKey((int) $otherChild->epc_id)->exists());
         } finally {
@@ -642,7 +653,7 @@ class OpenToteReceivingTest extends TestCase
                 ExceptionStatus::Closed->value,
                 ExceptionStatus::Cancelled->value,
             ])
-            ->whereHas('type', fn ($q) => $q->where('code', 'PARTIAL_SHIPMENT_UNDECLARED'))
+            ->whereHas('type', fn ($q) => $q->where('code', 'DATA_NO_PRODUCT'))
             ->whereHas('activities', function ($query) use ($sessionId): void {
                 $query->where(function ($meta) use ($sessionId): void {
                     $meta->where('meta->receiving_session_id', $sessionId)

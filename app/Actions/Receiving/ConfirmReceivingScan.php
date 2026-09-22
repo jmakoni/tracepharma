@@ -68,6 +68,7 @@ class ConfirmReceivingScan
         private readonly CompensateTransferReceiveLine $compensateTransferReceiveLine,
         private readonly RecordOperationalEpcisException $recordOperationalEpcisException,
         private readonly ResolveInboundAggregationChildEpcs $resolveInboundAggregationChildEpcs,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
     /**
@@ -177,6 +178,8 @@ class ConfirmReceivingScan
         $epc = $context['epc'];
 
         if ($epc === null) {
+            $this->authorProductNoData($session, [], 'Unknown barcode — no matching inbound serial/file.');
+
             return [
                 'ok' => false,
                 'message' => 'Unknown barcode — EPC must exist from prior EPCIS/commission.',
@@ -1287,6 +1290,8 @@ class ConfirmReceivingScan
         $mismatch = $resolved['ilmd_soft_mismatch'];
 
         if ($epc === null) {
+            $this->authorProductNoData($session, [], 'Barcode not recognized — no matching inbound serial/file.');
+
             return [
                 'ok' => false,
                 'message' => 'Barcode not recognized. Check the label and try again.',
@@ -1483,6 +1488,13 @@ class ConfirmReceivingScan
                     'ilmd_mismatch_json' => $mismatch,
                 ]);
 
+                $this->authorProductNoData(
+                    $session,
+                    [(int) $epc->getKey()],
+                    'Barcode not on this ASN — extra serial on a bound shipment.',
+                    alsoOverage: $session->inbound_shipment_id !== null,
+                );
+
                 return [
                     'ok' => false,
                     'message' => 'Barcode not on this ASN — logged as Unexpected.',
@@ -1503,6 +1515,13 @@ class ConfirmReceivingScan
             }
 
             if ($line->status === 'unexpected') {
+                $this->authorProductNoData(
+                    $session,
+                    [(int) $epc->getKey()],
+                    'Barcode not on this ASN — extra serial on a bound shipment.',
+                    alsoOverage: $session->inbound_shipment_id !== null,
+                );
+
                 return [
                     'ok' => false,
                     'message' => 'Barcode not on this ASN — logged as Unexpected.',
@@ -1831,6 +1850,13 @@ class ConfirmReceivingScan
                 ])->save();
             }
 
+            $this->authorProductNoData(
+                $session,
+                [$epcId],
+                'Barcode belongs to another ASN — extra serial on a bound shipment.',
+                alsoOverage: true,
+            );
+
             return [
                 'ok' => false,
                 'message' => 'Barcode belongs to another ASN — logged as Unexpected.',
@@ -2098,6 +2124,8 @@ class ConfirmReceivingScan
             return null;
         }
 
+        $this->authorReceiveSessionException->aggregationBreak($session, $epc);
+
         return [
             'ok' => false,
             'message' => 'No aggregation children found for this barcode — cannot auto-confirm sealed receive',
@@ -2105,6 +2133,24 @@ class ConfirmReceivingScan
             'epc' => $epc,
             'effect' => 'missing_aggregation',
         ];
+    }
+
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function authorProductNoData(
+        ReceivingSession $session,
+        array $epcIds,
+        string $notes,
+        bool $alsoOverage = false,
+    ): void {
+        $this->authorReceiveSessionException->productNoData(
+            $session,
+            $epcIds,
+            auth()->user() instanceof User ? auth()->user() : null,
+            $notes,
+            $alsoOverage,
+        );
     }
 
     private function scanFirstLineRole(ReceivingSession $session, Epc $epc): string

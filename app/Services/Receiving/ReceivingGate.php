@@ -37,6 +37,11 @@ final class ReceivingGate
             ->open()
             ->where('document_id', $document->getKey())
             ->whereDoesntHave('epcs')
+            ->whereDoesntHave('activities', function ($activities): void {
+                $activities->where(function ($meta): void {
+                    $meta->whereNotNull('meta->receiving_session_id');
+                });
+            })
             ->whereHas('type', function ($query) use ($blockingImpacts, $blockingCodes): void {
                 $query->where(function ($inner) use ($blockingImpacts, $blockingCodes): void {
                     $inner->whereIn('receive_impact', $blockingImpacts)

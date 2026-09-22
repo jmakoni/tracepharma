@@ -223,7 +223,7 @@ final class ExceptionCorrectionProfile
 
         $code = strtoupper(trim((string) $case->type?->code));
 
-        if ($code !== 'PARTIAL_SHIPMENT_UNDECLARED') {
+        if (! in_array($code, ['PARTIAL_SHIPMENT_UNDECLARED', 'SHORTAGE', 'DATA_NO_PRODUCT'], true)) {
             return true;
         }
 
@@ -466,6 +466,7 @@ final class ExceptionCorrectionProfile
 
         // Aggregation & Hierarchy
         'BROKEN_AGGREGATION' => self::FAMILY_AGGREGATION,
+        'AGGREGATION_BREAK' => self::FAMILY_AGGREGATION,
         'MISSING_PARENT' => self::FAMILY_AGGREGATION,
         'MISSING_CHILDREN' => self::FAMILY_AGGREGATION,
         'AGGREGATION_QUANTITY_MISMATCH' => self::FAMILY_AGGREGATION,
@@ -481,7 +482,12 @@ final class ExceptionCorrectionProfile
         'MISSING_EXPIRY' => self::FAMILY_DOCUMENT,
         'EXPIRED_PRODUCT_SHIPPED' => self::FAMILY_QUARANTINE,
         'MIXED_EXPIRY_SAME_LOT' => self::FAMILY_DOCUMENT,
-        'PARTIAL_SHIPMENT_UNDECLARED' => self::FAMILY_DOCUMENT, // hook-only today
+        'PARTIAL_SHIPMENT_UNDECLARED' => self::FAMILY_DOCUMENT, // reason only on receive desk
+        'SHORTAGE' => self::FAMILY_DOCUMENT,
+        'OVERAGE' => self::FAMILY_DOCUMENT,
+        'DATA_NO_PRODUCT' => self::FAMILY_DOCUMENT,
+        'PRODUCT_NO_DATA' => self::FAMILY_DOCUMENT,
+        'DAMAGED' => self::FAMILY_QUARANTINE,
         'OVER_SHIPMENT' => self::FAMILY_DOCUMENT, // hook-only today
 
         // Timing & Sequence
@@ -666,6 +672,38 @@ final class ExceptionCorrectionProfile
             'rootCause' => 'partner_data_error',
             'resolutionAction' => 'request_partner_correction',
             'waive' => true,
+        ],
+        'SHORTAGE' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
+        ],
+        'DATA_NO_PRODUCT' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
+        ],
+        'OVERAGE' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'quarantine' => true,
+            'waive' => false,
+        ],
+        'PRODUCT_NO_DATA' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'DAMAGED' => [
+            'rootCause' => 'unknown',
+            'resolutionAction' => 'quarantine_product',
+            'quarantine' => true,
+            'waive' => false,
+        ],
+        'AGGREGATION_BREAK' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
         ],
         'OVER_SHIPMENT' => [
             'rootCause' => 'partner_data_error',

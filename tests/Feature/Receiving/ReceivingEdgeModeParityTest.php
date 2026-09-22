@@ -617,6 +617,13 @@ class ReceivingEdgeModeParityTest extends TestCase
             $this->assertFalse($result['ok']);
             $this->assertSame('missing_aggregation', $result['effect']);
             $this->assertStringContainsString('aggregation', strtolower((string) $result['message']));
+            $this->assertTrue(
+                \App\Models\Exceptions\ExceptionCase::query()
+                    ->whereHas('type', fn ($q) => $q->where('code', 'AGGREGATION_BREAK'))
+                    ->whereHas('epcs', fn ($q) => $q->whereKey($orphanSscc->getKey()))
+                    ->exists(),
+                'Sealed empty aggregation must author AGGREGATION_BREAK.',
+            );
             $this->assertSame(
                 0,
                 ReceivingScanLine::query()

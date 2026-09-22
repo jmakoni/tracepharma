@@ -33,6 +33,13 @@ class ExceptionReceiveImpactMapTest extends TestCase
     public function maps_pharmacy_inbound_codes_to_expected_tiers(): void
     {
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('SUSPECT_PRODUCT'));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('PRODUCT_NO_DATA'));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('AGGREGATION_BREAK'));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('DAMAGED'));
+        $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('SHORTAGE'));
+        $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('OVERAGE'));
+        $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('DATA_NO_PRODUCT'));
+        $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode('PARTIAL_SHIPMENT_UNDECLARED'));
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('MISSING_DSCSA_STATEMENT'));
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('UNKNOWN_GTIN'));
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('SERIAL_SHIPPED_NOT_COMMISSIONED'));
