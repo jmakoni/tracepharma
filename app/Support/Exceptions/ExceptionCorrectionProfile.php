@@ -487,6 +487,11 @@ final class ExceptionCorrectionProfile
         'OVERAGE' => self::FAMILY_DOCUMENT,
         'DATA_NO_PRODUCT' => self::FAMILY_DOCUMENT,
         'PRODUCT_NO_DATA' => self::FAMILY_DOCUMENT,
+        'PI_MISMATCH' => self::FAMILY_DOCUMENT,
+        'WRONG_DESTINATION' => self::FAMILY_DOCUMENT,
+        'LATE_FAILED_EPCIS' => self::FAMILY_DOCUMENT,
+        'WRONG_ITEM' => self::FAMILY_DOCUMENT,
+        'REFUSED' => self::FAMILY_DOCUMENT,
         'DAMAGED' => self::FAMILY_QUARANTINE,
         'OVER_SHIPMENT' => self::FAMILY_DOCUMENT, // hook-only today
 
@@ -693,6 +698,31 @@ final class ExceptionCorrectionProfile
             'rootCause' => 'partner_data_error',
             'resolutionAction' => 'request_partner_correction',
             'waive' => false,
+        ],
+        'PI_MISMATCH' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'WRONG_DESTINATION' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'LATE_FAILED_EPCIS' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'WRONG_ITEM' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'REFUSED' => [
+            'rootCause' => 'unknown',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
         ],
         'DAMAGED' => [
             'rootCause' => 'unknown',

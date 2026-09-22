@@ -23,11 +23,24 @@ class ReceiveExceptionTypesTest extends TestCase
         $this->assertArrayHasKey(ReceiveExceptionTypes::PRODUCT_NO_DATA, $map);
         $this->assertArrayHasKey(ReceiveExceptionTypes::DATA_NO_PRODUCT, $map);
         $this->assertArrayHasKey(ReceiveExceptionTypes::AGGREGATION_BREAK, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::PI_MISMATCH, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::DUPLICATE_SERIAL, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::WRONG_DESTINATION, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::LATE_FAILED_EPCIS, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::WRONG_ITEM, $map);
+        $this->assertArrayHasKey(ReceiveExceptionTypes::REFUSED, $map);
         $this->assertArrayHasKey(ReceiveExceptionTypes::REASON_UNDECLARED_PARTIAL, $map);
 
         $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', ReceiveExceptionTypes::REASON_UNDECLARED_PARTIAL);
         $this->assertNotContains(ReceiveExceptionTypes::REASON_UNDECLARED_PARTIAL, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
         $this->assertNotContains(ReceiveExceptionTypes::REASON_UNDECLARED_PARTIAL, ReceiveExceptionTypes::SHORT_CLOSE_REQUIRED);
+        $this->assertContains(ReceiveExceptionTypes::PI_MISMATCH, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertContains(ReceiveExceptionTypes::DUPLICATE_SERIAL, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertContains(ReceiveExceptionTypes::WRONG_DESTINATION, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertContains(ReceiveExceptionTypes::OVERAGE, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertContains(ReceiveExceptionTypes::LATE_FAILED_EPCIS, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertContains(ReceiveExceptionTypes::WRONG_ITEM, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
+        $this->assertNotContains(ReceiveExceptionTypes::REFUSED, ReceiveExceptionTypes::HARD_BLOCK_COMPLETE);
     }
 
     #[Test]
@@ -36,6 +49,12 @@ class ReceiveExceptionTypesTest extends TestCase
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::PRODUCT_NO_DATA));
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::AGGREGATION_BREAK));
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::DAMAGED));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::PI_MISMATCH));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::DUPLICATE_SERIAL));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::WRONG_DESTINATION));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::LATE_FAILED_EPCIS));
+        $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::WRONG_ITEM));
+        $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::REFUSED));
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::DATA_NO_PRODUCT));
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::SHORTAGE));
         $this->assertSame(ExceptionReceiveImpact::Warning, ExceptionReceiveImpactMap::forCode(ReceiveExceptionTypes::OVERAGE));

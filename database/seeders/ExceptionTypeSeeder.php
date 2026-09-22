@@ -141,6 +141,11 @@ class ExceptionTypeSeeder extends Seeder
             $this->row('PRODUCT_NO_DATA', 'Product No Data', ExceptionTypeCategory::Process, ExceptionSeverity::High, 'Physical product without matching inbound serial/file', 'product_no_data'),
             $this->row('DAMAGED', 'Damaged', ExceptionTypeCategory::Process, ExceptionSeverity::Critical, 'OS&D damaged on this receipt', 'unavailable_for_distribution'),
             $this->row('AGGREGATION_BREAK', 'Aggregation Break', ExceptionTypeCategory::Aggregation, ExceptionSeverity::High, 'Sealed parent has no inbound aggregation children', 'packaging_labeling'),
+            $this->row('PI_MISMATCH', 'PI Mismatch', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'Scanned 2D GTIN/serial/lot/expiry does not match inbound EPCIS PI', 'data_issues'),
+            $this->row('WRONG_DESTINATION', 'Wrong Destination', ExceptionTypeCategory::Process, ExceptionSeverity::High, 'Inbound ship-to SGLN does not match this receive site', 'data_issues'),
+            $this->row('LATE_FAILED_EPCIS', 'Late / Failed EPCIS', ExceptionTypeCategory::Transmission, ExceptionSeverity::High, 'Missing, late, or schema-rejected inbound EPCIS document', 'data_issues'),
+            $this->row('WRONG_ITEM', 'Wrong Item', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'Scanned GTIN/lot does not match the ASN/order line', 'data_issues'),
+            $this->row('REFUSED', 'Refused', ExceptionTypeCategory::Process, ExceptionSeverity::Medium, 'Receive cancelled after product was presented', 'data_issues'),
             $this->row('OVER_SHIPMENT', 'Over Shipment', ExceptionTypeCategory::Quantity, ExceptionSeverity::High, 'Shipped quantity higher than available', 'product_no_data'),
 
             // Timing & Sequence

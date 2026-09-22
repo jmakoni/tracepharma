@@ -28,10 +28,14 @@ use App\Support\Floor\EpcExclusiveSessionGate;
 use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Floor\FloorSessionType;
 use App\Support\Gs1\ElementString;
+use App\Support\Receiving\CompareInboundAsnLineProduct;
+use App\Support\Receiving\CompareInboundDocumentPi;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Receiving\FindOpenAsnSessionExpectingEpc;
 use App\Support\Receiving\FindOpenTransferReceiveSessionExpectingEpc;
 use App\Support\Receiving\InboundExpectedLineClaims;
+use App\Support\Receiving\ReceiveDuplicateSerial;
+use App\Support\Receiving\ReceiveWrongDestination;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPackShape;
 use App\Support\Receiving\ReceivingPolicy;
@@ -69,6 +73,10 @@ class ConfirmReceivingScan
         private readonly RecordOperationalEpcisException $recordOperationalEpcisException,
         private readonly ResolveInboundAggregationChildEpcs $resolveInboundAggregationChildEpcs,
         private readonly AuthorReceiveSessionException $authorReceiveSessionException,
+        private readonly CompareInboundDocumentPi $compareInboundDocumentPi,
+        private readonly CompareInboundAsnLineProduct $compareInboundAsnLineProduct,
+        private readonly ReceiveWrongDestination $receiveWrongDestination,
+        private readonly ReceiveDuplicateSerial $receiveDuplicateSerial,
     ) {}
 
     /**
@@ -234,15 +242,55 @@ class ConfirmReceivingScan
             ->where('status', 'confirmed')
             ->exists();
 
+        $mismatch = $context['ilmd_soft_mismatch'];
+        $actor ??= $this->resolveActor($userId);
+        $identity = is_array($context['identity'] ?? null) ? $context['identity'] : [];
+        $preferredDocumentId = $context['matched_inbound_document_id'] !== null
+            ? (int) $context['matched_inbound_document_id']
+            : null;
+
         if (! $alreadyConfirmedOnSession) {
+            $p1Block = $this->receiveScanExceptionRejection(
+                $session,
+                $epc,
+                $scan,
+                $identity,
+                $preferredDocumentId,
+            );
+            if ($p1Block !== null) {
+                return [
+                    ...$p1Block,
+                    'has_ti' => $hasTi,
+                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                    'ti_warning' => $tiWarning,
+                    'reconciled_asn_session_id' => null,
+                ];
+            }
+
+            $duplicateReason = $this->receiveDuplicateSerial->reason($session, $epc);
+            if ($duplicateReason !== null) {
+                $this->authorDuplicateSerial($session, $epc, $duplicateReason, $scan, $identity);
+
+                return [
+                    'ok' => false,
+                    'message' => 'This serial was already received, shipped, or sold.',
+                    'line' => null,
+                    'epc' => $epc,
+                    'effect' => $duplicateReason,
+                    'has_ti' => $hasTi,
+                    'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                    'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                    'ti_warning' => $tiWarning,
+                    'reconciled_asn_session_id' => null,
+                ];
+            }
+
             $custodyBlock = $this->scanFirstReceiveCustodyBlock($session, $epc, $context, $hasTi, $tiWarning);
             if ($custodyBlock !== null) {
                 return $custodyBlock;
             }
         }
-
-        $mismatch = $context['ilmd_soft_mismatch'];
-        $actor ??= $this->resolveActor($userId);
 
         try {
             $result = DB::transaction(function () use (
@@ -349,7 +397,27 @@ class ConfirmReceivingScan
                     'reconciled_asn_session_id' => null,
                 ]);
                 if ($exclusiveBlock !== null) {
+                    $this->authorDuplicateSerial($session, $epc, $exclusiveBlock['effect'] ?? 'double_receive', $scan);
+
                     return $exclusiveBlock;
+                }
+
+                $duplicateReason = $this->receiveDuplicateSerial->reason($session, $epc);
+                if ($duplicateReason !== null) {
+                    $this->authorDuplicateSerial($session, $epc, $duplicateReason, $scan);
+
+                    return [
+                        'ok' => false,
+                        'message' => 'This serial was already received, shipped, or sold.',
+                        'line' => null,
+                        'epc' => $epc,
+                        'effect' => $duplicateReason,
+                        'has_ti' => $hasTi,
+                        'matched_asn_document_id' => $context['matched_inbound_document_id'],
+                        'matched_transfer_session_id' => $context['in_transit_transferring_session_id'],
+                        'ti_warning' => $tiWarning,
+                        'reconciled_asn_session_id' => null,
+                    ];
                 }
 
                 $lineRole = $this->scanFirstLineRole($session, $epc);
@@ -949,6 +1017,7 @@ class ConfirmReceivingScan
         $resolved = $this->resolveEpcFromScan->handle($scan);
         $epc = $resolved['epc'];
         $mismatch = $resolved['ilmd_soft_mismatch'];
+        $identity = is_array($resolved['identity'] ?? null) ? $resolved['identity'] : [];
 
         if ($epc === null) {
             return [
@@ -959,6 +1028,21 @@ class ConfirmReceivingScan
                 'effect' => 'not_found',
                 'session_completed' => false,
             ];
+        }
+
+        $alreadyConfirmedOnSession = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('epc_id', $epc->getKey())
+            ->where('status', 'confirmed')
+            ->exists();
+
+        if (! $alreadyConfirmedOnSession) {
+            $p1Block = $this->receiveScanExceptionRejection($session, $epc, $scan, $identity);
+            if ($p1Block !== null) {
+                $p1Block['session_completed'] = false;
+
+                return $p1Block;
+            }
         }
 
         // Transfer receive confirms the same SSCC/SGTIN units that shipped — not Receive SOP scan level.
@@ -997,6 +1081,8 @@ class ConfirmReceivingScan
                     $allowScanFirstBackfill = $other !== null && $other->isScanFirst();
                 }
                 if (! $allowScanFirstBackfill) {
+                    $this->authorDuplicateSerial($session, $epc, $block->effect, $scan);
+
                     return [
                         ...$block->toScanResult(),
                         'line' => null,
@@ -1288,6 +1374,7 @@ class ConfirmReceivingScan
         $resolved = $this->resolveEpcFromScan->handle($scan);
         $epc = $resolved['epc'];
         $mismatch = $resolved['ilmd_soft_mismatch'];
+        $identity = is_array($resolved['identity'] ?? null) ? $resolved['identity'] : [];
 
         if ($epc === null) {
             $this->authorProductNoData($session, [], 'Barcode not recognized — no matching inbound serial/file.');
@@ -1306,6 +1393,19 @@ class ConfirmReceivingScan
             return $scanLevelRejection;
         }
 
+        $alreadyConfirmedOnSession = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->where('epc_id', $epc->getKey())
+            ->where('status', 'confirmed')
+            ->exists();
+
+        if (! $alreadyConfirmedOnSession) {
+            $p1Block = $this->receiveScanExceptionRejection($session, $epc, $scan, $identity);
+            if ($p1Block !== null) {
+                return $p1Block;
+            }
+        }
+
         if (
             ReceivingPolicy::forTenant(tenant())->operatorScansCaseOnly()
             && $epc->epc_type === 'sscc'
@@ -1318,7 +1418,7 @@ class ConfirmReceivingScan
             }
         }
 
-        $result = DB::transaction(function () use ($session, $scan, $userId, $autoConfirmChildren, $epc, $mismatch): array {
+        $result = DB::transaction(function () use ($session, $scan, $userId, $autoConfirmChildren, $epc, $mismatch, $identity): array {
             $session = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
             if (in_array($session->status, ['completed', 'cancelled'], true)) {
@@ -1379,7 +1479,31 @@ class ConfirmReceivingScan
 
             $exclusiveBlock = $this->exclusiveBlockForReceiving($epc, $session);
             if ($exclusiveBlock !== null) {
+                $this->authorDuplicateSerial(
+                    $session,
+                    $epc,
+                    (string) ($exclusiveBlock['effect'] ?? 'double_receive'),
+                    $scan,
+                    $identity,
+                );
+
                 return $exclusiveBlock;
+            }
+
+            $duplicateReason = $this->receiveDuplicateSerial->reason($session, $epc);
+            if ($duplicateReason !== null) {
+                $this->authorDuplicateSerial($session, $epc, $duplicateReason, $scan, $identity);
+
+                return [
+                    'ok' => false,
+                    'message' => 'This serial was already received, shipped, or sold.',
+                    'line' => ReceivingScanLine::query()
+                        ->where('receiving_session_id', $session->getKey())
+                        ->where('epc_id', $epc->getKey())
+                        ->first(),
+                    'epc' => $epc,
+                    'effect' => $duplicateReason,
+                ];
             }
 
             $line = ReceivingScanLine::query()
@@ -1405,6 +1529,8 @@ class ConfirmReceivingScan
                         $expectedLine,
                         (int) $session->getKey(),
                     )) {
+                        $this->authorDuplicateSerial($session, $epc, 'claimed_other_session', $scan, $identity);
+
                         return [
                             'ok' => false,
                             'message' => 'Already in another receive session.',
@@ -1488,11 +1614,12 @@ class ConfirmReceivingScan
                     'ilmd_mismatch_json' => $mismatch,
                 ]);
 
-                $this->authorProductNoData(
+                $this->authorBoundExtraSerial(
                     $session,
                     [(int) $epc->getKey()],
                     'Barcode not on this ASN — extra serial on a bound shipment.',
-                    alsoOverage: $session->inbound_shipment_id !== null,
+                    $scan,
+                    $identity,
                 );
 
                 return [
@@ -1515,11 +1642,12 @@ class ConfirmReceivingScan
             }
 
             if ($line->status === 'unexpected') {
-                $this->authorProductNoData(
+                $this->authorBoundExtraSerial(
                     $session,
                     [(int) $epc->getKey()],
                     'Barcode not on this ASN — extra serial on a bound shipment.',
-                    alsoOverage: $session->inbound_shipment_id !== null,
+                    $scan,
+                    $identity,
                 );
 
                 return [
@@ -1773,6 +1901,15 @@ class ConfirmReceivingScan
         if ($onThisShipment !== null && $onThisShipment->status === 'confirmed') {
             $inCustody = app(EpcCustodyGate::class)->epcIdsInCustody([$epcId]);
             if ($inCustody !== []) {
+                $onThisSession = ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('epc_id', $epcId)
+                    ->where('status', 'confirmed')
+                    ->exists();
+                if (! $onThisSession) {
+                    $this->authorDuplicateSerial($session, $epc, 'already_received', $scan);
+                }
+
                 return [
                     'ok' => true,
                     'message' => 'Already received.',
@@ -1789,6 +1926,8 @@ class ConfirmReceivingScan
         if ($onThisShipment !== null
             && InboundExpectedLineClaims::isClaimedByOtherLiveSession($onThisShipment, (int) $session->getKey())
         ) {
+            $this->authorDuplicateSerial($session, $epc, 'claimed_other_session', $scan);
+
             return [
                 'ok' => false,
                 'message' => 'Already in another receive session.',
@@ -1850,11 +1989,11 @@ class ConfirmReceivingScan
                 ])->save();
             }
 
-            $this->authorProductNoData(
+            $this->authorBoundExtraSerial(
                 $session,
                 [$epcId],
                 'Barcode belongs to another ASN — extra serial on a bound shipment.',
-                alsoOverage: true,
+                $scan,
             );
 
             return [
@@ -2151,6 +2290,140 @@ class ConfirmReceivingScan
             $notes,
             $alsoOverage,
         );
+    }
+
+    /**
+     * Bound extra serial: OVERAGE when a usable inbound file/shipment exists.
+     *
+     * @param  list<int>  $epcIds
+     * @param  array<string, mixed>  $identity
+     */
+    private function authorBoundExtraSerial(
+        ReceivingSession $session,
+        array $epcIds,
+        string $notes,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): void {
+        $actor = auth()->user() instanceof User ? auth()->user() : null;
+        $hasInboundFile = $session->inbound_shipment_id !== null || $session->epcis_document_id !== null;
+
+        if ($hasInboundFile) {
+            $this->authorReceiveSessionException->overage(
+                $session,
+                $epcIds,
+                $actor,
+                $notes,
+                $scanRaw,
+                $identity,
+            );
+
+            return;
+        }
+
+        $this->authorReceiveSessionException->productNoData($session, $epcIds, $actor, $notes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $identity
+     */
+    private function authorDuplicateSerial(
+        ReceivingSession $session,
+        Epc $epc,
+        string $reason,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): void {
+        $this->authorReceiveSessionException->duplicateSerial(
+            $session,
+            $epc,
+            $reason,
+            auth()->user() instanceof User ? auth()->user() : null,
+            $scanRaw,
+            $identity,
+        );
+    }
+
+    /**
+     * Dest / PI gates before confirm. Duplicate uses exclusive + ReceiveDuplicateSerial.
+     *
+     * @param  array<string, mixed>  $identity
+     * @return array{ok: false, message: string, line: null, epc: Epc, effect: string}|null
+     */
+    private function receiveScanExceptionRejection(
+        ReceivingSession $session,
+        Epc $epc,
+        string $scan,
+        array $identity,
+        ?int $preferredDocumentId = null,
+    ): ?array {
+        $dest = $this->receiveWrongDestination->mismatch($session, $preferredDocumentId);
+        if ($dest !== null) {
+            $this->authorReceiveSessionException->wrongDestination(
+                $session,
+                $epc,
+                $dest,
+                auth()->user() instanceof User ? auth()->user() : null,
+                $scan,
+                $identity,
+            );
+
+            return [
+                'ok' => false,
+                'message' => 'Inbound ship-to does not match this receive site.',
+                'line' => null,
+                'epc' => $epc,
+                'effect' => 'wrong_destination',
+            ];
+        }
+
+        $pi = $this->compareInboundDocumentPi->mismatch($session, $epc, $identity, $preferredDocumentId);
+        $item = $this->compareInboundAsnLineProduct->mismatch($session, $epc, $identity);
+        $actor = auth()->user() instanceof User ? auth()->user() : null;
+
+        if ($pi !== null) {
+            $this->authorReceiveSessionException->piMismatch(
+                $session,
+                $epc,
+                $pi,
+                $actor,
+                $scan,
+                $identity,
+            );
+        }
+
+        if ($item !== null) {
+            $this->authorReceiveSessionException->wrongItem(
+                $session,
+                $epc,
+                $item,
+                $actor,
+                $scan,
+                $identity,
+            );
+        }
+
+        if ($pi !== null) {
+            return [
+                'ok' => false,
+                'message' => 'Scanned product identifier does not match inbound EPCIS.',
+                'line' => null,
+                'epc' => $epc,
+                'effect' => 'pi_mismatch',
+            ];
+        }
+
+        if ($item !== null) {
+            return [
+                'ok' => false,
+                'message' => 'Scanned GTIN/lot does not match this ASN line.',
+                'line' => null,
+                'epc' => $epc,
+                'effect' => 'wrong_item',
+            ];
+        }
+
+        return null;
     }
 
     private function scanFirstLineRole(ReceivingSession $session, Epc $epc): string

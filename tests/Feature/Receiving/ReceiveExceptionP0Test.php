@@ -8,6 +8,7 @@ use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
+use App\Enums\ExceptionStatus;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\ReceivingSessions\Pages\MobileViewReceivingSession;
@@ -39,6 +40,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
@@ -154,7 +156,7 @@ class ReceiveExceptionP0Test extends TestCase
     }
 
     #[Test]
-    public function extra_serial_on_bound_shipment_authors_product_no_data_and_overage(): void
+    public function extra_serial_on_bound_shipment_authors_overage_not_product_no_data(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
@@ -176,13 +178,10 @@ class ReceiveExceptionP0Test extends TestCase
             $this->assertFalse($result['ok']);
             $this->assertSame('unexpected', $result['effect']);
 
-            $productNoData = $this->latestSessionCase($session, ReceiveExceptionTypes::PRODUCT_NO_DATA);
+            $this->assertNull($this->latestSessionCase($session, ReceiveExceptionTypes::PRODUCT_NO_DATA));
             $overage = $this->latestSessionCase($session, ReceiveExceptionTypes::OVERAGE);
-            $this->assertNotNull($productNoData);
             $this->assertNotNull($overage);
-            $this->trackCase($productNoData);
             $this->trackCase($overage);
-            $this->assertTrue($productNoData->epcs()->whereKey($extra->getKey())->exists());
             $this->assertTrue($overage->epcs()->whereKey($extra->getKey())->exists());
             $this->assertTrue(
                 QuarantineHold::query()
@@ -264,14 +263,14 @@ class ReceiveExceptionP0Test extends TestCase
             $this->trackCase($productNoData);
             $this->assertCompleteBlocked($session, ReceiveExceptionTypes::PRODUCT_NO_DATA);
 
-            $productNoData->forceFill(['status' => \App\Enums\ExceptionStatus::Closed])->save();
+            $productNoData->forceFill(['status' => ExceptionStatus::Closed])->save();
 
             $orphan = $this->createSsccEpc();
             $agg = $author->aggregationBreak($session->fresh(), $orphan);
             $this->trackCase($agg);
             $this->assertCompleteBlocked($session, ReceiveExceptionTypes::AGGREGATION_BREAK);
 
-            $agg->forceFill(['status' => \App\Enums\ExceptionStatus::Closed])->save();
+            $agg->forceFill(['status' => ExceptionStatus::Closed])->save();
 
             $damagedEpc = Epc::query()->where('epc_uri', self::SSCC_URI)->firstOrFail();
             $damaged = $author->handle(
@@ -514,7 +513,7 @@ class ReceiveExceptionP0Test extends TestCase
             'email' => 'p0-recv-'.uniqid('', true).'@example.test',
         ]);
         $user->assignRole(TenantRole::Owner->value);
-        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
         return $user;

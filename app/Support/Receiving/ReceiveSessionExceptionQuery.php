@@ -36,12 +36,18 @@ final class ReceiveSessionExceptionQuery
     }
 
     /**
-     * @return array{shortage: int, no_data: int, quarantine: int}
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
      */
     public static function floorBadgeCounts(ReceivingSession $session): array
     {
         $shortage = self::openCases($session, ReceiveExceptionTypes::SHORT_CLOSE_REQUIRED)->count();
         $noData = self::openCases($session, [ReceiveExceptionTypes::PRODUCT_NO_DATA])->count();
+        $mismatch = self::openCases($session, [ReceiveExceptionTypes::PI_MISMATCH])->count();
+        $overage = self::openCases($session, [ReceiveExceptionTypes::OVERAGE])->count();
+        $wrongSite = self::openCases($session, [ReceiveExceptionTypes::WRONG_DESTINATION])->count();
+        $documentHold = self::openCases($session, [ReceiveExceptionTypes::LATE_FAILED_EPCIS])->count();
+        $wrongItem = self::openCases($session, [ReceiveExceptionTypes::WRONG_ITEM])->count();
+        $damaged = self::openCases($session, [ReceiveExceptionTypes::DAMAGED])->count();
 
         $quarantine = QuarantineHold::query()
             ->open()
@@ -55,6 +61,12 @@ final class ReceiveSessionExceptionQuery
             'shortage' => $shortage,
             'no_data' => $noData,
             'quarantine' => $quarantine,
+            'mismatch' => $mismatch,
+            'overage' => $overage,
+            'wrong_site' => $wrongSite,
+            'document_hold' => $documentHold,
+            'wrong_item' => $wrongItem,
+            'damaged' => $damaged,
         ];
     }
 }

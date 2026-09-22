@@ -9,6 +9,7 @@ use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
 use App\Models\Epcis\Epc;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\User;
@@ -174,6 +175,251 @@ final class AuthorReceiveSessionException
             [
                 'source' => 'receive_scan',
                 'notes' => 'Empty ResolveInboundAggregationChildEpcs',
+                ...$this->hdaFromEpc($parent),
+            ],
+            $actor,
+        );
+    }
+
+    /**
+     * Bound ASN/shipment extra serial (usable inbound file exists).
+     *
+     * @param  list<int>  $epcIds
+     * @param  array<string, mixed>  $identity
+     */
+    public function overage(
+        ReceivingSession $session,
+        array $epcIds,
+        ?User $actor = null,
+        string $notes = 'Serial is not on the bound inbound ASN/shipment.',
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): ExceptionCase {
+        $epc = $this->firstEpc($epcIds);
+
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::OVERAGE,
+            'Overage · receiving #'.$session->getKey(),
+            $notes,
+            $epcIds,
+            [
+                'source' => 'receive_scan',
+                'notes' => $notes,
+                ...$this->hdaFromEpc($epc, $scanRaw, $identity),
+            ],
+            $actor,
+            quarantine: $epcIds !== [],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $mismatch
+     * @param  array<string, mixed>  $identity
+     */
+    public function piMismatch(
+        ReceivingSession $session,
+        Epc $epc,
+        array $mismatch,
+        ?User $actor = null,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::PI_MISMATCH,
+            'PI mismatch · receiving #'.$session->getKey(),
+            'Scanned 2D GTIN/serial/lot/expiry does not match inbound EPCIS PI.',
+            [(int) $epc->getKey()],
+            [
+                'source' => 'receive_scan',
+                'notes' => 'Inbound document PI mismatch',
+                'mismatch' => $mismatch,
+                ...$this->hdaFromEpc($epc, $scanRaw, $identity),
+            ],
+            $actor,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $identity
+     */
+    public function duplicateSerial(
+        ReceivingSession $session,
+        Epc $epc,
+        string $reason,
+        ?User $actor = null,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::DUPLICATE_SERIAL,
+            'Duplicate serial · receiving #'.$session->getKey(),
+            'Serial already confirmed on receive, or already shipped/sold.',
+            [(int) $epc->getKey()],
+            [
+                'source' => 'receive_scan',
+                'notes' => $reason,
+                'reason' => $reason,
+                ...$this->hdaFromEpc($epc, $scanRaw, $identity),
+            ],
+            $actor,
+        );
+    }
+
+    /**
+     * @param  array{file: string, site: string}  $mismatch
+     * @param  array<string, mixed>  $identity
+     */
+    public function wrongDestination(
+        ReceivingSession $session,
+        Epc $epc,
+        array $mismatch,
+        ?User $actor = null,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::WRONG_DESTINATION,
+            'Wrong destination · receiving #'.$session->getKey(),
+            'Inbound ship-to SGLN does not match this receive site.',
+            [(int) $epc->getKey()],
+            [
+                'source' => 'receive_scan',
+                'notes' => 'Ship-to '.$mismatch['file'].' ≠ site '.$mismatch['site'],
+                'file_gln' => $mismatch['file'],
+                'site_gln' => $mismatch['site'],
+                ...$this->hdaFromEpc($epc, $scanRaw, $identity),
+            ],
+            $actor,
+        );
+    }
+
+    /**
+     * Missing, late, or schema-rejected inbound file. Session-level hold.
+     *
+     * @param  list<int>  $epcIds
+     */
+    public function lateFailedEpcis(
+        ReceivingSession $session,
+        string $reason = 'missing_or_failed_inbound_epcis',
+        ?User $actor = null,
+        array $epcIds = [],
+        bool $quarantine = false,
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::LATE_FAILED_EPCIS,
+            'Late / failed EPCIS · receiving #'.$session->getKey(),
+            'Inbound EPCIS is missing, late, or schema-rejected.',
+            $epcIds,
+            [
+                'source' => 'receive_document',
+                'notes' => $reason,
+                'reason' => $reason,
+            ],
+            $actor,
+            quarantine: $quarantine && $epcIds !== [],
+        );
+    }
+
+    /**
+     * @param  array<string, array{scan: string, line: string}>  $mismatch
+     * @param  array<string, mixed>  $identity
+     */
+    public function wrongItem(
+        ReceivingSession $session,
+        Epc $epc,
+        array $mismatch,
+        ?User $actor = null,
+        ?string $scanRaw = null,
+        array $identity = [],
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::WRONG_ITEM,
+            'Wrong item · receiving #'.$session->getKey(),
+            'Scanned GTIN/lot does not match the ASN/order line.',
+            [(int) $epc->getKey()],
+            [
+                'source' => 'receive_scan',
+                'notes' => 'ASN line product identity mismatch',
+                'mismatch' => $mismatch,
+                ...$this->hdaFromEpc($epc, $scanRaw, $identity),
+            ],
+            $actor,
+        );
+    }
+
+    /**
+     * Operator damage on an open receive — quarantine, do not confirm as sellable.
+     *
+     * @param  list<int>  $epcIds
+     */
+    public function damaged(
+        ReceivingSession $session,
+        array $epcIds,
+        ?User $actor = null,
+        string $notes = 'Operator flagged damaged product on this receive.',
+        ?string $scanRaw = null,
+    ): ExceptionCase {
+        $epc = $this->firstEpc($epcIds);
+
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::DAMAGED,
+            'Damaged · receiving #'.$session->getKey(),
+            $notes,
+            $epcIds,
+            [
+                'source' => 'receive_floor',
+                'notes' => $notes,
+                ...$this->hdaFromEpc($epc, $scanRaw),
+            ],
+            $actor,
+            quarantine: $epcIds !== [],
+        );
+    }
+
+    public function inheritLateFailedFromDocument(
+        EpcisDocument $document,
+        string $reason = 'schema_rejected_inbound_epcis',
+        ?User $actor = null,
+    ): void {
+        if ((string) ($document->direction ?? '') !== 'inbound') {
+            return;
+        }
+
+        $sessions = ReceivingSession::query()
+            ->where(function ($query) use ($document): void {
+                $query->where('epcis_document_id', $document->getKey())
+                    ->orWhere('matched_epcis_document_id', $document->getKey());
+            })
+            ->whereIn('status', ['open', 'in_progress'])
+            ->get();
+
+        foreach ($sessions as $session) {
+            $this->lateFailedEpcis($session, $reason, $actor);
+        }
+    }
+
+    public function refused(
+        ReceivingSession $session,
+        string $reason,
+        ?User $actor = null,
+    ): ExceptionCase {
+        return $this->handle(
+            $session,
+            ReceiveExceptionTypes::REFUSED,
+            'Refused · receiving #'.$session->getKey(),
+            'Receive cancelled after product was presented. Serials were not received.',
+            [],
+            [
+                'source' => 'receive_cancel',
+                'notes' => $reason,
+                'reason' => $reason,
             ],
             $actor,
         );
@@ -197,7 +443,7 @@ final class AuthorReceiveSessionException
             }
         }
 
-        return $open->first();
+        return null;
     }
 
     /**
@@ -246,6 +492,32 @@ final class AuthorReceiveSessionException
             'receiving_session_id' => (int) $session->getKey(),
             'customer_po' => $refs['po'],
             'asn_number' => $refs['asn'],
+            'po' => $extra['po'] ?? $refs['po'],
+            'desadv' => $extra['desadv'] ?? $refs['asn'],
         ];
+    }
+
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function firstEpc(array $epcIds): ?Epc
+    {
+        $epcId = $epcIds[0] ?? null;
+
+        return $epcId !== null ? Epc::query()->find($epcId) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $identity
+     * @return array<string, mixed>
+     */
+    private function hdaFromEpc(?Epc $epc, ?string $scanRaw = null, array $identity = []): array
+    {
+        return array_filter([
+            'gtin' => $identity['gtin14'] ?? $epc?->gtin14,
+            'lot' => $identity['lot_number'] ?? $epc?->ilmd?->lot_number,
+            'sscc' => $epc?->sscc18 ?? $identity['sscc18'] ?? null,
+            'scan_raw' => $scanRaw,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 }

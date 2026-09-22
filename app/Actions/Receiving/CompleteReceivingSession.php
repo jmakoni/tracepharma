@@ -269,10 +269,35 @@ final class CompleteReceivingSession
 
     private function assertSessionReceiveExceptionsAllowComplete(ReceivingSession $session): void
     {
+        $allowScanFirstWithoutFile = $session->isScanFirst()
+            && TenantSettings::forTenant(tenant())->allowScanFirstCompleteWithoutFile();
+
+        if (
+            $session->isScanFirst()
+            && $session->epcis_document_id === null
+            && $session->matched_epcis_document_id === null
+            && ! $allowScanFirstWithoutFile
+        ) {
+            $existingLate = ReceiveSessionExceptionQuery::openCases(
+                $session,
+                [ReceiveExceptionTypes::LATE_FAILED_EPCIS],
+            )->first();
+            if ($existingLate === null) {
+                app(AuthorReceiveSessionException::class)->lateFailedEpcis(
+                    $session,
+                    'missing_inbound_epcis',
+                );
+            }
+        }
+
         $blocking = ReceiveSessionExceptionQuery::openCases(
             $session,
             ReceiveExceptionTypes::HARD_BLOCK_COMPLETE,
-        )->first();
+        )->first(function ($case) use ($allowScanFirstWithoutFile): bool {
+            $code = $case->type?->code;
+
+            return ! ($allowScanFirstWithoutFile && $code === ReceiveExceptionTypes::LATE_FAILED_EPCIS);
+        });
 
         if ($blocking === null) {
             return;
