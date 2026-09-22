@@ -83,6 +83,29 @@ class ReceivingSessionCompleteCopyTest extends TestCase
     }
 
     #[Test]
+    public function sealed_parent_one_pallet_four_cases_complete_copy_counts_pallets_not_eaches(): void
+    {
+        $session = new ReceivingSession([
+            'session_kind' => ReceivingSessionKind::ScanFirst,
+            'confirmed_parent_count' => 1,
+            'confirmed_child_count' => 4,
+        ]);
+        $session->setRelation('inboundShipment', null);
+        $session->setRelation('document', null);
+
+        $copy = ReceivingSessionCompleteCopy::for(
+            $session,
+            new ReceivingPolicy(TenantProfile::Pharmacy, ReceivingEdgeMode::SealedParent),
+        );
+
+        $this->assertSame('1 pallet received this session.', $copy['body']);
+        $this->assertStringNotContainsString('4', $copy['body']);
+        $this->assertStringNotContainsString('48', $copy['body']);
+        $this->assertStringNotContainsString('Eaches', $copy['body']);
+        $this->assertSame(1, ReceivingSessionCompleteCopy::operatorScannedCount($session));
+    }
+
+    #[Test]
     public function units_only_session_reports_leaf_scans_when_no_parents(): void
     {
         $session = new ReceivingSession([

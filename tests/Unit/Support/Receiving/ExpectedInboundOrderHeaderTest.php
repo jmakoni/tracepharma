@@ -48,6 +48,9 @@ class ExpectedInboundOrderHeaderTest extends TestCase
             'parents_expected' => 4,
             'eaches_confirmed' => 10,
             'eaches_expected' => 40,
+            'child_type_label' => $header['child_type_label'],
         ], $header);
+        $this->assertContains($header['child_type_label'], ['Cases', 'Units']);
+        $this->assertNotSame('Eaches', $header['child_type_label']);
     }
 }

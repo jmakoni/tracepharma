@@ -99,7 +99,6 @@
         @else
             @php($session = $this->session())
             @php($confirmedRows = $this->confirmedScanRows())
-            @php($caseRows = $this->caseRows())
 
             <x-scanner-confirmed-table
                 :rows="$confirmedRows"
@@ -109,17 +108,6 @@
                 remove-method="removeConfirmed"
                 id-key="line_id"
             />
-
-            @if ($caseRows->isNotEmpty())
-                <x-scanner-confirmed-table
-                    :rows="$caseRows"
-                    :title="'Cases in this SSCC ('.$caseRows->count().')'"
-                    empty="No cases under this SSCC."
-                    :can-remove="$session?->status !== 'completed'"
-                    remove-method="removeCase"
-                    id-key="line_id"
-                />
-            @endif
 
             <button
                 type="button"

@@ -48,7 +48,8 @@ final class ExpectedInboundOrderHeader
      *     parents_confirmed: int,
      *     parents_expected: int,
      *     eaches_confirmed: int,
-     *     eaches_expected: int
+     *     eaches_expected: int,
+     *     child_type_label: string
      * }|null
      */
     public static function forSession(ReceivingSession $session): ?array
@@ -75,6 +76,7 @@ final class ExpectedInboundOrderHeader
             'parents_expected' => (int) $shipment->expected_parent_count,
             'eaches_confirmed' => (int) $shipment->confirmed_each_count,
             'eaches_expected' => (int) $shipment->expected_each_count,
+            'child_type_label' => ReceivingSessionProgress::for($session)->childTypeLabel(),
         ];
     }
 

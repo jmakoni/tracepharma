@@ -306,6 +306,13 @@ class ScanInWorkstationTest extends TestCase
                 ->where('receiving_session_id', $session->getKey())
                 ->where('epc_id', $child->getKey())
                 ->value('status'), (string) $component->get('lastScanMessage'));
+
+            $rows = $component->instance()->confirmedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame($ingested['sscc_uri'], $rows->first()['urn']);
+            $component->assertDontSee('Cases in this SSCC', false);
+            $this->assertFalse(method_exists($component->instance(), 'caseRows'));
+            $this->assertFalse(method_exists($component->instance(), 'removeCase'));
         } finally {
             $this->cleanup();
         }
@@ -426,7 +433,7 @@ class ScanInWorkstationTest extends TestCase
     }
 
     #[Test]
-    public function sscc_lists_cases_ticks_on_scan_and_complete_receives_only_confirmed(): void
+    public function scan_in_hides_child_sscc_list_and_complete_receives_only_confirmed(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
@@ -434,7 +441,6 @@ class ScanInWorkstationTest extends TestCase
             Filament::setCurrentPanel(Filament::getPanel('app'));
             $this->actingAs($this->createOwnerUser());
 
-            // Open count: parent scan does not auto-confirm children (case list tick UX).
             TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::OpenCount);
             $tenant->save();
             $this->assertFalse(ReceivingPolicy::forTenant($tenant)->defaultAutoConfirmChildren());
@@ -478,30 +484,24 @@ class ScanInWorkstationTest extends TestCase
                 ->where('epc_id', $scannedChild->getKey())
                 ->value('status'), (string) $component->get('lastScanMessage'));
 
-            $serials = $component->instance()->caseRows()->pluck('serial')->all();
-            $this->assertContains($scannedChild->serial_number, $serials);
-            $this->assertContains($leftover->serial_number, $serials);
-            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
-            $this->assertNotNull($scannedRow);
-            $this->assertFalse($scannedRow['confirmed']);
+            $component->assertDontSee('Cases in this SSCC', false);
+            $this->assertFalse(method_exists($component->instance(), 'caseRows'));
+            $this->assertFalse(method_exists($component->instance(), 'removeCase'));
+
+            $rows = $component->instance()->confirmedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame($ingested['sscc_uri'], $rows->first()['urn']);
 
             $component->set('scan', $scannedChild->epc_uri)->callAction('confirmScan');
-            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
-            $this->assertNotNull($scannedRow);
-            $this->assertTrue($scannedRow['confirmed']);
-
-            $scannedLineId = (int) ReceivingScanLine::query()
+            $this->assertSame('confirmed', ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->getKey())
                 ->where('epc_id', $scannedChild->getKey())
-                ->value('id');
-            $component->call('removeCase', $scannedLineId);
-            $scannedRow = $component->instance()->caseRows()->firstWhere('serial', $scannedChild->serial_number);
-            $this->assertNotNull($scannedRow);
-            $this->assertFalse($scannedRow['confirmed']);
+                ->value('status'), (string) $component->get('lastScanMessage'));
+            $rows = $component->instance()->confirmedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame($ingested['sscc_uri'], $rows->first()['urn']);
+            $component->assertDontSee('Cases in this SSCC', false);
 
-            $component->set('scan', $scannedChild->epc_uri)
-                ->callAction('confirmScan')
-                ->assertHasNoActionErrors();
             $component->callAction('completeReceiving')
                 ->assertHasNoActionErrors();
 

@@ -48,7 +48,12 @@ final class ReceivingSessionProgress
      */
     public function showUnitsProgress(): bool
     {
-        return ! ($this->session->isTransferReceive() && (int) $this->session->expected_child_count === 0);
+        if ((int) $this->session->expected_child_count === 0
+            && ($this->session->isTransferReceive() || $this->policy->operatorScansUnitsOnly())) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -60,6 +65,18 @@ final class ReceivingSessionProgress
             return 'Lines';
         }
 
+        if ($this->policy->operatorScansUnitsOnly()) {
+            return 'Units';
+        }
+
+        if ($this->policy->operatorScansSsccOnly()) {
+            return 'Pallets';
+        }
+
+        if ($this->policy->edgeMode() === ReceivingEdgeMode::OpenTote) {
+            return 'Totes';
+        }
+
         return match ($this->policy->preferredScanLevel()) {
             ReceivingScanLevel::Pallet => 'Pallets',
             ReceivingScanLevel::Case, ReceivingScanLevel::ToteOrCase => 'Cases',
@@ -67,12 +84,17 @@ final class ReceivingSessionProgress
     }
 
     /**
-     * Child hierarchy type under the preferred scan level.
+     * One-hop child UOM under the session SOP. Sealed-parent children are
+     * cases — never "Eaches", even when the profile's preferred scan level is tote/case.
      */
     public function childTypeLabel(): string
     {
         if ($this->session->isTransferReceive()) {
             return 'Units';
+        }
+
+        if ($this->policy->operatorScansSsccOnly()) {
+            return 'Cases';
         }
 
         return match ($this->policy->preferredScanLevel()) {

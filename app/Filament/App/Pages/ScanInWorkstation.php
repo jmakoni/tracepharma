@@ -471,6 +471,14 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         return ReceivingScanLine::query()
             ->where('receiving_session_id', $this->sessionId)
             ->where('status', 'confirmed')
+            ->where(function ($query): void {
+                $query->where('line_role', 'parent')
+                    ->orWhere('status', 'unexpected')
+                    ->orWhere(function ($child): void {
+                        $child->where('line_role', 'child')
+                            ->whereNull('parent_epc_id');
+                    });
+            })
             ->with([
                 'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
                 'epc.ilmd',
@@ -489,61 +497,6 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                     'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s') ?? '—',
                     'urn' => $display['urn'] !== '' ? $display['urn'] : '—',
                     'present' => true,
-                ];
-            })
-            ->values();
-    }
-
-    /**
-     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool, serial: string, label: string, confirmed: bool}>
-     */
-    public function caseRows(): Collection
-    {
-        if ($this->sessionId === null) {
-            return collect();
-        }
-
-        $parentIds = ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->sessionId)
-            ->where('line_role', 'parent')
-            ->where('status', 'confirmed')
-            ->pluck('epc_id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
-
-        if ($parentIds === []) {
-            return collect();
-        }
-
-        return ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->sessionId)
-            ->where('line_role', 'child')
-            ->whereIn('parent_epc_id', $parentIds)
-            ->with([
-                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
-                'epc.ilmd',
-            ])
-            ->orderBy('id')
-            ->get()
-            ->map(function (ReceivingScanLine $line): array {
-                $epc = $line->epc;
-                $serial = $epc?->serial_number ?? '';
-                $display = $epc instanceof Epc
-                    ? Gs1DualDisplay::forEpc($epc)
-                    : ['gs1_barcode' => $serial, 'urn' => '', 'primary' => $serial];
-                $confirmed = $line->status === 'confirmed';
-
-                return [
-                    'line_id' => (int) $line->getKey(),
-                    'serial' => $serial,
-                    'label' => $display['primary'] ?? $serial,
-                    'identifier' => ($display['gs1_barcode'] ?? '') !== '' ? $display['gs1_barcode'] : '—',
-                    'scanned_at' => $confirmed
-                        ? ($line->confirmed_at?->format('Y-m-d H:i:s') ?? '—')
-                        : '—',
-                    'urn' => ($display['urn'] ?? '') !== '' ? $display['urn'] : '—',
-                    'present' => $confirmed,
-                    'confirmed' => $confirmed,
                 ];
             })
             ->values();
@@ -584,31 +537,6 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
 
         $this->flashScan('ok', 'Removed from this receive.');
-    }
-
-    public function removeCase(int $lineId): void
-    {
-        $session = $this->session();
-        if ($session === null || $session->status === 'completed') {
-            return;
-        }
-
-        $line = ReceivingScanLine::query()
-            ->where('receiving_session_id', $session->getKey())
-            ->whereKey($lineId)
-            ->where('line_role', 'child')
-            ->first();
-
-        if ($line === null) {
-            $this->flashScan('error', 'Case not found on this session.');
-
-            return;
-        }
-
-        $this->removeConfirmed($lineId);
-        if ($this->lastScanTone === 'ok') {
-            $this->flashScan('ok', 'Case removed from this receive.');
-        }
     }
 
     public function startScanFirstFromPicker(): void

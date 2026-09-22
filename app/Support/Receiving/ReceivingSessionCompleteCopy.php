@@ -15,7 +15,7 @@ use App\Support\Copy\OperatorNouns;
  *
  * Operator-facing quantities follow ATTP practice: count top containers the
  * operator scanned (parents). Auto-confirmed AggregationLink children are not
- * summed into that number — eaches stay on the expected-order strip.
+ * summed into that number — one-hop child UOM stays on the expected-order strip.
  *
  * @phpstan-type CompleteCopy array{
  *     title: string,

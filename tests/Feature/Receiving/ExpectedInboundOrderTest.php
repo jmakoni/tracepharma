@@ -1325,6 +1325,7 @@ class ExpectedInboundOrderTest extends TestCase
             $this->assertSame($parentConfirmed, $header['parents_confirmed']);
             $this->assertSame($eachExpected, $header['eaches_expected']);
             $this->assertSame($eachConfirmed, $header['eaches_confirmed']);
+            $this->assertSame('Cases', $header['child_type_label']);
             $this->assertSame((string) $shipment->status, $header['status']);
             $this->assertSame($ingested['asn'], $header['asn']);
             $this->assertSame($ingested['po'], $header['po']);
