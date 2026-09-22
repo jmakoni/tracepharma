@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Actions\Receiving\FlagManualReceivingException;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Receiving\ReceivingScanLine;
@@ -12,11 +13,12 @@ use App\Models\Receiving\ReceivingSession;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\InboundPoOverReceipt;
+use App\Support\Receiving\ReceivingIssueSessionLabel;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Textarea;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Support\Icons\Heroicon;
@@ -121,7 +123,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
         $this->sessionId = (int) $session->getKey();
         $this->notes = '';
         $this->damagedEpcIds = [];
-        $session->loadMissing(['document', 'tradingPartner', 'site']);
+        $session->loadMissing(['document', 'tradingPartner', 'site', 'inboundShipment']);
     }
 
     /**
@@ -131,6 +133,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
     {
         $query = ReceivingSession::query()
             ->where('status', 'completed')
+            ->with(['tradingPartner', 'site', 'inboundShipment', 'document.inboundShipment'])
             ->latest('completed_at')
             ->latest('id');
 
@@ -155,7 +158,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
 
         // Always resolve through completed + site-scoped query — never unconstrained find($sessionId).
         return $this->sessionsQuery()
-            ->with(['document', 'tradingPartner', 'site'])
+            ->with(['document', 'tradingPartner', 'site', 'inboundShipment', 'document.inboundShipment'])
             ->whereKey($this->sessionId)
             ->first();
     }
@@ -166,23 +169,31 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
     public function completedSessionOptions(): array
     {
         return $this->sessionsQuery()
-            ->with(['tradingPartner', 'site'])
             ->limit(50)
             ->get()
-            ->mapWithKeys(function (ReceivingSession $session): array {
-                $partner = $session->tradingPartner?->name ?? 'No partner';
-                $site = $session->site?->name;
-                $label = '#'.$session->getKey().' · '.$partner;
-                if (filled($site)) {
-                    $label .= ' · '.$site;
-                }
-                if ($session->completed_at !== null) {
-                    $label .= ' · '.$session->completed_at->timezone(config('app.timezone'))->format('Y-m-d H:i');
-                }
-
-                return [(int) $session->getKey() => $label];
-            })
+            ->mapWithKeys(fn (ReceivingSession $session): array => [
+                (int) $session->getKey() => ReceivingIssueSessionLabel::for($session),
+            ])
             ->all();
+    }
+
+    /**
+     * @return array{po: ?string, asn: ?string}
+     */
+    public function orderRefs(): array
+    {
+        $session = $this->session();
+
+        return $session !== null
+            ? ReceivingIssueSessionLabel::orderRefs($session)
+            : ['po' => null, 'asn' => null];
+    }
+
+    public function poOverReceiptWarning(): ?string
+    {
+        $session = $this->session();
+
+        return $session !== null ? InboundPoOverReceipt::warningFor($session) : null;
     }
 
     public function shortageCount(): int
@@ -304,7 +315,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
                     ->disabled(fn (): bool => $this->shortageCount() === 0)
                     ->requiresConfirmation()
                     ->modalHeading('Report shortage?')
-                    ->modalDescription('Opens a PARTIAL_SHIPMENT_UNDECLARED exception for expected lines that were not confirmed.')
+                    ->modalDescription('Opens a SHORTAGE exception (undeclared-partial reason) for expected lines that were not confirmed.')
                     ->modalSubmitActionLabel('File shortage')
                     ->schema([
                         Textarea::make('notes')
@@ -330,7 +341,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
                     ->disabled(fn (): bool => $this->overageCount() === 0)
                     ->requiresConfirmation()
                     ->modalHeading('Report overage?')
-                    ->modalDescription('Opens an OVER_SHIPMENT exception for unexpected scan lines on this session.')
+                    ->modalDescription('Opens an OVERAGE exception for unexpected scan lines on this session.')
                     ->modalSubmitActionLabel('File overage')
                     ->schema([
                         Textarea::make('notes')
@@ -356,7 +367,7 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
                     ->disabled(fn (): bool => $this->damagedEpcOptions() === [])
                     ->requiresConfirmation()
                     ->modalHeading('Report damaged product?')
-                    ->modalDescription('Opens a SUSPECT_PRODUCT case and quarantine hold(s) for the selected EPC(s).')
+                    ->modalDescription('Opens a DAMAGED case and quarantine hold(s) for the selected EPC(s).')
                     ->modalSubmitActionLabel('File damaged')
                     ->schema(fn (): array => [
                         CheckboxList::make('epc_ids')

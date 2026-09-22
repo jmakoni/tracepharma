@@ -36,6 +36,13 @@
                     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <div class="flex flex-wrap items-center gap-1.5">
                             <span class="badge badge-success badge-outline">Completed</span>
+                            @php($refs = $this->orderRefs())
+                            @if ($refs['po'] !== null)
+                                <span class="badge badge-outline">PO {{ $refs['po'] }}</span>
+                            @endif
+                            @if ($refs['asn'] !== null)
+                                <span class="badge badge-outline">ASN {{ $refs['asn'] }}</span>
+                            @endif
                             <span>{{ $session->tradingPartner?->name ?? 'No partner on file' }}</span>
                             @if ($session->site?->name)
                                 <span aria-hidden="true">·</span>
@@ -71,6 +78,12 @@
                             <div class="stat-value text-2xl">{{ $this->overageCount() }}</div>
                         </div>
                     </div>
+
+                    @if ($warning = $this->poOverReceiptWarning())
+                        <div role="status" class="alert alert-warning">
+                            <span class="text-sm">{{ $warning }}</span>
+                        </div>
+                    @endif
 
                     <p class="text-sm opacity-70">
                         Use the header actions to file shortage, overage, or damaged claims.

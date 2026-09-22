@@ -3,6 +3,8 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Receiving\FlagManualReceivingException;
+use App\Enums\ExceptionSeverity;
+use App\Enums\ExceptionStatus;
 use App\Enums\ReceivingSessionKind;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
@@ -12,21 +14,27 @@ use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionActivity;
 use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Quarantine\QuarantineHold;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantFeatures;
 use Database\Seeders\ExceptionCaseSeeder;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class ReceivingIssuesPageTest extends TestCase
@@ -51,6 +59,12 @@ class ReceivingIssuesPageTest extends TestCase
 
     /** @var list<int> */
     private array $siteIds = [];
+
+    /** @var list<int> */
+    private array $shipmentIds = [];
+
+    /** @var list<int> */
+    private array $extraSessionIds = [];
 
     #[Test]
     public function page_is_visible_when_receiving_supported(): void
@@ -96,11 +110,12 @@ class ReceivingIssuesPageTest extends TestCase
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Notification::fake();
 
             $user = $this->createOwnerUser();
             $this->actingAs($user);
 
-            $this->seed(ExceptionCaseSeeder::class);
+            app(ExceptionCaseSeeder::class)->run();
 
             $session = $this->completedSessionWithVariance($user);
             $this->sessionId = (int) $session->getKey();
@@ -139,7 +154,13 @@ class ReceivingIssuesPageTest extends TestCase
             ], $user);
             $this->caseIds[] = (int) $shortage->getKey();
 
-            $this->assertSame('PARTIAL_SHIPMENT_UNDECLARED', $shortage->type?->code);
+            $this->assertSame('SHORTAGE', $shortage->type?->code);
+            $this->assertTrue(
+                $shortage->activities()
+                    ->where('meta->reason', 'PARTIAL_SHIPMENT_UNDECLARED')
+                    ->exists(),
+                'SHORTAGE from receiving issues carries undeclared-partial reason, not a third dock type.',
+            );
             $this->assertStringContainsString('Missing tote', (string) $shortage->description);
             $this->assertSame((int) $session->site_id, (int) $shortage->site_id);
 
@@ -148,7 +169,7 @@ class ReceivingIssuesPageTest extends TestCase
             ], $user);
             $this->caseIds[] = (int) $overage->getKey();
 
-            $this->assertSame('OVER_SHIPMENT', $overage->type?->code);
+            $this->assertSame('OVERAGE', $overage->type?->code);
             $this->assertTrue(
                 QuarantineHold::query()
                     ->open()
@@ -166,10 +187,10 @@ class ReceivingIssuesPageTest extends TestCase
                 (int) ($overageHold?->meta['receiving_session_id'] ?? 0),
             );
             $this->assertFalse(
-                \App\Support\Exceptions\ExceptionCorrectionProfile::for('OVER_SHIPMENT')->showsWaive(),
+                ExceptionCorrectionProfile::for('OVERAGE')->showsWaive(),
             );
             $this->assertFalse(
-                \App\Support\Exceptions\ExceptionCorrectionProfile::showsWaiveForCase($shortage),
+                ExceptionCorrectionProfile::showsWaiveForCase($shortage),
             );
 
             $damaged = $flag->execute($session, 'damaged', [
@@ -179,7 +200,7 @@ class ReceivingIssuesPageTest extends TestCase
             $this->caseIds[] = (int) $damaged->getKey();
             $this->epcIds[] = $damagedEpcId;
 
-            $this->assertSame('SUSPECT_PRODUCT', $damaged->type?->code);
+            $this->assertSame('DAMAGED', $damaged->type?->code);
             $this->assertTrue(
                 QuarantineHold::query()
                     ->open()
@@ -249,10 +270,11 @@ class ReceivingIssuesPageTest extends TestCase
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Notification::fake();
 
             $user = $this->createOwnerUser();
             $this->actingAs($user);
-            $this->seed(ExceptionCaseSeeder::class);
+            app(ExceptionCaseSeeder::class)->run();
 
             $document = $this->demo2ReceivableDocument();
             $site = $this->ensureEligibleReceiveSite();
@@ -307,24 +329,25 @@ class ReceivingIssuesPageTest extends TestCase
         try {
             Filament::setCurrentPanel(Filament::getPanel('app'));
             config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Notification::fake();
 
             $user = $this->createOwnerUser();
             $this->actingAs($user);
-            $this->seed(ExceptionCaseSeeder::class);
+            app(ExceptionCaseSeeder::class)->run();
 
             $session = $this->completedSessionWithVariance($user);
             $this->sessionId = (int) $session->getKey();
 
             $noise = ExceptionCase::query()->create([
-                'exception_type_id' => \App\Models\Exceptions\ExceptionType::query()
+                'exception_type_id' => ExceptionType::query()
                     ->where('code', 'OVER_SHIPMENT')
                     ->value('id'),
                 'document_id' => $session->epcis_document_id,
                 'trading_partner_id' => $session->trading_partner_id,
                 'title' => 'Unrelated document signal',
                 'description' => 'Should not appear on receiving issues list',
-                'severity' => \App\Enums\ExceptionSeverity::High->value,
-                'status' => \App\Enums\ExceptionStatus::New->value,
+                'severity' => ExceptionSeverity::High->value,
+                'status' => ExceptionStatus::New->value,
             ]);
             $this->caseIds[] = (int) $noise->getKey();
 
@@ -340,6 +363,113 @@ class ReceivingIssuesPageTest extends TestCase
 
             $this->assertTrue($openCases->contains('id', $flagged->getKey()));
             $this->assertFalse($openCases->contains('id', $noise->getKey()));
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function picker_and_header_show_po_and_asn_for_inbound_shipment(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $suffix = (string) random_int(100000, 999999);
+            $session = $this->completedSessionWithShipment($user, 'PO-ISSUE-'.$suffix, 'ASN-ISSUE-'.$suffix);
+            $this->sessionId = (int) $session->getKey();
+
+            $component = Livewire::withQueryParams(['session' => $session->getKey()])
+                ->test(ReceivingIssues::class)
+                ->assertOk()
+                ->assertSee('PO-ISSUE-'.$suffix)
+                ->assertSee('ASN-ISSUE-'.$suffix)
+                ->assertDontSee('#'.$session->getKey().' · ');
+
+            $options = $component->instance()->completedSessionOptions();
+            $this->assertArrayHasKey((int) $session->getKey(), $options);
+            $this->assertStringStartsWith(
+                'PO-ISSUE-'.$suffix.' · ASN-ISSUE-'.$suffix.' · ',
+                $options[(int) $session->getKey()],
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function filed_issue_stamps_po_and_asn_on_activity(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Notification::fake();
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            app(ExceptionCaseSeeder::class)->run();
+
+            $session = $this->completedSessionWithVariance($user);
+            $this->sessionId = (int) $session->getKey();
+            $suffix = (string) random_int(100000, 999999);
+            $this->attachShipment($session, 'PO-STAMP-'.$suffix, 'ASN-STAMP-'.$suffix);
+
+            $case = app(FlagManualReceivingException::class)->execute($session->fresh(), 'shortage', [
+                'notes' => 'Short on this truck',
+            ], $user);
+            $this->caseIds[] = (int) $case->getKey();
+
+            $meta = ExceptionActivity::query()
+                ->where('exception_id', $case->getKey())
+                ->where('meta->source', 'receiving_issues')
+                ->value('meta');
+
+            $this->assertIsArray($meta);
+            $this->assertSame((int) $session->getKey(), (int) ($meta['receiving_session_id'] ?? 0));
+            $this->assertSame('PO-STAMP-'.$suffix, $meta['customer_po'] ?? null);
+            $this->assertSame('ASN-STAMP-'.$suffix, $meta['asn_number'] ?? null);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function overage_page_warns_when_other_asns_share_the_po(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $session = $this->completedSessionWithVariance($user);
+            $this->sessionId = (int) $session->getKey();
+            $suffix = (string) random_int(100000, 999999);
+            $this->attachShipment($session, 'PO-WARN-'.$suffix, 'ASN-WARN-A-'.$suffix, unexpected: 1);
+
+            $sibling = InboundShipment::query()->create([
+                'trading_partner_id' => $session->trading_partner_id,
+                'trading_partner_key' => InboundShipment::partnerKey($session->trading_partner_id),
+                'asn_number' => 'ASN-WARN-B-'.$suffix,
+                'customer_po' => 'PO-WARN-'.$suffix,
+                'status' => 'open',
+                'expected_parent_count' => 1,
+                'confirmed_parent_count' => 1,
+                'unexpected_count' => 0,
+            ]);
+            $this->shipmentIds[] = (int) $sibling->getKey();
+
+            Livewire::withQueryParams(['session' => $session->getKey()])
+                ->test(ReceivingIssues::class)
+                ->assertOk()
+                ->assertSee('PO-WARN-'.$suffix)
+                ->assertSee('ASN-WARN-B-'.$suffix)
+                ->assertSee('this shipment');
         } finally {
             $this->cleanup();
         }
@@ -452,6 +582,38 @@ class ReceivingIssuesPageTest extends TestCase
         return $session->fresh() ?? $session;
     }
 
+    private function completedSessionWithShipment(User $user, string $po, string $asn): ReceivingSession
+    {
+        $document = $this->demo2ReceivableDocument();
+        $session = $this->makeCompletedSession($document, $user);
+        $this->attachShipment($session, $po, $asn);
+
+        return $session->fresh(['inboundShipment', 'tradingPartner', 'site']) ?? $session;
+    }
+
+    private function attachShipment(
+        ReceivingSession $session,
+        string $po,
+        string $asn,
+        int $unexpected = 0,
+    ): InboundShipment {
+        $shipment = InboundShipment::query()->create([
+            'trading_partner_id' => $session->trading_partner_id,
+            'trading_partner_key' => InboundShipment::partnerKey($session->trading_partner_id),
+            'asn_number' => $asn,
+            'customer_po' => $po,
+            'status' => 'open',
+            'expected_parent_count' => max(1, (int) $session->expected_parent_count),
+            'confirmed_parent_count' => (int) $session->confirmed_parent_count,
+            'unexpected_count' => $unexpected,
+        ]);
+        $this->shipmentIds[] = (int) $shipment->getKey();
+
+        $session->forceFill(['inbound_shipment_id' => $shipment->getKey()])->save();
+
+        return $shipment;
+    }
+
     private function makeCompletedSession(EpcisDocument $document, User $user): ReceivingSession
     {
         $site = $this->ensureEligibleReceiveSite();
@@ -497,11 +659,11 @@ class ReceivingIssuesPageTest extends TestCase
 
         $user = User::factory()->create();
         $user->assignRole(TenantRole::Owner->value);
-        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
         $this->assertTrue(
-            $user->can(\App\Support\Auth\Permissions::SitesAccessAll),
+            $user->can(Permissions::SitesAccessAll),
             'Owner must have sites.access_all for receiving-issues site checks.',
         );
 
@@ -574,10 +736,20 @@ class ReceivingIssuesPageTest extends TestCase
                 $this->caseIds = [];
             }
 
-            if ($this->sessionId !== null) {
-                ReceivingScanLine::query()->where('receiving_session_id', $this->sessionId)->delete();
-                ReceivingSession::query()->whereKey($this->sessionId)->delete();
+            $sessionIds = array_values(array_filter([
+                $this->sessionId,
+                ...$this->extraSessionIds,
+            ]));
+            if ($sessionIds !== []) {
+                ReceivingScanLine::query()->whereIn('receiving_session_id', $sessionIds)->delete();
+                ReceivingSession::query()->whereIn('id', $sessionIds)->delete();
                 $this->sessionId = null;
+                $this->extraSessionIds = [];
+            }
+
+            if ($this->shipmentIds !== []) {
+                InboundShipment::query()->whereIn('id', $this->shipmentIds)->delete();
+                $this->shipmentIds = [];
             }
 
             if ($this->documentId !== null) {
