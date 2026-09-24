@@ -240,6 +240,36 @@ class ReevaluateEpcisDocumentFindingsTest extends TestCase
     }
 
     #[Test]
+    public function failed_recompute_does_not_resolve_leftover_signals(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('UNKNOWN_GTIN');
+
+        try {
+            $document = $this->makeDocumentWithPayload();
+            $gtinCase = $this->openCase($document, 'UNKNOWN_GTIN', 'GTIN not found in product master: '.self::CASE_GTIN);
+            $gtinSignal = $this->signalForCase($gtinCase);
+
+            $gtinCase->forceFill([
+                'status' => ExceptionStatus::Cleared,
+                'condition_still_true' => false,
+                'sla_stopped_at' => now()->subMinute(),
+            ])->save();
+            $this->assertSame('open', $gtinSignal->fresh()?->status);
+
+            Storage::disk('local')->delete((string) $document->payload_path);
+
+            app(ReevaluateEpcisDocumentFindings::class)->handle($document);
+
+            $this->assertSame(ExceptionStatus::Cleared, $gtinCase->fresh()?->status);
+            $this->assertSame('open', $gtinSignal->fresh()?->status);
+            $this->assertNull($gtinSignal->fresh()?->resolved_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function time_order_fixture_keeps_events_out_of_order_open(): void
     {
         $this->initializeDemo2Tenant();
@@ -269,6 +299,51 @@ class ReevaluateEpcisDocumentFindingsTest extends TestCase
             $this->assertSame(ExceptionStatus::New, $fresh?->status);
             $this->assertSame($openedAt, $fresh?->created_at?->toDateTimeString());
             $this->assertNull($fresh?->sla_stopped_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function failed_recompute_leaves_open_without_claiming_unemitted_types(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('UNKNOWN_GLN');
+        ExceptionTypeSeeder::ensure('INGESTION_PARSE_ERROR');
+        ExceptionTypeSeeder::ensure('MIXED_PACKAGING_LEVELS');
+        ExceptionTypeSeeder::ensure('EVENTS_OUT_OF_ORDER');
+
+        try {
+            $document = $this->makeDocumentWithPayload();
+            $glnCase = $this->openCase($document, 'UNKNOWN_GLN', 'Unmatched GLN referenced in document: 0301160000009');
+            $parseCase = $this->openCase($document, 'INGESTION_PARSE_ERROR', 'Stored payload could not be parsed.');
+            $mixedCase = $this->openCase($document, 'MIXED_PACKAGING_LEVELS', 'ObjectEvent epcList mixes SGTIN and SSCC packaging levels.');
+            $orderCase = $this->openCase(
+                $document,
+                'EVENTS_OUT_OF_ORDER',
+                'Multiple distinct events for the same EPC report identical event times.',
+            );
+
+            Storage::disk('local')->delete((string) $document->payload_path);
+
+            $result = app(ReevaluateEpcisDocumentFindings::class)->handle($document);
+
+            $this->assertSame([], $result['cleared']);
+            $this->assertSame(ExceptionStatus::New, $glnCase->fresh()?->status);
+            $this->assertSame(ExceptionStatus::New, $parseCase->fresh()?->status);
+            $this->assertSame(ExceptionStatus::New, $mixedCase->fresh()?->status);
+            $this->assertSame(ExceptionStatus::New, $orderCase->fresh()?->status);
+            $this->assertContains((int) $glnCase->getKey(), $result['left_open']);
+            $this->assertContains((int) $parseCase->getKey(), $result['left_open']);
+            $this->assertContains((int) $mixedCase->getKey(), $result['left_open']);
+            $this->assertContains((int) $orderCase->getKey(), $result['left_open']);
+
+            $glnNotes = $glnCase->activities()->pluck('body')->implode("\n");
+            $this->assertStringNotContainsString('UNKNOWN_GLN still emitted', $glnNotes);
+            $this->assertStringContainsString('validation failed; case left open.', $glnNotes);
+
+            $parseNotes = $parseCase->activities()->pluck('body')->implode("\n");
+            $this->assertStringContainsString('INGESTION_PARSE_ERROR still emitted', $parseNotes);
         } finally {
             $this->cleanup();
         }

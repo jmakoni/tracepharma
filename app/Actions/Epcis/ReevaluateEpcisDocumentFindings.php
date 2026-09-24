@@ -33,18 +33,6 @@ use Throwable;
  */
 final class ReevaluateEpcisDocumentFindings
 {
-    /**
-     * Types that must stay open when the new finding set still contains them.
-     *
-     * @var list<string>
-     */
-    public const NEVER_CLEAR_WHILE_PRESENT = [
-        'MIXED_PACKAGING_LEVELS',
-        'MASTER_DATA_SYNC_LAG',
-        'EVENTS_OUT_OF_ORDER',
-        'PACK_HIERARCHY_TIME_INVERSION',
-    ];
-
     public function __construct(
         private readonly ValidateEpcis12Document $validator,
         private readonly RefreshUnmatchedGlnsFromMasterData $refreshUnmatchedGlns,
@@ -182,15 +170,7 @@ final class ReevaluateEpcisDocumentFindings
      */
     private function mustLeaveOpen(string $code, array $emitted): bool
     {
-        if (in_array($code, $emitted, true)) {
-            return true;
-        }
-
-        if (in_array($code, self::NEVER_CLEAR_WHILE_PRESENT, true) && in_array($code, $emitted, true)) {
-            return true;
-        }
-
-        return false;
+        return in_array($code, $emitted, true);
     }
 
     /**
