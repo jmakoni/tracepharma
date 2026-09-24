@@ -2,8 +2,11 @@
 
 namespace App\Filament\App\Pages;
 
+use App\Actions\Epcis\ReevaluateEpcisDocumentFindings;
+use App\Actions\Exceptions\RecheckReceiveExceptionCondition;
 use App\Actions\Exceptions\StartInvestigatorSla;
 use App\Enums\ExceptionReceiveImpact;
+use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Filament\Notifications\Notification;
 use App\Models\Exceptions\ExceptionActivity;
@@ -55,7 +58,7 @@ class InvestigatorSla extends Page implements HasKnowledgeBase
 
     public function getSubheading(): string|Htmlable|null
     {
-        return '72-hour supplier correction clock. Emails the existing exception portal. Exceptions list is unchanged.';
+        return '72-hour supplier correction clock for HardBlocking / BusinessRule cases that are still true. Waiting on partner pauses the clock.';
     }
 
     /**
@@ -106,6 +109,129 @@ class InvestigatorSla extends Page implements HasKnowledgeBase
     public function exceptionUrl(ExceptionCase $case): string
     {
         return ExceptionResource::getUrl('view', ['record' => $case], panel: 'app');
+    }
+
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('reevaluateFindings')
+                ->label('Re-evaluate findings')
+                ->icon(Heroicon::OutlinedMagnifyingGlass)
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Re-evaluate still-true hard-blocks?')
+                ->modalDescription('Runs the current validator on each linked document’s stored file. Events and receiving sessions are not rewritten.')
+                ->visible(fn (): bool => JobRoleAccess::allowsAny(
+                    Permissions::NavExceptions,
+                    Permissions::NavIntegrations,
+                ))
+                ->action(function (): void {
+                    $eligible = $this->casesQuery()
+                        ->with('type')
+                        ->whereNotNull('document_id')
+                        ->whereHas('type', fn (Builder $query): Builder => $query->where(
+                            'receive_impact',
+                            ExceptionReceiveImpact::HardBlocking->value,
+                        ))
+                        ->get();
+
+                    $result = app(ReevaluateEpcisDocumentFindings::class)->handleCases(
+                        $eligible,
+                        auth()->user(),
+                    );
+
+                    Notification::make()
+                        ->title('Findings re-evaluated')
+                        ->body(count($result['cleared']).' cleared · '.count($result['left_open']).' still emitted')
+                        ->success()
+                        ->send();
+                }),
+        ];
+    }
+
+    public function reevaluateFindingsCaseAction(): Action
+    {
+        return Action::make('reevaluateFindingsCase')
+            ->label('Re-evaluate findings')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading('Re-evaluate ingest findings?')
+            ->modalDescription('Runs the current validator on the linked document’s stored file. Events and receiving sessions are not rewritten.')
+            ->action(function (array $arguments): void {
+                $caseId = (int) ($arguments['case'] ?? 0);
+                $case = $this->casesQuery()->whereKey($caseId)->first();
+
+                if ($case === null || $case->document_id === null) {
+                    Notification::make()
+                        ->title('Case not found')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $document = $case->document;
+                if ($document === null) {
+                    Notification::make()
+                        ->title('No linked document')
+                        ->warning()
+                        ->send();
+
+                    return;
+                }
+
+                $result = app(ReevaluateEpcisDocumentFindings::class)->handle($document, auth()->user());
+
+                Notification::make()
+                    ->title('Findings re-evaluated')
+                    ->body(count($result['cleared']).' cleared · '.count($result['left_open']).' still emitted')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    public function recheckConditionAction(): Action
+    {
+        return Action::make('recheckCondition')
+            ->label('Re-check')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading('Re-check this exception?')
+            ->modalDescription('Re-runs the type predicate. Cleared cases leave this board. Still-true cases keep their SLA clock.')
+            ->action(function (array $arguments): void {
+                $caseId = (int) ($arguments['case'] ?? 0);
+                $case = $this->casesQuery()->whereKey($caseId)->first();
+
+                if ($case === null) {
+                    Notification::make()
+                        ->title('Case not found')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $fresh = app(RecheckReceiveExceptionCondition::class)->handle($case, auth()->user());
+
+                if ($fresh->status === ExceptionStatus::Cleared) {
+                    Notification::make()
+                        ->title('Condition cleared')
+                        ->body($fresh->caseReference().' left the SLA board.')
+                        ->success()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title('Condition still true')
+                    ->body('SLA clock was not reset.')
+                    ->warning()
+                    ->send();
+            });
     }
 
     public function emailSupplierAction(): Action
@@ -162,6 +288,7 @@ class InvestigatorSla extends Page implements HasKnowledgeBase
         return SiteAccess::constrainExceptionCases(
             ExceptionCase::query()
                 ->open()
+                ->conditionStillTrue()
                 ->whereHas('type', function (Builder $query): void {
                     $query->whereIn('receive_impact', [
                         ExceptionReceiveImpact::HardBlocking->value,

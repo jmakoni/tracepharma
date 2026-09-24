@@ -12,6 +12,7 @@ use App\Providers\Filament\AppPanelProvider;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\TracepharmaBreezyCore;
 use Filament\Panel;
+use Illuminate\Http\Request;
 use Jeffgreco13\FilamentBreezy\BreezyCore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -134,6 +135,17 @@ class UserManagementConfigTest extends TestCase
             $this->assertStringContainsString('images/brand/logo-mark.svg', (string) $panel->getFavicon());
             $this->assertSame('2.25rem', $panel->getBrandLogoHeight());
         }
+
+        // Floor topbar uses the favicon mark (shield only), not the wordmark.
+        $this->app->instance('request', Request::create('/receiving-sessions/1/floor', 'GET'));
+        $this->assertStringContainsString(
+            'images/brand/logo-mark.svg',
+            (string) $appPanel->getBrandLogo(),
+        );
+        $this->assertStringContainsString(
+            'images/brand/logo-mark.svg',
+            (string) $appPanel->getDarkModeBrandLogo(),
+        );
     }
 
     #[Test]

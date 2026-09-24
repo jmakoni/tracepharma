@@ -185,15 +185,13 @@ class ReceiveQueueVerificationTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            config([
-                'vrs.driver' => 'fake',
-                'vrs.hard_gate_receive_complete' => true,
-            ]);
+            config(['vrs.driver' => 'fake']);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
             $user = $this->createOwnerUser();
             $this->actingAs($user);
             $this->forcePharmacyProfile();
+            $this->enableReceiveVrsGate();
 
             $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GP'.random_int(10000000, 99999999);
             $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
@@ -225,15 +223,13 @@ class ReceiveQueueVerificationTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            config([
-                'vrs.driver' => 'fake',
-                'vrs.hard_gate_receive_complete' => true,
-            ]);
+            config(['vrs.driver' => 'fake']);
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
             $user = $this->createOwnerUser();
             $this->actingAs($user);
             $this->forcePharmacyProfile();
+            $this->enableReceiveVrsGate();
 
             $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GV'.random_int(10000000, 99999999);
             $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
@@ -273,10 +269,9 @@ class ReceiveQueueVerificationTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
-            config([
-                'vrs.driver' => 'null',
-                'vrs.hard_gate_receive_complete' => true,
-            ]);
+            config(['vrs.driver' => 'null']);
+            TenantSettings::forTenant(tenant())->setHardGateReceiveComplete(true);
+            tenant()?->save();
             Filament::setCurrentPanel(Filament::getPanel('app'));
 
             $user = $this->createOwnerUser();
@@ -284,6 +279,44 @@ class ReceiveQueueVerificationTest extends TestCase
             $this->forcePharmacyProfile();
 
             $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GN'.random_int(10000000, 99999999);
+            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $this->epcId = (int) $epc->getKey();
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $confirmed = app(ConfirmReceivingScan::class)->handle($session, $uri, userId: (int) $user->getKey());
+            $this->assertTrue($confirmed['ok'] ?? false, (string) ($confirmed['message'] ?? 'confirm failed'));
+
+            $completed = app(CompleteReceivingSession::class)->handle(
+                ReceivingSession::query()->findOrFail($session->getKey()),
+                (int) $user->getKey(),
+            );
+
+            $this->assertSame('completed', $completed->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function complete_is_not_blocked_when_receive_vrs_gate_is_off_by_default(): void
+    {
+        Bus::fake();
+
+        $this->initializeDemo2Tenant();
+
+        try {
+            config(['vrs.driver' => 'fake']);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            $this->forcePharmacyProfile();
+
+            $this->assertFalse(TenantSettings::forTenant(tenant())->hardGateReceiveComplete());
+
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(100000, 999999), 0, 6).'.GO'.random_int(10000000, 99999999);
             $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
             $this->epcId = (int) $epc->getKey();
 
@@ -333,6 +366,12 @@ class ReceiveQueueVerificationTest extends TestCase
         if ($tenant instanceof Tenant) {
             $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
         }
+    }
+
+    private function enableReceiveVrsGate(): void
+    {
+        TenantSettings::forTenant(tenant())->setHardGateReceiveComplete(true);
+        tenant()?->save();
     }
 
     private function createOwnerUser(): User
@@ -417,6 +456,9 @@ class ReceiveQueueVerificationTest extends TestCase
                 Epc::query()->whereKey($this->epcId)->delete();
                 $this->epcId = null;
             }
+
+            TenantSettings::forTenant(tenant())->setHardGateReceiveComplete(false);
+            tenant()?->save();
 
             tenancy()->end();
         }

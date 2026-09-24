@@ -3,6 +3,7 @@
 namespace App\Support\Exceptions;
 
 use App\Enums\ExceptionActivityKind;
+use App\Enums\ExceptionStatus;
 use App\Models\Exceptions\ExceptionActivity;
 use App\Models\Exceptions\ExceptionCase;
 use Carbon\CarbonInterface;
@@ -36,13 +37,42 @@ final class InvestigatorSlaClock
         return $case->due_at->lt($overlay) ? $case->due_at : $overlay;
     }
 
+    public function isPaused(ExceptionCase $case): bool
+    {
+        return $case->status === ExceptionStatus::WaitingPartner;
+    }
+
+    public function isStopped(ExceptionCase $case): bool
+    {
+        return $case->sla_stopped_at !== null
+            || in_array($case->status, [
+                ExceptionStatus::Cleared,
+                ExceptionStatus::Resolved,
+                ExceptionStatus::Overridden,
+                ExceptionStatus::Closed,
+                ExceptionStatus::Cancelled,
+            ], true);
+    }
+
     public function isBreached(ExceptionCase $case): bool
     {
+        if ($this->isPaused($case) || $this->isStopped($case)) {
+            return false;
+        }
+
         return $this->deadline($case)->isPast();
     }
 
     public function remainingLabel(ExceptionCase $case): string
     {
+        if ($this->isStopped($case)) {
+            return 'Stopped';
+        }
+
+        if ($this->isPaused($case)) {
+            return 'Paused — waiting on partner';
+        }
+
         $deadline = $this->deadline($case);
 
         if ($deadline->isPast()) {

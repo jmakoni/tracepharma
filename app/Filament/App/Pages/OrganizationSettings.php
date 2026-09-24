@@ -116,6 +116,7 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
             'block_receive_on_destination_gln_mismatch' => $settings->blockReceiveOnDestinationGlnMismatch(),
             'match_inbound_ship_to_site' => $settings->matchInboundShipToSite(),
             'block_send_on_atp_gap' => $settings->blockSendOnAtpGap(),
+            'hard_gate_receive_complete' => $settings->hardGateReceiveComplete(),
             'auto_open_receive_after_transfer_ship' => $settings->autoOpenReceiveAfterTransferShip(),
             'auto_complete_asn_on_ready' => $settings->autoCompleteAsnOnReady(),
             'auto_receive_from_cmo' => $settings->autoReceiveFromCmo(),
@@ -470,6 +471,12 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
                             ->default(false)
                             ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrsResponder())
                             ->columnSpanFull(),
+                        Toggle::make('hard_gate_receive_complete')
+                            ->label('Require VRS verified before completing receive')
+                            ->helperText('When off (default), receive can complete while verification is still pending. When on, Complete waits for VRS verified on confirmed saleable units.')
+                            ->default(false)
+                            ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsVrs())
+                            ->columnSpanFull(),
                     ]),
                 Section::make('Customer portal')
                     ->compact()
@@ -810,6 +817,10 @@ class OrganizationSettings extends Page implements HasKnowledgeBase
 
         if (TenantFeatures::forTenant(tenant())->canAuthorOutboundShipments()) {
             $organization['block_send_on_atp_gap'] = (bool) ($data['block_send_on_atp_gap'] ?? false);
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsVrs()) {
+            $organization['hard_gate_receive_complete'] = (bool) ($data['hard_gate_receive_complete'] ?? false);
         }
 
         try {

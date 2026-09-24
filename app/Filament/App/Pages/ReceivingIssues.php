@@ -14,6 +14,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Receiving\InboundPoOverReceipt;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingIssueSessionLabel;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
@@ -281,6 +282,27 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
             ->latest('id')
             ->limit(15)
             ->get();
+    }
+
+    /**
+     * Auto-authored receive cases for this completed session (not operator filings).
+     *
+     * @return Collection<int, ExceptionCase>
+     */
+    public function autoAuthoredCasesForSession(): Collection
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return collect();
+        }
+
+        $operatorIds = $this->openCasesForSession()->pluck('id')->all();
+
+        return ReceiveSessionExceptionQuery::openCases($session)
+            ->reject(fn (ExceptionCase $case): bool => in_array($case->getKey(), $operatorIds, true))
+            ->take(15)
+            ->values();
     }
 
     public function sessionViewUrl(): ?string

@@ -17,6 +17,8 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\OutboundShipmentInTransit;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Logging\RedactsUrls;
 use App\Support\Receiving\CmoOwnProductInbound;
 use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
@@ -30,6 +32,7 @@ use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -60,6 +63,7 @@ final class CompleteReceivingSession
         private readonly FlagManualReceivingException $flagManualReceivingException,
         private readonly ReconcileInboundExpectedLinesFromCustody $reconcileInboundExpectedLinesFromCustody,
         private readonly AssertReceivingVrsComplete $assertReceivingVrsComplete,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
     ) {}
 
     public function handle(
@@ -139,6 +143,8 @@ final class CompleteReceivingSession
                     return $locked;
                 }
 
+                $this->assertConfirmedLinesHierarchyFree($locked);
+
                 $locked->forceFill([
                     'status' => 'completed',
                     'completed_at' => now(),
@@ -152,6 +158,8 @@ final class CompleteReceivingSession
         if ($session->status !== 'completed') {
             return $session;
         }
+
+        $this->assertConfirmedLinesHierarchyFree($session);
 
         try {
             $generated = $this->generateReceivingEpcisEvents->handle($session, $actorId, $unpack);
@@ -172,6 +180,32 @@ final class CompleteReceivingSession
         InboundExpectedLineClaims::releaseUnconfirmedForSession($session);
 
         return $session;
+    }
+
+    private function assertConfirmedLinesHierarchyFree(ReceivingSession $session): void
+    {
+        $epcIds = ReceivingScanLine::query()
+            ->where('receiving_session_id', $session->getKey())
+            ->whereIn('status', ['confirmed', 'unexpected', 'staged'])
+            ->orderBy('id')
+            ->pluck('epc_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($epcIds === []) {
+            return;
+        }
+
+        try {
+            $this->exclusiveGate->assertParentsHierarchyFree(
+                $epcIds,
+                ExclusiveSessionContext::forReceiving($session),
+            );
+        } catch (InvalidArgumentException $e) {
+            throw new DomainException($e->getMessage(), 0, $e);
+        }
     }
 
     private function reconcileCustodyOntoAsn(ReceivingSession $session): void
@@ -496,6 +530,8 @@ final class CompleteReceivingSession
                     'received_count' => 0,
                 ];
             }
+
+            $this->assertConfirmedLinesHierarchyFree($session);
 
             $now = now();
 

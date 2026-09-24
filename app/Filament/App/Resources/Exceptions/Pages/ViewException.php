@@ -2,11 +2,13 @@
 
 namespace App\Filament\App\Resources\Exceptions\Pages;
 
+use App\Actions\Exceptions\RecheckReceiveExceptionCondition;
 use App\Actions\Exceptions\SendDscsaExceptionEmail;
 use App\Actions\Fda3911\PrefillFda3911Report;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionDisposition;
 use App\Enums\ExceptionStatus;
+use App\Filament\App\Resources\EpcisDocuments\Actions\ReevaluateFindingsAction;
 use App\Filament\App\Resources\Exceptions\Actions\CorrectDocumentActions;
 use App\Filament\App\Resources\Exceptions\Actions\CorrectUnknownGlnAction;
 use App\Filament\App\Resources\Exceptions\Actions\CorrectUnknownGtinAction;
@@ -37,6 +39,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
@@ -84,6 +87,12 @@ class ViewException extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->viewEpcisDocumentAction(),
+            $this->recheckConditionAction(),
+            ReevaluateFindingsAction::forExceptionCase(fn (): ExceptionCase => $this->getRecord())
+                ->after(function (): void {
+                    $this->refreshRecord();
+                }),
             $this->assignToMeAction(),
             CorrectUnknownGtinAction::make($this),
             $this->quarantineActionGroup(),
@@ -324,6 +333,64 @@ class ViewException extends ViewRecord
                 ->button()
                 ->color('gray'),
         ];
+    }
+
+    private function viewEpcisDocumentAction(): Action
+    {
+        return Action::make('viewEpcisDocument')
+            ->label('EPCIS document')
+            ->icon(Heroicon::OutlinedDocumentText)
+            ->color('gray')
+            ->url(fn (): ?string => $this->sourceEpcisDocumentUrl())
+            ->visible(fn (): bool => $this->sourceEpcisDocumentUrl() !== null);
+    }
+
+    private function sourceEpcisDocumentUrl(): ?string
+    {
+        /** @var ExceptionCase $record */
+        $record = $this->getRecord();
+        $document = $record->sourceEpcisDocument();
+
+        return $document?->filamentViewUrl();
+    }
+
+    private function recheckConditionAction(): Action
+    {
+        return Action::make('recheckCondition')
+            ->label('Re-check')
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->visible(function (): bool {
+                /** @var ExceptionCase $record */
+                $record = $this->getRecord();
+
+                return $record->status?->isOpen() === true;
+            })
+            ->action(function (): void {
+                /** @var User $actor */
+                $actor = auth()->user();
+                /** @var ExceptionCase $record */
+                $record = $this->getRecord();
+
+                $fresh = app(RecheckReceiveExceptionCondition::class)->handle($record, $actor);
+                $this->refreshRecord();
+
+                if ($fresh->status === ExceptionStatus::Cleared) {
+                    Notification::make()
+                        ->title('Condition cleared')
+                        ->body('This exception is no longer open. SLA clock stopped.')
+                        ->success()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title('Condition still true')
+                    ->body('The predicate still holds. Opened time and SLA clock were not reset.')
+                    ->warning()
+                    ->send();
+            });
     }
 
     private function assignToMeAction(): Action
@@ -797,6 +864,9 @@ class ViewException extends ViewRecord
                     ProseEditor::make('resolution_notes')
                         ->label('Resolution notes')
                         ->required(),
+                    TextInput::make('partner_ref')
+                        ->label('Partner reference')
+                        ->maxLength(120),
                 ])
                 ->action(function (array $data): void {
                     /** @var User $actor */
@@ -811,6 +881,7 @@ class ViewException extends ViewRecord
                             (int) $data['root_cause_id'],
                             (int) $data['resolution_action_id'],
                             (string) $data['resolution_notes'],
+                            filled($data['partner_ref'] ?? null) ? (string) $data['partner_ref'] : null,
                         );
                     } catch (ValidationException $e) {
                         Notification::make()

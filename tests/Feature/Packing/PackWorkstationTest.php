@@ -190,13 +190,16 @@ class PackWorkstationTest extends TestCase
 
         foreach ($blades as $path => $method) {
             $blade = File::get(resource_path($path));
-            $this->assertStringContainsString('wire:model.live.blur="scan"', $blade, $path);
-            $this->assertStringContainsString('keydown.enter.prevent="$wire.'.$method, $blade, $path);
+            $this->assertStringContainsString('wire:model="scan"', $blade, $path);
+            $this->assertStringContainsString('keydown.enter.prevent="$wire.'.$method.'($refs.scanInput.value)"', $blade, $path);
+            $this->assertStringContainsString('x-on:submit.prevent="$wire.'.$method.'($refs.scanInput.value)"', $blade, $path);
+            $this->assertStringNotContainsString('wire:model.live.blur', $blade, $path);
         }
 
         $scanField = File::get(resource_path('views/components/scan-field.blade.php'));
-        $this->assertStringContainsString('wire:model.live.blur', $scanField);
-        $this->assertStringContainsString('keydown.enter.prevent', $scanField);
+        $this->assertStringContainsString('wire:model="{{ $wireModel }}"', $scanField);
+        $this->assertStringContainsString('$refs.scanInput.value', $scanField);
+        $this->assertStringNotContainsString('wire:model.live.blur', $scanField);
     }
 
     #[Test]

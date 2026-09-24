@@ -126,7 +126,12 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
         ReceivingGate $receivingGate,
         EpcCustodyGate $custodyGate,
         ShippableEpcsAtSite $shippable,
+        ?string $raw = null,
     ): void {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 
@@ -418,8 +423,9 @@ class SaleableReturnWorkstation extends Page implements HasKnowledgeBase
                 return 'An EPC is quarantined and cannot be returned.';
             }
 
-            if ($exclusiveGate->check($epc, $except) !== null) {
-                return 'An EPC is reserved on another open work session.';
+            $reservation = $exclusiveGate->firstHierarchyReservation($epc, $except);
+            if ($reservation !== null) {
+                return $reservation['block']->message.' Reserved EPC: '.$exclusiveGate->epcLabel($reservation['epc']).'.';
             }
 
             try {

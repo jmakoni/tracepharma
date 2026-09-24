@@ -164,8 +164,12 @@ class OperationsHub extends Page implements HasKnowledgeBase
         );
     }
 
-    public function routeHubScan(ResolveEpcFromScan $resolveEpcFromScan): void
+    public function routeHubScan(ResolveEpcFromScan $resolveEpcFromScan, ?string $raw = null): void
     {
+        if ($raw !== null) {
+            $this->hubScan = ElementString::normalize(trim($raw));
+        }
+
         $scan = ElementString::normalize(trim((string) $this->hubScan));
         $this->hubScan = $scan;
 

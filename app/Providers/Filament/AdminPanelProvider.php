@@ -102,7 +102,6 @@ class AdminPanelProvider extends PanelProvider
             )
             ->plugin(
                 StickyTableHeaderPlugin::make()
-                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
             );
 
         $panel = OptionalFilamentPlugins::register(

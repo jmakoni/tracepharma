@@ -4,6 +4,8 @@ namespace App\Actions\Packing;
 
 use App\Models\Packing\PackingScanLine;
 use App\Models\Packing\PackingSession;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -11,6 +13,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class CompletePackingSession
 {
+    public function __construct(
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
+    ) {}
+
     public function handle(PackingSession $session, ?int $actorId = null): PackingSession
     {
         return DB::transaction(function () use ($session, $actorId): PackingSession {
@@ -19,6 +25,25 @@ final class CompletePackingSession
             if ($session->packing_events_generated_at !== null) {
                 return $session;
             }
+
+            $epcIds = PackingScanLine::query()
+                ->where('packing_session_id', $session->getKey())
+                ->whereIn('status', ['staged', 'confirmed'])
+                ->orderBy('id')
+                ->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($session->parent_epc_id !== null) {
+                $epcIds[] = (int) $session->parent_epc_id;
+            }
+
+            $this->exclusiveGate->assertParentsHierarchyFree(
+                $epcIds,
+                ExclusiveSessionContext::forPacking($session),
+            );
 
             $now = now();
 

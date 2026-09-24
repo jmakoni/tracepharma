@@ -43,6 +43,7 @@ use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\OutstandingReceiveTargets;
 use App\Support\Receiving\ReceiveLayout;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
 use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
@@ -550,6 +551,21 @@ trait InteractsWithReceivingSessionHud
     public function receiveExceptionBadgeCounts(): array
     {
         return ReceiveSessionExceptionQuery::floorBadgeCounts($this->getRecord());
+    }
+
+    public function receiveExceptionInboxUrl(string $badgeKey): ?string
+    {
+        $codes = ReceiveSessionExceptionQuery::badgeTypeCodes()[$badgeKey] ?? [];
+
+        return ReceiveSessionExceptionInbox::url($this->getRecord(), $codes);
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public function receiveExceptionInboxUrls(): array
+    {
+        return ReceiveSessionExceptionInbox::badgeUrls($this->getRecord());
     }
 
     public function sessionProgress(): ReceivingSessionProgress

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Receiving;
 
+use App\Actions\Receiving\AuthorReceiveSessionException;
 use App\Actions\Receiving\FlagManualReceivingException;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
@@ -356,13 +357,33 @@ class ReceivingIssuesPageTest extends TestCase
             ], $user);
             $this->caseIds[] = (int) $flagged->getKey();
 
-            $openCases = Livewire::withQueryParams(['session' => $session->getKey()])
+            $autoEpc = Epc::query()->create([
+                'epc_type' => 'sscc',
+                'epc_uri' => 'urn:epc:id:sscc:030116.7'.substr((string) str()->uuid(), 0, 8),
+                'sscc18' => '003011670'.substr(preg_replace('/\D/', '', (string) str()->uuid()) ?? '3', 0, 9),
+                'company_prefix' => '030116',
+            ]);
+            $this->epcIds[] = (int) $autoEpc->getKey();
+            $auto = app(AuthorReceiveSessionException::class)->productNoData(
+                $session,
+                [(int) $autoEpc->getKey()],
+                $user,
+            );
+            $this->caseIds[] = (int) $auto->getKey();
+
+            $page = Livewire::withQueryParams(['session' => $session->getKey()])
                 ->test(ReceivingIssues::class)
-                ->instance()
-                ->openCasesForSession();
+                ->instance();
+
+            $openCases = $page->openCasesForSession();
+            $autoCases = $page->autoAuthoredCasesForSession();
 
             $this->assertTrue($openCases->contains('id', $flagged->getKey()));
             $this->assertFalse($openCases->contains('id', $noise->getKey()));
+            $this->assertFalse($openCases->contains('id', $auto->getKey()));
+            $this->assertTrue($autoCases->contains('id', $auto->getKey()));
+            $this->assertFalse($autoCases->contains('id', $flagged->getKey()));
+            $this->assertFalse($autoCases->contains('id', $noise->getKey()));
         } finally {
             $this->cleanup();
         }

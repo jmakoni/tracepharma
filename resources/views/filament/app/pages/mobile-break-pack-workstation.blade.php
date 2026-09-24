@@ -57,14 +57,14 @@
         </header>
 
         <div class="tp-floor-receive__stage">
-            <form wire:submit.prevent="processScan" class="tp-floor-receive__scan-form">
+            <form x-on:submit.prevent="$wire.processScan($refs.scanInput.value)" class="tp-floor-receive__scan-form">
                 <div class="tp-floor-receive__scan-field">
                     <input
                         type="text"
                         inputmode="none"
-                        wire:model.live.blur="scan"
+                        wire:model="scan"
                         x-ref="scanInput"
-                        x-on:keydown.enter.prevent="$wire.processScan()"
+                        x-on:keydown.enter.prevent="$wire.processScan($refs.scanInput.value)"
                         autocomplete="off"
                         autofocus
                         class="tp-floor-receive__scan-input"
@@ -76,11 +76,12 @@
                 <button
                     type="button"
                     class="tp-floor-receive__camera-btn"
+                    aria-label="Open camera"
                     x-on:click="toggleCamera()"
                     x-bind:disabled="starting"
                     wire:loading.attr="disabled"
                 >
-                    <span class="tp-floor-receive__camera-btn-label">Camera</span>
+                    <x-filament::icon icon="heroicon-o-qr-code" class="size-6" />
                 </button>
             </form>
 

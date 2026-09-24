@@ -13,6 +13,7 @@ use App\Http\Middleware\RedirectUnmappedFloorShell;
 use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
+use App\Support\Floor\FloorRouteMap;
 use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
@@ -37,6 +38,7 @@ use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
 use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
+use Zvizvi\FilamentColumnFilters\FilamentColumnFiltersPlugin;
 use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AppPanelProvider extends PanelProvider
@@ -51,8 +53,12 @@ class AppPanelProvider extends PanelProvider
             ->authPasswordBroker('users')
             ->authGuard('web')
             ->brandName('TracePharma')
-            ->brandLogo(asset('images/brand/logo.svg'))
-            ->darkModeBrandLogo(asset('images/brand/logo-dark.svg'))
+            ->brandLogo(fn (): string => FloorRouteMap::isFloorPath()
+                ? asset('images/brand/logo-mark.svg')
+                : asset('images/brand/logo.svg'))
+            ->darkModeBrandLogo(fn (): string => FloorRouteMap::isFloorPath()
+                ? asset('images/brand/logo-mark.svg')
+                : asset('images/brand/logo-dark.svg'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('images/brand/logo-mark.svg'))
             ->homeUrl(fn (): string => Dashboard::getUrl(panel: 'app'))
@@ -111,10 +117,8 @@ class AppPanelProvider extends PanelProvider
                 FilamentUiExtrasPlugin::make()
                     ->stickyTableActions(true)
             )
-            ->plugin(
-                StickyTableHeaderPlugin::make()
-                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
-            );
+            ->plugin(StickyTableHeaderPlugin::make())
+            ->plugin(FilamentColumnFiltersPlugin::make());
 
         $panel = OptionalFilamentPlugins::register(
             $panel,

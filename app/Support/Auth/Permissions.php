@@ -56,6 +56,11 @@ final class Permissions
     public const ShipQuantityGateOverride = 'shipping.quantity_gate_override';
 
     /**
+     * Close LATE_FAILED_EPCIS / PRODUCT_NO_DATA while the condition is still true.
+     */
+    public const ExceptionOverride = 'exceptions.override';
+
+    /**
      * @return list<string>
      */
     public static function navCapabilities(): array
@@ -83,6 +88,7 @@ final class Permissions
             self::DecommissionMassApprove,
             self::IntegrationsBreakGlass,
             self::ShipQuantityGateOverride,
+            self::ExceptionOverride,
             ...self::navCapabilities(),
         ];
     }
@@ -118,6 +124,7 @@ final class Permissions
             self::DecommissionMassApprove => 'Mass decommission approve',
             self::IntegrationsBreakGlass => 'Integrations break-glass',
             self::ShipQuantityGateOverride => 'Ship quantity gate override',
+            self::ExceptionOverride => 'Exception override',
             default => $permission,
         };
     }

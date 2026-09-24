@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Domain\Epcis\Validation\ValidationPipeline;
 use App\Http\Responses\AppLoginResponse;
 use App\Listeners\LogTenantUserImpersonationEnded;
+use App\Listeners\SuppressNonDeliverableOutboundMail;
 use App\Livewire\MenuManager\MenuPanel;
 use App\Models\Admin;
 use App\Policies\ActivityPolicy;
@@ -31,10 +32,12 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
 use Filament\Support\Facades\FilamentView;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Table;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -94,6 +97,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->configureFilamentActions();
+        $this->configureFilamentTables();
 
         Livewire::component(
             'filament-menu-manager.menu-panel',
@@ -118,6 +122,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Activity::class, ActivityPolicy::class);
 
         Event::listen(Logout::class, LogTenantUserImpersonationEnded::class);
+        Event::listen(MessageSending::class, SuppressNonDeliverableOutboundMail::class);
 
         Event::listen(function (SocialiteWasCalled $event): void {
             $event->extendSocialite('azure', Provider::class);
@@ -204,6 +209,13 @@ class AppServiceProvider extends ServiceProvider
 
         BulkActionGroup::configureUsing(function (BulkActionGroup $group): void {
             $group->icon(Heroicon::EllipsisHorizontal);
+        });
+    }
+
+    private function configureFilamentTables(): void
+    {
+        Table::configureUsing(function (Table $table): void {
+            $table->reorderableColumns();
         });
     }
 

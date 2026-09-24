@@ -73,7 +73,7 @@ final class StageDispositionScan
             ];
         }
 
-        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forDisposition($session));
+        $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forDisposition($session));
         if ($block !== null) {
             return [
                 ...$block->toScanResult(),

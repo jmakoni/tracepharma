@@ -180,8 +180,8 @@ a.tp-trace-link:hover {
 
 /*
  * Filament hides .fi-topbar-start (brand logo) below lg — logo lives in the sidebar.
- * Floor shell also hides the sidebar on handheld, so restore the topbar logo —
- * keep it compact so it does not collide with site + profile on narrow widths.
+ * Floor shell also hides the sidebar on handheld, so restore the topbar logo.
+ * Mark is square (logo-mark.svg) — size it for handheld recognition.
  */
 .tp-floor-receive-page .fi-topbar-start,
 .tp-floor-transfer-page .fi-topbar-start,
@@ -193,10 +193,10 @@ a.tp-trace-link:hover {
 .tp-floor-list-page .fi-topbar-start {
     display: flex !important;
     align-items: center;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
-    max-width: min(6.5rem, 34vw);
-    margin-inline-end: 0.25rem;
+    max-width: 3rem;
+    margin-inline-end: 0.35rem;
 }
 
 .tp-floor-receive-page .fi-topbar-start .fi-logo,
@@ -209,10 +209,10 @@ a.tp-trace-link:hover {
 .tp-floor-list-page .fi-topbar-start .fi-logo {
     margin-inline-start: 0;
     /* Beat Filament brandLogoHeight inline (2.25rem). */
-    height: 1.5rem !important;
-    max-height: 1.5rem;
-    width: auto;
-    max-width: 100%;
+    height: 2.75rem !important;
+    max-height: 2.75rem;
+    width: 2.75rem;
+    max-width: 2.75rem;
     object-fit: contain;
 }
 
@@ -1047,29 +1047,40 @@ body.floor-shell .fi-layout-sidebar-toggle-btn-ctn {
 
 .tp-floor-receive__camera-btn {
     display: inline-flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.1rem;
-    width: 3.5rem;
-    min-height: 3.5rem;
-    border-radius: 1rem;
-    border: 1px solid var(--tp-floor-border);
-    background: var(--tp-floor-card);
-    color: var(--tp-floor-ink);
+    align-self: end;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    /* Match .tp-floor-receive__scan-input min-height; width follows square icon. */
+    height: 3.5rem;
+    width: auto;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: currentColor;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.tp-floor-receive__camera-btn-label {
-    font-size: 0.625rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+.tp-floor-receive__camera-btn:focus,
+.tp-floor-receive__camera-btn:focus-visible {
+    outline: none;
+    box-shadow: none;
 }
 
 .tp-floor-receive__camera-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.tp-floor-receive__camera-btn .fi-icon,
+.tp-floor-receive__camera-btn svg {
+    width: 100%;
+    height: 100%;
 }
 
 .tp-floor-receive__camera-error {
@@ -1250,16 +1261,16 @@ body.floor-shell .fi-layout-sidebar-toggle-btn-ctn {
 }
 
 .tp-floor-camera-dock {
-    position: fixed;
+    position: absolute;
     z-index: 6;
     right: 0;
-    bottom: 0;
+    bottom: 0.75rem;
     left: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.35rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
+    padding: 0 0.75rem;
     pointer-events: none;
     color: #fff;
 }
@@ -1331,71 +1342,116 @@ body.floor-shell .fi-layout-sidebar-toggle-btn-ctn {
     color: #fecaca;
 }
 
-.tp-floor-receive__camera-controls {
+.tp-floor-camera-chrome {
+    flex: 0 0 auto;
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
+    justify-content: space-evenly;
+    gap: 0.5rem;
     width: 100%;
-    pointer-events: auto;
+    background: #fff;
+    padding: 0.45rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgb(226 232 240);
+    z-index: 8;
 }
 
-.tp-floor-receive__camera-pace {
+.tp-floor-camera-chrome__btn {
     display: inline-flex;
-    align-items: stretch;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-}
-
-.tp-floor-receive__camera-pace-btn {
-    display: inline-flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.2rem;
+    flex: 1 1 0;
+    min-width: 2.75rem;
     min-height: 2.75rem;
-    min-width: 4.75rem;
-    padding: 0.4rem 0.65rem;
+    padding: 0.5rem;
+    border: 0;
     border-radius: 0.75rem;
-    border: 1px solid rgb(255 255 255 / 0.25);
-    background: rgb(255 255 255 / 0.08);
-    color: #fff;
-    font-weight: 700;
-    font-size: 0.75rem;
-    line-height: 1.1;
+    background: transparent;
+    color: #334155;
     cursor: pointer;
 }
 
-.tp-floor-receive__camera-pace-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    flex-shrink: 0;
+.tp-floor-camera-chrome__btn:focus-visible {
+    outline: 2px solid #64748b;
+    outline-offset: 2px;
 }
 
-.tp-floor-receive__camera-pace-btn.is-active {
-    background: rgb(255 255 255 / 0.28);
-    border-color: rgb(255 255 255 / 0.55);
+.tp-floor-camera-chrome__btn.is-torch-on {
+    color: #d97706;
 }
 
-.tp-floor-receive__camera-pace-btn:disabled {
-    opacity: 0.55;
+.tp-floor-camera-chrome__btn.is-disabled,
+.tp-floor-camera-chrome__btn:disabled {
+    opacity: 0.4;
     cursor: not-allowed;
 }
 
-.tp-floor-receive__camera-close {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0.5rem 1rem;
-    border-radius: 0.75rem;
+.tp-floor-camera-chrome__btn.is-open {
+    background: rgb(241 245 249);
+}
+
+.tp-floor-camera-chrome__icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+}
+
+.tp-floor-camera-chrome__gear {
+    position: relative;
+    flex: 1 1 0;
+    display: flex;
+    justify-content: center;
+}
+
+.tp-floor-camera-chrome__gear .tp-floor-camera-chrome__btn {
+    width: 100%;
+}
+
+.tp-floor-camera-chrome__sheet {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.5rem);
+    left: 0;
+    min-width: 12rem;
+    max-width: 16rem;
+    margin: 0 auto;
+    padding: 0.5rem;
+    pointer-events: auto;
+}
+
+.tp-floor-camera-chrome__sheet-group + .tp-floor-camera-chrome__sheet-group {
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgb(226 232 240);
+}
+
+.tp-floor-camera-chrome__sheet-title {
+    margin: 0 0 0.35rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
     font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.tp-floor-camera-chrome__sheet-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0.45rem 0.65rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: #0f172a;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-align: left;
     cursor: pointer;
 }
 
-.tp-floor-receive__camera-close {
-    border: 1px solid rgb(255 255 255 / 0.25);
-    background: rgb(255 255 255 / 0.1);
-    color: #fff;
+.tp-floor-camera-chrome__sheet-option.is-active {
+    background: rgb(241 245 249);
 }
 
 .tp-floor-receive__camera-host {
@@ -1419,6 +1475,45 @@ body.floor-shell .fi-layout-sidebar-toggle-btn-ctn {
     background: #020617;
 }
 
+.tp-floor-lockon {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 60vh;
+    overflow: hidden;
+    background: #020617;
+}
+
+.tp-floor-lockon__scale {
+    position: absolute;
+    inset: 0;
+    transform-origin: center center;
+    will-change: transform;
+}
+
+.tp-floor-lockon__video,
+.tp-floor-lockon__overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.tp-floor-lockon__video {
+    display: block;
+    object-fit: cover;
+}
+
+.tp-floor-lockon__overlay {
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tp-floor-lockon__scale {
+        transition: none !important;
+    }
+}
+
 .tp-floor-receive__camera video {
     display: block !important;
     width: 100% !important;
@@ -1432,10 +1527,6 @@ body.floor-shell .fi-layout-sidebar-toggle-btn-ctn {
     box-sizing: border-box !important;
     border-style: solid !important;
     border-color: rgb(0 0 0 / 0.48) !important;
-    border-top-width: 6px !important;
-    border-right-width: 4vw !important;
-    border-bottom-width: calc(100% - 6px - 40vw) !important;
-    border-left-width: 4vw !important;
 }
 
 .tp-floor-receive__camera img {

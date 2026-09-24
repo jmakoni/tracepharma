@@ -4,6 +4,8 @@ namespace App\Actions\Disposition;
 
 use App\Models\Disposition\DispositionScanLine;
 use App\Models\Disposition\DispositionSession;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -11,6 +13,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class CompleteDispositionSession
 {
+    public function __construct(
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
+    ) {}
+
     public function handle(DispositionSession $session, ?int $actorId = null): DispositionSession
     {
         return DB::transaction(function () use ($session, $actorId): DispositionSession {
@@ -19,6 +25,21 @@ final class CompleteDispositionSession
             if ($session->disposition_events_generated_at !== null) {
                 return $session;
             }
+
+            $epcIds = DispositionScanLine::query()
+                ->where('disposition_session_id', $session->getKey())
+                ->whereIn('status', ['staged', 'confirmed'])
+                ->orderBy('id')
+                ->pluck('epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $this->exclusiveGate->assertParentsHierarchyFree(
+                $epcIds,
+                ExclusiveSessionContext::forDisposition($session),
+            );
 
             $now = now();
 

@@ -15,6 +15,7 @@ use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use Illuminate\Database\Eloquent\Builder;
+use InvalidArgumentException;
 
 /**
  * Tenant-wide serial reservation: one EPC cannot sit on two unsubmitted work sessions.
@@ -39,10 +40,90 @@ final class EpcExclusiveSessionGate
     public function check(Epc $epc, ExclusiveSessionContext $except = new ExclusiveSessionContext): ?EpcExclusiveBlock
     {
         $epcId = (int) $epc->getKey();
+        $ancestors = $this->openAncestorIds($epcId);
+        $descendants = $this->openDescendantIds($epcId);
 
-        return $this->checkDirect($epcId, $except)
-            ?? $this->checkReservedOpenAncestors($epcId, $except)
-            ?? $this->checkReservedOpenDescendants($epcId, $except);
+        return $this->checkDirectMany([$epcId, ...$ancestors, ...$descendants], $except);
+    }
+
+    /**
+     * Confirm-path lookup: this EPC only. Does not walk ancestors or descendants.
+     */
+    public function checkScannedEpc(Epc $epc, ExclusiveSessionContext $except = new ExclusiveSessionContext): ?EpcExclusiveBlock
+    {
+        return $this->checkDirect((int) $epc->getKey(), $except);
+    }
+
+    /**
+     * Complete-path: first reserved EPC among this unit, its open ancestors, and open descendants.
+     *
+     * @return array{block: EpcExclusiveBlock, epc: Epc}|null
+     */
+    public function firstHierarchyReservation(Epc $epc, ExclusiveSessionContext $except = new ExclusiveSessionContext): ?array
+    {
+        $parentId = (int) $epc->getKey();
+        $ids = [$parentId, ...$this->openAncestorIds($parentId), ...$this->openDescendantIds($parentId)];
+
+        foreach ($ids as $epcId) {
+            $block = $this->checkDirect($epcId, $except);
+            if ($block === null) {
+                continue;
+            }
+
+            $reserved = $epcId === $parentId
+                ? $epc
+                : Epc::query()->find($epcId);
+
+            if (! $reserved instanceof Epc) {
+                continue;
+            }
+
+            return [
+                'block' => $block,
+                'epc' => $reserved,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Complete-path: throw if any parent or its open descendants is reserved elsewhere.
+     *
+     * @param  list<int>  $epcIds
+     *
+     * @throws InvalidArgumentException
+     */
+    public function assertParentsHierarchyFree(array $epcIds, ExclusiveSessionContext $except = new ExclusiveSessionContext): void
+    {
+        foreach ($epcIds as $epcId) {
+            $parent = Epc::query()->find((int) $epcId);
+            if (! $parent instanceof Epc) {
+                continue;
+            }
+
+            $reservation = $this->firstHierarchyReservation($parent, $except);
+            if ($reservation === null) {
+                continue;
+            }
+
+            throw new InvalidArgumentException(
+                $reservation['block']->message.' Reserved EPC: '.$this->epcLabel($reservation['epc']).'.',
+            );
+        }
+    }
+
+    public function epcLabel(Epc $epc): string
+    {
+        if (filled($epc->gtin14)) {
+            return (string) $epc->gtin14.(filled($epc->serial_number) ? ' / '.$epc->serial_number : '');
+        }
+
+        if (filled($epc->sscc18)) {
+            return (string) $epc->sscc18;
+        }
+
+        return (string) $epc->epc_uri;
     }
 
     public function existsOnAnyExclusiveSession(Epc $epc): bool
@@ -52,17 +133,34 @@ final class EpcExclusiveSessionGate
 
     private function checkDirect(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
-        return $this->checkReceiving($epcId, $except)
-            ?? $this->checkShipping($epcId, $except)
-            ?? $this->checkTransferring($epcId, $except)
-            ?? $this->checkPacking($epcId, $except)
-            ?? $this->checkDisposition($epcId, $except);
+        return $this->checkDirectMany([$epcId], $except);
     }
 
-    private function checkReservedOpenAncestors(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkDirectMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    {
+        $epcIds = array_values(array_unique(array_map('intval', $epcIds)));
+        if ($epcIds === []) {
+            return null;
+        }
+
+        return $this->checkReceivingMany($epcIds, $except)
+            ?? $this->checkShippingMany($epcIds, $except)
+            ?? $this->checkTransferringMany($epcIds, $except)
+            ?? $this->checkPackingMany($epcIds, $except)
+            ?? $this->checkDispositionMany($epcIds, $except);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function openAncestorIds(int $epcId): array
     {
         $currentId = $epcId;
         $seen = [$currentId => true];
+        $ancestors = [];
 
         for ($depth = 0; $depth < self::HIERARCHY_WALK_LIMIT; $depth++) {
             $parentId = AggregationLink::query()
@@ -71,30 +169,29 @@ final class EpcExclusiveSessionGate
                 ->value('parent_epc_id');
 
             if ($parentId === null) {
-                return null;
+                return $ancestors;
             }
 
             $parentId = (int) $parentId;
             if (isset($seen[$parentId])) {
-                return null;
+                return $ancestors;
             }
             $seen[$parentId] = true;
-
-            $block = $this->checkDirect($parentId, $except);
-            if ($block !== null) {
-                return $block;
-            }
-
+            $ancestors[] = $parentId;
             $currentId = $parentId;
         }
 
-        return null;
+        return $ancestors;
     }
 
-    private function checkReservedOpenDescendants(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @return list<int>
+     */
+    private function openDescendantIds(int $epcId): array
     {
         $frontier = [$epcId];
         $seen = [$epcId => true];
+        $descendants = [];
 
         for ($depth = 0; $depth < self::HIERARCHY_WALK_LIMIT && $frontier !== []; $depth++) {
             $childIds = AggregationLink::query()
@@ -110,23 +207,23 @@ final class EpcExclusiveSessionGate
                     continue;
                 }
                 $seen[$childId] = true;
-                $block = $this->checkDirect($childId, $except);
-                if ($block !== null) {
-                    return $block;
-                }
                 $next[] = $childId;
+                $descendants[] = $childId;
             }
 
             $frontier = $next;
         }
 
-        return null;
+        return $descendants;
     }
 
-    private function checkReceiving(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkReceivingMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
         $line = ReceivingScanLine::query()
-            ->where('epc_id', $epcId)
+            ->whereIn('epc_id', $epcIds)
             ->whereIn('status', self::RECEIVING_RESERVATION_STATUSES)
             ->whereHas('session', function ($query) use ($except): void {
                 $this->applyReceivingExclusiveScope($query);
@@ -161,10 +258,13 @@ final class EpcExclusiveSessionGate
         );
     }
 
-    private function checkShipping(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkShippingMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
         $line = OutboundShippingScanLine::query()
-            ->where('epc_id', $epcId)
+            ->whereIn('epc_id', $epcIds)
             ->where('status', 'confirmed')
             ->whereHas('session', function ($query) use ($except): void {
                 $this->applyShippingExclusiveScope($query);
@@ -190,10 +290,13 @@ final class EpcExclusiveSessionGate
         );
     }
 
-    private function checkTransferring(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkTransferringMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
         $line = TransferringScanLine::query()
-            ->where('epc_id', $epcId)
+            ->whereIn('epc_id', $epcIds)
             ->whereIn('status', ['confirmed', 'received'])
             ->whereHas('session', function ($query) use ($except): void {
                 $this->applyTransferringExclusiveScope($query);
@@ -219,10 +322,13 @@ final class EpcExclusiveSessionGate
         );
     }
 
-    private function checkPacking(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkPackingMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
         $line = PackingScanLine::query()
-            ->where('epc_id', $epcId)
+            ->whereIn('epc_id', $epcIds)
             ->whereIn('status', self::PACKING_RESERVATION_STATUSES)
             ->whereHas('session', function ($query) use ($except): void {
                 $this->applyPackingExclusiveScope($query);
@@ -245,8 +351,19 @@ final class EpcExclusiveSessionGate
             );
         }
 
+        $containerIds = Epc::query()
+            ->whereIn('id', $epcIds)
+            ->where('epc_type', 'sscc')
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        if ($containerIds === []) {
+            return null;
+        }
+
         $session = PackingSession::query()
-            ->where('parent_epc_id', $epcId)
+            ->whereIn('parent_epc_id', $containerIds)
             ->where(function ($query): void {
                 $this->applyPackingExclusiveScope($query);
             })
@@ -271,10 +388,13 @@ final class EpcExclusiveSessionGate
         );
     }
 
-    private function checkDisposition(int $epcId, ExclusiveSessionContext $except): ?EpcExclusiveBlock
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function checkDispositionMany(array $epcIds, ExclusiveSessionContext $except): ?EpcExclusiveBlock
     {
         $line = DispositionScanLine::query()
-            ->where('epc_id', $epcId)
+            ->whereIn('epc_id', $epcIds)
             ->whereIn('status', self::DISPOSITION_RESERVATION_STATUSES)
             ->whereHas('session', function ($query) use ($except): void {
                 $this->applyDispositionExclusiveScope($query);

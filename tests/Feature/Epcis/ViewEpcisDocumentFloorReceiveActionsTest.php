@@ -49,7 +49,8 @@ class ViewEpcisDocumentFloorReceiveActionsTest extends TestCase
                 ->assertActionHasLabel('startReceiving', 'Start Receiving')
                 ->assertActionHidden('viewReceivingSession')
                 ->assertActionVisible('probeScan')
-                ->assertActionVisible('reprocess');
+                ->assertActionVisible('reprocess')
+                ->assertActionVisible('reevaluateFindings');
         } finally {
             $this->cleanup();
         }
@@ -80,7 +81,8 @@ class ViewEpcisDocumentFloorReceiveActionsTest extends TestCase
                 ->assertActionHasLabel('startReceiving', 'Continue Receiving')
                 ->assertActionVisible('viewReceivingSession')
                 ->assertActionVisible('probeScan')
-                ->assertActionVisible('reprocess');
+                ->assertActionVisible('reprocess')
+                ->assertActionVisible('reevaluateFindings');
         } finally {
             $this->cleanup();
         }
@@ -112,7 +114,8 @@ class ViewEpcisDocumentFloorReceiveActionsTest extends TestCase
                 ->assertActionVisible('viewReceivingSession')
                 ->assertActionHasLabel('viewReceivingSession', 'View Receiving Session')
                 ->assertActionHidden('probeScan')
-                ->assertActionHidden('reprocess');
+                ->assertActionHidden('reprocess')
+                ->assertActionVisible('reevaluateFindings');
         } finally {
             $this->cleanup();
         }

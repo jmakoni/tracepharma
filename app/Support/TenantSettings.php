@@ -233,6 +233,28 @@ class TenantSettings
         return $this;
     }
 
+    /**
+     * When true, scan-first may complete without an inbound EPCIS file.
+     * Default false — LATE_FAILED_EPCIS hard-blocks complete.
+     */
+    public function allowScanFirstCompleteWithoutFile(): bool
+    {
+        return (bool) data_get($this->settingsBag(), 'receiving.allow_scan_first_complete_without_file', false);
+    }
+
+    public function setAllowScanFirstCompleteWithoutFile(bool $allow): self
+    {
+        if ($this->tenant === null) {
+            return $this;
+        }
+
+        $settings = $this->settingsBag();
+        data_set($settings, 'receiving.allow_scan_first_complete_without_file', $allow);
+        $this->tenant->setAttribute('settings', $settings === [] ? null : $settings);
+
+        return $this;
+    }
+
     public function receivingEdgeMode(): ?ReceivingEdgeMode
     {
         $value = data_get($this->settingsBag(), 'receiving.edge_mode');
@@ -1410,6 +1432,26 @@ class TenantSettings
     }
 
     /**
+     * When true, Complete receive waits for VRS `verified` on confirmed SGTINs.
+     * When false (default), receive can complete while verification is still pending.
+     */
+    public function hardGateReceiveComplete(): bool
+    {
+        $value = $this->setting('vrs.hard_gate_receive_complete');
+
+        if ($value === null) {
+            return false;
+        }
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+    }
+
+    public function setHardGateReceiveComplete(bool $enabled): self
+    {
+        return $this->putSetting('vrs.hard_gate_receive_complete', $enabled);
+    }
+
+    /**
      * Opt-in client portal v2 (OTP auth + org membership). Default off.
      */
     public function clientPortalV2Enabled(): bool
@@ -2107,6 +2149,7 @@ class TenantSettings
      *     require_pure_epcis_document?: bool|null,
      *     block_receive_on_destination_gln_mismatch?: bool|null,
      *     match_inbound_ship_to_site?: bool|null,
+     *     hard_gate_receive_complete?: bool|null,
      *     auto_open_receive_after_transfer_ship?: bool|null,
      *     auto_complete_asn_on_ready?: bool|null,
      *     auto_receive_from_cmo?: bool|null,
@@ -2182,6 +2225,7 @@ class TenantSettings
             'block_receive_on_destination_gln_mismatch',
             'match_inbound_ship_to_site',
             'block_send_on_atp_gap',
+            'hard_gate_receive_complete',
             'auto_open_receive_after_transfer_ship',
             'auto_complete_asn_on_ready',
             'auto_receive_from_cmo',
@@ -2268,6 +2312,7 @@ class TenantSettings
                 'block_receive_on_destination_gln_mismatch' => $this->setBlockReceiveOnDestinationGlnMismatch((bool) $data[$key]),
                 'match_inbound_ship_to_site' => $this->setMatchInboundShipToSite((bool) $data[$key]),
                 'block_send_on_atp_gap' => $this->setBlockSendOnAtpGap((bool) $data[$key]),
+                'hard_gate_receive_complete' => $this->setHardGateReceiveComplete((bool) $data[$key]),
                 'auto_open_receive_after_transfer_ship' => $this->setAutoOpenReceiveAfterTransferShip((bool) $data[$key]),
                 'auto_complete_asn_on_ready' => $this->setAutoCompleteAsnOnReady((bool) $data[$key]),
                 'auto_receive_from_cmo' => $this->setAutoReceiveFromCmo((bool) $data[$key]),

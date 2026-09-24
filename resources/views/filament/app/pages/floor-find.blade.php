@@ -35,7 +35,7 @@
             ></p>
 
             <form
-                wire:submit.prevent="runTrace"
+                x-on:submit.prevent="$wire.runTrace($refs.scanInput.value)"
                 x-init="$nextTick(() => $refs.scanInput?.focus())"
                 class="tp-floor-receive__scan-form"
             >
@@ -44,9 +44,9 @@
                         id="floor-scan-input"
                         type="text"
                         inputmode="none"
-                        wire:model.blur="scan"
+                        wire:model="scan"
                         x-ref="scanInput"
-                        x-on:keydown.enter.prevent="$wire.runTrace()"
+                        x-on:keydown.enter.prevent="$wire.runTrace($refs.scanInput.value)"
                         autocomplete="off"
                         autofocus
                         class="tp-floor-receive__scan-input"
@@ -64,8 +64,7 @@
                     :aria-pressed="cameraOn ? 'true' : 'false'"
                     x-on:click="toggleCamera()"
                 >
-                    <x-filament::icon icon="heroicon-o-camera" class="size-6" />
-                    <span class="tp-floor-receive__camera-btn-label">Camera</span>
+                    <x-filament::icon icon="heroicon-o-qr-code" class="size-6" />
                 </button>
             </form>
 
@@ -106,38 +105,11 @@
             @endif
         </div>
 
-        <div
-            x-show="cameraOn"
-            x-cloak
-            class="tp-floor-receive__camera-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Camera scanner"
-        >
-            <div class="tp-floor-receive__camera-overlay-bar">
-                <div class="tp-floor-receive__camera-overlay-bar-start">
-                    <button
-                        type="button"
-                        class="tp-floor-receive__camera-close"
-                        x-show="torchSupported"
-                        x-cloak
-                        x-on:click="toggleTorch()"
-                        :aria-pressed="torchOn ? 'true' : 'false'"
-                    >{{-- label via aria --}}
-                        <span x-text="torchOn ? 'Torch on' : 'Torch'"></span>
-                    </button>
-                </div>
-                <button
-                    type="button"
-                    class="tp-floor-receive__camera-close"
-                    x-ref="cameraClose"
-                    x-on:click="stopCamera()"
-                >Close</button>
-            </div>
-            <div wire:ignore class="tp-floor-receive__camera-host">
-                <div id="tp-floor-qr-reader" class="tp-floor-receive__camera"></div>
-            </div>
-        </div>
+        @include('filament.app.partials.floor-camera-overlay', [
+            'stats' => [],
+            'decode' => null,
+            'error' => null,
+        ])
     </div>
 
     @include('filament.app.partials.floor-bottom-nav', ['active' => 'profile'])

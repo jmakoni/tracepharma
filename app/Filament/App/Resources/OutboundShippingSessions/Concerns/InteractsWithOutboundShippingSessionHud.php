@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\OutboundShippingSessions\Concerns;
 
 use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\VoidOutboundShippingSession;
+use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileViewOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
@@ -298,14 +299,15 @@ trait InteractsWithOutboundShippingSessionHud
 
     protected function refreshOutboundShippingSessionHud(): void
     {
-        $this->outboundShippingSession()->refresh()->loadMissing([
-            'site',
-            'tradingPartner',
-            'shipToSite',
-            'outboundConnection',
-            'epcisDocument.outboundConnection',
-        ]);
-        $this->hydrateDeaScheduleChip();
+        $relations = $this->isFloorShippingHud()
+            ? ['site']
+            : ['site', 'tradingPartner', 'shipToSite', 'outboundConnection', 'epcisDocument.outboundConnection'];
+
+        $this->outboundShippingSession()->refresh()->loadMissing($relations);
+
+        if (! $this->isFloorShippingHud()) {
+            $this->hydrateDeaScheduleChip();
+        }
     }
 
     private function hydrateDeaScheduleChip(): void
@@ -419,25 +421,32 @@ trait InteractsWithOutboundShippingSessionHud
                         $result['epc'] ?? null,
                     );
 
-                    $notification = Notification::make()->title($result['message']);
+                    if (! $this->isFloorShippingHud()) {
+                        $notification = Notification::make()->title($result['message']);
 
-                    match ($tone) {
-                        'ok' => $notification->success(),
-                        'warn' => $notification->warning(),
-                        default => $notification->danger(),
-                    };
+                        match ($tone) {
+                            'ok' => $notification->success(),
+                            'warn' => $notification->warning(),
+                            default => $notification->danger(),
+                        };
 
-                    $notification->ephemeral()->send();
+                        $notification->ephemeral()->send();
+                    }
 
                     if ($result['effect'] === 'confirmed') {
-                        $this->notifyOpenParentHierarchyIfNeeded($this->outboundShippingSession());
+                        if (! $this->isFloorShippingHud()) {
+                            $this->notifyOpenParentHierarchyIfNeeded($this->outboundShippingSession());
+                        }
                         $this->afterOutboundScanConfirmed();
                     }
 
                     $this->dispatch('focus-scan');
                     $this->dispatch('scan-result', tone: $tone);
-                    $this->dispatch('outbound-shipping-scan-lines-updated')
-                        ->to(ScanLinesRelationManager::class);
+
+                    if (! $this->isFloorShippingHud()) {
+                        $this->dispatch('outbound-shipping-scan-lines-updated')
+                            ->to(ScanLinesRelationManager::class);
+                    }
                 } finally {
                     $this->confirmScanInFlight = false;
                 }
@@ -502,12 +511,20 @@ trait InteractsWithOutboundShippingSessionHud
         $this->lastScanDetail = $detail;
         $this->lastScanHref = $href;
         $this->lastScanEpcId = $epc?->getKey();
-        $this->lastScanContextLinks = $epc !== null
+        $this->lastScanContextLinks = ($epc !== null && ! $this->isFloorShippingHud())
             ? array_values(array_filter(
                 app(EpcContextLinks::class)->forEpc($epc, AssetTrackingUrl::scanForEpc($epc), auth()->id()),
                 fn (array $link): bool => ($link['key'] ?? null) !== 'open_ship',
             ))
             : [];
+    }
+
+    /**
+     * Floor mobile HUD — keep confirm round-trips lean (no desktop chip/table work).
+     */
+    private function isFloorShippingHud(): bool
+    {
+        return $this instanceof MobileViewOutboundShippingSession;
     }
 
     private function identifierFor(?Epc $epc): ?string

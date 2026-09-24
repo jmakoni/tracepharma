@@ -12,6 +12,8 @@ use App\Services\Outbound\CustomerPortalService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
@@ -31,6 +33,7 @@ final class CompleteOutboundShippingSession
         private readonly GenerateShippingEpcisEvents $generateShippingEpcisEvents,
         private readonly EpcCustodyGate $custodyGate,
         private readonly CustomerPortalService $customerPortalService,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
     ) {}
 
     public function handle(OutboundShippingSession $session, ?int $actorId = null): OutboundShippingSession
@@ -248,18 +251,21 @@ final class CompleteOutboundShippingSession
                     'sending this shipment',
                     $session->principal_id !== null ? (int) $session->principal_id : null,
                 );
-
-                return;
+            } else {
+                // Ids, not models: the gate resolves them itself and fails closed on one it
+                // cannot load, where dropping it here would wave the line through unchecked.
+                $this->custodyGate->assertCorrectiveShipAllowed(
+                    $epcIds,
+                    $session->corrects_epcis_document_id !== null
+                        ? (int) $session->corrects_epcis_document_id
+                        : null,
+                    $session->site_id !== null ? (int) $session->site_id : null,
+                );
             }
 
-            // Ids, not models: the gate resolves them itself and fails closed on one it
-            // cannot load, where dropping it here would wave the line through unchecked.
-            $this->custodyGate->assertCorrectiveShipAllowed(
+            $this->exclusiveGate->assertParentsHierarchyFree(
                 $epcIds,
-                $session->corrects_epcis_document_id !== null
-                    ? (int) $session->corrects_epcis_document_id
-                    : null,
-                $session->site_id !== null ? (int) $session->site_id : null,
+                ExclusiveSessionContext::forShipping($session),
             );
         } catch (InvalidArgumentException $e) {
             throw new DomainException($e->getMessage(), 0, $e);

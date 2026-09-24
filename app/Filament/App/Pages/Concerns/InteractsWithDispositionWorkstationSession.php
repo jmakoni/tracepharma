@@ -63,7 +63,7 @@ trait InteractsWithDispositionWorkstationSession
 
     protected function refuseIfEpcReserved(Epc $epc, string $scan, string $tone = 'error'): bool
     {
-        $block = app(EpcExclusiveSessionGate::class)->check($epc, $this->dispositionExclusiveContext());
+        $block = app(EpcExclusiveSessionGate::class)->checkScannedEpc($epc, $this->dispositionExclusiveContext());
         if ($block === null) {
             return false;
         }

@@ -112,9 +112,12 @@ final class EmitReturningEpcis
                 );
             }
 
-            $block = $this->exclusiveGate->check($epc, $this->exceptContext($options));
-            if ($block !== null) {
-                throw new InvalidArgumentException($block->dispositionRefusal('return'));
+            $reservation = $this->exclusiveGate->firstHierarchyReservation($epc, $this->exceptContext($options));
+            if ($reservation !== null) {
+                throw new InvalidArgumentException(
+                    $reservation['block']->dispositionRefusal('return').
+                    ' Reserved EPC: '.$this->exclusiveGate->epcLabel($reservation['epc']).'.',
+                );
             }
 
             $uris[] = (string) $epc->epc_uri;

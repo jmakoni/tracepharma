@@ -67,7 +67,7 @@ trait InteractsWithPackingWorkstationSession
 
     protected function refuseIfEpcReserved(Epc $epc, string $scan, string $tone = 'warn'): bool
     {
-        $block = app(EpcExclusiveSessionGate::class)->check($epc, $this->packingExclusiveContext());
+        $block = app(EpcExclusiveSessionGate::class)->checkScannedEpc($epc, $this->packingExclusiveContext());
         if ($block === null) {
             return false;
         }

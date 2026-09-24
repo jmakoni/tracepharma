@@ -36,7 +36,7 @@ final class ReceiveDuplicateSerial
             return 'already_received';
         }
 
-        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+        $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forReceiving($session));
         if ($block !== null) {
             return $block->effect;
         }

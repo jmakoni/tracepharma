@@ -9,6 +9,8 @@ use App\Services\Custody\EpcCustodyGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\TenantFeatures;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +30,7 @@ final class CompleteTransferringSession
     public function __construct(
         private readonly GenerateTransferringEpcisEvents $generateTransferringEpcisEvents,
         private readonly EpcCustodyGate $custodyGate,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
     ) {}
 
     public function handle(TransferringSession $session, ?int $actorId = null): TransferringSession
@@ -147,6 +150,11 @@ final class CompleteTransferringSession
             ->all();
 
         $this->custodyGate->assertOperableFor($epcIds, 'shipping this transfer');
+
+        $this->exclusiveGate->assertParentsHierarchyFree(
+            $epcIds,
+            ExclusiveSessionContext::forTransferring($session),
+        );
     }
 
     /**

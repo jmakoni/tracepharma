@@ -156,10 +156,10 @@ class MobileFloorTransferringTest extends TestCase
             'views/filament/app/resources/transferring-sessions/pages/mobile-view-transferring-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="confirmScanInput"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
@@ -170,10 +170,10 @@ class MobileFloorTransferringTest extends TestCase
             'views/filament/app/resources/transferring-sessions/pages/view-transferring-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="confirmScanInput"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 

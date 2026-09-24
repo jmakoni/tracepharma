@@ -23,6 +23,7 @@
                                 'class' => 'stats stats-horizontal bg-base-200 shadow',
                             ])
                         @endif
+                        @include('filament.app.partials.receive-exception-badges')
                     </x-slot:qty>
 
                     <x-slot:alert>

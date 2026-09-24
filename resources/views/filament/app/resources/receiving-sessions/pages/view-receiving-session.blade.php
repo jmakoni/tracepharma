@@ -89,6 +89,8 @@
                     'progress' => $this->sessionProgress(),
                 ])
 
+                @include('filament.app.partials.receive-exception-badges')
+
                 @if ($lockedTote = $this->openToteLockedParentLabel())
                     <div class="rounded-lg border border-base-300 bg-base-200/60 px-3 py-2 text-sm font-medium">
                         Open tote {{ $lockedTote }}

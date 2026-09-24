@@ -11,6 +11,8 @@ use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Enums\ExceptionStatus;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Filament\App\Resources\Exceptions\Pages\ListExceptions;
 use App\Filament\App\Resources\ReceivingSessions\Pages\MobileViewReceivingSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -357,7 +359,7 @@ class ReceiveExceptionP0Test extends TestCase
             $this->assertGreaterThanOrEqual(1, $counts['quarantine']);
 
             $blade = File::get(resource_path(
-                'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
+                'views/filament/app/partials/receive-exception-badges.blade.php',
             ));
             $this->assertStringContainsString('Shortage {{ $exceptionBadges[\'shortage\'] }}', $blade);
             $this->assertStringContainsString('No data {{ $exceptionBadges[\'no_data\'] }}', $blade);
@@ -365,12 +367,67 @@ class ReceiveExceptionP0Test extends TestCase
             $this->assertStringNotContainsString('child-epc', $blade);
             $this->assertStringNotContainsString('aggregation children', strtolower($blade));
 
-            Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
+            $this->assertTrue(ExceptionResource::canAccess());
+            $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSee('Shortage 1')
                 ->assertSee('No data 1')
                 ->assertSee('Quarantine '.$counts['quarantine'])
                 ->assertDontSee(self::SGTIN_URI);
+
+            $noDataUrl = $component->instance()->receiveExceptionInboxUrl('no_data');
+            $this->assertNotNull($noDataUrl);
+            $this->assertStringContainsString('/exceptions', parse_url($noDataUrl, PHP_URL_PATH) ?? $noDataUrl);
+            $this->assertStringContainsString('receiving_session_id', $noDataUrl);
+            $this->assertStringContainsString((string) $session->getKey(), $noDataUrl);
+            $this->assertStringContainsString('PRODUCT_NO_DATA', $noDataUrl);
+            $html = $component->html();
+            $this->assertStringContainsString('/exceptions', $html);
+            $this->assertStringContainsString('PRODUCT_NO_DATA', $html);
+            $this->assertStringContainsString((string) $session->getKey(), $html);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function exceptions_filter_returns_session_product_no_data_case(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Notification::fake();
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setEdgeMode($tenant, ReceivingEdgeMode::SealedParent);
+            $this->actingAs($this->createOwnerUser());
+
+            $session = $this->openAsnFromFixture();
+            $extra = $this->createSsccEpc();
+            $noData = app(AuthorReceiveSessionException::class)->productNoData(
+                $session,
+                [(int) $extra->getKey()],
+                auth()->user(),
+            );
+            $this->trackCase($noData);
+
+            $noise = ExceptionCase::query()->create([
+                'exception_type_id' => $noData->exception_type_id,
+                'document_id' => $session->epcis_document_id,
+                'trading_partner_id' => $session->trading_partner_id,
+                'site_id' => $session->site_id,
+                'title' => 'Unrelated product no data',
+                'description' => 'No receiving_session_id activity',
+                'severity' => $noData->severity?->value ?? 'high',
+                'status' => ExceptionStatus::New->value,
+            ]);
+            $this->trackCase($noise);
+
+            Livewire::test(ListExceptions::class)
+                ->set('activeTab', 'all_open')
+                ->set('tableFilters.receiving_session_id.value', (string) $session->getKey())
+                ->set('tableFilters.type_code.value', ReceiveExceptionTypes::PRODUCT_NO_DATA)
+                ->assertCanSeeTableRecords([$noData])
+                ->assertCanNotSeeTableRecords([$noise]);
         } finally {
             $this->cleanup($tenant);
         }

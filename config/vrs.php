@@ -9,8 +9,9 @@ $defaultDriver = $appEnv === 'production' ? 'null' : 'fake';
 return [
     'driver' => env('VRS_DRIVER', $defaultDriver),
 
-    // When true (default), Complete receive waits for VRS `verified` on confirmed SGTINs.
-    'hard_gate_receive_complete' => (bool) env('VRS_HARD_GATE_RECEIVE', true),
+    // Legacy env kill-switch only. Complete-receive VRS wait is tenant-opt-in
+    // (Organization Settings → Require VRS verified before completing receive).
+    'hard_gate_receive_complete' => (bool) env('VRS_HARD_GATE_RECEIVE', false),
 
     'http' => [
         // Production HttpVrsClient — set VRS_BASE_URL and VRS_API_KEY when wiring a live VRS.

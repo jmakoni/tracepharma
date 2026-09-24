@@ -287,9 +287,12 @@ class MobileFloorReceivingTest extends TestCase
             $blade = File::get(resource_path(
                 'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
             ));
+            $badges = File::get(resource_path(
+                'views/filament/app/partials/receive-exception-badges.blade.php',
+            ));
 
-            $this->assertStringContainsString('Overage {{ $exceptionBadges[\'overage\'] }}', $blade);
-            $this->assertStringContainsString('Damaged {{ $exceptionBadges[\'damaged\'] }}', $blade);
+            $this->assertStringContainsString('Overage {{ $exceptionBadges[\'overage\'] }}', $badges);
+            $this->assertStringContainsString('Damaged {{ $exceptionBadges[\'damaged\'] }}', $badges);
             $this->assertStringNotContainsString("mountAction('reportDamaged')", $blade);
             $this->assertStringNotContainsString('Report Damaged', $blade);
             $this->assertStringContainsString("mountAction('closeTransferWithShortage')", $blade);

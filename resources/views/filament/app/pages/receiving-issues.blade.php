@@ -116,5 +116,30 @@
                 </div>
             </div>
         @endif
+
+        @if ($this->session() && ($autoCases = $this->autoAuthoredCasesForSession())->isNotEmpty())
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body gap-3">
+                    <h2 class="card-title text-base">Receive exceptions from scan or complete</h2>
+                    <p class="text-sm opacity-70">Read-only. Filed automatically during receive. Use Exceptions to investigate.</p>
+                    <ul class="divide-y divide-base-200">
+                        @foreach ($autoCases as $case)
+                            <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                                <div class="flex flex-col gap-0.5">
+                                    <span class="font-medium">{{ $case->title }}</span>
+                                    <span class="opacity-70">
+                                        {{ $case->type?->code ?? 'UNCLASSIFIED' }}
+                                        · {{ $case->status?->label() ?? $case->status }}
+                                    </span>
+                                </div>
+                                @if ($url = $this->exceptionUrl($case))
+                                    <a href="{{ $url }}" class="btn btn-sm btn-outline">Open</a>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
     </div>
 </x-filament-panels::page>

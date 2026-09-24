@@ -6,6 +6,7 @@ use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Transferring\CompleteTransferringSession;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\App\Resources\TransferringSessions\Pages\MobileViewTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
@@ -212,7 +213,7 @@ trait InteractsWithTransferringSessionHud
             };
 
             $this->scan = '';
-            $this->getRecord()->refresh()->loadMissing(['fromSite', 'toSite', 'transferDocument', 'receivingSession']);
+            $this->refreshRecordAfterConfirm();
             $this->hydrateDeaScheduleChip();
 
             $this->setLastScan(
@@ -223,20 +224,26 @@ trait InteractsWithTransferringSessionHud
                 $result['epc'] ?? null,
             );
 
-            $notification = Notification::make()->title($result['message']);
+            // Floor already shows lastScanMessage + scan-flash; skip Filament toast overhead.
+            if (! $this->isFloorTransferHud()) {
+                $notification = Notification::make()->title($result['message']);
 
-            match ($tone) {
-                'ok' => $notification->success(),
-                'warn' => $notification->warning(),
-                default => $notification->danger(),
-            };
+                match ($tone) {
+                    'ok' => $notification->success(),
+                    'warn' => $notification->warning(),
+                    default => $notification->danger(),
+                };
 
-            $notification->ephemeral()->send();
+                $notification->ephemeral()->send();
+            }
 
             $this->dispatch('focus-scan');
             $this->dispatch('scan-result', tone: $tone);
-            $this->dispatch('transferring-scan-lines-updated')
-                ->to(ScanLinesRelationManager::class);
+
+            if (! $this->isFloorTransferHud()) {
+                $this->dispatch('transferring-scan-lines-updated')
+                    ->to(ScanLinesRelationManager::class);
+            }
         } finally {
             $this->confirmScanInFlight = false;
         }
@@ -259,12 +266,30 @@ trait InteractsWithTransferringSessionHud
         $this->lastScanDetail = $detail;
         $this->lastScanHref = $href;
         $this->lastScanEpcId = $epc?->getKey();
-        $this->lastScanContextLinks = $epc !== null
+        // Floor does not render context link chips.
+        $this->lastScanContextLinks = ($epc !== null && ! $this->isFloorTransferHud())
             ? array_values(array_filter(
                 app(EpcContextLinks::class)->forEpc($epc, AssetTrackingUrl::scanForEpc($epc), auth()->id()),
                 fn (array $link): bool => ($link['key'] ?? null) !== 'open_transfer',
             ))
             : [];
+    }
+
+    /**
+     * Floor mobile HUD — keep confirm round-trips lean (no desktop chip/table work).
+     */
+    private function isFloorTransferHud(): bool
+    {
+        return $this instanceof MobileViewTransferringSession;
+    }
+
+    private function refreshRecordAfterConfirm(): void
+    {
+        $relations = $this->isFloorTransferHud()
+            ? ['fromSite', 'toSite']
+            : ['fromSite', 'toSite', 'transferDocument', 'receivingSession'];
+
+        $this->getRecord()->refresh()->loadMissing($relations);
     }
 
     private function identifierFor(?Epc $epc): ?string
@@ -381,13 +406,12 @@ trait InteractsWithTransferringSessionHud
         /** @var TransferringSession $session */
         $session = $this->getRecord();
         $gtins = $session->scanLines()
-            ->with('epc:id,gtin14')
-            ->get()
-            ->pluck('epc.gtin14')
-            ->filter(fn ($gtin): bool => filled($gtin))
+            ->join('epcs', 'epcs.id', '=', 'transferring_scan_lines.epc_id')
+            ->whereNotNull('epcs.gtin14')
+            ->where('epcs.gtin14', '!=', '')
+            ->distinct()
+            ->pluck('epcs.gtin14')
             ->map(fn ($gtin): string => (string) $gtin)
-            ->unique()
-            ->values()
             ->all();
 
         $presence = ScheduledProductPresence::forGtins($gtins);

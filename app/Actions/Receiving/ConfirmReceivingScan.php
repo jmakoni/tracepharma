@@ -135,14 +135,22 @@ class ConfirmReceivingScan
         }
 
         if ($session->isScanFirst()) {
-            return $this->confirmScanFirst($session, $scan, $userId, $autoConfirmChildren, $actor);
+            $result = $this->confirmScanFirst($session, $scan, $userId, $autoConfirmChildren, $actor);
+        } elseif ($session->isTransferReceive()) {
+            $result = $this->confirmTransferReceive($session, $scan, $userId);
+        } else {
+            $result = $this->confirmInboundAsn($session, $scan, $userId, $autoConfirmChildren, $unpack);
         }
 
-        if ($session->isTransferReceive()) {
-            return $this->confirmTransferReceive($session, $scan, $userId);
+        if (($result['ok'] ?? false) === true) {
+            try {
+                app(RecheckReceiveSessionExceptions::class)->handle($session->fresh() ?? $session, $actor);
+            } catch (Throwable) {
+                // Confirm already succeeded; honesty re-check must not roll it back.
+            }
         }
 
-        return $this->confirmInboundAsn($session, $scan, $userId, $autoConfirmChildren, $unpack);
+        return $result;
     }
 
     /**
@@ -1070,7 +1078,7 @@ class ConfirmReceivingScan
         }
 
         if ($line->status !== 'confirmed') {
-            $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+            $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forReceiving($session));
             if ($block !== null) {
                 $allowScanFirstBackfill = $block->effect === 'double_receive'
                     && $block->sessionType === FloorSessionType::Receiving;
@@ -2861,7 +2869,7 @@ class ConfirmReceivingScan
      */
     private function exclusiveBlockForReceiving(Epc $epc, ReceivingSession $session, array $extra = []): ?array
     {
-        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+        $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forReceiving($session));
         if ($block === null) {
             return null;
         }

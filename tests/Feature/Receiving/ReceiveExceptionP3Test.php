@@ -246,9 +246,15 @@ class ReceiveExceptionP3Test extends TestCase
             'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
         ));
         $this->assertNotFalse($mobile);
-        $this->assertStringContainsString("Quarantine {{ \$exceptionBadges['quarantine'] }}", $mobile);
+        $this->assertStringContainsString('receive-exception-badges', $mobile);
         $this->assertStringNotContainsString('VRS {{', $mobile);
         $this->assertStringNotContainsString('Verification {{', $mobile);
+
+        $badges = file_get_contents(resource_path(
+            'views/filament/app/partials/receive-exception-badges.blade.php',
+        ));
+        $this->assertNotFalse($badges);
+        $this->assertStringContainsString("Quarantine {{ \$exceptionBadges['quarantine'] }}", $badges);
     }
 
     private function bindFailedVrsClient(string $gtin14, string $serial): void

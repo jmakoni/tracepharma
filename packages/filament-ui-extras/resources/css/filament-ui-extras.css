@@ -109,21 +109,37 @@
     transition: margin 220ms ease, padding 220ms ease;
 }
 
-/* Prefer a single chevron affordance: hide the X and reuse open/close with rotate */
+/* Single chevron slot: Filament ships two x-show buttons; stack them and rotate. */
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-collapse-sidebar-btn-ctn,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-collapse-sidebar-btn-ctn {
+    position: relative;
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+}
+
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-open-collapse-sidebar-btn,
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-open-collapse-sidebar-btn,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn {
+    position: absolute;
+    inset: 0;
+}
+
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-open-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar-open-collapse-sidebar-btn .fi-icon,
 .fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-open-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-sidebar-open-collapse-sidebar-btn .fi-icon,
 .fi-body-has-sidebar-fully-collapsible-on-desktop .fi-sidebar-close-collapse-sidebar-btn .fi-icon {
     transition: transform 220ms ease;
 }
 
-.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-open-sidebar-btn .fi-icon,
-.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-open-sidebar-btn .fi-icon {
-    transition: transform 220ms ease;
-}
-
-/* When open, rotate the collapse control like a chevron */
-.fi-body-has-sidebar-collapsible-on-desktop:not(.fi-body-has-sidebar-fully-collapsible-on-desktop)
-    .fi-sidebar-close-collapse-sidebar-btn
-    .fi-icon {
+.fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn .fi-icon,
+.fi-body-has-sidebar-fully-collapsible-on-desktop .fi-sidebar-close-collapse-sidebar-btn .fi-icon {
     transform: rotate(180deg);
 }
 
@@ -168,9 +184,14 @@ button[aria-label*='otification']:hover .fi-icon,
     .fi-sidebar,
     .fi-main,
     .fi-uie-loading-bar,
-    .fi-uie-skeleton-pulse {
+    .fi-uie-skeleton-pulse,
+    .fi-topbar-open-collapse-sidebar-btn .fi-icon,
+    .fi-topbar-close-collapse-sidebar-btn .fi-icon,
+    .fi-sidebar-open-collapse-sidebar-btn .fi-icon,
+    .fi-sidebar-close-collapse-sidebar-btn .fi-icon {
         animation: none !important;
         transition: none !important;
+        transform: none !important;
     }
 }
 
@@ -410,11 +431,29 @@ button[aria-label*='otification']:hover .fi-icon,
     display: flex;
     align-items: center;
     gap: 0;
+    border: 1px solid color-mix(in oklab, var(--gray-300) 100%, transparent);
+    border-radius: var(--radius-lg, 0.5rem);
+    background: color-mix(in oklab, var(--gray-50) 100%, transparent);
+    padding-inline-start: 0.75rem;
+}
+
+.dark .fi-uie-inline-label-prefix[data-uie-label],
+.fi-uie-inline-label-prefix[data-uie-label]:where(.dark *) {
+    border-color: color-mix(in oklab, var(--gray-600) 100%, transparent);
+    background: color-mix(in oklab, var(--gray-900) 100%, transparent);
 }
 
 .fi-uie-inline-label-prefix[data-uie-label] > * {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+.fi-uie-inline-label-prefix[data-uie-label] .fi-input-wrp,
+.fi-uie-inline-label-prefix[data-uie-label] .fi-select-wrp,
+.fi-uie-inline-label-prefix[data-uie-label] .fi-fo-select {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
 }
 
 .fi-uie-inline-label-prefix--mute-value .choices__item--selectable,

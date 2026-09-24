@@ -158,7 +158,7 @@ final class ConfirmOutboundShippingScan
                 ];
             }
 
-            $exclusiveBlock = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forShipping($session));
+            $exclusiveBlock = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forShipping($session));
             if ($exclusiveBlock !== null) {
                 return [
                     ...$exclusiveBlock->toScanResult(),

@@ -168,9 +168,12 @@ final class EmitDecommissioningEpcis
                 throw new InvalidArgumentException("EPC #{$epcId} is missing an epc_uri for decommissioning.");
             }
 
-            $block = $this->exclusiveGate->check($epc, $this->exceptContext($options));
-            if ($block !== null) {
-                throw new InvalidArgumentException($block->dispositionRefusal('decommission'));
+            $reservation = $this->exclusiveGate->firstHierarchyReservation($epc, $this->exceptContext($options));
+            if ($reservation !== null) {
+                throw new InvalidArgumentException(
+                    $reservation['block']->dispositionRefusal('decommission').
+                    ' Reserved EPC: '.$this->exclusiveGate->epcLabel($reservation['epc']).'.',
+                );
             }
 
             $uris[] = (string) $epc->epc_uri;

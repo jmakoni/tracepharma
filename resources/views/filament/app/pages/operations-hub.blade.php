@@ -17,7 +17,11 @@
         >
             <div class="card-body gap-4">
                 <h2 class="card-title text-base">Scan to route</h2>
-                <form wire:submit.prevent="routeHubScan" class="flex flex-col gap-4">
+                <form
+                    x-on:submit.prevent="$wire.routeHubScan($refs.hubScanInput.value)"
+                    x-on:keydown.enter.prevent="$wire.routeHubScan($refs.hubScanInput.value)"
+                    class="flex flex-col gap-4"
+                >
                     <div class="form-control w-full gap-1.5">
                         <label for="hub-scan-input" class="label-text text-sm font-medium">
                             Scan barcode

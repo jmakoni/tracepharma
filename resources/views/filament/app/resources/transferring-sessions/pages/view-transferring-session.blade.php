@@ -139,7 +139,7 @@
                     </div>
                 @else
                     <form
-                        wire:submit.prevent="confirmScanInput"
+                        x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
@@ -153,7 +153,7 @@
                                 <input
                                     id="scan-input"
                                     type="text"
-                                    wire:model.live.blur="scan"
+                                    wire:model="scan"
                                     x-ref="scanInput"
                                     x-on:keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"
                                     autocomplete="off"

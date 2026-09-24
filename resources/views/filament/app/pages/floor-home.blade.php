@@ -16,7 +16,7 @@
             <img
                 src="{{ filament()->getFavicon() }}"
                 alt="TracePharma"
-                class="h-8 w-8 shrink-0"
+                class="h-12 w-12 shrink-0"
             />
             <button
                 type="button"

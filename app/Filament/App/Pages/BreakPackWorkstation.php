@@ -311,6 +311,9 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         $this->removePackingStagedChild($childId);
     }
 
+    /**
+     * @return list<array{epc_id: int, identifier: string, label: string, type: string, scanned_at: string, urn: string, present: bool, can_remove: bool}>
+     */
     public function selectedScanRows(): array
     {
         $ids = array_values(array_filter(

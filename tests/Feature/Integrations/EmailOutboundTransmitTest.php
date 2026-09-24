@@ -49,7 +49,7 @@ class EmailOutboundTransmitTest extends TestCase
 
         try {
             $connection = $this->createEmailConnection([
-                'to_emails' => ['partner@example.com'],
+                'to_emails' => ['partner@acme-wholesaler.com'],
                 'max_attachment_mb' => 15,
             ]);
             $xml = $this->schemaValidOutboundXml();
@@ -62,7 +62,7 @@ class EmailOutboundTransmitTest extends TestCase
             $this->assertNotNull($document->sent_at);
 
             Mail::assertSent(OutboundEpcisAttachmentMail::class, function (OutboundEpcisAttachmentMail $mail) use ($xml): bool {
-                return $mail->hasTo('partner@example.com')
+                return $mail->hasTo('partner@acme-wholesaler.com')
                     && $mail->attachmentContent === $xml;
             });
         } finally {
@@ -106,7 +106,7 @@ class EmailOutboundTransmitTest extends TestCase
 
         try {
             $connection = $this->createEmailConnection([
-                'to_emails' => ['partner@example.com'],
+                'to_emails' => ['partner@acme-wholesaler.com'],
                 'max_attachment_mb' => 1,
             ]);
             // Trailing whitespace keeps the EPCIS document schema-valid while exceeding the limit.

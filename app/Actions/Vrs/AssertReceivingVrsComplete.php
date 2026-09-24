@@ -9,6 +9,7 @@ use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Verification;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use DomainException;
 
 /**
@@ -18,7 +19,7 @@ final class AssertReceivingVrsComplete
 {
     public function applies(): bool
     {
-        if (! (bool) config('vrs.hard_gate_receive_complete', true)) {
+        if (! TenantSettings::forTenant(tenant())->hardGateReceiveComplete()) {
             return false;
         }
 

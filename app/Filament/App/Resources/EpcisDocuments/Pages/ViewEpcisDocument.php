@@ -9,6 +9,7 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Epcis\VoidEpcisDocument;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Exceptions\InboundReceiverGlnRejected;
+use App\Filament\App\Resources\EpcisDocuments\Actions\ReevaluateFindingsAction;
 use App\Filament\App\Resources\EpcisDocuments\Actions\StartReceivingAction;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Support\QueueSerializedTrackTraceExport;
@@ -164,6 +165,7 @@ class ViewEpcisDocument extends ViewRecord
 
                     return $session !== null ? ReceiveLayout::sessionUrl($session) : null;
                 }),
+            ReevaluateFindingsAction::forDocument(fn (): EpcisDocument => $this->getRecord()),
             ActionGroup::make([
                 Action::make('downloadTransactionReport')
                     ->label('Track & Trace')

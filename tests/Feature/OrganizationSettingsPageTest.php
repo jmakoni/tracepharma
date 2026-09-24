@@ -378,6 +378,54 @@ class OrganizationSettingsPageTest extends TestCase
     }
 
     #[Test]
+    public function save_persists_hard_gate_receive_complete_toggle(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $this->setProfile($tenant, TenantProfile::Pharmacy);
+        $settings = TenantSettings::forTenant($tenant);
+        $prior = $settings->hardGateReceiveComplete();
+        $priorReceiveSiteId = $settings->defaultReceiveSiteId();
+        $priorGln = $settings->gln();
+
+        try {
+            $this->assertFalse($prior);
+
+            $user = $this->createOwner();
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'hard_gate_receive_complete' => true,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertTrue(TenantSettings::forTenant($tenant->fresh())->hardGateReceiveComplete());
+
+            Livewire::test(OrganizationSettings::class)
+                ->fillForm([
+                    'default_receive_site_id' => null,
+                    'gln' => null,
+                    'hard_gate_receive_complete' => false,
+                ])
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            $this->assertFalse(TenantSettings::forTenant($tenant->fresh())->hardGateReceiveComplete());
+        } finally {
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'hard_gate_receive_complete' => $prior,
+                'default_receive_site_id' => $priorReceiveSiteId,
+                'gln' => $priorGln,
+            ]);
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function save_persists_block_send_on_atp_gap_toggle(): void
     {
         $tenant = $this->initializeDemo2Tenant();

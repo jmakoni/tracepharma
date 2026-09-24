@@ -318,7 +318,7 @@ class ReceiveExceptionP1Test extends TestCase
             $this->assertSame(1, $counts['wrong_site']);
 
             $blade = File::get(resource_path(
-                'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
+                'views/filament/app/partials/receive-exception-badges.blade.php',
             ));
             $this->assertStringContainsString('Mismatch {{ $exceptionBadges[\'mismatch\'] }}', $blade);
             $this->assertStringContainsString('Overage {{ $exceptionBadges[\'overage\'] }}', $blade);

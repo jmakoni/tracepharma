@@ -258,6 +258,15 @@ class PharmacyOutboundDesk extends Page implements HasKnowledgeBase
             });
     }
 
+    public function confirmScanInput(?string $raw = null): void
+    {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $this->mountAction('confirmScan');
+    }
+
     public function confirmScanAction(): Action
     {
         return Action::make('confirmScan')

@@ -43,9 +43,12 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListEpcisDocuments extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = EpcisDocumentResource::class;
 
     /**

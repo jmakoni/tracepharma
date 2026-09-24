@@ -56,10 +56,11 @@
             placeholder="Scan SSCC or SGTIN"
             confirm-label="ADD"
             submit-action="confirmScan"
+            submit-method="stageScan"
         />
     @else
         <form
-            wire:submit.prevent="stageScan"
+            x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"
             x-data
             x-init="$nextTick(() => $refs.scanInput?.focus())"
             x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
@@ -73,7 +74,7 @@
                     <input
                         id="{{ $scanInputId }}"
                         type="text"
-                        wire:model.live.blur="scan"
+                        wire:model="scan"
                         x-ref="scanInput"
                         x-on:keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"
                         autocomplete="off"

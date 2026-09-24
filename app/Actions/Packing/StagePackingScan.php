@@ -77,7 +77,7 @@ final class StagePackingScan
             ];
         }
 
-        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forPacking($session));
+        $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forPacking($session));
         if ($block !== null) {
             return [
                 ...$block->toScanResult(),

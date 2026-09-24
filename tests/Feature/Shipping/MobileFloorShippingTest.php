@@ -159,11 +159,11 @@ class MobileFloorShippingTest extends TestCase
             'views/filament/app/resources/outbound-shipping-sessions/pages/mobile-view-outbound-shipping-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
         $this->assertStringContainsString("tpFloorReceiveConfig('stageScan')", $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
@@ -174,11 +174,11 @@ class MobileFloorShippingTest extends TestCase
             'views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
-        $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('submit-method="stageScan"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
     }
 
     #[Test]

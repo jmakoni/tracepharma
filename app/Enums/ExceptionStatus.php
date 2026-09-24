@@ -13,6 +13,8 @@ enum ExceptionStatus: string
     case Resolved = 'resolved';
     case Closed = 'closed';
     case Cancelled = 'cancelled';
+    case Cleared = 'cleared';
+    case Overridden = 'overridden';
 
     public function label(): string
     {
@@ -26,6 +28,8 @@ enum ExceptionStatus: string
             self::Resolved => 'Resolved',
             self::Closed => 'Closed',
             self::Cancelled => 'Cancelled',
+            self::Cleared => 'Cleared',
+            self::Overridden => 'Overridden',
         };
     }
 
@@ -35,19 +39,26 @@ enum ExceptionStatus: string
             self::New => 'danger',
             self::Triaged, self::Investigating => 'warning',
             self::WaitingInternal, self::WaitingPartner, self::PendingApproval => 'info',
-            self::Resolved => 'success',
+            self::Resolved, self::Cleared => 'success',
+            self::Overridden => 'warning',
             self::Closed, self::Cancelled => 'gray',
         };
     }
 
     public function isOpen(): bool
     {
-        return ! in_array($this, [self::Resolved, self::Closed, self::Cancelled], true);
+        return ! in_array($this, [
+            self::Resolved,
+            self::Closed,
+            self::Cancelled,
+            self::Cleared,
+            self::Overridden,
+        ], true);
     }
 
     public function isTerminal(): bool
     {
-        return in_array($this, [self::Closed, self::Cancelled], true);
+        return in_array($this, [self::Closed, self::Cancelled, self::Cleared, self::Overridden], true);
     }
 
     /**
@@ -56,23 +67,34 @@ enum ExceptionStatus: string
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::New => [self::Triaged, self::Cancelled],
-            self::Triaged => [self::Investigating, self::WaitingInternal, self::WaitingPartner, self::Cancelled],
+            self::New => [self::Triaged, self::Cancelled, self::Cleared, self::Overridden],
+            self::Triaged => [
+                self::Investigating,
+                self::WaitingInternal,
+                self::WaitingPartner,
+                self::Cancelled,
+                self::Cleared,
+                self::Overridden,
+            ],
             self::Investigating => [
                 self::WaitingInternal,
                 self::WaitingPartner,
                 self::PendingApproval,
                 self::Resolved,
                 self::Cancelled,
+                self::Cleared,
+                self::Overridden,
             ],
             self::WaitingInternal, self::WaitingPartner => [
                 self::Investigating,
                 self::PendingApproval,
                 self::Resolved,
+                self::Cleared,
+                self::Overridden,
             ],
-            self::PendingApproval => [self::Resolved, self::Investigating],
+            self::PendingApproval => [self::Resolved, self::Investigating, self::Cleared, self::Overridden],
             self::Resolved => [self::Closed, self::Investigating],
-            self::Closed, self::Cancelled => [],
+            self::Closed, self::Cancelled, self::Cleared, self::Overridden => [],
         };
     }
 

@@ -29,6 +29,19 @@ final class ResolveInboundAggregationChildEpcs
     ): array {
         $documentIds = $this->aggregationDocumentIdsForSession($session, $preferredDocumentId);
 
+        // Scan-first with no document for THIS barcode: use live warehouse children
+        // (same set asset tracing shows). A matched ASN still stays document-scoped.
+        if ($preferredDocumentId === null && $session->isScanFirst()) {
+            return AggregationLink::query()
+                ->where('parent_epc_id', $parentEpc->getKey())
+                ->whereNull('valid_to')
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
         if ($documentIds === []) {
             return [];
         }
@@ -62,12 +75,14 @@ final class ResolveInboundAggregationChildEpcs
             }
         }
 
-        return $query
+        $ids = $query
             ->pluck('child_epc_id')
             ->map(fn ($id): int => (int) $id)
             ->unique()
             ->values()
             ->all();
+
+        return $ids;
     }
 
     /**

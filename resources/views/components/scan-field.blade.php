@@ -81,10 +81,10 @@
 >
     <form
         @if (filled($submitMethod))
-            wire:submit.prevent="{{ $submitMethod }}"
+            x-on:submit.prevent="$wire.{{ $submitMethod }}($refs.scanInput.value)"
             x-on:keydown.enter.prevent="$wire.{{ $submitMethod }}($refs.scanInput.value)"
         @else
-            wire:submit.prevent="mountAction('{{ $submitAction }}')"
+            x-on:submit.prevent="$wire.set(@js($wireModel), $refs.scanInput.value).then(() => $wire.mountAction(@js($submitAction)))"
             x-on:keydown.enter.prevent="$wire.set(@js($wireModel), $refs.scanInput.value).then(() => $wire.mountAction(@js($submitAction)))"
         @endif
         x-init="$nextTick(() => $refs.scanInput?.focus())"
@@ -97,7 +97,7 @@
                 <input
                     id="{{ $inputId }}"
                     type="text"
-                    wire:model.live.blur="{{ $wireModel }}"
+                    wire:model="{{ $wireModel }}"
                     x-ref="scanInput"
                     autocomplete="off"
                     autofocus

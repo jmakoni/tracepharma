@@ -153,6 +153,7 @@ class ScanOutWorkstationTest extends TestCase
             $this->assertStringContainsString('scan-field', $scanPartial);
             $this->assertStringContainsString('useScanFieldComponent', $scanPartial);
             $this->assertStringContainsString('submit-action="confirmScan"', $scanPartial);
+            $this->assertStringContainsString('submit-method="stageScan"', $scanPartial);
         } finally {
             $this->cleanup();
         }

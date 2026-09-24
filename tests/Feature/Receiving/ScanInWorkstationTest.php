@@ -3,6 +3,7 @@
 namespace Tests\Feature\Receiving;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
+use App\Actions\Receiving\AuthorReceiveSessionException;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Enums\ReceivingSessionKind;
@@ -16,6 +17,8 @@ use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Exceptions\ExceptionActivity;
+use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
@@ -31,6 +34,7 @@ use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionProgress;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
+use Database\Seeders\ExceptionTypeSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -65,6 +69,9 @@ class ScanInWorkstationTest extends TestCase
     /** @var list<int> */
     private array $userIds = [];
 
+    /** @var list<int> */
+    private array $caseIds = [];
+
     private ?bool $priorRequireTi = null;
 
     private ?ReceivingEdgeMode $priorEdgeMode = null;
@@ -84,6 +91,51 @@ class ScanInWorkstationTest extends TestCase
             $this->assertSame('Receiving', ScanInWorkstation::getNavigationGroup());
             $this->assertSame('scan-in', ScanInWorkstation::getSlug());
             $this->assertSame(2, ScanInWorkstation::getNavigationSort());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function scan_in_shows_product_no_data_count_when_case_is_open(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->actingAs($this->createOwnerUser());
+            app(ExceptionTypeSeeder::class)->run();
+
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
+
+            $siteId = $this->eligibleReceiveSiteId();
+            $this->assertNotNull($siteId, 'Demo2 needs an eligible receive site.');
+            $session = app(OpenScanFirstReceivingSession::class)->handle($siteId);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $epc = $this->createSgtinEpc();
+            $case = app(AuthorReceiveSessionException::class)->productNoData(
+                $session,
+                [(int) $epc->getKey()],
+                auth()->user(),
+            );
+            $this->caseIds[] = (int) $case->getKey();
+
+            $this->assertSame(1, ReceiveSessionExceptionQuery::floorBadgeCounts($session->fresh())['no_data']);
+
+            $component = Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+                ->assertSuccessful()
+                ->assertSee('No data 1');
+
+            $url = $component->instance()->receiveExceptionInboxUrl('no_data');
+            $this->assertNotNull($url);
+            $this->assertStringContainsString((string) $session->getKey(), $url);
+            $this->assertStringContainsString('PRODUCT_NO_DATA', $url);
+            $html = $component->html();
+            $this->assertStringContainsString('/exceptions', $html);
+            $this->assertStringContainsString('PRODUCT_NO_DATA', $html);
+            $this->assertStringContainsString((string) $session->getKey(), $html);
         } finally {
             $this->cleanup();
         }
@@ -887,6 +939,16 @@ class ScanInWorkstationTest extends TestCase
                 $settings->setReceivingEdgeMode($this->priorEdgeMode);
                 $this->priorEdgeMode = null;
                 $tenant->save();
+            }
+
+            if ($this->caseIds !== []) {
+                QuarantineHold::query()->whereIn('exception_id', $this->caseIds)->delete();
+                ExceptionActivity::query()->whereIn('exception_id', $this->caseIds)->delete();
+                foreach ($this->caseIds as $caseId) {
+                    ExceptionCase::query()->find($caseId)?->epcs()->detach();
+                }
+                ExceptionCase::query()->whereIn('id', $this->caseIds)->delete();
+                $this->caseIds = [];
             }
 
             foreach ($this->requestIds as $requestId) {

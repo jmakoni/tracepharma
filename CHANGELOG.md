@@ -6,10 +6,14 @@ All notable releases of TracePharma are documented here.
 
 ### Added
 
+- **Inbound EPCIS column filters** — Excel-style header filters on `/inbound-epcis` via `zvizvi/filament-column-filters` (synced with existing modal filters where they overlap). Status filter includes floor receive badges (Received / Partially Received / Receive Blocked) plus ingest values.
+- **Non-deliverable mail recipients** — Outbound mail to reserved or made-up test domains (`.test`, `example.com`, `.invalid`, `.localhost`, `.local`) is dropped before ZeptoMail. Override with `MAIL_BLOCK_NON_DELIVERABLE=false`.
 - **GS1/QA P3 tests** — Lean-path EPCClass NDC (R1.2 `FDA_NDC_11` / R1.3 `US_FDA_NDC`), SSCC commission has no ILMD, saleable-return verified complete, VRS `not_in_network` → `unavailable`, and R1.3 transitional `FDA_NDC_11` ingest is not MIXED.
 
 ### Changed
 
+- **Table column order** — Every Filament table can show, hide, and drag columns from the column manager. The layout stays in the session.
+- **Floor brand mark** — Floor paths use the favicon shield (`logo-mark.svg`) in the Filament topbar instead of the wordmark.
 - **Floor pack camera** — Mobile pack / break-pack / unpack / verify call `processScan` / `verifyScan` with the decoded barcode. Camera re-fire on an already-selected break-pack child stays selected. Packing scan lines stamp `confirmed_at` so selected rows show scan time and transcoded URN.
 - **R1.2 shipping detail** — Lean and full-history ship now author a business-transaction detail ObjectEvent whose `eventTime` precedes shipping (R1.2 errata + R1.3).
 - **JSON-LD inbound DSCSA detect** — `DetectDscsaGuidelineRelease` reads JSON-LD `guidelineVersion` / NDC type codes, not XML-only.
@@ -21,7 +25,7 @@ All notable releases of TracePharma are documented here.
 - **Commission grouping** — Commission-all authors one ObjectEvent per GTIN-14 + lot + expiry (packaging level is in GTIN-14). Same-lot serials share one `eventTime` and one ILMD. Each SSCC stays its own event.
 - **Inbound prev-wholesaler PARTIALLY_DIRECT** — R1.3 shipping with `receivedDirectPurchaseFromPrevWhlsDist` qualifier `PARTIALLY_DIRECT` now requires `prevReceivedinDirectPurchaseEPCs` (same rule as `indirectPurchaseEPCs` on `directPurchase`). Payload bytes are not rewritten.
 - **VRS LMS envelope** — HTTP requestor emits GS1 Lightweight Messaging `verificationRequest`. Responder accepts LMS or flat JSON. EPCIS capture still rejects LMS.
-- **Receive VRS hard gate** — Complete receive waits for VRS `verified` on confirmed SGTINs when VRS is configured (`vrs.hard_gate_receive_complete`).
+- **Receive VRS hard gate** — Complete receive waits for VRS `verified` on confirmed SGTINs only when the tenant turns on Organization Settings → **Require VRS verified before completing receive** (default off).
 - **Dispense / inspect ObjectEvents** — Verify Product and dispense-check author `dispensing`/`dispensed` after verified. Suspect decommission authors an `inspecting` ObjectEvent first.
 
 ### Fixed

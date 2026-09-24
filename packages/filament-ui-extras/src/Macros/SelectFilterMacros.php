@@ -45,7 +45,7 @@ final class SelectFilterMacros
                 return $field
                     ->hiddenLabel()
                     ->extraFieldWrapperAttributes([
-                        'class' => 'fi-uie-inline-label-prefix fi-uie-select-filter-inline-label',
+                        'class' => 'fi-uie-inline-label-prefix fi-uie-inline-label-prefix--mute-value fi-uie-select-filter-inline-label',
                         'data-uie-label' => is_string($label) ? $label : '',
                     ], merge: true);
             });

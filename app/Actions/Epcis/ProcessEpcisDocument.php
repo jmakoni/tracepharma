@@ -5,6 +5,7 @@ namespace App\Actions\Epcis;
 use App\Actions\Labeling\StampSsccBatchCommissionedFromDocument;
 use App\Actions\Receiving\AttachInboundDocumentToShipment;
 use App\Actions\Receiving\AutoReceiveCmoInboundDocument;
+use App\Actions\Receiving\RecheckInboundDocumentExceptions;
 use App\Actions\Receiving\SyncInboundExpectedLinesFromDocument;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -339,6 +340,17 @@ final class ProcessEpcisDocument
 
             $this->recordDroppedEpcUriExceptions($document);
             $this->flushSharedIlmdLotMismatchExceptions($document);
+
+            if ((string) ($document->direction ?? '') === 'inbound') {
+                try {
+                    app(RecheckInboundDocumentExceptions::class)->handle($document->refresh());
+                } catch (Throwable $recheckError) {
+                    Log::warning('exception.honesty.ingest_recheck_failed', [
+                        'document_id' => $document->getKey(),
+                        'message' => $recheckError->getMessage(),
+                    ]);
+                }
+            }
 
             return $document->refresh();
         } catch (Throwable $e) {

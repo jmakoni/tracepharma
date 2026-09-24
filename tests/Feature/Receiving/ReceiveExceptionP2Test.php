@@ -369,7 +369,7 @@ class ReceiveExceptionP2Test extends TestCase
             $this->assertSame(1, $counts['damaged']);
 
             $blade = File::get(resource_path(
-                'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
+                'views/filament/app/partials/receive-exception-badges.blade.php',
             ));
             $this->assertStringContainsString('Document hold {{ $exceptionBadges[\'document_hold\'] }}', $blade);
             $this->assertStringContainsString('Wrong item {{ $exceptionBadges[\'wrong_item\'] }}', $blade);

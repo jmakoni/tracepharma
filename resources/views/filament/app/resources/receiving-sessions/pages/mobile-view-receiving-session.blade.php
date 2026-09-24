@@ -58,20 +58,7 @@
                     'class' => 'tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow',
                 ])
 
-                @php
-                    $exceptionBadges = $this->receiveExceptionBadgeCounts();
-                @endphp
-                <div class="flex flex-wrap items-center gap-1.5" aria-label="Receive exceptions">
-                    <span class="badge badge-ghost">Shortage {{ $exceptionBadges['shortage'] }}</span>
-                    <span class="badge badge-ghost">No data {{ $exceptionBadges['no_data'] }}</span>
-                    <span class="badge badge-ghost">Quarantine {{ $exceptionBadges['quarantine'] }}</span>
-                    <span class="badge badge-ghost">Mismatch {{ $exceptionBadges['mismatch'] }}</span>
-                    <span class="badge badge-ghost">Overage {{ $exceptionBadges['overage'] }}</span>
-                    <span class="badge badge-ghost">Wrong site {{ $exceptionBadges['wrong_site'] }}</span>
-                    <span class="badge badge-ghost">Document hold {{ $exceptionBadges['document_hold'] }}</span>
-                    <span class="badge badge-ghost">Wrong item {{ $exceptionBadges['wrong_item'] }}</span>
-                    <span class="badge badge-ghost">Damaged {{ $exceptionBadges['damaged'] }}</span>
-                </div>
+                @include('filament.app.partials.receive-exception-badges')
 
                 @if ($lockedTote = $this->openToteLockedParentLabel())
                     <div class="text-sm font-medium">

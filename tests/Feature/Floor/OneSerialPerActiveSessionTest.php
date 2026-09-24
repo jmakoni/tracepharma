@@ -32,6 +32,7 @@ use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Floor\OpenFloorWork;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\TenantSettings;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -300,11 +301,21 @@ class OneSerialPerActiveSessionTest extends TestCase
 
             $pack = app(OpenPackingSession::class)->handle(PackingSessionKind::Pack, $siteId);
             $this->packingSessionIds[] = (int) $pack->getKey();
-            $blocked = app(StagePackingScan::class)->handle($pack, (string) $child->epc_uri);
-            $this->assertFalse($blocked['ok']);
-            $this->assertSame('on_open_disposition', $blocked['effect']);
-            $this->assertSame((int) $disposition->getKey(), $blocked['blocking_session_id']);
-            $this->assertStringContainsString('#'.$disposition->getKey(), (string) $blocked['message']);
+            $staged = app(StagePackingScan::class)->handle($pack, (string) $child->epc_uri);
+            $this->assertTrue($staged['ok'], $staged['message']);
+
+            $gate = app(EpcExclusiveSessionGate::class);
+            $except = ExclusiveSessionContext::forPacking($pack);
+            $this->assertNotNull($gate->check($child, $except));
+            $this->assertNull($gate->checkScannedEpc($child, $except));
+
+            try {
+                app(CompletePackingSession::class)->handle($pack->fresh());
+                $this->fail('Pack complete should name the reserved parent.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString((string) ($parent->sscc18 ?: $parent->epc_uri), $exception->getMessage());
+                $this->assertSame('open', (string) $pack->fresh()->status);
+            }
         } finally {
             $this->cleanup($tenant);
         }
@@ -324,16 +335,27 @@ class OneSerialPerActiveSessionTest extends TestCase
 
             [$parent, $child] = $this->createOpenHierarchy();
 
-            $receive = app(OpenScanFirstReceivingSession::class)->handle($siteId);
-            $this->receivingSessionIds[] = (int) $receive->getKey();
-            $this->assertTrue(app(StageReceivingScan::class)->handle($receive, (string) $child->epc_uri)['ok']);
+            $childSession = app(OpenDispositionSession::class)->handle('returning', $siteId);
+            $this->dispositionSessionIds[] = (int) $childSession->getKey();
+            $this->assertTrue(app(StageDispositionScan::class)->handle($childSession, (string) $child->epc_uri)['ok']);
 
-            $disposition = app(OpenDispositionSession::class)->handle('decommissioning', $siteId);
-            $this->dispositionSessionIds[] = (int) $disposition->getKey();
-            $blocked = app(StageDispositionScan::class)->handle($disposition, (string) $parent->epc_uri);
-            $this->assertFalse($blocked['ok']);
-            $this->assertSame('on_open_receive', $blocked['effect']);
-            $this->assertSame((int) $receive->getKey(), $blocked['blocking_session_id']);
+            $parentSession = app(OpenDispositionSession::class)->handle('decommissioning', $siteId);
+            $this->dispositionSessionIds[] = (int) $parentSession->getKey();
+            $staged = app(StageDispositionScan::class)->handle($parentSession, (string) $parent->epc_uri);
+            $this->assertTrue($staged['ok'], $staged['message']);
+
+            $gate = app(EpcExclusiveSessionGate::class);
+            $except = ExclusiveSessionContext::forDisposition($parentSession);
+            $this->assertNotNull($gate->check($parent, $except));
+            $this->assertNull($gate->checkScannedEpc($parent, $except));
+
+            try {
+                app(CompleteDispositionSession::class)->handle($parentSession->fresh());
+                $this->fail('Disposition complete should name the reserved child.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString((string) ($child->gtin14 ?: $child->epc_uri), $exception->getMessage());
+                $this->assertSame('open', (string) $parentSession->fresh()->status);
+            }
         } finally {
             $this->cleanup($tenant);
         }
@@ -353,9 +375,9 @@ class OneSerialPerActiveSessionTest extends TestCase
 
             [$parent, $childA, $childB] = $this->createOpenHierarchy(withSibling: true);
 
-            $receive = app(OpenScanFirstReceivingSession::class)->handle($siteId);
-            $this->receivingSessionIds[] = (int) $receive->getKey();
-            $this->assertTrue(app(StageReceivingScan::class)->handle($receive, (string) $childA->epc_uri)['ok']);
+            $reserved = app(OpenDispositionSession::class)->handle('returning', $siteId);
+            $this->dispositionSessionIds[] = (int) $reserved->getKey();
+            $this->assertTrue(app(StageDispositionScan::class)->handle($reserved, (string) $childA->epc_uri)['ok']);
 
             $pack = app(OpenPackingSession::class)->handle(PackingSessionKind::Pack, $siteId);
             $this->packingSessionIds[] = (int) $pack->getKey();
@@ -393,9 +415,15 @@ class OneSerialPerActiveSessionTest extends TestCase
             $this->assertFalse($blockedParent['ok']);
             $this->assertSame('on_open_pack', $blockedParent['effect']);
 
-            $blockedChild = app(StageDispositionScan::class)->handle($disposition, (string) $child->epc_uri);
-            $this->assertFalse($blockedChild['ok']);
-            $this->assertSame('on_open_pack', $blockedChild['effect']);
+            $childStage = app(StageDispositionScan::class)->handle($disposition, (string) $child->epc_uri);
+            $this->assertTrue($childStage['ok'], $childStage['message']);
+
+            try {
+                app(CompleteDispositionSession::class)->handle($disposition->fresh());
+                $this->fail('Disposition complete should name the reserved pack parent.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString((string) ($parent->sscc18 ?: $parent->epc_uri), $exception->getMessage());
+            }
         } finally {
             $this->cleanup($tenant);
         }

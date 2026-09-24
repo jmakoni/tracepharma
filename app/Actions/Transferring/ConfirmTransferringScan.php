@@ -130,7 +130,7 @@ final class ConfirmTransferringScan
                 ];
             }
 
-            $exclusiveBlock = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forTransferring($session));
+            $exclusiveBlock = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forTransferring($session));
             if ($exclusiveBlock !== null) {
                 return [
                     ...$exclusiveBlock->toScanResult(),
@@ -139,7 +139,8 @@ final class ConfirmTransferringScan
                 ];
             }
 
-            if (! $this->shippableEpcsAtSite->contains((int) $session->from_site_id, (int) $epc->getKey())) {
+            $onHand = $this->shippableEpcsAtSite->contains((int) $session->from_site_id, (int) $epc->getKey());
+            if (! $onHand) {
                 return [
                     'ok' => false,
                     'message' => 'This unit is not on hand at the transfer-from site.',

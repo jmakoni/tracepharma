@@ -38,10 +38,11 @@
 
                 <x-slot:scan>
                     <form
-                        wire:submit.prevent="processScan"
+                        x-on:submit.prevent="$wire.processScan($refs.scanInput.value)"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                        x-on:keydown.enter.prevent="$wire.processScan($refs.scanInput.value)"
                         class="flex flex-col gap-3"
                     >
                         <div class="flex w-full flex-col gap-3">

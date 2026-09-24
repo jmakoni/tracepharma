@@ -262,7 +262,7 @@ class OutboundShippingSessionTest extends TestCase
 
             $doubleShip = app(ConfirmOutboundShippingScan::class)->handle($session->fresh(), self::SSCC_URI);
             $this->assertFalse($doubleShip['ok']);
-            $this->assertSame('double_ship', $doubleShip['effect']);
+            $this->assertSame('on_open_ship', $doubleShip['effect']);
 
             $transfer = app(OpenTransferringSession::class)->handle(
                 fromSiteId: (int) $site->getKey(),
@@ -275,7 +275,7 @@ class OutboundShippingSessionTest extends TestCase
             $this->sessionIds[] = (int) $sessionThree->getKey();
             $onTransfer = app(ConfirmOutboundShippingScan::class)->handle($sessionThree, self::SSCC_URI);
             $this->assertFalse($onTransfer['ok']);
-            $this->assertSame('double_ship', $onTransfer['effect']);
+            $this->assertSame('on_open_ship', $onTransfer['effect']);
         } finally {
             $this->cleanup($tenant);
         }
@@ -5896,11 +5896,11 @@ class OutboundShippingSessionTest extends TestCase
             'views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
-        $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('submit-method="stageScan"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
 
         $viewBlade = File::get(resource_path(
             'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',

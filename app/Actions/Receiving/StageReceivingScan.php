@@ -111,7 +111,7 @@ final class StageReceivingScan
             }
         }
 
-        $block = $this->exclusiveGate->check($epc, ExclusiveSessionContext::forReceiving($session));
+        $block = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forReceiving($session));
         if ($block !== null) {
             return [
                 ...$block->toScanResult(),
