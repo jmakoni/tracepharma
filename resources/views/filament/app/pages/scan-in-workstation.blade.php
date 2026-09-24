@@ -11,12 +11,19 @@
                         <span class="badge badge-outline">{{ $this->kindBadgeLabel() }}</span>
                         <span class="badge badge-outline">{{ $this->edgeModeChipLabel() }}</span>
                         <span class="badge badge-lg badge-outline">{{ $this->statusLabel() }}</span>
+                        @include('filament.app.partials.expected-order-header', [
+                            'header' => $this->expectedOrderHeader(),
+                        ])
                     </x-slot:context>
 
                     <x-slot:qty>
-                        <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
-                            Confirmed {{ $this->confirmedLineCount() }}
-                        </span>
+                        @if ($progress = $this->sessionProgress())
+                            @include('filament.app.partials.receiving-session-progress-stats', [
+                                'progress' => $progress,
+                                'class' => 'stats stats-horizontal bg-base-200 shadow',
+                            ])
+                        @endif
+                        @include('filament.app.partials.receive-exception-badges')
                     </x-slot:qty>
 
                     <x-slot:alert>
@@ -37,12 +44,15 @@
                     </x-slot:alert>
 
                     <x-slot:scan>
-                        <p class="text-sm opacity-70">{{ $this->promptCopy()['kindHelper'] }}</p>
-
                         @if ($session?->status === 'completed')
                             <div class="rounded-lg border border-success/30 bg-success/10 p-4">
                                 <div class="text-lg font-semibold">{{ $this->promptCopy()['completeTitle'] }}</div>
                                 <p class="text-sm">{{ $this->promptCopy()['completeBody'] }}</p>
+                            </div>
+                        @elseif ($session?->status === 'held')
+                            <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                                <div class="text-lg font-semibold">Complete to hold — waiting for EPCIS</div>
+                                <p class="text-sm">Confirmed serials are held, not sellable. Complete still requires a file.</p>
                             </div>
                         @else
                             <x-scan-field
@@ -68,6 +78,15 @@
                         Pick an open inbound or start scan-first. The existing Receive screen is unchanged.
                     </p>
 
+                    <button
+                        type="button"
+                        class="btn btn-primary min-h-14"
+                        wire:click="startScanFirstFromPicker"
+                        wire:loading.attr="disabled"
+                    >
+                        Start scan-first
+                    </button>
+
                     @forelse ($this->openSessions() as $openSession)
                         <button
                             type="button"
@@ -79,34 +98,22 @@
                             · {{ $openSession->tradingPartner?->name ?? $openSession->site?->name ?? 'No partner' }}
                         </button>
                     @empty
-                        <p class="text-sm opacity-70">No open receive sessions. Start scan-first from the header.</p>
+                        <p class="text-sm opacity-70">No open receive sessions yet. Use Start scan-first above.</p>
                     @endforelse
                 </div>
             </div>
         @else
             @php($session = $this->session())
             @php($confirmedRows = $this->confirmedScanRows())
-            @php($caseRows = $this->caseRows())
 
             <x-scanner-confirmed-table
                 :rows="$confirmedRows"
                 :title="'Confirmed ('.$confirmedRows->count().')'"
                 empty="Scan barcodes to build the receive list."
-                :can-remove="$session?->status !== 'completed'"
+                :can-remove="! in_array($session?->status, ['completed', 'held'], true)"
                 remove-method="removeConfirmed"
                 id-key="line_id"
             />
-
-            @if ($caseRows->isNotEmpty())
-                <x-scanner-confirmed-table
-                    :rows="$caseRows"
-                    :title="'Cases in this SSCC ('.$caseRows->count().')'"
-                    empty="No cases under this SSCC."
-                    :can-remove="$session?->status !== 'completed'"
-                    remove-method="removeCase"
-                    id-key="line_id"
-                />
-            @endif
 
             <button
                 type="button"

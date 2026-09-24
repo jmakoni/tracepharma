@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\Floor\UnsubmittedSessionDelete;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\TenantSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -186,6 +187,11 @@ class ReceivingSession extends Model
             ->exists();
     }
 
+    /**
+     * Day-N session ready: this session's expected parents/children are done
+     * (session counters + session scan lines only). Does not require the whole
+     * InboundShipment / ASN expected order to be complete.
+     */
     public function isReadyToCompleteInboundAsn(): bool
     {
         if ($this->isScanFirst() || $this->isTransferReceive()) {
@@ -210,6 +216,35 @@ class ReceivingSession extends Model
         return ! $this->hasUnclosedExpectedChildrenOfConfirmedParents();
     }
 
+    /**
+     * Operator may press Complete Receive for inbound ASN.
+     * Parallel on: ≥1 confirmed and no open-tote lock (partial session post).
+     * Parallel off: full session expected set ready ({@see isReadyToCompleteInboundAsn}).
+     */
+    public function canOperatorCompleteInboundAsn(): bool
+    {
+        if ($this->isScanFirst() || $this->isTransferReceive()) {
+            return false;
+        }
+
+        if (! in_array($this->status, ['open', 'in_progress'], true)) {
+            return false;
+        }
+
+        if ($this->openToteLockBlocksComplete()) {
+            return false;
+        }
+
+        if (TenantSettings::forTenant(tenant())->allowParallelSessions()) {
+            return ReceivingScanLine::query()
+                ->where('receiving_session_id', $this->getKey())
+                ->where('status', 'confirmed')
+                ->exists();
+        }
+
+        return $this->isReadyToCompleteInboundAsn();
+    }
+
     public function openedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'opened_by');
@@ -225,6 +260,34 @@ class ReceivingSession extends Model
         return $this->session_kind === ReceivingSessionKind::ScanFirst;
     }
 
+    /**
+     * File-less scan-first may Complete to hold when sellable Complete is
+     * hard-blocked by missing inbound EPCIS.
+     */
+    public function canCompleteToHold(): bool
+    {
+        if (! $this->isScanFirst()) {
+            return false;
+        }
+
+        if ($this->epcis_document_id !== null || $this->matched_epcis_document_id !== null) {
+            return false;
+        }
+
+        if (! in_array($this->status, ['open', 'in_progress'], true)) {
+            return false;
+        }
+
+        if (TenantSettings::forTenant(tenant())->allowScanFirstCompleteWithoutFile()) {
+            return false;
+        }
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->getKey())
+            ->where('status', 'confirmed')
+            ->exists();
+    }
+
     public function isTransferReceive(): bool
     {
         return $this->session_kind === ReceivingSessionKind::TransferReceive;
@@ -234,6 +297,35 @@ class ReceivingSession extends Model
     {
         return $this->session_kind === ReceivingSessionKind::InboundAsn
             || $this->session_kind === null;
+    }
+
+    /**
+     * Lot-level (01)+(10) Scan In is allowed only on inbound ASN sessions with no
+     * expected SSCC parents or serialized hierarchy children.
+     */
+    public function isLotLevelInboundAsn(): bool
+    {
+        return $this->isInboundAsn() && ! $this->hasSerializedExpectedLines();
+    }
+
+    /**
+     * Expected SSCC outers or child lines under a parent — requires (00) or (01)+(21).
+     */
+    public function hasSerializedExpectedLines(): bool
+    {
+        if ((int) $this->expected_parent_count > 0) {
+            return true;
+        }
+
+        return ReceivingScanLine::query()
+            ->where('receiving_session_id', $this->getKey())
+            ->where('status', 'expected')
+            ->where(function ($query): void {
+                $query->where('line_role', 'parent')
+                    ->orWhereNotNull('parent_epc_id')
+                    ->orWhereHas('epc', fn ($epc) => $epc->where('epc_type', 'sscc'));
+            })
+            ->exists();
     }
 
     /**

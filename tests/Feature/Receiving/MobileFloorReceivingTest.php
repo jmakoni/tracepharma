@@ -19,8 +19,10 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\ReceiveLayout;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingScanLevel;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -83,6 +85,36 @@ class MobileFloorReceivingTest extends TestCase
     }
 
     #[Test]
+    public function floor_units_only_placeholder_does_not_say_scan_sscc(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $tenant = tenant();
+            $this->assertNotNull($tenant);
+            TenantSettings::forTenant($tenant)->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            $tenant->save();
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $session = app(OpenScanFirstReceivingSession::class)->handle();
+            $this->sessionId = (int) $session->getKey();
+
+            $placeholder = Livewire::test(MobileViewReceivingSession::class, [
+                'record' => $session->getKey(),
+            ])->instance()->floorScanPlaceholder();
+
+            $this->assertStringNotContainsStringIgnoringCase('Scan SSCC', $placeholder);
+            $this->assertStringContainsStringIgnoringCase('unit', $placeholder);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function floor_page_mounts_for_demo2_session_and_confirm_scan_works(): void
     {
         $this->initializeDemo2Tenant();
@@ -106,7 +138,13 @@ class MobileFloorReceivingTest extends TestCase
             $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSeeHtml('id="floor-scan-input"')
-                ->assertSeeHtml('tp-floor-receive__cart-fab')
+                ->assertSee(ReceivingPolicy::forTenant(tenant())->operatorScansSsccOnly()
+                    ? 'Scan pallet SSCC'
+                    : 'Scan SSCC or case')
+                ->assertDontSeeHtml('tp-floor-receive__more')
+                ->assertDontSeeHtml('tp-floor-receive__cart-fab')
+                ->assertDontSeeHtml('tp-floor-receive__menu')
+                ->assertSeeHtml('tp-floor-receive__footer')
                 ->assertSeeHtml('tp-floor-receive__progress-stats')
                 ->assertSeeHtml('stats-horizontal')
                 ->assertSeeHtml('bg-base-200')
@@ -115,32 +153,54 @@ class MobileFloorReceivingTest extends TestCase
                 ->assertDontSeeHtml('tp-floor-receive__site-chip')
                 ->assertSeeHtml('tp-floor-receive__mode-chip')
                 ->assertSee(ReceivingPolicy::forTenant(tenant())->edgeMode()->chipLabel())
-                ->assertSee('Attach invoice')
+                ->assertDontSee('More')
+                ->assertDontSee('Open desktop receive')
+                ->assertDontSee('Attach invoice')
                 ->assertDontSee('0/0')
-                ->assertSee('Complete Receive')
                 ->assertSee('Scan at least one item to complete')
-                ->assertSee('Back to receives')
-                ->assertSee('Open desktop receive')
-                ->assertSee('Scanned items will appear here')
-                ->assertSee('Recent scans')
+                ->assertSee('Cancel')
                 ->assertDontSee('Tap to Scan')
                 ->assertDontSee('Prefer floor layout')
                 ->assertDontSee('Break hierarchy after receive')
-                ->assertDontSee('Shortage')
-                ->assertDontSee('Overage')
-                ->assertDontSee('Damaged')
-                ->assertSee('Staged scans')
-                ->assertSee('Confirm staged')
+                ->assertSee('Shortage 0')
+                ->assertSee('No data 0')
+                ->assertSee('Quarantine 0')
+                ->assertSee('Overage 0')
+                ->assertSee('Damaged 0')
+                ->assertDontSee('Staged scans')
+                ->assertDontSeeHtml('wire:click="confirmStagedScans"')
+                ->assertSee('Just scanned')
+                ->assertSee('Scanned items will appear here')
                 ->set('scan', $uri)
-                ->call('stageScan')
-                ->assertSet('stagedScans', [$uri])
-                ->call('confirmStagedScans')
-                ->assertSet('stagedScans', []);
+                ->call('confirmScanInput')
+                ->assertSet('stagedScans', [])
+                ->assertSee('Complete session')
+                ->assertDontSee('Undo last')
+                ->assertSee('Just scanned')
+                ->assertSee($this->expectedChildProgressLabel())
+                ->assertSeeHtml('aria-label="Remove"')
+                ->assertDontSee('Scanned items will appear here')
+                ->assertSeeHtml('tp-floor-receive__camera-stage')
+                ->assertSeeHtml('tp-floor-camera-hud');
+
+            $this->assertMatchesRegularExpression(
+                '/class="tp-floor-receive__camera-stage"[\s\S]*wire:ignore[\s\S]*id="tp-floor-qr-reader"[\s\S]*class="tp-floor-camera-hud"/',
+                $component->html(),
+            );
+
+            $rows = $component->instance()->recentConfirmedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame($this->expectedChildProgressLabel(), $rows[0]['type']);
+            $this->assertTrue($rows[0]['can_remove']);
+            $this->assertNotSame('', $rows[0]['label']);
+            $component->assertSee($rows[0]['label']);
+
+            $component->assertDontSee('Start next receive');
 
             if (ReceivingPolicy::forTenant(tenant())->canUnpackAtReceive()) {
                 $component->assertSee('Open cases after receive');
             }
-            // Soft TI warning yields warn/ok; staged confirm must not fail hard for a valid scan-first EPC.
+            // Soft TI warning yields warn/ok; immediate confirm must not fail hard for a valid scan-first EPC.
             $this->assertContains($component->get('lastScanTone'), ['ok', 'warn']);
 
             $session->refresh();
@@ -179,8 +239,7 @@ class MobileFloorReceivingTest extends TestCase
 
             $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->set('scan', $uri)
-                ->call('stageScan')
-                ->call('confirmStagedScans');
+                ->call('confirmScanInput');
 
             $line = ReceivingScanLine::query()
                 ->where('receiving_session_id', $session->getKey())
@@ -221,43 +280,72 @@ class MobileFloorReceivingTest extends TestCase
             Livewire::test(ViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSee('Scan barcode')
-                ->assertSee('Use floor view')
+                ->assertSee('Floor view')
                 ->assertSee($this->expectedParentProgressLabel())
                 ->assertSee($this->expectedChildProgressLabel());
 
             $blade = File::get(resource_path(
                 'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
             ));
+            $badges = File::get(resource_path(
+                'views/filament/app/partials/receive-exception-badges.blade.php',
+            ));
 
-            foreach (['Shortage', 'Overage', 'Damaged'] as $forbidden) {
-                $this->assertStringNotContainsString($forbidden, $blade);
-            }
+            $this->assertStringContainsString('Overage {{ $exceptionBadges[\'overage\'] }}', $badges);
+            $this->assertStringContainsString('Damaged {{ $exceptionBadges[\'damaged\'] }}', $badges);
+            $this->assertStringNotContainsString("mountAction('reportDamaged')", $blade);
+            $this->assertStringNotContainsString('Report Damaged', $blade);
+            $this->assertStringContainsString("mountAction('closeTransferWithShortage')", $blade);
+            $this->assertStringContainsString('Close with shortage', $blade);
             $this->assertStringContainsString('floor-scan-input', $blade);
             $this->assertStringContainsString('autofocus', $blade);
-            $this->assertStringContainsString('Complete Receive', $blade);
+            $this->assertStringContainsString('Complete session', $blade);
             $this->assertStringContainsString('Open cases after receive', $blade);
             $this->assertStringContainsString('Back to receives', $blade);
-            $this->assertStringContainsString('Open desktop receive', $blade);
-            $this->assertStringContainsString('tp-floor-receive__cart-fab', $blade);
+            $this->assertStringContainsString('wire:click="startNextReceive"', $blade);
+            $this->assertStringNotContainsString('Open desktop receive', $blade);
+            $this->assertStringNotContainsString('tp-floor-receive__more', $blade);
+            $this->assertStringContainsString('floorScanPlaceholder', $blade);
+            $this->assertStringNotContainsString('Undo last', $blade);
+            $this->assertStringNotContainsString('tp-floor-receive__cart-fab', $blade);
+            $this->assertStringNotContainsString('tp-floor-receive__menu', $blade);
+            $this->assertStringContainsString('tp-floor-receive__footer', $blade);
             $this->assertStringContainsString('tp-floor-receive__progress-stats', $blade);
             $this->assertStringNotContainsString('tp-floor-receive__site-chip', $blade);
             $this->assertStringContainsString('tp-floor-receive__mode-chip', $blade);
-            $this->assertStringContainsString('Attach invoice', $blade);
-            $this->assertStringContainsString('tp-floor-receive__sheet', $blade);
-            $this->assertStringContainsString('tp-floor-receive__camera-overlay', $blade);
+            $this->assertStringNotContainsString('Attach invoice', $blade);
+            $this->assertStringNotContainsString('tp-floor-receive__sheet', $blade);
+            $this->assertStringContainsString('floor-camera-overlay', $blade);
+            $overlay = File::get(resource_path('views/filament/app/partials/floor-camera-overlay.blade.php'));
+            $this->assertStringContainsString('tp-floor-receive__camera-overlay', $overlay);
+            $this->assertStringContainsString('floor-camera-overlay-counts', $overlay);
+            $this->assertStringNotContainsString('acceptRemaining', $overlay);
+            $this->assertMatchesRegularExpression(
+                '/tp-floor-receive__camera-title[\s\S]*Align barcode[\s\S]*tp-floor-receive__camera-stage[\s\S]*wire:ignore[\s\S]*tp-floor-qr-reader[\s\S]*tp-floor-camera-dock[\s\S]*floor-camera-overlay-counts[\s\S]*tp-floor-camera-chrome[\s\S]*aria-label="Torch"[\s\S]*aria-label="Scan settings"[\s\S]*Scan mode[\s\S]*Confidence[\s\S]*aria-label="Close camera"/',
+                $overlay,
+            );
             $this->assertStringContainsString('tpFloorReceive(', $blade);
+            $this->assertStringContainsString('vendor/html5-qrcode/html5-qrcode.min.js', $blade);
+            $this->assertStringContainsString('data-tp-html5-qrcode="1"', $blade);
             $this->assertStringContainsString('tp-floor-receive.js', $blade);
-            $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
-            $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-            $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-            $this->assertStringContainsString('staged-scan-panel', $blade);
-            $this->assertStringContainsString('confirmStagedScans', File::get(resource_path(
-                'views/components/staged-scan-panel.blade.php',
+            $this->assertStringContainsString('wire:model="scan"', $blade);
+            $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+            $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+            $this->assertStringNotContainsString('staged-scan-panel', $blade);
+            $this->assertStringContainsString('confirmed-scan-panel', $blade);
+            $this->assertStringContainsString('Just scanned', File::get(resource_path(
+                'views/components/confirmed-scan-panel.blade.php',
             )));
-            $this->assertStringContainsString('Confirm staged', File::get(resource_path(
-                'views/components/staged-scan-panel.blade.php',
+            $this->assertStringContainsString('aria-label="Remove"', File::get(resource_path(
+                'views/components/confirmed-scan-panel.blade.php',
             )));
-            $this->assertStringNotContainsString('wire:model="scan"', $blade);
+            $this->assertStringContainsString('tp-staged-scan-panel__type', File::get(resource_path(
+                'views/components/confirmed-scan-panel.blade.php',
+            )));
+            $this->assertStringNotContainsString('stageScan', $blade);
+            $this->assertStringNotContainsString('confirmStagedScans', $blade);
+            $this->assertStringNotContainsString('>Receive<', $blade);
+            $this->assertStringNotContainsString('wire:model.live.blur', $blade);
             $this->assertStringNotContainsString('[tabindex=\\"-1\\"]', $blade);
             $this->assertStringNotContainsString('Tap to Scan', $blade);
             $this->assertStringNotContainsString('Break hierarchy after receive', $blade);
@@ -284,6 +372,66 @@ class MobileFloorReceivingTest extends TestCase
             request()->cookies->set(ReceiveLayout::COOKIE, ReceiveLayout::FLOOR);
             $floor = ReceiveLayout::sessionUrl($session);
             $this->assertStringContainsString('/floor', $floor);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function floor_sgtin_and_sscc_confirm_immediately(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $this->setReceivingEdgeMode($tenant, ReceivingEdgeMode::SealedParent);
+            TenantSettings::forTenant($tenant)->setAutoCompleteAsnOnReady(false);
+            $tenant->save();
+
+            $this->assertTrue(ReceivingPolicy::forTenant(tenant())->operatorScansSsccOnly());
+            $this->assertTrue(ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren());
+            $this->assertFalse(TenantSettings::forTenant(tenant())->autoCompleteAsnOnReady());
+
+            $document = $this->ingestMinimalFixture();
+            $this->documentId = (int) $document->getKey();
+
+            $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+            $this->sessionId = (int) $session->getKey();
+
+            $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Scan pallet SSCC')
+                ->call('confirmScanInput', self::SGTIN_URI)
+                ->assertSet('stagedScans', []);
+
+            // Sealed parent: case/SGTIN rejected — not logged as unexpected.
+            $this->assertSame('error', $component->get('lastScanTone'));
+            $this->assertFalse($component->get('highlightUnexpected'));
+            $this->assertStringContainsString('SSCC only', (string) $component->get('lastScanMessage'));
+            $this->assertSame(0, (int) $session->fresh()->confirmed_child_count);
+
+            $component->call('confirmScanInput', self::SSCC_URI)
+                ->assertSet('stagedScans', []);
+
+            $session->refresh();
+            $this->assertSame(1, (int) $session->confirmed_parent_count);
+            $this->assertGreaterThan(0, (int) $session->confirmed_child_count);
+            $this->assertSame(
+                '1/'.(int) $session->expected_parent_count,
+                $component->instance()->parentProgressQuantity(),
+            );
+            $this->assertFalse($component->instance()->isCompleted());
+            $this->assertContains($component->get('lastScanTone'), ['ok', 'warn']);
+
+            $rows = $component->instance()->recentConfirmedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame($this->expectedParentProgressLabel(), $rows[0]['type']);
+            $this->assertTrue($rows[0]['can_remove']);
+            $this->assertStringNotContainsString('urn:', $rows[0]['label']);
         } finally {
             $this->cleanup();
         }
@@ -369,7 +517,7 @@ class MobileFloorReceivingTest extends TestCase
     }
 
     #[Test]
-    public function floor_stages_two_barcodes_then_batch_confirms(): void
+    public function floor_confirms_two_barcodes_immediately_in_sequence(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -392,10 +540,9 @@ class MobileFloorReceivingTest extends TestCase
 
             $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
-                ->call('stageScan', $uriA)
-                ->call('stageScan', $uriB)
-                ->assertSet('stagedScans', [$uriA, $uriB])
-                ->call('confirmStagedScans')
+                ->call('confirmScanInput', $uriA)
+                ->assertSet('stagedScans', [])
+                ->call('confirmScanInput', $uriB)
                 ->assertSet('stagedScans', []);
 
             $this->assertContains($component->get('lastScanTone'), ['ok', 'warn']);
@@ -408,7 +555,7 @@ class MobileFloorReceivingTest extends TestCase
     }
 
     #[Test]
-    public function floor_keeps_failed_barcode_in_staged_queue(): void
+    public function floor_failed_barcode_does_not_leave_staged_queue(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -429,15 +576,11 @@ class MobileFloorReceivingTest extends TestCase
 
             $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
-                ->call('stageScan', $goodUri)
-                ->call('stageScan', $badUri)
-                ->assertCount('stagedScans', 2)
-                ->call('confirmStagedScans');
+                ->call('confirmScanInput', $goodUri)
+                ->assertSet('stagedScans', [])
+                ->call('confirmScanInput', $badUri)
+                ->assertSet('stagedScans', []);
 
-            $staged = $component->get('stagedScans');
-            $this->assertIsArray($staged);
-            $this->assertContains($badUri, $staged);
-            $this->assertNotContains($goodUri, $staged);
             $this->assertSame('error', $component->get('lastScanTone'));
 
             $session->refresh();
@@ -448,7 +591,7 @@ class MobileFloorReceivingTest extends TestCase
     }
 
     #[Test]
-    public function floor_hardware_scan_enter_stages_dom_value_without_wire_property(): void
+    public function floor_hardware_scan_enter_confirms_dom_value_without_wire_property(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -466,12 +609,17 @@ class MobileFloorReceivingTest extends TestCase
             $session = app(OpenScanFirstReceivingSession::class)->handle();
             $this->sessionId = (int) $session->getKey();
 
-            Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
+            $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSet('scan', '')
-                ->call('stageScan', $uri)
-                ->assertSet('stagedScans', [$uri])
+                ->call('confirmScanInput', $uri)
+                ->assertSet('stagedScans', [])
                 ->assertSet('scan', '');
+
+            $this->assertContains($component->get('lastScanTone'), ['ok', 'warn']);
+
+            $session->refresh();
+            $this->assertGreaterThan(0, (int) $session->confirmed_child_count + (int) $session->confirmed_parent_count);
         } finally {
             $this->cleanup();
         }
@@ -536,7 +684,17 @@ class MobileFloorReceivingTest extends TestCase
 
     private function expectedParentProgressLabel(): string
     {
-        return match (ReceivingPolicy::forTenant(tenant())->preferredScanLevel()) {
+        $policy = ReceivingPolicy::forTenant(tenant());
+
+        if ($policy->operatorScansUnitsOnly()) {
+            return 'Units';
+        }
+
+        if ($policy->operatorScansSsccOnly()) {
+            return 'Pallets';
+        }
+
+        return match ($policy->preferredScanLevel()) {
             ReceivingScanLevel::Pallet => 'Pallets',
             ReceivingScanLevel::Case, ReceivingScanLevel::ToteOrCase => 'Cases',
         };
@@ -544,10 +702,22 @@ class MobileFloorReceivingTest extends TestCase
 
     private function expectedChildProgressLabel(): string
     {
-        return match (ReceivingPolicy::forTenant(tenant())->preferredScanLevel()) {
+        $policy = ReceivingPolicy::forTenant(tenant());
+
+        if ($policy->operatorScansSsccOnly()) {
+            return 'Cases';
+        }
+
+        return match ($policy->preferredScanLevel()) {
             ReceivingScanLevel::Pallet => 'Cases',
             ReceivingScanLevel::Case, ReceivingScanLevel::ToteOrCase => 'Units',
         };
+    }
+
+    private function setReceivingEdgeMode(Tenant $tenant, ?ReceivingEdgeMode $mode): void
+    {
+        TenantSettings::forTenant($tenant)->setReceivingEdgeMode($mode);
+        $tenant->save();
     }
 
     private function createOwnerUser(): User
@@ -594,6 +764,7 @@ class MobileFloorReceivingTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+        $this->setReceivingEdgeMode($tenant, null);
 
         return $tenant;
     }
@@ -601,6 +772,11 @@ class MobileFloorReceivingTest extends TestCase
     private function cleanup(): void
     {
         if (tenancy()->initialized) {
+            $tenant = tenant();
+            if ($tenant instanceof Tenant) {
+                $this->setReceivingEdgeMode($tenant, null);
+            }
+
             if ($this->sessionId !== null) {
                 ReceivingScanLine::query()->where('receiving_session_id', $this->sessionId)->delete();
                 ReceivingSession::query()->whereKey($this->sessionId)->delete();

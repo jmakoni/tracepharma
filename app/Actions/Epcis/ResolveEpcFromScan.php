@@ -4,6 +4,7 @@ namespace App\Actions\Epcis;
 
 use App\Models\Epcis\Epc;
 use App\Support\Gs1\ElementString;
+use App\Support\Gs1\Gs1DigitalLinkScan;
 use Carbon\Carbon;
 
 /**
@@ -20,6 +21,11 @@ final class ResolveEpcFromScan
      */
     public function handle(string $scan): array
     {
+        $digitalLinkElement = Gs1DigitalLinkScan::toElementString($scan);
+        if ($digitalLinkElement !== null) {
+            $scan = $digitalLinkElement;
+        }
+
         // AI parsing reads the raw scan so FNC1 still terminates variable-length AIs;
         // already-normalized callers are unaffected because normalization is idempotent.
         $normalized = ElementString::normalize($scan);

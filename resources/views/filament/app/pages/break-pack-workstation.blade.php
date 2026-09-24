@@ -8,6 +8,24 @@
                     </span>
                 </x-slot:context>
 
+                <x-slot:qty>
+                    @if ($this->parentEpcId && $this->openChildren !== [])
+                        @include('filament.app.partials.scanner-progress-stats', [
+                            'stats' => [
+                                [
+                                    'title' => 'Selected',
+                                    'value' => count(array_values(array_unique(array_map('intval', $this->selectedChildIds)))),
+                                ],
+                                [
+                                    'title' => 'Open',
+                                    'value' => count($this->openChildren),
+                                ],
+                            ],
+                            'class' => 'stats stats-horizontal bg-base-200 shadow',
+                        ])
+                    @endif
+                </x-slot:qty>
+
                 <x-slot:alert>
                     @if ($this->lastMessage)
                         <div
@@ -27,10 +45,11 @@
 
                 <x-slot:scan>
                     <form
-                        wire:submit.prevent="processScan"
+                        x-on:submit.prevent="$wire.processScan($refs.scanInput.value)"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                        x-on:keydown.enter.prevent="$wire.processScan($refs.scanInput.value)"
                         class="flex flex-col gap-3"
                     >
                         <div class="flex w-full flex-col gap-3">
@@ -118,6 +137,18 @@
                 </div>
             </div>
         @endif
+
+        <div class="flex flex-wrap gap-2">
+            <button
+                type="button"
+                class="btn btn-primary min-h-14"
+                wire:click="mountAction('confirmBreakPack')"
+                wire:loading.attr="disabled"
+                @disabled($this->selectedChildIds === [])
+            >
+                Confirm break & pack
+            </button>
+        </div>
     </x-scanner-desk>
 
     <x-filament-actions::modals />

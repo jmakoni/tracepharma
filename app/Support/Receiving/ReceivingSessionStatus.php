@@ -12,6 +12,7 @@ final class ReceivingSessionStatus
         return match ($status) {
             'open' => 'Open',
             'in_progress' => 'In progress',
+            'held' => 'Held',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
             null => 'Unknown',

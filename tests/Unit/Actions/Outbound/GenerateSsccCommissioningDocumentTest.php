@@ -39,4 +39,34 @@ class GenerateSsccCommissioningDocumentTest extends TestCase
         $this->assertStringContainsString('urn:epc:id:sscc:030116.01001235403', $xml);
         $this->assertStringContainsString('EPCISDocument', $xml);
     }
+
+    #[Test]
+    public function test_builds_sbdh_when_correlation_id_and_gln_provided(): void
+    {
+        $batch = new SsccLabelBatch([
+            'company_prefix' => '030116',
+            'extension_digit' => '0',
+        ]);
+        $batch->id = 6;
+
+        $label = new SsccLabel([
+            'sscc_18' => '003011610012354038',
+            'sscc_urn' => 'urn:epc:id:sscc:030116.01001235403',
+        ]);
+        $label->id = 51;
+
+        $xml = app(GenerateSsccCommissioningDocument::class)->forBatch(
+            $batch,
+            new Collection([$label]),
+            correlationId: 'sscc-commission-test-uuid',
+            settings: [
+                'sgln_urn' => 'urn:epc:id:sgln:030116.00000.0',
+                'gln' => '0399991000008',
+            ],
+        );
+
+        $this->assertStringContainsString('<sbdh:StandardBusinessDocumentHeader>', $xml);
+        $this->assertStringContainsString('0399991000008', $xml);
+        $this->assertStringNotContainsString('urn:epcglobal:epcis:vtype:EPCClass', $xml);
+    }
 }

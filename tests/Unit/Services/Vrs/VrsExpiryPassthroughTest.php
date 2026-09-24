@@ -30,13 +30,13 @@ class VrsExpiryPassthroughTest extends TestCase
         $this->assertSame('260731', $result['expiry_yymmdd']);
 
         Http::assertSent(function ($request): bool {
-            $body = $request->data();
+            $inner = $request->data()['verificationRequest'] ?? [];
 
-            return $body['gtin'] === '00301164024167'
-                && $body['serial'] === 'SN1'
-                && $body['lot'] === 'LOT-A'
-                && $body['expiry'] === '260731'
-                && $body['requestor_gln'] === '0614141000005';
+            return ($inner['gtin'] ?? null) === '00301164024167'
+                && ($inner['serialNumber'] ?? null) === 'SN1'
+                && ($inner['lotNumber'] ?? null) === 'LOT-A'
+                && ($inner['expiryDate'] ?? null) === '2026-07-31'
+                && ($inner['requestorGln'] ?? null) === '0614141000005';
         });
     }
 
@@ -58,10 +58,11 @@ class VrsExpiryPassthroughTest extends TestCase
         $this->assertNull($result['expiry_yymmdd']);
 
         Http::assertSent(function ($request): bool {
-            $body = $request->data();
+            $inner = $request->data()['verificationRequest'] ?? [];
 
-            return ! array_key_exists('expiry', $body)
-                && ! array_key_exists('requestor_gln', $body);
+            return is_array($inner)
+                && ! array_key_exists('expiryDate', $inner)
+                && ! array_key_exists('requestorGln', $inner);
         });
     }
 

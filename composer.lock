@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1be9d76d5765f0462112487bbf313cf8",
+    "content-hash": "a076ea47472345069f7e153f2a45a544",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -13041,6 +13041,81 @@
                 "source": "https://github.com/zeeshantariq08/filament-sticky-columns/tree/v1.0.11"
             },
             "time": "2026-07-15T21:29:13+00:00"
+        },
+        {
+            "name": "zvizvi/filament-column-filters",
+            "version": "0.0.6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/zvizvi/filament-column-filters.git",
+                "reference": "eccb4f0878ba3e94bcada5080fd2e68d8ed5b5bf"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/zvizvi/filament-column-filters/zipball/eccb4f0878ba3e94bcada5080fd2e68d8ed5b5bf",
+                "reference": "eccb4f0878ba3e94bcada5080fd2e68d8ed5b5bf",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "filament/forms": "^5.0",
+                "filament/tables": "^5.0",
+                "php": "^8.2",
+                "spatie/laravel-package-tools": "^1.15.0"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.0",
+                "nunomaduro/collision": "^8.0",
+                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "pestphp/pest": "^3.7|^4.0",
+                "pestphp/pest-plugin-arch": "^3.0|^4.0",
+                "pestphp/pest-plugin-laravel": "^3.0|^4.0",
+                "pestphp/pest-plugin-livewire": "^3.0|^4.0",
+                "rector/rector": "^2.0",
+                "spatie/laravel-ray": "^1.26"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Zvizvi\\FilamentColumnFilters\\FilamentColumnFiltersServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Zvizvi\\FilamentColumnFilters\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "zvizvi",
+                    "email": "yaakov@workflow.co.il",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Excel-style column header filters for Filament tables, with search, date range and multi-select filter types that sync with regular table filters.",
+            "homepage": "https://github.com/zvizvi/filament-column-filters",
+            "keywords": [
+                "filament",
+                "filament-column-filters",
+                "filament-plugin",
+                "filamentphp",
+                "filters",
+                "laravel",
+                "table",
+                "zvizvi"
+            ],
+            "support": {
+                "issues": "https://github.com/zvizvi/filament-column-filters/issues",
+                "source": "https://github.com/zvizvi/filament-column-filters"
+            },
+            "time": "2026-08-03T01:58:02+00:00"
         },
         {
             "name": "zvizvi/filament-notifications-tabs",

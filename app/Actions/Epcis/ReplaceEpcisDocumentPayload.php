@@ -2,11 +2,14 @@
 
 namespace App\Actions\Epcis;
 
+use App\Enums\EpcisGuideline;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingSession;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Epcis\AssertInboundReceiverGln;
+use App\Support\Epcis\DetectDscsaGuidelineRelease;
 use App\Support\Epcis\EpcisStoragePath;
 use DomainException;
 use Illuminate\Support\Facades\Queue;
@@ -65,6 +68,17 @@ final class ReplaceEpcisDocumentPayload
             throw new \InvalidArgumentException('Corrected EPCIS upload must be an .xml file.');
         }
 
+        $content = file_get_contents($absolutePath);
+        if ($content === false) {
+            throw new \RuntimeException("Unable to read EPCIS XML: {$absolutePath}");
+        }
+
+        $this->assertReplacementGuidelineCompatible($document, $content);
+
+        if ((string) ($document->direction ?: 'inbound') !== 'outbound') {
+            AssertInboundReceiverGln::assertBelongsToCurrentTenant($content);
+        }
+
         $sha256 = hash_file('sha256', $absolutePath);
         if ($sha256 === false) {
             throw new \RuntimeException("Unable to hash EPCIS XML: {$absolutePath}");
@@ -121,6 +135,27 @@ final class ReplaceEpcisDocumentPayload
         $sync = (bool) ($meta['sync'] ?? false) || Queue::getDefaultDriver() === 'sync';
 
         return $this->reprocess->handle($document->refresh(), sync: $sync, force: $force, authorizeExceptionsRole: false);
+    }
+
+    private function assertReplacementGuidelineCompatible(EpcisDocument $document, string $content): void
+    {
+        $incoming = DetectDscsaGuidelineRelease::fromXml($content);
+        if ($incoming->mixed) {
+            throw new DomainException(
+                'Corrected file mixes GS1 US DSCSA R1.2 and R1.3 constructs and cannot replace this document.',
+            );
+        }
+
+        $stored = $document->dscsa_guideline_release;
+        if (! $stored instanceof EpcisGuideline) {
+            return;
+        }
+
+        if ($incoming->release instanceof EpcisGuideline && $incoming->release !== $stored) {
+            throw new DomainException(
+                "Corrected file is {$incoming->release->label()} but this document is {$stored->label()}. Replace would change the stored release.",
+            );
+        }
     }
 
     private function storePayloadStream(string $disk, string $payloadPath, string $absolutePath): void

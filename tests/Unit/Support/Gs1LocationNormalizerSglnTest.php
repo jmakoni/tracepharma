@@ -20,4 +20,11 @@ class Gs1LocationNormalizerSglnTest extends TestCase
             Gs1LocationNormalizer::normalize('urn:epc:id:sgln:120020.222804.0'),
         );
     }
+
+    #[Test]
+    public function thirteen_digit_gln_must_pass_mod10(): void
+    {
+        $this->assertSame('0614141000005', Gs1LocationNormalizer::normalize('0614141000005'));
+        $this->assertNull(Gs1LocationNormalizer::normalize('0614141000006'));
+    }
 }

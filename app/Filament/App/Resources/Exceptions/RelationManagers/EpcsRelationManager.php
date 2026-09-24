@@ -8,7 +8,6 @@ use App\Models\Fda\FdaProductPackaging;
 use App\Support\Catalog\DisplayName;
 use App\Support\Epcis\ShipmentReference;
 use App\Support\Exceptions\AssortmentFromCatalog;
-use App\Support\Gs1\Gtin;
 use App\Support\Tracing\AssetTrackingUrl;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontFamily;
@@ -165,18 +164,6 @@ class EpcsRelationManager extends RelationManager
         $candidates = [];
         if (filled($record->gtin14)) {
             $candidates[] = (string) $record->gtin14;
-        }
-
-        if (filled($record->company_prefix) && filled($record->item_reference)) {
-            $body13 = '0'.$record->company_prefix.$record->item_reference;
-            if (strlen($body13) === 13 && ctype_digit($body13)) {
-                $candidates[] = $body13.Gtin::checkDigit($body13);
-            }
-        } elseif (filled($record->gtin14) && strlen((string) $record->gtin14) === 14 && ctype_digit((string) $record->gtin14)) {
-            $body13 = '0'.substr((string) $record->gtin14, 1, 12);
-            if (ctype_digit($body13)) {
-                $candidates[] = $body13.Gtin::checkDigit($body13);
-            }
         }
 
         foreach (array_unique($candidates) as $gtin) {

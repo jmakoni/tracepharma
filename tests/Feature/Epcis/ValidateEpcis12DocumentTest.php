@@ -7,7 +7,9 @@ use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Enums\ExceptionReceiveImpact;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
+use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisDocumentProductClass;
 use App\Models\Epcis\EpcisException;
 use App\Models\Tenant;
 use App\Support\Epcis\Validation\EpcisCatalogBusinessRules;
@@ -34,6 +36,8 @@ class ValidateEpcis12DocumentTest extends TestCase
     private static bool $demo2TenantReady = false;
 
     private ?int $documentId = null;
+
+    private ?string $redactedSgtin = null;
 
     #[Test]
     public function ingest_marks_commissioning_without_locations_as_error(): void
@@ -1791,6 +1795,608 @@ class ValidateEpcis12DocumentTest extends TestCase
         $this->assertSame(ExceptionReceiveImpact::HardBlocking, ExceptionReceiveImpactMap::forCode('MISSING_COMMISSIONING'));
     }
 
+    #[Test]
+    public function mixed_ndc_type_codes_raise_mixed_guideline_and_preserve_payload_bytes(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document, $expectedSha, $expectedXml] = $this->ingestMutatedMinimalShipping(
+                '</gs1ushc:dscsaTransactionStatement>',
+                "</gs1ushc:dscsaTransactionStatement>\n    <!-- "
+                .'<attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">FDA_NDC_11</attribute>'
+                .'<attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">US_FDA_NDC</attribute>'
+                .' -->',
+            );
+
+            $this->assertMixedGuidelineIngest($document, $expectedSha, $expectedXml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function boolean_and_qualifier_direct_purchase_raises_mixed_guideline(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document, $expectedSha, $expectedXml] = $this->ingestMutatedMinimalShipping(
+                '</gs1ushc:dscsaTransactionStatement>',
+                "</gs1ushc:dscsaTransactionStatement>\n    <!-- "
+                .'<gs1ushc:directPurchase>true</gs1ushc:directPurchase>'
+                .'<gs1ushc:directPurchase qualifier="ENTIRELY_DIRECT"><gs1ushc:directPurchaseStatement>x</gs1ushc:directPurchaseStatement></gs1ushc:directPurchase>'
+                .' -->',
+            );
+
+            $this->assertMixedGuidelineIngest($document, $expectedSha, $expectedXml);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r12_inspecting_bizstep_is_invalid(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document] = $this->ingestInspectingMinimalShipping(r13: false);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'INVALID_BIZSTEP')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'inspecting')),
+                'Expected open INVALID_BIZSTEP for inspecting on R1.2',
+            );
+            $this->assertSame(
+                1,
+                $document->events()->where('biz_step', 'urn:epcglobal:cbv:bizstep:inspecting')->count(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r13_inspecting_bizstep_is_allowed(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document] = $this->ingestInspectingMinimalShipping(r13: true);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'INVALID_BIZSTEP')
+                ->get();
+
+            $this->assertFalse(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'inspecting')),
+                'R1.3 inspecting must not raise INVALID_BIZSTEP',
+            );
+            $this->assertSame(
+                1,
+                $document->events()->where('biz_step', 'urn:epcglobal:cbv:bizstep:inspecting')->count(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r13_bare_inspecting_bizstep_is_allowed(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document] = $this->ingestInspectingMinimalShipping(r13: true, bareBizStep: true);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'INVALID_BIZSTEP')
+                ->get();
+
+            $this->assertFalse(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'inspecting')),
+                'R1.3 bare inspecting must not raise INVALID_BIZSTEP',
+            );
+            $this->assertTrue(
+                $document->events()->where('biz_step', 'like', '%inspecting%')->exists(),
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function partially_direct_without_indirect_epcs_raises_finding_and_preserves_bytes(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/shipping_direct_purchase_entirely_direct.xml');
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_pd_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('22222222-3333-4444-5555-666666666666', (string) str()->uuid(), $xml);
+            $xml = str_replace('qualifier="ENTIRELY_DIRECT"', 'qualifier="PARTIALLY_DIRECT"', $xml);
+            file_put_contents($tmp, $xml);
+            $expectedSha = hash('sha256', $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'partially-direct-missing-indirect.xml',
+                ]);
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->documentId = (int) $document->getKey();
+            $document->refresh();
+            $this->assertSame($expectedSha, (string) $document->file_sha256);
+            $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertSame($expectedSha, hash('sha256', $stored));
+            $this->assertStringNotContainsString('indirectPurchaseEPCs', $stored);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MISSING_MANDATORY_FIELD')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'PARTIALLY_DIRECT')),
+                'Expected open MISSING_MANDATORY_FIELD for PARTIALLY_DIRECT without indirectPurchaseEPCs',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function partially_direct_prev_wholesaler_without_indirect_epcs_raises_finding_and_preserves_bytes(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/shipping_mixed_direct_indirect.xml');
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_prev_pd_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('22222222-3333-4444-5555-666666666666', (string) str()->uuid(), $xml);
+            $xml = (string) preg_replace(
+                '/\s*<(?:[\w.-]+:)?prevReceivedinDirectPurchaseEPCs\b[^>]*>.*?<\/(?:[\w.-]+:)?prevReceivedinDirectPurchaseEPCs>/s',
+                '',
+                $xml,
+            );
+            file_put_contents($tmp, $xml);
+            $expectedSha = hash('sha256', $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'partially-direct-prev-missing-indirect.xml',
+                ]);
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->documentId = (int) $document->getKey();
+            $document->refresh();
+            $this->assertSame($expectedSha, (string) $document->file_sha256);
+            $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertSame($expectedSha, hash('sha256', $stored));
+            $this->assertStringNotContainsString('prevReceivedinDirectPurchaseEPCs', $stored);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MISSING_MANDATORY_FIELD')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'prevReceivedinDirectPurchaseEPCs')),
+                'Expected open MISSING_MANDATORY_FIELD for PARTIALLY_DIRECT prev-wholesaler without prevReceivedinDirectPurchaseEPCs',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function event_time_without_timezone_offset_raises_finding_and_does_not_invent_z(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            [$document, $expectedSha, $expectedXml] = $this->ingestMutatedMinimalShipping(
+                '<eventTimeZoneOffset>-05:00</eventTimeZoneOffset>',
+                '',
+            );
+
+            $this->assertSame($expectedSha, (string) $document->file_sha256);
+            $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertSame($expectedXml, $stored);
+            $this->assertStringNotContainsString('<eventTimeZoneOffset>', $stored);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MISSING_MANDATORY_FIELD')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'eventTimeZoneOffset')),
+                'Expected open MISSING_MANDATORY_FIELD for missing eventTimeZoneOffset',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r12_lot_level_inbound_is_accepted_not_rejected_as_illegal(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_lot_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+            $xml = (string) preg_replace(
+                '/<epcList>.*?<\/epcList>/s',
+                '<quantityList><quantityElement><epcClass>urn:epc:class:lgtin:030116.0200116.606412T</epcClass><quantity>12</quantity></quantityElement></quantityList>',
+                $xml,
+            );
+            $xml = (string) preg_replace('/<epc>.*?<\/epc>/s', '', $xml);
+            $xml = str_replace('<parentID>urn:epc:id:sscc:030116.01001227052</parentID>', '', $xml);
+            file_put_contents($tmp, $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'r12-lot-level.xml',
+                ]);
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->documentId = (int) $document->getKey();
+            $document->refresh();
+            $this->assertNotSame('rejected', $document->status);
+            $this->assertContains($document->status, ['parsed', 'validated', 'error', 'pending']);
+
+            $illegal = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('description', 'like', '%lot-level%illegal%')
+                ->count();
+            $this->assertSame(0, $illegal);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function shipping_biz_location_is_a_finding_and_payload_bytes_stay(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/shipping_direct_purchase_entirely_direct.xml');
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_biz_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('22222222-3333-4444-5555-666666666666', (string) str()->uuid(), $xml);
+            $xml = str_replace(
+                "        <readPoint>\n          <id>urn:epc:id:sgln:030116.000001.0</id>\n        </readPoint>\n        <bizTransactionList>",
+                "        <readPoint>\n          <id>urn:epc:id:sgln:030116.000001.0</id>\n        </readPoint>\n        <bizLocation>\n          <id>urn:epc:id:sgln:030116.000001.0</id>\n        </bizLocation>\n        <bizTransactionList>",
+                $xml,
+            );
+            file_put_contents($tmp, $xml);
+            $expectedSha = hash('sha256', $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'shipping-bizlocation.xml',
+                ]);
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->documentId = (int) $document->getKey();
+            $document->refresh();
+            $this->assertSame($expectedSha, (string) $document->file_sha256);
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->get();
+
+            $this->assertTrue(
+                $open->contains(fn (EpcisException $e): bool => str_contains((string) $e->description, 'bizLocation')),
+                'Expected a shipping bizLocation finding without rewriting XML',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r13_abbreviated_net_content_does_not_fail(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $vocab = <<<'XML'
+    <extension>
+      <EPCISMasterData>
+        <VocabularyList>
+          <Vocabulary type="urn:epcglobal:epcis:vtype:EPCClass">
+            <VocabularyElementList>
+              <VocabularyElement id="urn:epc:idpat:sgtin:030116.0200116.*">
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">00116200116</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">FDA_NDC_11</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#netContentDescription">473 mL</attribute>
+              </VocabularyElement>
+            </VocabularyElementList>
+          </Vocabulary>
+        </VocabularyList>
+      </EPCISMasterData>
+    </extension>
+XML;
+
+            [$document] = $this->ingestMutatedMinimalShipping(
+                '</sbdh:StandardBusinessDocumentHeader>',
+                "</sbdh:StandardBusinessDocumentHeader>\n".$vocab
+                ."\n    <gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>",
+            );
+
+            $netContentFindings = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->get()
+                ->filter(fn (EpcisException $e): bool => str_contains(strtolower((string) $e->description), 'netcontent'));
+
+            $this->assertCount(0, $netContentFindings);
+
+            $class = EpcisDocumentProductClass::query()
+                ->where('document_id', $document->id)
+                ->where('idpat', 'urn:epc:idpat:sgtin:030116.0200116.*')
+                ->first();
+            $this->assertNotNull($class);
+            $this->assertSame('473 mL', $class->net_content);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function r13_guideline_version_with_fda_ndc_11_is_not_mixed_reject(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $vocab = <<<'XML'
+    <extension>
+      <EPCISMasterData>
+        <VocabularyList>
+          <Vocabulary type="urn:epcglobal:epcis:vtype:EPCClass">
+            <VocabularyElementList>
+              <VocabularyElement id="urn:epc:idpat:sgtin:030116.0200116.*">
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentification">00116200116</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#additionalTradeItemIdentificationTypeCode">FDA_NDC_11</attribute>
+                <attribute id="urn:epcglobal:cbv:mda#manufacturerOfTradeItemPartyName">Xttrium</attribute>
+              </VocabularyElement>
+            </VocabularyElementList>
+          </Vocabulary>
+        </VocabularyList>
+      </EPCISMasterData>
+    </extension>
+XML;
+
+            [$document] = $this->ingestMutatedMinimalShipping(
+                '</sbdh:StandardBusinessDocumentHeader>',
+                "</sbdh:StandardBusinessDocumentHeader>\n".$vocab
+                ."\n    <gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>",
+            );
+
+            $mixed = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->where('exception_type', 'MIXED_DSCSA_GUIDELINE_RELEASE')
+                ->count();
+
+            $this->assertSame(0, $mixed, 'R1.3 guidelineVersion + transitional FDA_NDC_11 must not be MIXED.');
+            $this->assertNotSame('error', $document->fresh()->status, (string) $document->fresh()->error_message);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function item_expiration_1970_sentinel_is_redacted_not_discarded(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->assertFileExists($fixture);
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_redact_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $serial = 'R70'.substr(str_replace('-', '', (string) str()->uuid()), 0, 10);
+            $sgtin = 'urn:epc:id:sgtin:030116.0200116.'.$serial;
+            $this->redactedSgtin = $sgtin;
+            $this->purgeSharedEpc($sgtin);
+            $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+            $xml = str_replace(
+                'urn:epc:id:sgtin:030116.0200116.10000082001560',
+                $sgtin,
+                $xml,
+            );
+            $xml = str_replace(
+                '<cbvmda:itemExpirationDate>2029-05-31</cbvmda:itemExpirationDate>',
+                '<cbvmda:itemExpirationDate>1970-01-01T00:00:00Z</cbvmda:itemExpirationDate>',
+                $xml,
+            );
+            file_put_contents($tmp, $xml);
+
+            try {
+                $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                    'direction' => 'inbound',
+                    'original_filename' => 'ilmd-1970-sentinel.xml',
+                ]);
+                $this->documentId = (int) $document->getKey();
+            } finally {
+                @unlink($tmp);
+            }
+
+            $this->assertStringContainsString('1970-01-01T00:00:00Z', $xml);
+
+            $epc = Epc::query()->where('epc_uri', $sgtin)->first();
+            $this->assertNotNull($epc);
+
+            $ilmd = EpcIlmd::query()->where('epc_id', $epc->id)->first();
+            $this->assertNotNull($ilmd);
+            $this->assertSame('606412T', $ilmd->lot_number);
+            $this->assertNull($ilmd->expiry_date);
+            $this->assertTrue((bool) ($ilmd->extra_json['expiry_redacted'] ?? false));
+
+            $open = EpcisException::query()
+                ->where('document_id', $document->id)
+                ->where('status', 'open')
+                ->whereIn('exception_type', ['MISSING_EXPIRY', 'EXPIRED_PRODUCT_SHIPPED'])
+                ->get();
+            $this->assertCount(0, $open);
+
+            $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertStringContainsString('1970-01-01T00:00:00Z', $stored);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    /**
+     * @return array{0: EpcisDocument, 1: string, 2: string}
+     */
+    private function ingestInspectingMinimalShipping(bool $r13, bool $bareBizStep = false): array
+    {
+        $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_insp_').'.xml';
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+
+        if ($r13) {
+            $xml = str_replace(
+                '</gs1ushc:dscsaTransactionStatement>',
+                "</gs1ushc:dscsaTransactionStatement>\n    <gs1ushc:guidelineVersion>GS1 US DSCSA R1.3</gs1ushc:guidelineVersion>",
+                $xml,
+            );
+        }
+
+        $bizStep = $bareBizStep
+            ? 'inspecting'
+            : 'urn:epcglobal:cbv:bizstep:inspecting';
+        $inspectingEvent = <<<XML
+      <ObjectEvent>
+        <eventTime>2026-06-18T23:30:00.000Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sgtin:030116.0200116.INSPECT001</epc>
+        </epcList>
+        <action>OBSERVE</action>
+        <bizStep>{$bizStep}</bizStep>
+        <disposition>urn:epcglobal:cbv:disp:active</disposition>
+        <readPoint>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </readPoint>
+        <bizLocation>
+          <id>urn:epc:id:sgln:030116.000000.0</id>
+        </bizLocation>
+      </ObjectEvent>
+XML;
+        $xml = str_replace('<EventList>', "<EventList>\n".$inspectingEvent, $xml);
+        file_put_contents($tmp, $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => $r13 ? 'inspecting-r13.xml' : 'inspecting-r12.xml',
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            return [$document, hash('sha256', $xml), $xml];
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    /**
+     * @return array{0: EpcisDocument, 1: string, 2: string}
+     */
+    private function ingestMutatedMinimalShipping(string $search, string $replace): array
+    {
+        $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_mix_').'.xml';
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+        $xml = str_replace($search, $replace, $xml);
+        file_put_contents($tmp, $xml);
+
+        $expectedSha = hash('sha256', $xml);
+
+        try {
+            $document = app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'mixed-dscsa-guideline.xml',
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            return [$document, $expectedSha, $xml];
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    private function assertMixedGuidelineIngest(EpcisDocument $document, string $expectedSha, string $expectedXml): void
+    {
+        $document->refresh();
+
+        $this->assertSame('error', $document->status);
+        $this->assertNull($document->dscsa_guideline_release);
+        $this->assertSame($expectedSha, (string) $document->file_sha256);
+
+        $stored = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+        $this->assertSame($expectedXml, $stored);
+        $this->assertSame($expectedSha, hash('sha256', $stored));
+
+        $open = EpcisException::query()
+            ->where('document_id', $document->id)
+            ->where('status', 'open')
+            ->where('exception_type', 'MIXED_DSCSA_GUIDELINE_RELEASE')
+            ->get();
+
+        $this->assertCount(1, $open);
+    }
+
     private function initializeDemo2Tenant(): Tenant
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -1838,14 +2444,43 @@ class ValidateEpcis12DocumentTest extends TestCase
         foreach ([
             self::SSCC_URI,
             'urn:epc:id:sgtin:030116.0200116.10000082001560',
+            'urn:epc:id:sgtin:030116.0200116.INSPECT001',
+            'urn:epc:id:sgtin:030116.0200116.REDACT1970001',
             'urn:epc:id:sscc:030116.01001227052',
+            $this->redactedSgtin,
         ] as $uri) {
+            if (! is_string($uri) || $uri === '') {
+                continue;
+            }
             $epc = Epc::query()->where('epc_uri', $uri)->first();
             if ($epc !== null && ! DB::table('event_epcs')->where('epc_id', $epc->id)->exists()) {
-                $epc->delete();
+                $this->purgeSharedEpc($uri);
             }
         }
 
+        $this->redactedSgtin = null;
+
         tenancy()->end();
+    }
+
+    private function purgeSharedEpc(string $uri): void
+    {
+        $epc = Epc::query()->where('epc_uri', $uri)->first();
+        if ($epc === null) {
+            return;
+        }
+
+        DB::table('aggregation_links')
+            ->where('parent_epc_id', $epc->id)
+            ->orWhere('child_epc_id', $epc->id)
+            ->delete();
+
+        if (Schema::hasTable('event_epc_ilmd')) {
+            DB::table('event_epc_ilmd')->where('epc_id', $epc->id)->delete();
+        }
+
+        EpcIlmd::query()->where('epc_id', $epc->id)->delete();
+
+        $epc->delete();
     }
 }

@@ -25,7 +25,7 @@ enum ReceivingSessionKind: string
     public function badgeLabel(): string
     {
         return match ($this) {
-            self::InboundAsn => 'ASN',
+            self::InboundAsn => 'ASN receive',
             self::ScanFirst => 'Scan-first',
             self::TransferReceive => 'Transfer',
         };

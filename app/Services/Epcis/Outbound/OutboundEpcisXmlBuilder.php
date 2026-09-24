@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Epcis\Outbound;
 
+use App\Enums\EpcisGuideline;
 use App\Support\Epcis\ShippingTiTsFragments;
 use App\Support\Gs1\Sgln;
 use DomainException;
@@ -21,9 +22,11 @@ final class OutboundEpcisXmlBuilder
         ?string $correlationId = null,
         ?string $senderGln = null,
         ?string $receiverGln = null,
+        EpcisGuideline $guideline = EpcisGuideline::R12,
+        ?string $masterDataXml = null,
     ): string {
         $escapedTime = htmlspecialchars($eventTime, ENT_XML1);
-        $header = $this->buildEpcisHeaderXml($correlationId, $eventTime, $senderGln, $receiverGln);
+        $header = $this->buildEpcisHeaderXml($correlationId, $eventTime, $senderGln, $receiverGln, $guideline, $masterDataXml);
 
         return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +48,8 @@ XML;
         ?string $creationDate = null,
         ?string $senderGln = null,
         ?string $receiverGln = null,
+        EpcisGuideline $guideline = EpcisGuideline::R12,
+        ?string $masterDataXml = null,
     ): string {
         if ($correlationId === null || trim($correlationId) === '') {
             return '';
@@ -54,10 +59,11 @@ XML;
         $escaped = htmlspecialchars($trimmed, ENT_XML1);
         $sbdhCreationDate = htmlspecialchars($creationDate ?? now()->toIso8601String(), ENT_XML1);
         [$resolvedSender, $resolvedReceiver] = $this->requireRealGlns($senderGln, $receiverGln);
+        $master = $masterDataXml !== null && trim($masterDataXml) !== '' ? $masterDataXml : '';
 
         return <<<XML
     <EPCISHeader>
-{$this->sbdhXml($resolvedSender, $resolvedReceiver, $trimmed, $sbdhCreationDate)}        <tracepharma:OutboundCorrelation>{$escaped}</tracepharma:OutboundCorrelation>
+{$this->sbdhXml($resolvedSender, $resolvedReceiver, $trimmed, $sbdhCreationDate, $guideline)}{$master}        <tracepharma:OutboundCorrelation>{$escaped}</tracepharma:OutboundCorrelation>
     </EPCISHeader>
 
 XML;
@@ -92,13 +98,19 @@ XML;
         return [$sender, $receiver];
     }
 
-    private function sbdhXml(string $senderGln, string $receiverGln, string $instanceId, string $creationDate): string
-    {
+    private function sbdhXml(
+        string $senderGln,
+        string $receiverGln,
+        string $instanceId,
+        string $creationDate,
+        EpcisGuideline $guideline = EpcisGuideline::R12,
+    ): string {
         return ShippingTiTsFragments::sbdhXml(
             senderGln: $senderGln,
             receiverGln: $receiverGln,
             instanceId: $instanceId,
             creationDate: $creationDate,
+            guideline: $guideline,
         );
     }
 }

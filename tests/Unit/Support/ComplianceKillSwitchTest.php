@@ -113,6 +113,15 @@ class ComplianceKillSwitchTest extends TestCase
         }
     }
 
+    #[Test]
+    public function missing_biz_transaction_hard_gate_defaults_off_for_back_compat(): void
+    {
+        $this->assertFalse(
+            (bool) config('tracepharma.epcis.hard_gate_missing_biz_transaction'),
+            'Expected hard_gate_missing_biz_transaction to stay Soft by default.',
+        );
+    }
+
     private function setEnv(string $value): void
     {
         $_ENV[self::KEY] = $value;

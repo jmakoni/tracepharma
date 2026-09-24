@@ -161,12 +161,14 @@ final class StartReceivingAction
                 ->disabled(fn (EpcisDocument $record): bool => app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record) !== null)
                 ->tooltip(function (EpcisDocument $record): ?string {
                     $blocking = app(ReceivingGate::class)->documentBlockedAfterDestinationRecheck($record);
-                    if ($blocking === null) {
-                        return null;
+                    if ($blocking !== null) {
+                        return 'Blocked by open document-wide exception #'.$blocking->getKey()
+                            .' ('.($blocking->type?->name ?? 'exception').').';
                     }
 
-                    return 'Blocked by open document-wide exception #'.$blocking->getKey()
-                        .' ('.($blocking->type?->name ?? 'exception').').';
+                    return $record->openReceivingSession() !== null
+                        ? 'Continue receiving'
+                        : 'Scan in';
                 })
                 ->action(function (EpcisDocument $record, array $data): RedirectResponse|Redirector|null {
                     $session = self::openOrNotify($record, $data, auth()->id());

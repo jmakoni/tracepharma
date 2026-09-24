@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Epcis;
 
+use App\Actions\Epcis\ValidateEpcis12Document;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Models\Epcis\EpcisDocument;
@@ -15,6 +16,7 @@ use App\Support\SanctumAbilities;
 use App\Support\Tenancy\TenantKillSwitches;
 use App\Support\TenantSettings;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\CleansDemo2EpcisArtifacts;
 use Tests\TestCase;
@@ -63,9 +65,9 @@ class EpcisQueryAs20ApiTest extends TestCase
             $document = EpcisDocument::query()->findOrFail($documentId);
             if ($document->status === 'received') {
                 app(EpcisIngestionService::class)->process($document);
-                app(\App\Actions\Epcis\ValidateEpcis12Document::class)->handle($document->refresh());
+                app(ValidateEpcis12Document::class)->handle($document->refresh());
             } elseif ($document->status === 'parsed') {
-                app(\App\Actions\Epcis\ValidateEpcis12Document::class)->handle($document);
+                app(ValidateEpcis12Document::class)->handle($document);
             }
             $this->assertSame('validated', $document->refresh()->status);
             tenancy()->end();
@@ -153,10 +155,14 @@ class EpcisQueryAs20ApiTest extends TestCase
         $xml = file_get_contents(base_path($fixturePath));
         $this->assertNotFalse($xml);
 
-        return str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+        return str_replace(
+            '0096295000009',
+            (string) Tenant::query()->findOrFail(self::DEMO2_TENANT_ID)->gln,
+            str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml),
+        );
     }
 
-    private function tenantApiPost(string $uri, ?string $token, string $body, array $headers = []): \Illuminate\Testing\TestResponse
+    private function tenantApiPost(string $uri, ?string $token, string $body, array $headers = []): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;
@@ -174,7 +180,7 @@ class EpcisQueryAs20ApiTest extends TestCase
         return $this->call('POST', $absolute, [], [], [], $server, $body);
     }
 
-    private function tenantApiGet(string $uri, ?string $token): \Illuminate\Testing\TestResponse
+    private function tenantApiGet(string $uri, ?string $token): TestResponse
     {
         $path = str_starts_with($uri, '/') ? $uri : '/'.$uri;
         $absolute = 'http://'.self::DEMO2_DOMAIN.$path;

@@ -157,7 +157,7 @@ final class EnrichEpcisDocumentShippingFields
         $document->forceFill($attributes)->save();
         $document = $document->refresh();
 
-        if ((string) ($document->direction ?? '') === 'inbound' && filled($document->asn_number)) {
+        if ((string) ($document->direction ?? '') === 'inbound') {
             app(AttachInboundDocumentToShipment::class)->handle($document);
             $document = $document->refresh();
         }

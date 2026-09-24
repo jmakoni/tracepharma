@@ -6,6 +6,7 @@ use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Transferring\CompleteTransferringSession;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
+use App\Filament\App\Resources\TransferringSessions\Pages\MobileViewTransferringSession;
 use App\Filament\App\Resources\TransferringSessions\RelationManagers\ScanLinesRelationManager;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
@@ -134,117 +135,123 @@ trait InteractsWithTransferringSessionHud
     {
         return Action::make('confirmScan')
             ->label('Confirm')
-            ->action(function (): void {
-                if ($this->confirmScanInFlight) {
-                    return;
-                }
-
-                $this->confirmScanInFlight = true;
-
-                try {
-                    /** @var TransferringSession $session */
-                    $session = $this->getRecord();
-
-                    if ($session->status === 'completed') {
-                        $this->setLastScan('error', 'This transfer is already complete.');
-
-                        Notification::make()
-                            ->title('Already complete')
-                            ->danger()
-                            ->ephemeral()->send();
-
-                        $this->dispatch('scan-result', tone: 'error');
-
-                        return;
-                    }
-
-                    if ($session->status === 'in_transit') {
-                        $this->setLastScan('error', 'Receive this transfer from the Receive workstation.');
-
-                        Notification::make()
-                            ->title('Receive at destination')
-                            ->body('Use Receive at destination to open the transfer receive session.')
-                            ->warning()
-                            ->ephemeral()->send();
-
-                        $this->dispatch('scan-result', tone: 'error');
-
-                        return;
-                    }
-
-                    $scan = ElementString::normalize(trim((string) $this->scan));
-                    $this->scan = $scan;
-
-                    if ($scan === '') {
-                        $this->setLastScan('error', 'Scan an SSCC or SGTIN to confirm.');
-
-                        Notification::make()
-                            ->title('Scan required')
-                            ->danger()
-                            ->ephemeral()->send();
-
-                        $this->dispatch('focus-scan');
-                        $this->dispatch('scan-result', tone: 'error');
-
-                        return;
-                    }
-
-                    $result = app(ConfirmTransferringScan::class)->handle(
-                        $session,
-                        $scan,
-                        auth()->id(),
-                    );
-
-                    $tone = match ($result['effect']) {
-                        'already_confirmed' => 'warn',
-                        'confirmed' => 'ok',
-                        'double_transfer' => 'error',
-                        default => 'error',
-                    };
-
-                    $this->scan = '';
-                    $this->getRecord()->refresh()->loadMissing(['fromSite', 'toSite', 'transferDocument', 'receivingSession']);
-                    $this->hydrateDeaScheduleChip();
-
-                    $this->setLastScan(
-                        $tone,
-                        $result['message'],
-                        $this->identifierFor($result['epc']),
-                        AssetTrackingUrl::forEpc($result['epc'] ?? null),
-                        $result['epc'] ?? null,
-                    );
-
-                    $notification = Notification::make()->title($result['message']);
-
-                    match ($tone) {
-                        'ok' => $notification->success(),
-                        'warn' => $notification->warning(),
-                        default => $notification->danger(),
-                    };
-
-                    $notification->ephemeral()->send();
-
-                    $this->dispatch('focus-scan');
-                    $this->dispatch('scan-result', tone: $tone);
-                    $this->dispatch('transferring-scan-lines-updated')
-                        ->to(ScanLinesRelationManager::class);
-                } finally {
-                    $this->confirmScanInFlight = false;
-                }
-            });
+            ->action(fn (): mixed => $this->confirmScanInput());
     }
 
-    public function stageScan(?string $raw = null): void
+    /**
+     * Commit one barcode immediately (desktop Confirm + floor wedge/camera).
+     * Accepts optional raw so hardware Enter or camera can pass the DOM value
+     * without waiting on wire:model.
+     */
+    public function confirmScanInput(?string $raw = null): void
     {
         if ($this->confirmScanInFlight) {
             return;
         }
 
-        if ($raw !== null) {
-            $this->scan = ElementString::normalize(trim($raw));
-        }
+        $this->confirmScanInFlight = true;
 
-        $this->mountAction('confirmScan');
+        try {
+            /** @var TransferringSession $session */
+            $session = $this->getRecord();
+
+            if ($session->status === 'completed') {
+                $this->setLastScan('error', 'This transfer is already complete.');
+
+                Notification::make()
+                    ->title('Already complete')
+                    ->danger()
+                    ->ephemeral()->send();
+
+                $this->dispatch('scan-result', tone: 'error');
+
+                return;
+            }
+
+            if ($session->status === 'in_transit') {
+                $this->setLastScan('error', 'Receive this transfer from the Receive workstation.');
+
+                Notification::make()
+                    ->title('Receive at destination')
+                    ->body('Use Receive at destination to open the transfer receive session.')
+                    ->warning()
+                    ->ephemeral()->send();
+
+                $this->dispatch('scan-result', tone: 'error');
+
+                return;
+            }
+
+            $scan = ElementString::normalize(trim($raw ?? (string) $this->scan));
+            $this->scan = $scan;
+
+            if ($scan === '') {
+                $this->setLastScan('error', 'Scan an SSCC or SGTIN to confirm.');
+
+                Notification::make()
+                    ->title('Scan required')
+                    ->danger()
+                    ->ephemeral()->send();
+
+                $this->dispatch('focus-scan');
+                $this->dispatch('scan-result', tone: 'error');
+
+                return;
+            }
+
+            $result = app(ConfirmTransferringScan::class)->handle(
+                $session,
+                $scan,
+                auth()->id(),
+            );
+
+            $tone = match ($result['effect']) {
+                'already_confirmed' => 'warn',
+                'confirmed' => 'ok',
+                'double_transfer' => 'error',
+                default => 'error',
+            };
+
+            $this->scan = '';
+            $this->refreshRecordAfterConfirm();
+            $this->hydrateDeaScheduleChip();
+
+            $this->setLastScan(
+                $tone,
+                $result['message'],
+                $this->identifierFor($result['epc']),
+                AssetTrackingUrl::forEpc($result['epc'] ?? null),
+                $result['epc'] ?? null,
+            );
+
+            // Floor already shows lastScanMessage + scan-flash; skip Filament toast overhead.
+            if (! $this->isFloorTransferHud()) {
+                $notification = Notification::make()->title($result['message']);
+
+                match ($tone) {
+                    'ok' => $notification->success(),
+                    'warn' => $notification->warning(),
+                    default => $notification->danger(),
+                };
+
+                $notification->ephemeral()->send();
+            }
+
+            $this->dispatch('focus-scan');
+            $this->dispatch('scan-result', tone: $tone);
+
+            if (! $this->isFloorTransferHud()) {
+                $this->dispatch('transferring-scan-lines-updated')
+                    ->to(ScanLinesRelationManager::class);
+            }
+        } finally {
+            $this->confirmScanInFlight = false;
+        }
+    }
+
+    public function stageScan(?string $raw = null): void
+    {
+        $this->confirmScanInput($raw);
     }
 
     private function setLastScan(
@@ -259,12 +266,30 @@ trait InteractsWithTransferringSessionHud
         $this->lastScanDetail = $detail;
         $this->lastScanHref = $href;
         $this->lastScanEpcId = $epc?->getKey();
-        $this->lastScanContextLinks = $epc !== null
+        // Floor does not render context link chips.
+        $this->lastScanContextLinks = ($epc !== null && ! $this->isFloorTransferHud())
             ? array_values(array_filter(
                 app(EpcContextLinks::class)->forEpc($epc, AssetTrackingUrl::scanForEpc($epc), auth()->id()),
                 fn (array $link): bool => ($link['key'] ?? null) !== 'open_transfer',
             ))
             : [];
+    }
+
+    /**
+     * Floor mobile HUD — keep confirm round-trips lean (no desktop chip/table work).
+     */
+    private function isFloorTransferHud(): bool
+    {
+        return $this instanceof MobileViewTransferringSession;
+    }
+
+    private function refreshRecordAfterConfirm(): void
+    {
+        $relations = $this->isFloorTransferHud()
+            ? ['fromSite', 'toSite']
+            : ['fromSite', 'toSite', 'transferDocument', 'receivingSession'];
+
+        $this->getRecord()->refresh()->loadMissing($relations);
     }
 
     private function identifierFor(?Epc $epc): ?string
@@ -381,13 +406,12 @@ trait InteractsWithTransferringSessionHud
         /** @var TransferringSession $session */
         $session = $this->getRecord();
         $gtins = $session->scanLines()
-            ->with('epc:id,gtin14')
-            ->get()
-            ->pluck('epc.gtin14')
-            ->filter(fn ($gtin): bool => filled($gtin))
+            ->join('epcs', 'epcs.id', '=', 'transferring_scan_lines.epc_id')
+            ->whereNotNull('epcs.gtin14')
+            ->where('epcs.gtin14', '!=', '')
+            ->distinct()
+            ->pluck('epcs.gtin14')
             ->map(fn ($gtin): string => (string) $gtin)
-            ->unique()
-            ->values()
             ->all();
 
         $presence = ScheduledProductPresence::forGtins($gtins);

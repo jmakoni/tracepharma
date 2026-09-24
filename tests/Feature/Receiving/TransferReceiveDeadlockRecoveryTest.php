@@ -10,8 +10,10 @@ use App\Actions\Receiving\UnpackReceivingHierarchy;
 use App\Actions\Transferring\CompleteTransferringSession;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\OpenTransferringSession;
+use App\Enums\ReceivingSessionKind;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
+use App\Filament\App\Resources\ReceivingSessions\Pages\MobileViewReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\Pages\ViewReceivingSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -283,6 +285,62 @@ class TransferReceiveDeadlockRecoveryTest extends TestCase
     }
 
     #[Test]
+    public function floor_close_with_shortage_action_is_reachable(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $suffix = (string) random_int(10000000, 99999999);
+        $receivedUri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.FL'.$suffix;
+        $missingUri = 'urn:epc:id:sgtin:030116.3'.substr((string) ($suffix + 1), 0, 6).'.FM'.($suffix + 1);
+
+        try {
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            [$fromSite, $toSite] = $this->createTransferSites($tenant);
+
+            $session = app(OpenTransferringSession::class)->handle(
+                fromSiteId: (int) $fromSite->getKey(),
+                toSiteId: (int) $toSite->getKey(),
+            );
+            $this->sessionId = (int) $session->getKey();
+
+            $receivedEpc = Epc::query()->create(Epc::materializeAttributesFromUri($receivedUri));
+            $missingEpc = Epc::query()->create(Epc::materializeAttributesFromUri($missingUri));
+            $this->epcId = (int) $receivedEpc->getKey();
+            $this->extraEpcIds[] = (int) $missingEpc->getKey();
+
+            foreach ([$receivedEpc, $missingEpc] as $epc) {
+                $this->receiveAtSite($fromSite, $epc);
+            }
+
+            app(ConfirmTransferringScan::class)->handle($session, $receivedUri);
+            app(ConfirmTransferringScan::class)->handle($session->fresh(), $missingUri);
+
+            $shipped = app(CompleteTransferringSession::class)->handle($session->fresh());
+            $this->transferDocumentId = (int) $shipped->transfer_epcis_document_id;
+
+            $receiving = app(OpenTransferReceivingSession::class)->handle($shipped->fresh());
+            $this->receivingSessionId = (int) $receiving->getKey();
+
+            $barcode = '(01)'.$receivedEpc->gtin14.'(21)'.$receivedEpc->serial_number;
+            app(ConfirmReceivingScan::class)->handle($receiving->fresh(), $barcode);
+
+            $this->actingAs($this->createUserWithSites([(int) $toSite->getKey()]));
+
+            Livewire::test(MobileViewReceivingSession::class, ['record' => $receiving->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Close with shortage', false)
+                ->assertActionVisible('closeTransferWithShortage')
+                ->callAction('closeTransferWithShortage')
+                ->assertHasNoActionErrors();
+
+            $this->assertSame('completed', $receiving->fresh()->status);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function complete_receiving_session_short_close_marks_completed_under_lock(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -347,7 +405,7 @@ class TransferReceiveDeadlockRecoveryTest extends TestCase
             tenancy()->initialize($tenant->fresh());
 
             $session = ReceivingSession::query()->create([
-                'session_kind' => \App\Enums\ReceivingSessionKind::InboundAsn,
+                'session_kind' => ReceivingSessionKind::InboundAsn,
                 'status' => 'completed',
                 'opened_at' => now(),
                 'completed_at' => now(),

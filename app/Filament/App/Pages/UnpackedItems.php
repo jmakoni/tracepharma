@@ -185,7 +185,7 @@ class UnpackedItems extends Page implements HasKnowledgeBase, HasTable
                     ->icon(Heroicon::OutlinedMapPin)
                     ->url(fn (Epc $record): string => AssetTracking::getUrl([
                         'scan' => $this->scanFor($record),
-                    ], panel: 'app')),
+                    ], isAbsolute: false, panel: 'app')),
             ])
             ->defaultSort('latest_unpacked_at', 'desc')
             ->paginated([10, 25, 50])

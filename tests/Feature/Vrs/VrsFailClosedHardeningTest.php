@@ -82,6 +82,26 @@ class VrsFailClosedHardeningTest extends TestCase
     }
 
     #[Test]
+    public function digital_link_url_parses_before_vrs_driver_gate(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            config(['vrs.driver' => 'null']);
+            $this->app->forgetInstance(VrsClient::class);
+
+            try {
+                app(RunProductVerification::class)->handle('https://id.gs1.org/01/30301164005162/21/DL-SERIAL-1');
+                $this->fail('Expected VrsConfigurationException after Digital Link parse.');
+            } catch (VrsConfigurationException $e) {
+                $this->assertStringContainsString('VRS_DRIVER', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function null_driver_run_product_verification_throws_before_persist(): void
     {
         $this->initializeDemo2Tenant();

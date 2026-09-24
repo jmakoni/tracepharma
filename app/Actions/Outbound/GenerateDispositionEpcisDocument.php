@@ -6,11 +6,15 @@ namespace App\Actions\Outbound;
 
 use App\Domain\Epcis\Enums\EpcisAction;
 use App\Domain\Epcis\EpcisEventFactory;
+use App\Enums\EpcisGuideline;
+use App\Models\Epcis\Epc;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Services\Epcis\Outbound\Xml12Writer;
 use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\GroupCommissioningEpcUris;
 use App\Support\Epcis\OutboundCorrelationGlns;
+use App\Support\Epcis\OutboundEpcClassVocabulary;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -51,13 +55,8 @@ final class GenerateDispositionEpcisDocument
 
         $events = '';
 
-        foreach ($epcUris as $epcUri) {
-            $uri = trim((string) $epcUri);
-            if ($uri === '') {
-                continue;
-            }
-
-            $events .= $this->eventBuilder->execute($uri, $kind, $siteId, $settings)."\n";
+        foreach ($this->eventUriGroups($epcUris, $kind) as $uris) {
+            $events .= $this->eventBuilder->executeGroup($uris, $kind, $siteId, $settings)."\n";
         }
 
         if (trim($events) === '') {
@@ -66,12 +65,20 @@ final class GenerateDispositionEpcisDocument
 
         [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
 
+        $epcs = Epc::query()
+            ->whereIn('epc_uri', array_values(array_filter(array_map(
+                static fn (string $uri): string => trim($uri),
+                $epcUris,
+            ))))
+            ->get();
+
         return $this->xml12Writer->buildDocument(
             now()->toIso8601String(),
             $events,
             $correlationId,
             $senderGln,
             $receiverGln,
+            OutboundEpcClassVocabulary::masterDataXml($epcs, EpcisGuideline::R12),
         );
     }
 
@@ -95,13 +102,22 @@ final class GenerateDispositionEpcisDocument
             ],
             GenerateDispositionObjectEvent::KIND_DECOMMISSIONING => [
                 EpcisAction::Delete,
-                'decommissioning',
-                $this->resolveDispositionLocal($settings['disposition'] ?? null, 'inactive'),
+                ...$this->eventBuilder->decommissioningStepAndDisposition($settings),
             ],
             GenerateDispositionObjectEvent::KIND_RETURNING => [
                 EpcisAction::Observe,
                 'returning',
                 'returned',
+            ],
+            GenerateDispositionObjectEvent::KIND_DISPENSING => [
+                EpcisAction::Observe,
+                'dispensing',
+                'dispensed',
+            ],
+            GenerateDispositionObjectEvent::KIND_INSPECTING => [
+                EpcisAction::Observe,
+                'inspecting',
+                'active',
             ],
             default => throw new InvalidArgumentException("Unsupported disposition kind [{$kind}]."),
         };
@@ -110,15 +126,10 @@ final class GenerateDispositionEpcisDocument
         $eventTimeUtc = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $domainEvents = [];
 
-        foreach ($epcUris as $epcUri) {
-            $uri = trim((string) $epcUri);
-            if ($uri === '') {
-                continue;
-            }
-
-            // Same pre-author hard-gate as XML path (GenerateDispositionObjectEvent::execute).
+        foreach ($this->eventUriGroups($epcUris, $kind) as $uris) {
+            // Same pre-author hard-gate as XML path (GenerateDispositionObjectEvent::executeGroup).
             $this->assertCandidate->handle(
-                epcList: [$uri],
+                epcList: $uris,
                 action: $action,
                 bizStep: $bizStep,
                 disposition: $disposition,
@@ -126,7 +137,7 @@ final class GenerateDispositionEpcisDocument
             );
 
             $domainEvents[] = $this->eventFactory->objectEvent(
-                epcList: [$uri],
+                epcList: $uris,
                 action: $action,
                 bizStep: $bizStep,
                 disposition: $disposition,
@@ -141,6 +152,30 @@ final class GenerateDispositionEpcisDocument
         }
 
         return $this->jsonLd20Writer->buildFromDomainEvents($domainEvents, now()->toIso8601String(), $correlationId);
+    }
+
+    /**
+     * Commission: one ObjectEvent per GTIN-14 + lot + expiry. Other kinds stay one URI each.
+     *
+     * @param  list<string>  $epcUris
+     * @param  GenerateDispositionObjectEvent::KIND_*  $kind
+     * @return list<list<string>>
+     */
+    private function eventUriGroups(array $epcUris, string $kind): array
+    {
+        if ($kind === GenerateDispositionObjectEvent::KIND_COMMISSIONING) {
+            return GroupCommissioningEpcUris::group($epcUris);
+        }
+
+        $groups = [];
+        foreach ($epcUris as $epcUri) {
+            $uri = trim((string) $epcUri);
+            if ($uri !== '') {
+                $groups[] = [$uri];
+            }
+        }
+
+        return $groups;
     }
 
     private function resolveDispositionLocal(?string $disposition, string $default): string

@@ -542,7 +542,11 @@ XML;
         $xml = file_get_contents($fixture);
         $this->assertNotFalse($xml);
 
-        return str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+        return str_replace(
+            '0096295000009',
+            (string) tenant()->gln,
+            str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml),
+        );
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -574,7 +578,7 @@ XML;
 
         tenancy()->initialize($tenant);
 
-        $this->seed(ExceptionCaseSeeder::class);
+        app(ExceptionCaseSeeder::class)->run();
 
         return $tenant;
     }

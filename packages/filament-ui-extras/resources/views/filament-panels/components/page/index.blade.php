@@ -1,7 +1,6 @@
 {{--
     filament-ui-extras OVERRIDE of filament-panels::components.page.index
-    Purpose: add independent dual sub-navigation slots alongside Filament cluster/resource sub-nav.
-    Keep this diff minimal when reconciling Filament upgrades.
+    Rebased on Filament v5.7.8. Dual-nav slots only — keep this diff small on upgrades.
 --}}
 @props([
     'fullHeight' => false,
@@ -9,6 +8,10 @@
 
 @php
     use Filament\Pages\Enums\SubNavigationPosition;
+    use Filament\Support\Facades\FilamentView;
+    use Filament\Tables\Contracts\HasTable;
+    use Filament\View\PanelsRenderHook;
+    use Illuminate\Contracts\Support\Htmlable;
     use Tracepharma\FilamentUiExtras\Enums\DualSubNavigationPosition;
 
     $subNavigation = $this->getCachedSubNavigation();
@@ -22,20 +25,16 @@
         ? $this->getDualSubNavigationPositionEnum()
         : null;
     $hasDualSubNavigation = filled($dualSubNavigation) && $dualSubNavigationPosition;
-@endphp
 
-@php
     $pageClasses = [
         'fi-page',
         'fi-height-full' => $fullHeight,
-        'fi-page-has-sub-navigation' => filled($subNavigation),
+        'fi-page-has-sub-navigation' => $subNavigation,
         'fi-page-has-dual-sub-navigation' => $hasDualSubNavigation,
         ...$this->getPageClasses(),
     ];
 
-    // Avoid interpolating ->value in array keys when position enums are null
-    // (PHP evaluates keys even when the class flag value is false).
-    if (filled($subNavigation) && $subNavigationPosition) {
+    if ($subNavigation && $subNavigationPosition) {
         $pageClasses["fi-page-has-sub-navigation-{$subNavigationPosition->value}"] = true;
     }
 
@@ -49,14 +48,14 @@
         $attributes->class($pageClasses)
     }}
 >
-    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_START, scopes: $this->getRenderHookScopes()) }}
+    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_START, scopes: $this->getRenderHookScopes()) }}
 
     <div class="fi-page-header-main-ctn">
         @if ($subNavigation)
             <div
                 class="fi-page-main-sub-navigation-mobile-menu-render-hook-ctn"
             >
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_BEFORE, scopes: $this->getRenderHookScopes()) }}
             </div>
 
             <x-filament-panels::page.sub-navigation.mobile-menu
@@ -66,7 +65,7 @@
             <div
                 class="fi-page-main-sub-navigation-mobile-menu-render-hook-ctn"
             >
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_AFTER, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_MOBILE_MENU_AFTER, scopes: $this->getRenderHookScopes()) }}
             </div>
         @endif
 
@@ -101,13 +100,13 @@
                     :heading="$heading"
                     :subheading="$subheading"
                 >
-                    @if ($heading instanceof \Illuminate\Contracts\Support\Htmlable)
+                    @if ($heading instanceof Htmlable)
                         <x-slot name="heading">
                             {{ $heading }}
                         </x-slot>
                     @endif
 
-                    @if ($subheading instanceof \Illuminate\Contracts\Support\Htmlable)
+                    @if ($subheading instanceof Htmlable)
                         <x-slot name="subheading">
                             {{ $subheading }}
                         </x-slot>
@@ -131,23 +130,23 @@
 
             @if ($subNavigation)
                 @if ($subNavigationPosition === SubNavigationPosition::Start)
-                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_START_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_START_BEFORE, scopes: $this->getRenderHookScopes()) }}
 
                     <x-filament-panels::page.sub-navigation.sidebar
                         :navigation="$subNavigation"
                     />
 
-                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_START_AFTER, scopes: $this->getRenderHookScopes()) }}
+                    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_START_AFTER, scopes: $this->getRenderHookScopes()) }}
                 @endif
 
                 @if ($subNavigationPosition === SubNavigationPosition::Top)
-                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_BEFORE, scopes: $this->getRenderHookScopes()) }}
 
                     <x-filament-panels::page.sub-navigation.tabs
                         :navigation="$subNavigation"
                     />
 
-                    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_AFTER, scopes: $this->getRenderHookScopes()) }}
+                    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_TOP_AFTER, scopes: $this->getRenderHookScopes()) }}
                 @endif
             @endif
 
@@ -164,29 +163,29 @@
                     </nav>
                 @endif
 
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
 
                 {{ $this->headerWidgets }}
 
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_HEADER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
 
                 {{ $slot }}
 
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_FOOTER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_FOOTER_WIDGETS_BEFORE, scopes: $this->getRenderHookScopes()) }}
 
                 {{ $this->footerWidgets }}
 
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_FOOTER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_FOOTER_WIDGETS_AFTER, scopes: $this->getRenderHookScopes()) }}
             </div>
 
             @if ($subNavigation && $subNavigationPosition === SubNavigationPosition::End)
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_END_BEFORE, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_END_BEFORE, scopes: $this->getRenderHookScopes()) }}
 
                 <x-filament-panels::page.sub-navigation.sidebar
                     :navigation="$subNavigation"
                 />
 
-                {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_SUB_NAVIGATION_END_AFTER, scopes: $this->getRenderHookScopes()) }}
+                {{ FilamentView::renderHook(PanelsRenderHook::PAGE_SUB_NAVIGATION_END_AFTER, scopes: $this->getRenderHookScopes()) }}
             @endif
 
             {{-- filament-ui-extras: dual sub-nav end --}}
@@ -207,7 +206,7 @@
         @endif
     </div>
 
-    @if (! ($this instanceof \Filament\Tables\Contracts\HasTable))
+    @if (! ($this instanceof HasTable))
         <x-filament-actions::modals />
     @elseif ($this->isTableLoaded() && filled($this->defaultTableAction))
         <div
@@ -221,10 +220,10 @@
         ></div>
     @endif
 
-    {{ \Filament\Support\Facades\FilamentView::renderHook(\Filament\View\PanelsRenderHook::PAGE_END, scopes: $this->getRenderHookScopes()) }}
+    {{ FilamentView::renderHook(PanelsRenderHook::PAGE_END, scopes: $this->getRenderHookScopes()) }}
 
     @if (method_exists($this, 'hasUnsavedDataChangesAlert') && $this->hasUnsavedDataChangesAlert())
-        @if (\Filament\Support\Facades\FilamentView::hasSpaMode())
+        @if (FilamentView::hasSpaMode())
             @script
                 <script>
                     setUpSpaModeUnsavedDataChangesAlert({

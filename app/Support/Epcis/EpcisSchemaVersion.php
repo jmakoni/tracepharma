@@ -11,7 +11,7 @@ use App\Support\TenantSettings;
  * - 1.2 / 1.3: XML on urn:epcglobal:epcis:xsd:1 (shipped default)
  * - 2.0: JSON-LD EPCIS 2.0 (opt-in via config tracepharma.epcis.accept_20)
  *
- * GS1 US guideline R1.3 is orthogonal — see validation.force_r13.
+ * GS1 US DSCSA guideline R1.2/R1.3 is orthogonal to schemaVersion.
  */
 final class EpcisSchemaVersion
 {

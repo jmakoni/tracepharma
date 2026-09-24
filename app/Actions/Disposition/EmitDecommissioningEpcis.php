@@ -12,6 +12,7 @@ use App\Domain\Aggregation\HierarchyDriftReport;
 use App\Enums\DecommissionReason;
 use App\Enums\EpcisAuthoredKind;
 use App\Enums\ExceptionStatus;
+use App\Models\Disposition\DispositionSession;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -25,10 +26,9 @@ use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
 use App\Support\Disposition\AcquireDecommissionEpcLocks;
 use App\Support\Disposition\AssertDecommissionMassApproval;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
-use App\Support\Shipping\EpcOnOpenShippingSession;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Shipping\ShippableEpcsAtSite;
-use App\Support\Transferring\EpcOnOpenTransferringSession;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -42,9 +42,7 @@ final class EmitDecommissioningEpcis
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly AcquireDecommissionEpcLocks $decommissionLocks,
         private readonly ResolveEpcLastKnownGln $lastKnownGln,
-        private readonly EpcOnOpenShippingSession $epcOnOpenShippingSession,
-        private readonly EpcOnOpenTransferringSession $epcOnOpenTransferringSession,
-        private readonly EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
         private readonly AggregationHierarchyService $aggregationHierarchy,
         private readonly ExceptionService $exceptionService,
         private readonly AssertDecommissionMassApproval $assertMassApproval,
@@ -56,7 +54,8 @@ final class EmitDecommissioningEpcis
      *     sync?: bool,
      *     dispatch?: bool,
      *     reason?: DecommissionReason|string|null,
-     *     approver_user_id?: int|null
+     *     approver_user_id?: int|null,
+     *     disposition_session?: DispositionSession|null
      * }  $options
      * @return array{
      *     document: EpcisDocument|null,
@@ -169,21 +168,11 @@ final class EmitDecommissioningEpcis
                 throw new InvalidArgumentException("EPC #{$epcId} is missing an epc_uri for decommissioning.");
             }
 
-            if ($this->epcOnOpenShippingSession->exists($epc)) {
+            $reservation = $this->exclusiveGate->firstHierarchyReservation($epc, $this->exceptContext($options));
+            if ($reservation !== null) {
                 throw new InvalidArgumentException(
-                    'Cannot decommission — this unit is already confirmed on an open ship order.',
-                );
-            }
-
-            if ($this->epcOnOpenTransferringSession->exists($epc)) {
-                throw new InvalidArgumentException(
-                    'Cannot decommission — this unit is already confirmed on an open or in-transit transfer.',
-                );
-            }
-
-            if ($this->epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
-                throw new InvalidArgumentException(
-                    'Cannot decommission — this unit is already confirmed on an open receive session.',
+                    $reservation['block']->dispositionRefusal('decommission').
+                    ' Reserved EPC: '.$this->exclusiveGate->epcLabel($reservation['epc']).'.',
                 );
             }
 
@@ -515,5 +504,17 @@ final class EmitDecommissioningEpcis
         }
 
         return array_keys($linkIds);
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function exceptContext(array $options): ExclusiveSessionContext
+    {
+        $session = $options['disposition_session'] ?? null;
+
+        return $session instanceof DispositionSession
+            ? ExclusiveSessionContext::forDisposition($session)
+            : ExclusiveSessionContext::none();
     }
 }

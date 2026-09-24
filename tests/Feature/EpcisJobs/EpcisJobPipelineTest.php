@@ -219,6 +219,32 @@ class EpcisJobPipelineTest extends TestCase
     }
 
     #[Test]
+    public function enqueue_transformation_document_creates_queued_job(): void
+    {
+        Bus::fake([TransmitEpcisJob::class]);
+
+        $tenant = $this->initializeDemo2();
+        [$document] = $this->seedShippingDocument();
+        $document->forceFill([
+            'authored_kind' => EpcisAuthoredKind::Transformation,
+            'notes' => 'Generated TransformationEvent (repack) — 1 input(s) → 1 output(s).',
+            'original_filename' => 'transformation-test.xml',
+        ])->save();
+
+        $job = app(EnqueueEpcisJob::class)->handle($document);
+
+        $this->jobIds[] = (int) $job->getKey();
+
+        $this->assertSame('outbound_transformation', $job->kind->value);
+        $this->assertSame(EpcisJobStatus::Queued, $job->status);
+        $this->assertSame('queued', $document->fresh()->transmission_status);
+
+        Bus::assertDispatched(TransmitEpcisJob::class, function (TransmitEpcisJob $queued) use ($tenant, $job): bool {
+            return $queued->tenant->is($tenant) && $queued->epcisJobId === (int) $job->getKey();
+        });
+    }
+
+    #[Test]
     public function stale_queued_outbound_job_is_redispatched_on_repeat_enqueue(): void
     {
         Bus::fake([TransmitEpcisJob::class]);

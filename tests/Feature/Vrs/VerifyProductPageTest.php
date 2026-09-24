@@ -216,11 +216,10 @@ class VerifyProductPageTest extends TestCase
     }
 
     /**
-     * DSCSA: an unreachable VRS says nothing about the product, so the scan is recorded for
-     * the audit trail and handed back to the operator to retry — never quarantined.
+     * Transport timeout files a case so the unit is not auto-released, without a new hold.
      */
     #[Test]
-    public function unreachable_vrs_records_the_attempt_without_opening_a_case(): void
+    public function unreachable_vrs_opens_a_case_without_a_hold_or_verified_at(): void
     {
         $this->initializeDemo2Tenant();
 
@@ -260,7 +259,8 @@ class VerifyProductPageTest extends TestCase
             $this->verificationIds[] = (int) $verification->getKey();
 
             $this->assertSame('unavailable', $verification->status);
-            $this->assertNull($verification->exception_id);
+            $this->assertNotNull($verification->exception_id);
+            $this->exceptionIds[] = (int) $verification->exception_id;
             $this->assertNull($verification->verified_at);
             $this->assertSame($holdsBefore, QuarantineHold::query()->count());
         } finally {

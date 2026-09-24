@@ -10,6 +10,8 @@ use App\Enums\TracingRequestScope;
 use App\Enums\TracingRequestStatus;
 use App\Filament\App\Pages\ReturnWorkstation;
 use App\Filament\App\Pages\SaleableReturnWorkstation;
+use App\Models\Disposition\DispositionScanLine;
+use App\Models\Disposition\DispositionSession;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcIlmd;
 use App\Models\Epcis\EpcisDocument;
@@ -24,11 +26,13 @@ use App\Services\Receiving\ReceivingGate;
 use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\Auth\CurrentSite;
 use App\Support\Auth\TenantRoleSeeder;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
+use App\Support\Gs1\Gtin;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\PlacesEpcOnHandAtSite;
@@ -73,6 +77,19 @@ class SaleableReturnWorkstationTest extends TestCase
         } finally {
             tenancy()->end();
         }
+    }
+
+    private function uniqueOrgGln(): string
+    {
+        $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?: '0399991';
+        $fill = max(1, 12 - strlen($prefix));
+
+        do {
+            $body = substr($prefix.str_pad((string) random_int(0, (int) str_repeat('9', $fill)), $fill, '0', STR_PAD_LEFT), 0, 12);
+            $gln = $body.Gtin::checkDigit($body);
+        } while (Site::query()->where('gln', $gln)->exists());
+
+        return $gln;
     }
 
     private function initializeDemo2Tenant(): void
@@ -172,7 +189,6 @@ class SaleableReturnWorkstationTest extends TestCase
                 app(ReceivingGate::class),
                 app(EpcCustodyGate::class),
                 app(ShippableEpcsAtSite::class),
-                app(EpcOnAnotherOpenReceivingSession::class),
             );
 
             Verification::query()
@@ -306,6 +322,273 @@ class SaleableReturnWorkstationTest extends TestCase
             }
             foreach ($requestIds as $id) {
                 TracingRequest::query()->whereKey($id)->delete();
+            }
+            foreach ($eventIds as $eventId) {
+                DB::table('event_epcs')->where('event_id', $eventId)->delete();
+                EpcisEvent::query()->whereKey($eventId)->delete();
+            }
+            foreach ($documentIds as $documentId) {
+                EpcisDocument::query()->whereKey($documentId)->delete();
+            }
+            foreach ($epcIds as $epcId) {
+                EpcIlmd::query()->where('epc_id', $epcId)->delete();
+                if (! DB::table('event_epcs')->where('epc_id', $epcId)->exists()) {
+                    Epc::query()->whereKey($epcId)->delete();
+                }
+            }
+            foreach ($siteIds as $siteId) {
+                Site::query()->whereKey($siteId)->delete();
+            }
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function verified_scan_completes_saleable_return(): void
+    {
+        $this->initializeDemo2Tenant();
+        $siteIds = [];
+        $epcIds = [];
+        $documentIds = [];
+        $eventIds = [];
+        $verificationIds = [];
+        $sessionIds = [];
+        $tenant = tenant();
+        $priorGln = $tenant?->gln;
+        $priorCompanyPrefix = $tenant?->company_prefix;
+
+        try {
+            Storage::fake('local');
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+                'l3_enabled' => false,
+                'l3_endpoint_url' => null,
+            ]);
+
+            $site = Site::query()->create([
+                'name' => 'Saleable happy site '.substr((string) str()->uuid(), 0, 8),
+                'gln' => $this->uniqueOrgGln(),
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $siteIds[] = (int) $site->getKey();
+            CurrentSite::set((int) $site->getKey());
+
+            $suffix = (string) random_int(10_000_000, 99_999_999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.HP'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->first_seen_at = now();
+            $epc->save();
+            $epcIds[] = (int) $epc->getKey();
+            EpcIlmd::query()->create([
+                'epc_id' => $epc->getKey(),
+                'gtin14' => $epc->gtin14,
+                'lot_number' => 'SRHAPPY',
+            ]);
+            $placed = $this->placeEpcOnHandAtSite($site, $epc);
+            $documentIds[] = (int) $placed['document']->getKey();
+            $eventIds[] = (int) $placed['event']->getKey();
+
+            $this->app->bind(VrsClient::class, fn (): VrsClient => new class implements VrsClient
+            {
+                public function verify(
+                    string $gtin14,
+                    string $serial,
+                    ?string $lot = null,
+                    ?string $expiryYymmdd = null,
+                ): array {
+                    return [
+                        'gtin14' => $gtin14,
+                        'serial' => $serial,
+                        'lot' => $lot,
+                        'expiry_yymmdd' => $expiryYymmdd,
+                        'status' => 'verified',
+                        'message' => 'Verified',
+                    ];
+                }
+            });
+
+            $scan = '(01)'.$epc->gtin14.'(21)'.$epc->serial_number;
+            $component = Livewire::test(SaleableReturnWorkstation::class);
+            CurrentSite::set((int) $site->getKey());
+            $component->set('scan', $scan)->call('processScan');
+            $page = $component->instance();
+            $this->assertNotSame([], $page->confirmed);
+            if ($page->dispositionSessionId !== null) {
+                $sessionIds[] = (int) $page->dispositionSessionId;
+            }
+
+            $verificationIds = Verification::query()
+                ->where('gtin14', $epc->gtin14)
+                ->where('serial', $epc->serial_number)
+                ->pluck('id')
+                ->all();
+
+            $component->callAction('confirmReturn');
+            $page = $component->instance();
+            $this->assertStringContainsString(
+                'returned',
+                strtolower((string) $page->lastMessage),
+                (string) $page->lastMessage,
+            );
+            $component->assertNotified('Return complete');
+            $this->assertSame([], $page->confirmed);
+
+            $returning = EpcisEvent::query()
+                ->where('biz_step', 'like', '%returning%')
+                ->whereHas('epcs', fn ($q) => $q->where('epcs.id', $epc->getKey()))
+                ->latest('id')
+                ->first();
+            $this->assertNotNull($returning);
+            $eventIds[] = (int) $returning->getKey();
+            if ($returning->document_id !== null) {
+                $documentIds[] = (int) $returning->document_id;
+            }
+        } finally {
+            foreach ($verificationIds as $id) {
+                Verification::query()->whereKey($id)->delete();
+            }
+            foreach ($sessionIds as $sessionId) {
+                DispositionScanLine::query()->where('disposition_session_id', $sessionId)->delete();
+                DispositionSession::query()->whereKey($sessionId)->delete();
+            }
+            foreach ($eventIds as $eventId) {
+                DB::table('event_epcs')->where('event_id', $eventId)->delete();
+                EpcisEvent::query()->whereKey($eventId)->delete();
+            }
+            foreach ($documentIds as $documentId) {
+                EpcisDocument::query()->whereKey($documentId)->delete();
+            }
+            foreach ($epcIds as $epcId) {
+                EpcIlmd::query()->where('epc_id', $epcId)->delete();
+                if (! DB::table('event_epcs')->where('epc_id', $epcId)->exists()) {
+                    Epc::query()->whereKey($epcId)->delete();
+                }
+            }
+            foreach ($siteIds as $siteId) {
+                Site::query()->whereKey($siteId)->delete();
+            }
+            if ($tenant instanceof Tenant) {
+                $tenant->forceFill([
+                    'gln' => $priorGln,
+                    'company_prefix' => $priorCompanyPrefix,
+                ])->save();
+            }
+            tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function complete_is_blocked_when_only_a_stale_vrs_verified_exists(): void
+    {
+        $this->initializeDemo2Tenant();
+        $siteIds = [];
+        $epcIds = [];
+        $documentIds = [];
+        $eventIds = [];
+        $verificationIds = [];
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::Pharmacy);
+            $user = User::factory()->create();
+            $user->assignRole(TenantRole::Owner->value);
+            $this->actingAs($user);
+
+            $gln = '03'.str_pad((string) random_int(0, 99_999_999_999), 11, '0', STR_PAD_LEFT);
+            $site = Site::query()->create([
+                'name' => 'Saleable stale VRS site '.substr((string) str()->uuid(), 0, 8),
+                'gln' => $gln,
+                'is_active' => true,
+                'is_headquarters' => true,
+                'is_organization_facility' => true,
+            ]);
+            $siteIds[] = (int) $site->getKey();
+            CurrentSite::set((int) $site->getKey());
+
+            $suffix = (string) random_int(10_000_000, 99_999_999);
+            $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.SV'.$suffix;
+            $epc = Epc::fromUri($uri);
+            $epc->first_seen_at = now();
+            $epc->save();
+            $epcIds[] = (int) $epc->getKey();
+            EpcIlmd::query()->create([
+                'epc_id' => $epc->getKey(),
+                'gtin14' => $epc->gtin14,
+                'lot_number' => 'SRSTALE',
+            ]);
+            $placed = $this->placeEpcOnHandAtSite($site, $epc);
+            $documentIds[] = (int) $placed['document']->getKey();
+            $eventIds[] = (int) $placed['event']->getKey();
+
+            $this->app->bind(VrsClient::class, fn (): VrsClient => new class implements VrsClient
+            {
+                public function verify(
+                    string $gtin14,
+                    string $serial,
+                    ?string $lot = null,
+                    ?string $expiryYymmdd = null,
+                ): array {
+                    return [
+                        'gtin14' => $gtin14,
+                        'serial' => $serial,
+                        'lot' => $lot,
+                        'expiry_yymmdd' => $expiryYymmdd,
+                        'status' => 'verified',
+                        'message' => 'Verified',
+                    ];
+                }
+            });
+
+            $scan = '(01)'.$epc->gtin14.'(21)'.$epc->serial_number;
+            $component = Livewire::test(SaleableReturnWorkstation::class);
+            CurrentSite::set((int) $site->getKey());
+            $component->set('scan', $scan)->call('processScan');
+            $page = $component->instance();
+            $this->assertNotSame([], $page->confirmed);
+
+            $freshIds = Verification::query()
+                ->where('gtin14', $epc->gtin14)
+                ->where('serial', $epc->serial_number)
+                ->pluck('id')
+                ->all();
+
+            Verification::query()->whereIn('id', $freshIds)->delete();
+
+            $stale = Verification::query()->create([
+                'gtin14' => $epc->gtin14,
+                'serial' => $epc->serial_number,
+                'lot' => 'SRSTALE',
+                'status' => 'verified',
+                'scanned_barcode' => $scan,
+                'verified_by' => $user->getKey(),
+                'message' => 'Stale verified',
+                'verified_at' => now()->subWeek(),
+                'created_at' => now()->subWeek(),
+                'updated_at' => now()->subWeek(),
+            ]);
+            $verificationIds[] = (int) $stale->getKey();
+
+            $component->callAction('confirmReturn')
+                ->assertNotified('Return failed');
+
+            $page = $component->instance();
+            $this->assertStringContainsString('vrs', strtolower((string) $page->lastMessage));
+            $this->assertSame([(int) $epc->getKey()], array_map(
+                fn (array $row): int => (int) $row['epc_id'],
+                $page->confirmed,
+            ));
+        } finally {
+            foreach ($verificationIds as $id) {
+                Verification::query()->whereKey($id)->delete();
             }
             foreach ($eventIds as $eventId) {
                 DB::table('event_epcs')->where('event_id', $eventId)->delete();

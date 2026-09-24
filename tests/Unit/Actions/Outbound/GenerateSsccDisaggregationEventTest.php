@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Actions\Outbound;
 
 use App\Actions\Outbound\GenerateSsccDisaggregationEvent;
+use App\Support\Epcis\AuthoredEventTimezone;
 use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -69,5 +70,29 @@ class GenerateSsccDisaggregationEventTest extends TestCase
         );
 
         $this->assertStringContainsString('<eventTime>'.$fixed->toIso8601String().'</eventTime>', $xml);
+        $this->assertStringContainsString(
+            '<eventTimeZoneOffset>'.AuthoredEventTimezone::offsetForSite(null, $fixed).'</eventTimeZoneOffset>',
+            $xml,
+        );
+    }
+
+    #[Test]
+    public function timezone_offset_follows_app_timezone_not_hardcoded_utc(): void
+    {
+        config(['app.timezone' => 'America/Chicago']);
+        $at = Carbon::parse('2026-09-18T18:00:00+00:00');
+
+        $xml = app(GenerateSsccDisaggregationEvent::class)->execute(
+            'urn:epc:id:sscc:030116.00000210167',
+            ['urn:epc:id:sgtin:030116.5200116.00000000413101'],
+            [
+                ...self::TEST_SETTINGS,
+                'event_time' => $at,
+            ],
+        );
+
+        $offset = AuthoredEventTimezone::offsetForSite(null, $at);
+        $this->assertNotSame('+00:00', $offset);
+        $this->assertStringContainsString('<eventTimeZoneOffset>'.$offset.'</eventTimeZoneOffset>', $xml);
     }
 }

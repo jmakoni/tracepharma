@@ -3,12 +3,15 @@
 namespace App\Filament\App\Resources\TradingPartners\Schemas;
 
 use App\Enums\CmoOwnership;
+use App\Enums\EpcisGuideline;
 use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Filament\App\Support\FdaPicker;
+use App\Models\TradingPartner;
 use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
+use App\Support\Gs1\Gs1IdentityStatus;
 use App\Support\Gs1\SglnRules;
 use App\Support\TenantSettings;
 use Filament\Forms\Components\Placeholder;
@@ -78,13 +81,26 @@ class TradingPartnerForm
                                 ]),
                                 Grid::make(['default' => 2])->schema([
                                     GlnRules::input()
+                                        ->live(onBlur: true)
                                         ->unique(ignoreRecord: true)
                                         ->rule(new RejectTenantGln)
                                         ->rule(new RejectPartnerGlnUnderOrgPrefix),
                                     SglnRules::input()
-                                        ->helperText(fn (): string => TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
-                                            ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy the partner\'s stated SGLN from their EPCIS.'
-                                            : 'Copy the partner\'s stated SGLN from their EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.'),
+                                        ->live(onBlur: true)
+                                        ->helperText(function (Get $get, ?TradingPartner $record): string {
+                                            if (TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
+                                                && Gs1IdentityStatus::canDeriveOrgSiteSgln(
+                                                    is_string($get('gln')) ? $get('gln') : null,
+                                                )) {
+                                                return 'Optional — this GLN sits under your organization prefix, so SGLN is derived on save.';
+                                            }
+
+                                            return Gs1IdentityStatus::partnerSglnStatus(
+                                                is_string($get('sgln')) ? $get('sgln') : null,
+                                                is_string($get('gln')) ? $get('gln') : null,
+                                                is_string($record?->sgln) ? $record->sgln : null,
+                                            );
+                                        }),
                                 ]),
                                 Grid::make(['default' => 4])->schema([
                                     TextInput::make('duns_number')->label('DUNS')->maxLength(14),
@@ -103,6 +119,15 @@ class TradingPartnerForm
                                         ->default(true)
                                         ->inline(false),
                                 ]),
+                                Select::make('epcis_guideline')
+                                    ->label('Outbound GS1 US DSCSA guideline')
+                                    ->options(collect(EpcisGuideline::cases())->mapWithKeys(
+                                        fn (EpcisGuideline $case): array => [$case->value => $case->label()]
+                                    ))
+                                    ->default(EpcisGuideline::R12->value)
+                                    ->required()
+                                    ->native(false)
+                                    ->helperText('Outbound TI/TS only. Inbound accepts both GS1 US DSCSA guidelines R1.2 and R1.3 (independent of EPCIS schema 1.2/1.3/2.0).'),
                                 Grid::make(['default' => 2])
                                     ->visible(fn (): bool => tenant()?->profile === TenantProfile::Manufacturer)
                                     ->schema([

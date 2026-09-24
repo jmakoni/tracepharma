@@ -23,16 +23,20 @@ use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\TenantRoleSeeder;
+use App\Support\Gs1\Gtin;
 use App\Support\Receiving\ResolveOpenReceiveUrl;
 use App\Support\TenantSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class OpenTransferReceivingSessionTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
+
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -460,7 +464,7 @@ class OpenTransferReceivingSessionTest extends TestCase
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.TR'.$suffix.$index;
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             if ($index === 1) {
                 $this->epcId = (int) $epc->getKey();
                 $this->epcUri = $uri;
@@ -487,7 +491,7 @@ class OpenTransferReceivingSessionTest extends TestCase
         );
         $this->transferSessionId = (int) $transfer->getKey();
 
-        $epc = Epc::query()->create(Epc::materializeAttributesFromUri($this->epcUri));
+        $epc = $this->epcFromUri($this->epcUri);
         $this->epcId = (int) $epc->getKey();
         $this->receiveAtSite($fromSite, $epc);
 
@@ -534,10 +538,22 @@ class OpenTransferReceivingSessionTest extends TestCase
         ]]);
     }
 
+    private function epcFromUri(string $uri): Epc
+    {
+        $attrs = Epc::materializeAttributesFromUri($uri);
+        $existing = Epc::query()->where('epc_uri', $attrs['epc_uri'])->first();
+
+        return $existing instanceof Epc ? $existing : Epc::query()->create($attrs);
+    }
+
     private function uniqueGln(): string
     {
+        $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?: '03';
+        $fill = max(1, 12 - strlen($prefix));
+
         do {
-            $gln = '0366159'.str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $body = substr($prefix.str_pad((string) random_int(0, (int) str_repeat('9', $fill)), $fill, '0', STR_PAD_LEFT), 0, 12);
+            $gln = $body.Gtin::checkDigit($body);
         } while (Site::query()->where('gln', $gln)->exists());
 
         return $gln;
@@ -571,6 +587,7 @@ class OpenTransferReceivingSessionTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
     }

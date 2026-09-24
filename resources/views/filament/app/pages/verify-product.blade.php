@@ -1,4 +1,10 @@
 <x-filament-panels::page>
+    @include('filament.app.partials.floor-layout-switch', [
+        'mode' => 'desktop',
+        'desktopUrl' => \App\Filament\App\Pages\VerifyProduct::getUrl(panel: 'app'),
+        'floorUrl' => \App\Filament\App\Pages\MobileVerifyProduct::getUrl(panel: 'app'),
+    ])
+
     <div class="flex flex-col gap-4">
         @if ($this->showScorecard() && ($scorecard = $this->scorecardMetrics()))
             <div class="stats stats-vertical w-full shadow-xl sm:stats-horizontal bg-base-100">
@@ -83,10 +89,11 @@
                 @endif
 
                 <form
-                    wire:submit.prevent="verifyScan"
+                    x-on:submit.prevent="$wire.verifyScan($refs.scanInput.value)"
                     x-data
                     x-init="$nextTick(() => $refs.scanInput?.focus())"
                     x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                    x-on:keydown.enter.prevent="$wire.verifyScan($refs.scanInput.value)"
                     class="flex flex-col gap-4"
                 >
                     <div class="form-control w-full gap-1.5">

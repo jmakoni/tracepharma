@@ -43,6 +43,10 @@ class ManufacturerVerificationFailedTest extends TestCase
     /** @var list<int> */
     private array $productIds = [];
 
+    private ?int $priorCatalogProductId = null;
+
+    private ?int $priorCatalogPartnerId = null;
+
     /** @var list<int> */
     private array $partnerIds = [];
 
@@ -101,11 +105,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $productPartner->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $productPartner->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $productPartner->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -153,11 +153,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $manufacturer->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $manufacturer->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $manufacturer->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -197,11 +193,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $manufacturer->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $manufacturer->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $manufacturer->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -244,11 +236,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $manufacturer->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $manufacturer->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $manufacturer->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -312,11 +300,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $wholesaler->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $wholesaler->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $wholesaler->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -350,11 +334,7 @@ class ManufacturerVerificationFailedTest extends TestCase
             ]);
             $this->partnerIds[] = (int) $manufacturer->getKey();
 
-            $product = Product::factory()->create([
-                'gtin' => self::GTIN14,
-                'trading_partner_id' => $manufacturer->getKey(),
-            ]);
-            $this->productIds[] = (int) $product->getKey();
+            $this->bindCatalogGtinToPartner((int) $manufacturer->getKey());
 
             ResolveProductFromIdentifier::clearCache();
 
@@ -445,9 +425,33 @@ class ManufacturerVerificationFailedTest extends TestCase
 
         tenancy()->initialize($tenant);
 
-        $this->seed(ExceptionCaseSeeder::class);
+        // Avoid $this->seed() under tenancy — it routes to db:seed / tenants:seed
+        // and $this->option('tenants') on a signature that has no tenants option.
+        (new ExceptionCaseSeeder)->run();
 
         return $tenant;
+    }
+
+    private function bindCatalogGtinToPartner(int $tradingPartnerId): Product
+    {
+        $product = Product::query()->where('gtin', self::GTIN14)->first();
+        if ($product === null) {
+            $product = Product::factory()->create([
+                'gtin' => self::GTIN14,
+                'trading_partner_id' => $tradingPartnerId,
+            ]);
+            $this->productIds[] = (int) $product->getKey();
+
+            return $product;
+        }
+
+        $this->priorCatalogProductId = (int) $product->getKey();
+        $this->priorCatalogPartnerId = $product->trading_partner_id !== null
+            ? (int) $product->trading_partner_id
+            : null;
+        $product->forceFill(['trading_partner_id' => $tradingPartnerId])->save();
+
+        return $product;
     }
 
     private function cleanup(): void
@@ -479,6 +483,14 @@ class ManufacturerVerificationFailedTest extends TestCase
         if ($this->productIds !== []) {
             Product::query()->whereKey($this->productIds)->delete();
             $this->productIds = [];
+        }
+
+        if ($this->priorCatalogProductId !== null) {
+            Product::query()->whereKey($this->priorCatalogProductId)->update([
+                'trading_partner_id' => $this->priorCatalogPartnerId,
+            ]);
+            $this->priorCatalogProductId = null;
+            $this->priorCatalogPartnerId = null;
         }
 
         if ($this->partnerIds !== []) {

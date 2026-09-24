@@ -96,7 +96,13 @@ class ViewOutboundShippingSession extends ViewRecord
 
     public function statusLabel(): string
     {
-        return OutboundShippingSessionStatus::label($this->getRecord()->status);
+        $label = OutboundShippingSessionStatus::label($this->getRecord()->status);
+
+        if ($this->getRecord()->isVoided()) {
+            return $label.' · Voided';
+        }
+
+        return $label;
     }
 
     public function isCorrective(): bool
@@ -136,8 +142,19 @@ class ViewOutboundShippingSession extends ViewRecord
 
     public function statusBadgeColor(): string
     {
+        if ($this->getRecord()->isVoided()) {
+            return 'warning';
+        }
+
+        if ($this->getRecord()->status === 'completed') {
+            return match ($this->shipCompleteCopy()['tone']) {
+                'success' => 'success',
+                'warning' => 'warning',
+                default => 'danger',
+            };
+        }
+
         return match ($this->getRecord()->status) {
-            'completed' => 'success',
             'in_progress' => 'info',
             'open' => 'warning',
             'cancelled' => 'gray',
@@ -306,6 +323,7 @@ class ViewOutboundShippingSession extends ViewRecord
                         ->success()
                         ->send();
                 }),
+            $this->voidShipOrderAction(),
             UnsubmittedSessionDeleteAction::forShipping(
                 fn (OutboundShippingSession $record) => app(DeleteOutboundShippingSession::class)->handle($record, auth()->id()),
                 OutboundShippingSessionResource::getUrl(name: 'index', panel: 'app'),
@@ -357,6 +375,12 @@ class ViewOutboundShippingSession extends ViewRecord
                 ->color('gray')
                 ->visible(fn (): bool => $this->getRecord()->epcisDocument !== null)
                 ->url(fn (): ?string => $this->getRecord()->epcisDocument?->filamentViewUrl()),
+            Action::make('viewVoidDocument')
+                ->label('View void EPCIS')
+                ->icon(Heroicon::OutlinedDocumentText)
+                ->color('gray')
+                ->visible(fn (): bool => $this->getRecord()->voidEpcisDocument !== null)
+                ->url(fn (): ?string => $this->getRecord()->voidEpcisDocument?->filamentViewUrl()),
         ];
     }
 

@@ -32,7 +32,7 @@ class ListReceivingSessions extends ListRecords
                     ->whereIn('status', ['open', 'in_progress'])),
             'history' => Tab::make('History')
                 ->modifyQueryUsing(fn (Builder $query): Builder => $query
-                    ->whereIn('status', ['completed', 'cancelled'])
+                    ->whereIn('status', ['completed', 'cancelled', 'held'])
                     ->orderByDesc('completed_at')
                     ->orderByDesc('id')),
         ];

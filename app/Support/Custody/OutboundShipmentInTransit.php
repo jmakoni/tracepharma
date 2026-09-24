@@ -82,8 +82,22 @@ final class OutboundShipmentInTransit
             return false;
         }
 
-        // A partner telling us they shipped (inbound document) says nothing about
-        // our custody; only documents we authored take stock out of our hands.
+        return self::isAuthoredHandoffDocument($meta);
+    }
+
+    /**
+     * Whether the event sits on a shipment or transfer document we authored.
+     * Disposition is ignored — a void_shipping event on that document still
+     * belongs to us, even though it is no longer in transit.
+     *
+     * @param  array{
+     *     document_direction?: ?string,
+     *     authored_kind?: ?string,
+     *     document_notes?: ?string
+     * }  $meta
+     */
+    public static function isAuthoredHandoffDocument(array $meta): bool
+    {
         if (($meta['document_direction'] ?? null) !== 'outbound') {
             return false;
         }
@@ -117,6 +131,34 @@ final class OutboundShipmentInTransit
      */
     public static function eventCondition(string $eventAlias = 'ev'): array
     {
+        [$documentSql, $documentBindings] = self::authoredHandoffDocumentCondition($eventAlias);
+
+        $sql = "(
+                    {$eventAlias}.event_type = ?
+                    AND COALESCE({$eventAlias}.biz_step, '') LIKE ?
+                    AND COALESCE({$eventAlias}.disposition, '') LIKE ?
+                    AND {$documentSql}
+                )";
+
+        $bindings = [
+            self::EVENT_TYPE,
+            '%'.self::BIZ_STEP_NEEDLE.'%',
+            '%'.self::DISPOSITION_NEEDLE.'%',
+            ...$documentBindings,
+        ];
+
+        return [$sql, $bindings];
+    }
+
+    /**
+     * Document-side of an authored shipment or transfer, for callers that must
+     * recognize our handoff documents even when the latest event is no longer
+     * in transit (void_shipping).
+     *
+     * @return array{0: string, 1: list<string>}
+     */
+    public static function authoredHandoffDocumentCondition(string $eventAlias = 'ev'): array
+    {
         $legacyNotes = implode(' OR ', array_fill(
             0,
             count(self::LEGACY_NOTE_NEEDLES),
@@ -125,11 +167,7 @@ final class OutboundShipmentInTransit
 
         $authoredKinds = implode(', ', array_fill(0, count(self::IN_TRANSIT_AUTHORED_KINDS), '?'));
 
-        $sql = "(
-                    {$eventAlias}.event_type = ?
-                    AND COALESCE({$eventAlias}.biz_step, '') LIKE ?
-                    AND COALESCE({$eventAlias}.disposition, '') LIKE ?
-                    AND EXISTS (
+        $sql = "EXISTS (
                         SELECT 1
                         FROM epcis_documents shipdoc
                         WHERE shipdoc.id = {$eventAlias}.document_id
@@ -138,13 +176,9 @@ final class OutboundShipmentInTransit
                               shipdoc.authored_kind IN ({$authoredKinds})
                               OR (shipdoc.authored_kind IS NULL AND ({$legacyNotes}))
                           )
-                    )
-                )";
+                    )";
 
         $bindings = [
-            self::EVENT_TYPE,
-            '%'.self::BIZ_STEP_NEEDLE.'%',
-            '%'.self::DISPOSITION_NEEDLE.'%',
             ...self::authoredKindValues(),
             ...array_map(static fn (string $needle): string => '%'.$needle.'%', self::LEGACY_NOTE_NEEDLES),
         ];

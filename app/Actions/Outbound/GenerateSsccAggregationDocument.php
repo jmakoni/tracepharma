@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Outbound;
 
+use App\Domain\Gs1\EpcClassUri;
+use App\Domain\Gs1\SgtinUri;
+use App\Models\Epcis\Epc;
 use App\Models\SsccLabel;
 use App\Models\SsccLabelBatch;
 use App\Services\Epcis\Outbound\OutboundEpcisXmlBuilder;
 use App\Support\Epcis\OutboundCorrelationGlns;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
+use Throwable;
 
 final class GenerateSsccAggregationDocument
 {
@@ -38,11 +43,17 @@ final class GenerateSsccAggregationDocument
                 continue;
             }
 
-            $events .= $this->aggregationEvent->execute($label, $childEpcs, settings: $settings, siteId: $siteId)."\n";
+            $events .= $this->aggregationEvent->execute(
+                $label,
+                $childEpcs,
+                $this->quantityChildrenForHomogeneousSgtins($childEpcs),
+                settings: $settings,
+                siteId: $siteId,
+            )."\n";
         }
 
         if (trim($events) === '') {
-            throw new \InvalidArgumentException('No labels in this batch have child EPCs for aggregation.');
+            throw new InvalidArgumentException('No labels in this batch have child EPCs for aggregation.');
         }
 
         [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
@@ -89,7 +100,13 @@ final class GenerateSsccAggregationDocument
         ?int $siteId = null,
         ?array $settings = null,
     ): string {
-        $event = $this->aggregationEvent->execute($label, $childEpcs, settings: $settings, siteId: $siteId);
+        $event = $this->aggregationEvent->execute(
+            $label,
+            $childEpcs,
+            $this->quantityChildrenForHomogeneousSgtins($childEpcs),
+            settings: $settings,
+            siteId: $siteId,
+        );
 
         [$senderGln, $receiverGln] = OutboundCorrelationGlns::forSelfAuthored($correlationId, $settings, $siteId);
 
@@ -121,7 +138,7 @@ final class GenerateSsccAggregationDocument
             return $this->forLabel($label, $payload['correlation_id'] ?? null);
         }
 
-        throw new \InvalidArgumentException('Aggregation payload requires sscc_label_batch_id or sscc_label_id.');
+        throw new InvalidArgumentException('Aggregation payload requires sscc_label_batch_id or sscc_label_id.');
     }
 
     /**
@@ -140,5 +157,71 @@ final class GenerateSsccAggregationDocument
         }
 
         return Carbon::parse($eventTime)->toIso8601String();
+    }
+
+    /**
+     * Homogeneous serialized pack (one GTIN + lot) keeps instance childEPCs
+     * and adds a summarizing LGTIN childQuantityList (hybrid). Mixed or
+     * unknown ILMD stays instance-only so serials are never dropped.
+     *
+     * @param  list<string>  $childEpcs
+     * @return list<array{epcClass: string, quantity: int}>
+     */
+    private function quantityChildrenForHomogeneousSgtins(array $childEpcs): array
+    {
+        $uris = [];
+        foreach ($childEpcs as $uri) {
+            $uri = trim((string) $uri);
+            if ($uri === '' || ! str_starts_with(strtolower($uri), 'urn:epc:id:sgtin:')) {
+                return [];
+            }
+            $uris[] = $uri;
+        }
+
+        $uris = array_values(array_unique($uris));
+        if ($uris === []) {
+            return [];
+        }
+
+        try {
+            $epcs = Epc::query()->whereIn('epc_uri', $uris)->with('ilmd')->get()->keyBy('epc_uri');
+        } catch (Throwable) {
+            return [];
+        }
+
+        if ($epcs->count() !== count($uris)) {
+            return [];
+        }
+
+        $gtin = null;
+        $lot = null;
+        foreach ($uris as $uri) {
+            $epc = $epcs->get($uri);
+            $thisGtin = trim((string) ($epc?->gtin14 ?? ''));
+            $thisLot = trim((string) ($epc?->ilmd?->lot_number ?? ''));
+            if ($thisGtin === '' || $thisLot === '') {
+                return [];
+            }
+            if ($gtin === null) {
+                $gtin = $thisGtin;
+                $lot = $thisLot;
+
+                continue;
+            }
+            if ($thisGtin !== $gtin || strcasecmp($thisLot, $lot) !== 0) {
+                return [];
+            }
+        }
+
+        try {
+            $lgtin = EpcClassUri::fromSgtinAndLot(SgtinUri::fromUrn($uris[0]), (string) $lot)->toString();
+        } catch (Throwable) {
+            return [];
+        }
+
+        return [[
+            'epcClass' => $lgtin,
+            'quantity' => count($uris),
+        ]];
     }
 }

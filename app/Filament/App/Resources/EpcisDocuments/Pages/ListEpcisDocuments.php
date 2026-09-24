@@ -6,6 +6,7 @@ use App\Actions\Epcis\ReceiveEpcisUpload;
 use App\Actions\Epcis\SearchEpcisSchema;
 use App\Enums\EpcisReceivedVia;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Filament\App\Support\EpcisSchemaSearchForm;
 use App\Filament\Notifications\Notification;
@@ -19,6 +20,7 @@ use App\Services\Quarantine\QuarantineService;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Filesystem\SafeFilename;
 use App\Support\TenantFeatures;
 use DomainException;
@@ -31,6 +33,7 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -38,12 +41,14 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListEpcisDocuments extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = EpcisDocumentResource::class;
 
     /**
@@ -338,10 +343,22 @@ class ListEpcisDocuments extends ListRecords
                             $file = $file[0] ?? null;
                         }
 
-                        if (! $file instanceof TemporaryUploadedFile) {
+                        if (! $file instanceof UploadedFile) {
                             Notification::make()
                                 ->title('Upload failed')
                                 ->body('No XML file was received.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        try {
+                            AssertInboundReceiverGln::assertBelongsToCurrentTenant($file->get());
+                        } catch (InboundReceiverGlnRejected $e) {
+                            Notification::make()
+                                ->title('Upload rejected')
+                                ->body($e->getMessage())
                                 ->danger()
                                 ->send();
 
@@ -371,7 +388,7 @@ class ListEpcisDocuments extends ListRecords
                         } catch (DuplicateEpcisUploadException $e) {
                             Notification::make()
                                 ->title('Duplicate upload')
-                                ->body('This file was already received (document #'.$e->existing->getKey().').')
+                                ->body('This file was already uploaded (document #'.$e->existing->getKey().').')
                                 ->warning()
                                 ->send();
 
@@ -401,7 +418,7 @@ class ListEpcisDocuments extends ListRecords
                         }
 
                         Notification::make()
-                            ->title('Upload received — processing queued')
+                            ->title('Upload accepted — processing queued')
                             ->body($originalFilename)
                             ->success()
                             ->send();

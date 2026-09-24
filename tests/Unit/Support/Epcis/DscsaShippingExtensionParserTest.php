@@ -41,6 +41,26 @@ XML;
     }
 
     #[Test]
+    public function r12_boolean_true_does_not_persist_as_entirely_direct_qualifier(): void
+    {
+        $xml = <<<'XML'
+<extension>
+  <gs1ushc:directPurchase xmlns:gs1ushc="http://epcis.gs1us.org/hc/ns">true</gs1ushc:directPurchase>
+</extension>
+XML;
+
+        $parsed = DscsaShippingExtensionParser::parseXmlExtension(new SimpleXMLElement($xml));
+
+        $this->assertNotNull($parsed?->directPurchase);
+        $this->assertNull($parsed->directPurchase->qualifier);
+        $this->assertTrue($parsed->directPurchase->booleanAffirmed);
+
+        $fromJson = DscsaShippingExtensionParser::parseJsonExtension(['directPurchase' => true]);
+        $this->assertNull($fromJson?->directPurchase?->qualifier);
+        $this->assertTrue($fromJson?->directPurchase?->booleanAffirmed);
+    }
+
+    #[Test]
     public function it_parses_direct_purchase_from_json_array(): void
     {
         $parsed = DscsaShippingExtensionParser::parseJsonExtension([

@@ -3,6 +3,8 @@
 namespace Tests\Unit\Support\Gs1;
 
 use App\Support\Gs1\ElementString;
+use App\Support\Gs1\Sgtin;
+use App\Support\Gs1\Sscc;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -200,6 +202,64 @@ class ElementStringTest extends TestCase
             '01503011640050812110000000172110',
             ElementString::encodeSgtin('50301164005081', '10000000172110'),
         );
+    }
+
+    #[Test]
+    public function identity_barcode_display_strips_expiry_and_lot_from_sgtin(): void
+    {
+        $raw = '015030116400516621100000008455371728043010607153A';
+
+        $this->assertSame(
+            '01503011640051662110000000845537',
+            ElementString::identityBarcodeDisplay($raw),
+        );
+
+        $parenthesized = '(01)50301164005166(21)10000000845537(17)280430(10)607153A';
+        $this->assertSame(
+            '01503011640051662110000000845537',
+            ElementString::identityBarcodeDisplay($parenthesized),
+        );
+
+        $this->assertSame(
+            '(00)003011610012345661',
+            ElementString::identityBarcodeDisplay('003011610012345661'),
+        );
+        $this->assertSame(
+            '(00)003011610012345661',
+            ElementString::identityBarcodeDisplay('00003011610012345661'),
+        );
+        $this->assertSame(
+            '(00)003011610012345661',
+            ElementString::identityBarcodeDisplay('(00)003011610012345661'),
+        );
+    }
+
+    #[Test]
+    public function identity_barcode_display_uses_human_ai_forms_not_urn_or_lot_exp(): void
+    {
+        $this->assertSame(
+            '01503011620011602110000009658059',
+            ElementString::identityBarcodeDisplay('015030116200116021100000096580591728073110608457T'),
+        );
+
+        $this->assertSame(
+            '(00)003011610012345678',
+            ElementString::identityBarcodeDisplay('00003011610012345678'),
+        );
+
+        $sgtinUri = 'urn:epc:id:sgtin:030116.0200116.10000009658059';
+        $sgtin = Sgtin::fromUrn($sgtinUri);
+        $this->assertNotNull($sgtin);
+        $display = ElementString::identityBarcodeDisplay($sgtinUri);
+        $this->assertSame($sgtin['ai_01_21'], $display);
+        $this->assertStringNotContainsString('urn:', $display);
+
+        $ssccUri = 'urn:epc:id:sscc:030116.01001234567';
+        $sscc = Sscc::fromUrn($ssccUri);
+        $this->assertNotNull($sscc);
+        $ssccDisplay = ElementString::identityBarcodeDisplay($ssccUri);
+        $this->assertSame('(00)'.$sscc['sscc18'], $ssccDisplay);
+        $this->assertStringNotContainsString('urn:', $ssccDisplay);
     }
 
     #[Test]

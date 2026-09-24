@@ -4,18 +4,27 @@ namespace Tests\Feature\Shipping;
 
 use App\Actions\Epcis\IngestEpcisXmlDocument;
 use App\Actions\Receiving\ConfirmReceivingScan;
+use App\Actions\Receiving\GenerateReceivingEpcisEvents;
 use App\Actions\Receiving\OpenReceivingSessionFromDocument;
+use App\Actions\Shipping\CompleteOutboundShippingSession;
+use App\Actions\Shipping\ConfirmOutboundShippingScan;
 use App\Actions\Shipping\OpenOutboundShippingSession;
+use App\Actions\Shipping\UpdateOutboundShippingParty;
+use App\Actions\Shipping\UpdateOutboundShippingReferences;
+use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileViewOutboundShippingSession;
+use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Models\TradingPartner;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Shipping\ShipLayout;
@@ -52,6 +61,9 @@ class MobileFloorShippingTest extends TestCase
 
     /** @var list<int> */
     private array $documentIds = [];
+
+    /** @var list<int> */
+    private array $epcIds = [];
 
     private ?int $priorDefaultShipFromSiteId = null;
 
@@ -110,14 +122,18 @@ class MobileFloorShippingTest extends TestCase
             $component = Livewire::test(MobileViewOutboundShippingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSeeHtml('id="floor-scan-input"')
-                ->assertSeeHtml('tp-floor-receive__cart-fab')
+                ->assertDontSeeHtml('tp-floor-receive__cart-fab')
+                ->assertSeeHtml('tp-floor-receive__footer')
+                ->assertSeeHtml('tp-staged-scan-panel')
                 ->assertSeeHtml('tp-floor-ship')
                 ->assertSeeHtml('tp-floor-receive__progress-stats')
+                ->assertSeeHtml('tp-floor-receive__camera-overlay')
+                ->assertSeeHtml('tp-floor-camera-counts')
                 ->assertSee('Confirmed')
                 ->assertSee('Back to ship orders')
-                ->assertSee('Open desktop ship order')
+                ->assertSee('Customer & send')
                 ->assertSee('Scanned items will appear here')
-                ->assertSee('Recent scans')
+                ->assertSee('Just scanned')
                 ->assertDontSee('Send shipment')
                 ->assertDontSee('Customer PO')
                 ->set('scan', self::SSCC_URI)
@@ -143,10 +159,11 @@ class MobileFloorShippingTest extends TestCase
             'views/filament/app/resources/outbound-shipping-sessions/pages/mobile-view-outbound-shipping-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString("tpFloorReceiveConfig('stageScan')", $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
@@ -154,14 +171,29 @@ class MobileFloorShippingTest extends TestCase
     public function desktop_blade_has_live_blur_and_enter_stage_scan_binding(): void
     {
         $blade = File::get(resource_path(
-            'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
+            'views/filament/app/partials/outbound-ship-wizard-step-scan.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
         $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
-        $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('submit-method="stageScan"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
+    }
+
+    #[Test]
+    public function desktop_ship_blades_expose_send_and_void_macros(): void
+    {
+        $view = File::get(resource_path(
+            'views/filament/app/resources/outbound-shipping-sessions/pages/view-outbound-shipping-session.blade.php',
+        ));
+        $this->assertStringContainsString("mountAction('voidShipOrder')", $view);
+        $this->assertStringContainsString('badge-error', $view);
+
+        $send = File::get(resource_path(
+            'views/filament/app/partials/outbound-ship-wizard-step-send.blade.php',
+        ));
+        $this->assertStringContainsString("mountAction('sendShipment')", $send);
     }
 
     #[Test]
@@ -191,6 +223,79 @@ class MobileFloorShippingTest extends TestCase
 
             $session->refresh();
             $this->assertSame(1, (int) $session->confirmed_count);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function floor_completed_sent_order_can_void_and_shows_warning_banner(): void
+    {
+        $tenant = $this->initializeWholesalerTenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            Storage::fake((string) config('tracepharma.epcis.payload_disk', 'local'));
+            Storage::fake((string) config('tracepharma.epcis.authored_payload_disk', 'local'));
+            config(['tracepharma.epcis.enforce_atp_outbound_gate' => false]);
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+
+            $site = $this->createShipSite($tenant);
+            $user->syncSites([(int) $site->getKey()], (int) $site->getKey());
+
+            $ssccUri = $this->makeUniqueSsccShippableAtSite($site);
+
+            $session = app(OpenOutboundShippingSession::class)->handle((int) $site->getKey());
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $confirmed = app(ConfirmOutboundShippingScan::class)->handle($session, $ssccUri);
+            $this->assertTrue($confirmed['ok'], $confirmed['message'] ?? 'ship confirm failed');
+
+            $partner = TradingPartner::query()->updateOrCreate(
+                ['gln' => '0614141000005'],
+                [
+                    'name' => 'Floor Void Customer',
+                    'sgln' => 'urn:epc:id:sgln:0614141.00000.0',
+                    'partner_type' => PartnerType::Pharmacy,
+                    'is_active' => true,
+                ],
+            );
+
+            app(UpdateOutboundShippingParty::class)->handle($session->fresh(), [
+                'trading_partner_id' => (int) $partner->getKey(),
+            ]);
+            app(UpdateOutboundShippingReferences::class)->handle($session->fresh(), [
+                'asn_number' => 'ASN-FLOOR-VOID',
+                'customer_po' => 'PO-FLOOR-VOID',
+                'dscsa_affirm' => true,
+            ]);
+
+            $completed = app(CompleteOutboundShippingSession::class)->handle($session->fresh());
+            $this->assertNotNull($completed->epcis_document_id);
+            $this->documentIds[] = (int) $completed->epcis_document_id;
+            $completed->epcisDocument?->forceFill(['transmission_status' => 'sent'])->save();
+
+            $this->assertTrue($completed->fresh()->canVoid());
+
+            $page = Livewire::test(MobileViewOutboundShippingSession::class, ['record' => $completed->getKey()])
+                ->assertSuccessful()
+                ->assertSee('Void shipment')
+                ->assertSeeHtml('tp-floor-receive__complete')
+                ->assertActionVisible('voidShipOrder')
+                ->mountAction('voidShipOrder')
+                ->callMountedAction()
+                ->assertHasNoActionErrors();
+
+            $completed->refresh();
+            $this->assertNotNull($completed->voided_at);
+            if ($completed->void_epcis_document_id !== null) {
+                $this->documentIds[] = (int) $completed->void_epcis_document_id;
+            }
+
+            $page->assertSee('Shipment voided')
+                ->assertSeeHtml('tp-floor-receive__complete--warning');
         } finally {
             $this->cleanup($tenant);
         }
@@ -348,8 +453,83 @@ class MobileFloorShippingTest extends TestCase
         return $site;
     }
 
+    private function makeUniqueSsccShippableAtSite(Site $site): string
+    {
+        do {
+            $serial = '0'.str_pad((string) random_int(0, 9_999_999_999), 10, '0', STR_PAD_LEFT);
+            $uri = 'urn:epc:id:sscc:030116.'.$serial;
+        } while (Epc::query()->where('epc_uri', $uri)->exists());
+
+        $document = $this->ingestMinimalFixtureWithSscc($uri);
+        $this->documentIds[] = (int) $document->getKey();
+
+        $session = app(OpenReceivingSessionFromDocument::class)->handle($document);
+        $this->receivingSessionIds[] = (int) $session->getKey();
+        $session->forceFill(['site_id' => (int) $site->getKey()])->save();
+
+        app(ConfirmReceivingScan::class)->handle(
+            $session->fresh(),
+            $uri,
+            userId: null,
+            autoConfirmChildren: true,
+        );
+
+        $session = $session->fresh();
+        $session->forceFill([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'receiving_events_generated_at' => $session->receiving_events_generated_at ?? now(),
+        ])->save();
+
+        if ($session->receiving_epcis_document_id === null) {
+            app(GenerateReceivingEpcisEvents::class)->handle($session->fresh());
+            $session = $session->fresh();
+        }
+
+        $this->assertNotNull(
+            $session->receiving_epcis_document_id,
+            'Expected receiving EPCIS events so the unique SSCC is on-hand for ship.',
+        );
+
+        if ($session->receiving_epcis_document_id !== null) {
+            $this->documentIds[] = (int) $session->receiving_epcis_document_id;
+        }
+
+        $epc = Epc::query()->where('epc_uri', $uri)->first();
+        if ($epc !== null) {
+            $this->epcIds[] = (int) $epc->getKey();
+        }
+
+        return $uri;
+    }
+
+    private function ingestMinimalFixtureWithSscc(string $ssccUri): EpcisDocument
+    {
+        $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+        $this->assertFileExists($fixture);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'epcis_');
+        $this->assertNotFalse($tmp);
+        $xml = file_get_contents($fixture);
+        $this->assertNotFalse($xml);
+        $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) Str::uuid(), $xml);
+        $xml = str_replace(self::SSCC_URI, $ssccUri, $xml);
+        file_put_contents($tmp, $xml);
+
+        try {
+            return app(IngestEpcisXmlDocument::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => basename($fixture),
+            ]);
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
     private function makeEpcShippableAtSite(Site $site): int
     {
+        Storage::fake((string) config('tracepharma.epcis.payload_disk', 'local'));
+
         $document = $this->ingestMinimalFixture();
         $this->documentIds[] = (int) $document->getKey();
 
@@ -368,7 +548,42 @@ class MobileFloorShippingTest extends TestCase
         $session->forceFill([
             'status' => 'completed',
             'completed_at' => now(),
+            'receiving_events_generated_at' => $session->receiving_events_generated_at ?? now(),
         ])->save();
+
+        // Author receiving events so fixture stock lands on-hand at the site.
+        if ($session->receiving_epcis_document_id === null) {
+            app(GenerateReceivingEpcisEvents::class)->handle($session->fresh());
+            $session = $session->fresh();
+        }
+
+        $this->assertNotNull(
+            $session->receiving_epcis_document_id,
+            'Expected receiving EPCIS events so the SSCC is on-hand for ship.',
+        );
+
+        // Fixture SSCC is shared across runs — release any leftover exclusive receives
+        // that still claim the same EPC so ship confirms are not blocked.
+        ReceivingSession::query()
+            ->whereKeyNot($session->getKey())
+            ->where(function ($exclusive): void {
+                $exclusive
+                    ->whereIn('status', ['open', 'in_progress'])
+                    ->orWhere(function ($pending): void {
+                        $pending
+                            ->where('status', 'completed')
+                            ->whereNull('receiving_events_generated_at');
+                    });
+            })
+            ->whereHas('scanLines', function ($lines): void {
+                $lines->whereIn('status', ['confirmed', 'unexpected'])
+                    ->whereHas('epc', fn ($epc) => $epc->where('sscc18', '003011610012270529'));
+            })
+            ->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'receiving_events_generated_at' => now(),
+            ]);
 
         if ($session->receiving_epcis_document_id !== null) {
             $this->documentIds[] = (int) $session->receiving_epcis_document_id;
@@ -429,8 +644,15 @@ class MobileFloorShippingTest extends TestCase
     {
         if (tenancy()->initialized) {
             if ($this->sessionIds !== []) {
+                OutboundShippingScanLine::query()
+                    ->whereIn('outbound_shipping_session_id', $this->sessionIds)
+                    ->delete();
                 OutboundShippingSession::query()->whereIn('id', $this->sessionIds)->delete();
                 $this->sessionIds = [];
+            }
+
+            if ($this->epcIds !== []) {
+                QuarantineHold::query()->whereIn('epc_id', $this->epcIds)->delete();
             }
 
             if ($this->receivingSessionIds !== []) {
@@ -447,8 +669,22 @@ class MobileFloorShippingTest extends TestCase
                     })
                     ->delete();
                 DB::table('epcis_events')->whereIn('document_id', $this->documentIds)->delete();
+                DB::table('document_epcs')->whereIn('document_id', $this->documentIds)->delete();
                 EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();
                 $this->documentIds = [];
+            }
+
+            if ($this->epcIds !== []) {
+                DB::table('document_epcs')->whereIn('epc_id', $this->epcIds)->delete();
+                DB::table('event_epcs')->whereIn('epc_id', $this->epcIds)->delete();
+                DB::table('aggregation_links')
+                    ->where(function ($query): void {
+                        $query->whereIn('parent_epc_id', $this->epcIds)
+                            ->orWhereIn('child_epc_id', $this->epcIds);
+                    })
+                    ->delete();
+                Epc::query()->whereIn('id', $this->epcIds)->delete();
+                $this->epcIds = [];
             }
 
             if ($this->siteIds !== []) {

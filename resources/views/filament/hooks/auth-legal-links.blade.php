@@ -2,7 +2,7 @@
     use App\Support\Marketing\LegalDocumentUrls;
 @endphp
 
-<nav class="mt-6 text-center text-sm opacity-70" aria-label="Legal documents">
+<nav class="tp-auth-legal-links tp-login-desktop-legal mt-6 text-center text-sm opacity-70" aria-label="Legal documents">
     <a
         href="{{ LegalDocumentUrls::termsUrl() }}"
         class="link link-hover"

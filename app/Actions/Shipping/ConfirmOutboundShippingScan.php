@@ -3,6 +3,7 @@
 namespace App\Actions\Shipping;
 
 use App\Actions\Epcis\ResolveEpcFromScan;
+use App\Enums\EpcisGuideline;
 use App\Models\Epcis\Epc;
 use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
@@ -14,8 +15,10 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\PrincipalCustody;
+use App\Support\Epcis\ResolveOutboundEpcisGuideline;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Gs1\ElementString;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
 use App\Support\Shipping\DetectOpenParentHierarchyOnShip;
 use App\Support\Shipping\EpcOnOpenShippingSession;
@@ -36,7 +39,7 @@ final class ConfirmOutboundShippingScan
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly EpcCustodyGate $custodyGate,
         private readonly DetectOpenParentHierarchyOnShip $openParentHierarchyOnShip,
-        private readonly EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
         private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
     ) {}
 
@@ -46,7 +49,7 @@ final class ConfirmOutboundShippingScan
      *     message: string,
      *     line: ?OutboundShippingScanLine,
      *     epc: ?Epc,
-     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'|'overscan'
+     *     effect: 'confirmed'|'already_confirmed'|'not_found'|'lot_level_refused'|'quarantined'|'not_shippable'|'not_in_custody'|'not_correctable'|'double_ship'|'session_closed'|'open_parent_hierarchy'|'on_open_receive'|'overscan'
      * }
      */
     public function handle(
@@ -68,6 +71,21 @@ final class ConfirmOutboundShippingScan
         }
 
         $scan = ElementString::normalize($scan);
+
+        if ($this->mustRefuseLotLevelOutbound($session, $scan)) {
+            $pharmacyDesk = TenantFeatures::forTenant(tenant())->supportsPharmacyOutboundDesk();
+
+            return [
+                'ok' => false,
+                'message' => $pharmacyDesk
+                    ? 'Scan the 2D serial. Pharmacy outbound does not accept GTIN + lot without a serial.'
+                    : 'Partners on GS1 US DSCSA guideline R1.3 do not allow lot-level outbound TI. Scan an SSCC or SGTIN serial.',
+                'line' => null,
+                'epc' => null,
+                'effect' => 'lot_level_refused',
+            ];
+        }
+
         $resolved = $this->resolveEpcFromScan->handle($scan);
         $epc = $resolved['epc'];
 
@@ -140,13 +158,12 @@ final class ConfirmOutboundShippingScan
                 ];
             }
 
-            if ($this->epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
+            $exclusiveBlock = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forShipping($session));
+            if ($exclusiveBlock !== null) {
                 return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on an open receive session.',
+                    ...$exclusiveBlock->toScanResult(),
                     'line' => null,
                     'epc' => $epc,
-                    'effect' => 'on_open_receive',
                 ];
             }
 
@@ -223,26 +240,6 @@ final class ConfirmOutboundShippingScan
                 }
             }
 
-            if ($this->onAnotherOpenShipSession($session, $epc)) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already on another open ship order.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_ship',
-                ];
-            }
-
-            if ($this->onOpenTransferSession($epc)) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on an open or in-transit transfer.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_ship',
-                ];
-            }
-
             if (! $session->is_corrective) {
                 try {
                     $this->assertOutermostSsccHasChildren->handle($epc);
@@ -286,12 +283,43 @@ final class ConfirmOutboundShippingScan
 
             return [
                 'ok' => true,
-                'message' => 'Confirmed for shipment.',
+                'message' => 'Confirmed on this ship order.',
                 'line' => $line,
                 'epc' => $epc,
                 'effect' => 'confirmed',
             ];
         });
+    }
+
+    private function mustRefuseLotLevelOutbound(OutboundShippingSession $session, string $scan): bool
+    {
+        if (! $this->isLotLevelScan($scan)) {
+            return false;
+        }
+
+        if (TenantFeatures::forTenant(tenant())->supportsPharmacyOutboundDesk()) {
+            return true;
+        }
+
+        return $this->partnerGuideline($session) === EpcisGuideline::R13;
+    }
+
+    private function isLotLevelScan(string $scan): bool
+    {
+        if (ElementString::sgtinIdentity($scan) !== null || str_starts_with($scan, 'urn:epc:')) {
+            return false;
+        }
+
+        $ais = ElementString::parse($scan);
+
+        return filled($ais['01'] ?? null) && filled($ais['10'] ?? null);
+    }
+
+    private function partnerGuideline(OutboundShippingSession $session): EpcisGuideline
+    {
+        $session->loadMissing('tradingPartner');
+
+        return ResolveOutboundEpcisGuideline::forPartner($session->tradingPartner);
     }
 
     private function onAnotherOpenShipSession(OutboundShippingSession $session, Epc $epc): bool

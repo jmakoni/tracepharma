@@ -3,6 +3,8 @@
 namespace App\Actions\Transferring;
 
 use App\Actions\Epcis\SyncDocumentEpcsFromEvents;
+use App\Actions\Outbound\AssertAuthoredObjectEventCandidate;
+use App\Domain\Epcis\Enums\EpcisAction;
 use App\Enums\EpcisAuthoredKind;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -16,10 +18,12 @@ use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
 use App\Support\Epcis\ResolveSiteLocationGlns;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
+use App\Support\Epcis\ShippingTiTsFragments;
 use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -50,6 +54,7 @@ final class GenerateTransferringEpcisEvents
         private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly ReceivingGate $receivingGate,
         private readonly EpcCustodyGate $custodyGate,
+        private readonly AssertAuthoredObjectEventCandidate $assertObjectEventCandidate,
     ) {}
 
     /**
@@ -112,6 +117,13 @@ final class GenerateTransferringEpcisEvents
 
             $this->assertConfirmedEpcsStillEligible($epcIds);
 
+            $recordTime = now();
+            $eventTime = $session->shipped_at !== null
+                ? Carbon::parse($session->shipped_at)
+                : $recordTime;
+
+            $this->softAssertTransferShippingObjectEvent($session, $epcsById, $epcIds, $eventTime);
+
             $fromLocation = $this->resolveSiteLocationGlns->handle(
                 (int) $session->from_site_id,
                 'Transfer origin site',
@@ -124,10 +136,6 @@ final class GenerateTransferringEpcisEvents
                 'Transfer destination site',
             );
 
-            $recordTime = now();
-            $eventTime = $session->shipped_at !== null
-                ? Carbon::parse($session->shipped_at)
-                : $recordTime;
             $timezoneOffset = $this->timezoneOffset($session->fromSite, $eventTime);
 
             $shippingUuid = (string) Str::uuid();
@@ -171,6 +179,7 @@ final class GenerateTransferringEpcisEvents
                 timezoneOffset: $timezoneOffset,
                 shippingUuid: $shippingUuid,
                 fromSglnUrn: $fromLocation['sgln_urn'],
+                toSglnUrn: $toLocation['sgln_urn'],
             );
 
             $document->forceFill([
@@ -207,6 +216,48 @@ final class GenerateTransferringEpcisEvents
         }
 
         return $built;
+    }
+
+    /**
+     * Soft Domain preflight for the transfer shipping ObjectEvent (OBSERVE / shipping / in_transit).
+     * Failures are logged only — dual-run vs transmit ValidateEpcis12Document.
+     *
+     * @param  Collection<int, Epc>  $epcsById
+     * @param  list<int>  $epcIds
+     */
+    private function softAssertTransferShippingObjectEvent(
+        TransferringSession $session,
+        Collection $epcsById,
+        array $epcIds,
+        Carbon $eventTime,
+    ): void {
+        try {
+            $epcUris = [];
+            foreach ($epcIds as $epcId) {
+                $epc = $epcsById->get($epcId);
+                if ($epc !== null) {
+                    $epcUris[] = (string) $epc->epc_uri;
+                }
+            }
+
+            if ($epcUris === []) {
+                return;
+            }
+
+            $this->assertObjectEventCandidate->handle(
+                epcList: $epcUris,
+                action: EpcisAction::Observe,
+                bizStep: 'shipping',
+                disposition: 'in_transit',
+                eventTimeUtc: $eventTime->clone()->utc()->toDateTimeImmutable(),
+            );
+        } catch (Throwable $e) {
+            Log::warning('transferring.domain_object_event_assert_soft_fail', [
+                'session_id' => (int) $session->getKey(),
+                'leg' => 'shipping',
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -356,6 +407,7 @@ final class GenerateTransferringEpcisEvents
         string $timezoneOffset,
         string $shippingUuid,
         string $fromSglnUrn,
+        string $toSglnUrn,
     ): string {
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $eventTimeXml = $eventTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
@@ -367,6 +419,12 @@ final class GenerateTransferringEpcisEvents
             ->implode("\n");
 
         $shippingLocationXml = $this->locationXml($fromSglnUrn);
+        $destinationXml = ShippingTiTsFragments::sourceDestinationExtensionXml(
+            $fromSglnUrn,
+            $fromSglnUrn,
+            $toSglnUrn,
+            $toSglnUrn,
+        );
 
         $shippingEvent =
             "              <ObjectEvent>\n".
@@ -383,6 +441,7 @@ final class GenerateTransferringEpcisEvents
             '                <bizStep>'.self::BIZ_STEP_SHIPPING."</bizStep>\n".
             '                <disposition>'.self::DISPOSITION_IN_TRANSIT."</disposition>\n".
             $shippingLocationXml.
+            $destinationXml.
             '              </ObjectEvent>';
 
         return

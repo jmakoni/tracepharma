@@ -2,9 +2,12 @@
 
 namespace App\Support\Floor;
 
+use App\Models\Disposition\DispositionSession;
+use App\Models\Packing\PackingSession;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Transferring\TransferringSession;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Validation\ValidationException;
 
@@ -39,7 +42,10 @@ final class UnsubmittedSessionDelete
 
     public static function confirmedScanCountReceiving(ReceivingSession $session): int
     {
-        return (int) $session->confirmed_parent_count + (int) $session->confirmed_child_count;
+        $confirmed = (int) $session->confirmed_parent_count + (int) $session->confirmed_child_count;
+        $staged = $session->scanLines()->where('status', 'staged')->count();
+
+        return $confirmed + $staged;
     }
 
     public static function canHardDeleteShipping(OutboundShippingSession $session): bool
@@ -65,8 +71,30 @@ final class UnsubmittedSessionDelete
         return (int) $session->confirmed_count;
     }
 
+    public static function canHardDeletePacking(PackingSession $session): bool
+    {
+        return $session->status === 'open'
+            && $session->packing_events_generated_at === null;
+    }
+
+    public static function reservedScanCountPacking(PackingSession $session): int
+    {
+        return (int) $session->staged_count + (int) $session->confirmed_count;
+    }
+
+    public static function canHardDeleteDisposition(DispositionSession $session): bool
+    {
+        return $session->status === 'open'
+            && $session->disposition_events_generated_at === null;
+    }
+
+    public static function reservedScanCountDisposition(DispositionSession $session): int
+    {
+        return (int) $session->staged_count + (int) $session->confirmed_count;
+    }
+
     /**
-     * @return list<\Filament\Forms\Components\Component>
+     * @return list<Component>
      */
     public static function confirmPhraseSchema(int $confirmedScanCount): array
     {

@@ -87,6 +87,48 @@ final class ValidateEpcis12Document
         }
 
         try {
+            $findings = $this->computeFindings($document, $path, $directionOverride);
+
+            DB::transaction(function () use ($document, $findings): void {
+                $this->clearPriorValidationExceptions($document);
+                $this->persistFindings($document, $findings);
+                $this->applyDocumentStatus($document, $findings);
+            });
+
+            return $findings;
+        } finally {
+            if ($cleanupTemp && is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * Run XSD + document business rules + catalog engine against the stored
+     * payload and current event projection. Does not persist signals, flip
+     * document status, or rewrite events / aggregation links.
+     *
+     * @return list<EpcisValidationFinding>
+     */
+    public function computeFindings(
+        EpcisDocument $document,
+        ?string $absolutePayloadPath = null,
+        ?string $directionOverride = null,
+    ): array {
+        $path = $absolutePayloadPath;
+        $cleanupTemp = false;
+
+        if ($path === null) {
+            $path = $document->materializePayloadPath();
+            $tempDir = realpath(sys_get_temp_dir()) ?: sys_get_temp_dir();
+            $resolved = realpath($path) ?: $path;
+            $cleanupTemp = str_starts_with(
+                $resolved,
+                rtrim($tempDir, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR,
+            );
+        }
+
+        try {
             $ctx = $this->profileResolver->resolve(
                 $document,
                 $directionOverride ?? (string) $document->direction,
@@ -96,21 +138,11 @@ final class ValidateEpcis12Document
             $this->maxFindingsPerType = (int) config('tracepharma.epcis.validation.max_findings_per_type', 50);
             $this->findingCounts = [];
 
-            // Compute all findings first (schema file I/O + DB business/catalog rules are CPU/IO
-            // bound and stay outside the transaction); only the clear+persist+status mutation
-            // below needs to be atomic.
             $findings = $this->schemaFindings($document, $path);
             $events = $this->activeEvents($document);
             $findings = array_merge($findings, $this->runBusinessRules($document, $events, $ctx));
-            $findings = array_merge($findings, $this->catalogRules->validate($ctx, $events));
 
-            DB::transaction(function () use ($document, $findings): void {
-                $this->clearPriorValidationExceptions($document);
-                $this->persistFindings($document, $findings);
-                $this->applyDocumentStatus($document, $findings);
-            });
-
-            return $findings;
+            return array_merge($findings, $this->catalogRules->validate($ctx, $events));
         } finally {
             if ($cleanupTemp && is_file($path)) {
                 @unlink($path);
@@ -262,6 +294,19 @@ final class ValidateEpcis12Document
                 $ctx,
                 'INVALID_BIZSTEP',
                 'Event has non-CBV bizStep: '.$bizStep,
+                $eventId,
+            );
+        }
+
+        if (filled($bizStep)
+            && ! $ctx->r13Hard
+            && EpcisCbvAllowlist::isR13OnlyBizStep((string) $bizStep)
+        ) {
+            $this->addFinding(
+                $findings,
+                $ctx,
+                'INVALID_BIZSTEP',
+                'Event has R1.3-only bizStep on an R1.2 document: '.$bizStep,
                 $eventId,
             );
         }
@@ -585,6 +630,10 @@ final class ValidateEpcis12Document
                     'epc_ilmd.expiry_date',
                 ]);
 
+            if (Schema::hasColumn('epc_ilmd', 'extra_json')) {
+                $ilmdQuery->addSelect('epc_ilmd.extra_json');
+            }
+
             if (Schema::hasColumn('epc_ilmd', 'gtin14')) {
                 $ilmdQuery->addSelect('epc_ilmd.gtin14');
             } else {
@@ -608,7 +657,7 @@ final class ValidateEpcis12Document
                 );
             }
 
-            if (blank($row->expiry_date)) {
+            if (blank($row->expiry_date) && ! $this->ilmdExpiryRedacted($row)) {
                 $this->addFinding(
                     $findings,
                     $ctx,
@@ -695,6 +744,17 @@ final class ValidateEpcis12Document
         }
 
         return $findings;
+    }
+
+    private function ilmdExpiryRedacted(object $row): bool
+    {
+        $extra = $row->extra_json ?? null;
+        if (is_string($extra) && $extra !== '') {
+            $decoded = json_decode($extra, true);
+            $extra = is_array($decoded) ? $decoded : null;
+        }
+
+        return is_array($extra) && ($extra['expiry_redacted'] ?? false) === true;
     }
 
     /**

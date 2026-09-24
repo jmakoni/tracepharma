@@ -27,6 +27,8 @@ use App\Models\Transferring\TransferringSession;
 use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Floor\UnsubmittedSessionDelete;
+use App\Support\Gs1\Gtin;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\TenantSettings;
 use DomainException;
 use Filament\Facades\Filament;
@@ -37,10 +39,13 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\PreparesDemo2ReceivingState;
 use Tests\TestCase;
 
 class DeleteReceivingSessionTest extends TestCase
 {
+    use PreparesDemo2ReceivingState;
+
     private const DEMO2_TENANT_ID = '13fe9068-cb05-4bab-9e0e-a89f2a458832';
 
     private const DEMO2_DOMAIN = 'demo2.internal.vatengi.com';
@@ -107,12 +112,17 @@ class DeleteReceivingSessionTest extends TestCase
         $this->initializeDemo2Tenant();
 
         try {
+            TenantSettings::forTenant(tenant())->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            tenant()->save();
+
             $session = app(OpenScanFirstReceivingSession::class)->handle();
             $this->trackSession($session);
+            $site = Site::query()->findOrFail($session->site_id);
 
             $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(10000000, 99999999), 0, 6).'.DEL1';
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->epcIds[] = (int) $epc->getKey();
+            $this->receiveAtSite($site, $epc);
 
             $result = app(ConfirmReceivingScan::class)->handle($session, $uri);
             $this->assertTrue($result['ok']);
@@ -441,13 +451,18 @@ class DeleteReceivingSessionTest extends TestCase
             $user->assignRole(TenantRole::Owner->value);
             $this->actingAs($user);
 
+            TenantSettings::forTenant(tenant())->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
+            tenant()->save();
+
             $session = app(OpenScanFirstReceivingSession::class)->handle();
             $this->trackSession($session);
             $sessionId = (int) $session->getKey();
+            $site = Site::query()->findOrFail($session->site_id);
 
             $uri = 'urn:epc:id:sgtin:030116.3'.substr((string) random_int(10000000, 99999999), 0, 6).'.PHR1';
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->epcIds[] = (int) $epc->getKey();
+            $this->receiveAtSite($site, $epc);
 
             $result = app(ConfirmReceivingScan::class)->handle($session->fresh(), $uri);
             $this->assertTrue($result['ok']);
@@ -623,7 +638,7 @@ class DeleteReceivingSessionTest extends TestCase
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.TR'.$suffix.$index;
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->epcIds[] = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -675,11 +690,23 @@ class DeleteReceivingSessionTest extends TestCase
 
     private function uniqueGln(): string
     {
+        $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?: '03';
+        $fill = max(1, 12 - strlen($prefix));
+
         do {
-            $gln = '0366159'.str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $body = substr($prefix.str_pad((string) random_int(0, (int) str_repeat('9', $fill)), $fill, '0', STR_PAD_LEFT), 0, 12);
+            $gln = $body.Gtin::checkDigit($body);
         } while (Site::query()->where('gln', $gln)->exists());
 
         return $gln;
+    }
+
+    private function epcFromUri(string $uri): Epc
+    {
+        $attrs = Epc::materializeAttributesFromUri($uri);
+        $existing = Epc::query()->where('epc_uri', $attrs['epc_uri'])->first();
+
+        return $existing instanceof Epc ? $existing : Epc::query()->create($attrs);
     }
 
     private function initializeDemo2Tenant(): Tenant
@@ -710,6 +737,7 @@ class DeleteReceivingSessionTest extends TestCase
         }
 
         tenancy()->initialize($tenant);
+        $this->ensureDemo2OrgPrefixMatchesReceiveSites();
 
         return $tenant;
     }

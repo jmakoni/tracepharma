@@ -118,16 +118,19 @@ class MobileFloorTransferringTest extends TestCase
             $component = Livewire::test(MobileViewTransferringSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSeeHtml('id="floor-scan-input"')
-                ->assertSeeHtml('tp-floor-receive__cart-fab')
+                ->assertDontSeeHtml('tp-floor-receive__cart-fab')
+                ->assertSeeHtml('tp-floor-receive__footer')
+                ->assertSeeHtml('tp-staged-scan-panel')
                 ->assertSeeHtml('tp-floor-transfer')
                 ->assertSeeHtml('tp-floor-receive__progress-stats')
+                ->assertSeeHtml('tp-floor-receive__camera-overlay')
+                ->assertSeeHtml('tp-floor-camera-counts')
                 ->assertSee('Confirmed')
                 ->assertSee('Ship transfer')
                 ->assertSee('Scan at least one item to ship')
                 ->assertSee('Back to transfers')
-                ->assertSee('Open desktop transfer')
                 ->assertSee('Scanned items will appear here')
-                ->assertSee('Recent scans')
+                ->assertSee('Just scanned')
                 ->assertDontSee('Staged scans')
                 ->assertDontSee('Confirm staged')
                 ->set('scan', $uri)
@@ -153,10 +156,10 @@ class MobileFloorTransferringTest extends TestCase
             'views/filament/app/resources/transferring-sessions/pages/mobile-view-transferring-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
-        $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
@@ -167,15 +170,15 @@ class MobileFloorTransferringTest extends TestCase
             'views/filament/app/resources/transferring-sessions/pages/view-transferring-session.blade.php',
         ));
 
-        $this->assertStringContainsString('wire:model.live.blur="scan"', $blade);
-        $this->assertStringContainsString('keydown.enter.prevent="$wire.stageScan($refs.scanInput.value)"', $blade);
-        $this->assertStringContainsString('wire:submit.prevent="stageScan"', $blade);
-        $this->assertStringNotContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('wire:model="scan"', $blade);
+        $this->assertStringContainsString('keydown.enter.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringContainsString('x-on:submit.prevent="$wire.confirmScanInput($refs.scanInput.value)"', $blade);
+        $this->assertStringNotContainsString('wire:model.live.blur', $blade);
         $this->assertStringNotContainsString("mountAction('confirmScan')", $blade);
     }
 
     #[Test]
-    public function floor_hardware_scan_enter_confirms_dom_value_without_wire_property(): void
+    public function floor_camera_and_wedge_confirm_scan_input_commits_immediately(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
@@ -203,7 +206,7 @@ class MobileFloorTransferringTest extends TestCase
             $component = Livewire::test(MobileViewTransferringSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
                 ->assertSet('scan', '')
-                ->call('stageScan', $uri)
+                ->call('confirmScanInput', $uri)
                 ->assertSet('scan', '');
 
             $this->assertContains($component->get('lastScanTone'), ['ok', 'warn']);
@@ -242,7 +245,7 @@ class MobileFloorTransferringTest extends TestCase
             $this->sessionId = (int) $session->getKey();
 
             $component = Livewire::test(MobileViewTransferringSession::class, ['record' => $session->getKey()])
-                ->call('stageScan', $uri);
+                ->call('confirmScanInput', $uri);
 
             $line = TransferringScanLine::query()
                 ->where('transferring_session_id', $session->getKey())

@@ -3,13 +3,14 @@
 namespace App\Filament\App\Resources\Sites\Schemas;
 
 use App\Filament\App\Support\FdaPicker;
+use App\Models\Site;
 use App\Rules\RejectPartnerGlnUnderOrgPrefix;
 use App\Rules\RejectTenantGln;
 use App\Support\Gs1\GlnRules;
+use App\Support\Gs1\Gs1IdentityStatus;
 use App\Support\Gs1\SglnRules;
 use App\Support\Places\UsState;
 use App\Support\TenantFeatures;
-use App\Support\TenantSettings;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -39,6 +40,7 @@ class SiteForm
                             ->preload()
                             ->searchDebounce(500)
                             ->nullable()
+                            ->live()
                             ->helperText('Leave blank for your organization\'s own site. Set a partner for that partner\'s location.'),
                         Select::make('principal_id')
                             ->label('Principal')
@@ -61,6 +63,7 @@ class SiteForm
                         TextInput::make('name')->required()->maxLength(255)->columnSpanFull(),
                         TextInput::make('code')->unique(ignoreRecord: true)->maxLength(255),
                         GlnRules::input()
+                            ->live(onBlur: true)
                             ->unique(ignoreRecord: true)
                             // Only a partner-owned location is barred from our GLNs; an
                             // organization facility is supposed to carry one.
@@ -72,15 +75,38 @@ class SiteForm
                                 new RejectPartnerGlnUnderOrgPrefix,
                                 fn (Get $get): bool => filled($get('trading_partner_id')),
                             ),
-                        // Our own facilities get theirs from the organization company
-                        // prefix; a partner's location has to be told to us unless we
-                        // allocate GLNs from our prefix.
                         SglnRules::input()
-                            ->helperText(fn (Get $get): string => filled($get('trading_partner_id'))
-                                ? (TenantSettings::forTenant(tenant())->allowAssignPartnerGlnsFromPrefix()
-                                    ? 'Optional when the GLN is under your organization prefix — SGLN is derived on save. Otherwise copy from the partner\'s EPCIS.'
-                                    : 'Copy the SGLN from the partner\'s EPCIS — we do not guess where a partner\'s GS1 company prefix ends unless you allow partner GLNs from your prefix in Organization settings.')
-                                : 'Filled from the GLN for your own facilities.'),
+                            ->live(onBlur: true)
+                            ->disabled(fn (Get $get): bool => blank($get('trading_partner_id'))
+                                && Gs1IdentityStatus::canDeriveOrgSiteSgln(
+                                    is_string($get('gln')) ? $get('gln') : null,
+                                ))
+                            ->dehydrated(fn (Get $get): bool => filled($get('trading_partner_id'))
+                                || ! Gs1IdentityStatus::canDeriveOrgSiteSgln(
+                                    is_string($get('gln')) ? $get('gln') : null,
+                                ))
+                            ->placeholder(function (Get $get): ?string {
+                                if (filled($get('trading_partner_id'))) {
+                                    return 'urn:epc:id:sgln:0614141.12345.0';
+                                }
+
+                                return Gs1IdentityStatus::resolveOrgSiteSgln(
+                                    is_string($get('gln')) ? $get('gln') : null,
+                                ) ?? 'urn:epc:id:sgln:0614141.12345.0';
+                            })
+                            ->helperText(function (Get $get, ?Site $record): string {
+                                if (filled($get('trading_partner_id'))) {
+                                    return Gs1IdentityStatus::partnerSglnStatus(
+                                        is_string($get('sgln')) ? $get('sgln') : null,
+                                        is_string($get('gln')) ? $get('gln') : null,
+                                        is_string($record?->sgln) ? $record->sgln : null,
+                                    );
+                                }
+
+                                return Gs1IdentityStatus::orgSiteSglnHelper(
+                                    is_string($get('gln')) ? $get('gln') : null,
+                                );
+                            }),
                         TextInput::make('duns_number')->label('DUNS')->maxLength(14),
                         TextInput::make('dea_number')->label('DEA')->maxLength(20),
                         TextInput::make('hin_number')->label('HIN')->maxLength(20),

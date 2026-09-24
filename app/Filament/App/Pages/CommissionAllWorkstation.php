@@ -4,6 +4,7 @@ namespace App\Filament\App\Pages;
 
 use App\Actions\Disposition\EmitCommissioningEpcisForEpcs;
 use App\Actions\Epcis\ResolveEpcFromScan;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
 use App\Models\Site;
@@ -21,7 +22,6 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -80,7 +80,12 @@ class CommissionAllWorkstation extends Page implements HasKnowledgeBase
         EpcHasCommissioningEvent $hasCommissioningEvent,
         ShippableEpcsAtSite $shippable,
         ReceivingGate $receivingGate,
+        ?string $raw = null,
     ): void {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 

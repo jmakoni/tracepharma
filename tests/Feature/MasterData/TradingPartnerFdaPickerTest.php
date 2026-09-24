@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\MasterData;
 
+use App\Enums\EpcisGuideline;
 use App\Enums\FacilityType;
 use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
@@ -254,6 +255,31 @@ class TradingPartnerFdaPickerTest extends TestCase
             $this->assertStringContainsString('Creating '.$orgA->name.' as a trading partner', $preview);
             $this->assertStringContainsString('Headquarters:', $preview);
             $this->assertStringContainsString('Also: '.$estA->name.' (plant)', $preview);
+        } finally {
+            if (tenancy()->initialized) {
+                tenancy()->end();
+            }
+        }
+    }
+
+    #[Test]
+    public function filament_create_form_defaults_epcis_guideline_to_r12(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $user = User::factory()->create();
+            $this->userIds[] = (int) $user->id;
+            $user->syncRoles([TenantRole::Owner->value]);
+
+            $this->actingAs($user);
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            Livewire::test(ListTradingPartners::class)
+                ->mountAction('create')
+                ->assertActionDataSet([
+                    'epcis_guideline' => EpcisGuideline::R12->value,
+                ]);
         } finally {
             if (tenancy()->initialized) {
                 tenancy()->end();

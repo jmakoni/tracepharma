@@ -9,7 +9,6 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Support\Gs1\Sgln;
-use App\Support\Gs1\SglnResolution;
 use App\Support\TenantSettings;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -78,7 +77,7 @@ class SiteSglnAutoGenerateTest extends TestCase
     }
 
     #[Test]
-    public function org_site_create_uses_org_prefix_length_when_no_prefix_covers_the_gln(): void
+    public function org_site_create_leaves_sgln_null_when_no_prefix_covers_the_gln(): void
     {
         $tenant = $this->initializeDemo2Tenant();
 
@@ -89,10 +88,7 @@ class SiteSglnAutoGenerateTest extends TestCase
 
             $site = $this->createOrgSite($gln);
 
-            $this->assertSame(
-                SglnResolution::fromPrefixLength($gln, $orgPrefix),
-                $site->fresh()->sgln,
-            );
+            $this->assertNull($site->fresh()->sgln);
         } finally {
             $this->cleanup($tenant);
         }

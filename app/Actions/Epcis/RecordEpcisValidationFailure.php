@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Epcis;
 
+use App\Actions\Receiving\AuthorReceiveSessionException;
 use App\Domain\Epcis\Validation\ValidationFailure;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisException;
@@ -11,6 +12,10 @@ use App\Support\Epcis\Validation\EpcisValidationCatalog;
 
 /**
  * Maps a Domain hard-gate failure into the existing epcis_exceptions ledger (DLQ surface).
+ *
+ * Ingest soft signal ({@see ProcessEpcisDocument}) calls with $blocking=false so
+ * Domain findings never flip a catalog-validated document out of `validated`.
+ * Blocking mode remains available for future hard-gate commit paths.
  */
 final class RecordEpcisValidationFailure
 {
@@ -34,17 +39,24 @@ final class RecordEpcisValidationFailure
 
     public function __construct(
         private readonly RecordOperationalEpcisException $recorder,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
-    public function handle(EpcisDocument $document, ValidationFailure $failure): EpcisException
+    /**
+     * @param  bool  $blocking  When true, mark the document status=error (hard DLQ).
+     *                          When false, record a warning exception only (ingest soft signal).
+     */
+    public function handle(EpcisDocument $document, ValidationFailure $failure, bool $blocking = true): EpcisException
     {
         $catalogCode = $this->toCatalogCode($failure->code);
         $description = "[{$failure->stage}] {$failure->code}: {$failure->message}";
 
-        $document->forceFill([
-            'status' => 'error',
-            'error_message' => mb_substr($description, 0, 2000),
-        ])->save();
+        if ($blocking) {
+            $document->forceFill([
+                'status' => 'error',
+                'error_message' => mb_substr($description, 0, 2000),
+            ])->save();
+        }
 
         $existing = EpcisException::query()
             ->where('document_id', $document->getKey())
@@ -54,19 +66,40 @@ final class RecordEpcisValidationFailure
             ->first();
 
         if ($existing !== null) {
-            $existing->forceFill([
-                'description' => $description,
-                'severity' => 'error',
-            ])->save();
+            $fill = ['description' => $description];
+            if ($blocking) {
+                $fill['severity'] = 'error';
+            }
+            $existing->forceFill($fill)->save();
+            $this->inheritLateFailed($document, $catalogCode, $blocking);
 
             return $existing;
         }
 
-        return $this->recorder->handle(
+        $recorded = $this->recorder->handle(
             document: $document,
             exceptionType: $catalogCode,
             description: $description,
-            severity: 'error',
+            severity: $blocking ? 'error' : 'warning',
+        );
+        $this->inheritLateFailed($document, $catalogCode, $blocking);
+
+        return $recorded;
+    }
+
+    private function inheritLateFailed(EpcisDocument $document, string $catalogCode, bool $blocking): void
+    {
+        if (
+            ! $blocking
+            || (string) ($document->direction ?? '') !== 'inbound'
+            || ! in_array($catalogCode, ['INGESTION_PARSE_ERROR', 'INTERNAL_VALIDATION_FAILED'], true)
+        ) {
+            return;
+        }
+
+        $this->authorReceiveSessionException->inheritLateFailedFromDocument(
+            $document,
+            'schema_rejected_inbound_epcis',
         );
     }
 

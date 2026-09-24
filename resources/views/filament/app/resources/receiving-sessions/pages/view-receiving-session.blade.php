@@ -51,8 +51,6 @@
                     </span>
                 </div>
 
-                <p class="text-sm opacity-70">{{ $this->promptCopy()['kindHelper'] }}</p>
-
                 <div class="flex flex-wrap gap-1.5" aria-label="Scan context">
                     @if ($this->chipHasTi === true)
                         <span class="badge badge-success badge-outline">TI OK</span>
@@ -83,22 +81,15 @@
                     @endif
                 </div>
 
-                <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
-                    <div class="stat">
-                        <div class="stat-title">{{ $this->parentTypeLabel() }}</div>
-                        <div class="stat-value text-2xl">
-                            {{ $this->parentProgressQuantity() }}
-                        </div>
-                    </div>
-                    @if ($this->showUnitsProgress())
-                        <div class="stat">
-                            <div class="stat-title">{{ $this->childTypeLabel() }}</div>
-                            <div class="stat-value text-2xl">
-                                {{ $this->childProgressQuantity() }}
-                            </div>
-                        </div>
-                    @endif
-                </div>
+                @include('filament.app.partials.expected-order-header', [
+                    'header' => $this->expectedOrderHeader(),
+                ])
+
+                @include('filament.app.partials.receiving-session-progress-stats', [
+                    'progress' => $this->sessionProgress(),
+                ])
+
+                @include('filament.app.partials.receive-exception-badges')
 
                 @if ($lockedTote = $this->openToteLockedParentLabel())
                     <div class="rounded-lg border border-base-300 bg-base-200/60 px-3 py-2 text-sm font-medium">
@@ -148,11 +139,36 @@
                 @endif
 
                 @if ($this->isCompleted())
-                    <div class="rounded-lg border border-success/30 bg-success/10 p-4">
+                    @php
+                        $documentComplete = $this->documentReceiveComplete();
+                        $epcisPending = $this->transferReceiveEpcisPending();
+                    @endphp
+                    <div @class([
+                        'rounded-lg border p-4',
+                        'border-warning/30 bg-warning/10' => $epcisPending,
+                        'border-success/30 bg-success/10' => ! $epcisPending,
+                    ])>
                         <div class="text-lg font-semibold">{{ $this->promptCopy()['completeTitle'] }}</div>
                         <p class="text-sm">
                             {{ $this->promptCopy()['completeBody'] }}
                         </p>
+                        @if ($epcisPending)
+                            <div role="alert" class="alert alert-warning mt-3">
+                                <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <span>Receiving EPCIS was not authored. Received scans are saved.</span>
+                                    @if ($this->canRetryReceiveEpcis())
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-warning min-h-14"
+                                            wire:click="mountAction('retryReceiveEpcis')"
+                                            wire:loading.attr="disabled"
+                                        >
+                                            Retry receive EPCIS
+                                        </button>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
                         @if ($issuesUrl = $this->receivingIssuesUrl())
                             <p class="mt-2 text-sm">
                                 <a href="{{ $issuesUrl }}" class="link link-hover font-medium">
@@ -161,6 +177,45 @@
                                 <span class="opacity-70"> — shortage, overage, or damaged after receive.</span>
                             </p>
                         @endif
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            @if ($documentComplete)
+                                <a href="{{ $this->receiveListUrl() }}" class="btn btn-primary btn-sm">
+                                    Back to receives
+                                </a>
+                            @else
+                                <button
+                                    type="button"
+                                    class="btn btn-primary btn-sm"
+                                    wire:click="startNextReceive"
+                                    wire:loading.attr="disabled"
+                                >
+                                    Start next receive
+                                </button>
+                                <a href="{{ $this->receiveListUrl() }}" class="btn btn-ghost btn-sm">
+                                    Back to receives
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+                @elseif ($this->isHeld())
+                    <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                        <div class="text-lg font-semibold">Complete to hold — waiting for EPCIS</div>
+                        <p class="text-sm">Confirmed serials are held, not sellable. Complete still requires a file. This session stays for Investigator until inbound EPCIS arrives.</p>
+                        <div class="mt-3">
+                            <a href="{{ $this->receiveListUrl() }}" class="btn btn-primary btn-sm">
+                                Back to receives
+                            </a>
+                        </div>
+                    </div>
+                @elseif ($this->isCancelled())
+                    <div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+                        <div class="text-lg font-semibold">Receive cancelled</div>
+                        <p class="text-sm">This session is closed. Open a new receive to continue.</p>
+                        <div class="mt-3">
+                            <a href="{{ $this->receiveListUrl() }}" class="btn btn-primary btn-sm">
+                                Back to receives
+                            </a>
+                        </div>
                     </div>
                 @else
                     <div class="flex flex-col gap-4">
@@ -172,6 +227,7 @@
                             :placeholder="$this->promptCopy()['scanHelper']"
                             :confirm-label="$this->promptCopy()['confirmButton']"
                             submit-action="confirmScan"
+                            submit-method="confirmScanInput"
                         />
 
                         @if ($this->canAttachInvoice())
@@ -189,8 +245,28 @@
                             </div>
                         @endif
 
-                        @if ($this->canCloseOpenTote() || $this->canAcceptRemaining())
+                        @if ($this->canCloseOpenTote() || $this->canAcceptRemaining() || $this->canCompleteManually() || $this->canCompleteToHold() || $this->canCloseTransferWithShortage())
                             <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                @if ($this->canCompleteManually())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn btn btn-primary min-h-14"
+                                        wire:click="mountAction('completeReceiving')"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Complete session
+                                    </button>
+                                @endif
+                                @if ($this->canCompleteToHold())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn btn btn-warning min-h-14"
+                                        wire:click="mountAction('completeToHold')"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Complete to hold — waiting for EPCIS
+                                    </button>
+                                @endif
                                 @if ($this->canCloseOpenTote())
                                     <button
                                         type="button"
@@ -216,8 +292,24 @@
                                         Accept remaining
                                     </button>
                                 @endif
+                                @if ($this->canCloseTransferWithShortage())
+                                    <button
+                                        type="button"
+                                        class="tp-scanner-macro-btn btn btn-warning min-h-14"
+                                        wire:click="mountAction('closeTransferWithShortage')"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        Close with shortage
+                                    </button>
+                                @endif
                             </div>
                         @endif
+
+                        @unless ($this->canCompleteManually())
+                            @if ($reason = $this->completeDisabledReason())
+                                <p class="text-sm opacity-70">{{ $reason }}</p>
+                            @endif
+                        @endunless
 
                         @if ($this->canShowUnpackOnComplete())
                             <label class="label cursor-pointer justify-start gap-3 min-h-14 rounded-lg border border-base-300 bg-base-200/60 px-3">
@@ -231,6 +323,16 @@
                                     <span class="block opacity-70">On by default — uncheck to keep parent/child links sealed.</span>
                                 </span>
                             </label>
+                        @endif
+
+                        @php($outstanding = $this->outstandingReceive())
+                        @if ($outstanding['heading'] !== '')
+                            <x-confirmed-scan-panel
+                                :heading="$outstanding['heading']"
+                                :rows="$outstanding['rows']"
+                                :caption="$outstanding['caption']"
+                                empty="Nothing left to scan."
+                            />
                         @endif
                     </div>
                 @endif

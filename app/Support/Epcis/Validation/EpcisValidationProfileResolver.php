@@ -2,14 +2,19 @@
 
 namespace App\Support\Epcis\Validation;
 
+use App\Enums\EpcisGuideline;
 use App\Models\Epcis\EpcisDocument;
+use App\Support\Epcis\DetectDscsaGuidelineRelease;
 use SimpleXMLElement;
 use Throwable;
 
 /**
- * Resolves which validation profile applies to a document: DSCSA minimum is
- * always stacked conceptually, and the "hard" enforced profile is GS1 US R1.3
- * when forced by config or detected in the payload, otherwise the tenant default.
+ * Resolves which validation profile applies to a document.
+ *
+ * The hard R1.3 profile follows per-document detection only. Tenant
+ * {@see config('tracepharma.epcis.validation.force_r13')} does not store or
+ * override release — stored {@see EpcisDocument::$dscsa_guideline_release}
+ * is always payload detection in ProcessEpcisDocument.
  */
 final class EpcisValidationProfileResolver
 {
@@ -19,12 +24,18 @@ final class EpcisValidationProfileResolver
             (string) config('tracepharma.epcis.validation.default_profile', 'gs1us_r12')
         ) ?? EpcisValidationProfile::Gs1UsR12;
 
-        $forceR13 = (bool) config('tracepharma.epcis.validation.force_r13', false);
-
         $resolvedPath = $payloadPath ?? $this->resolvePayloadPath($document);
         $declaredVersion = $resolvedPath !== null ? $this->detectGuidelineVersion($resolvedPath) : null;
+        $detection = $resolvedPath !== null
+            ? DetectDscsaGuidelineRelease::fromPath($resolvedPath)
+            : ($document->dscsa_guideline_release !== null
+                ? DetectDscsaGuidelineRelease::detectionForDocument($document)
+                : null);
+        $detectedR13 = $detection !== null
+            && ! $detection->mixed
+            && $detection->release === EpcisGuideline::R13;
 
-        $r13Hard = $forceR13 || $this->indicatesR13($declaredVersion);
+        $r13Hard = $detectedR13;
 
         return new EpcisValidationContext(
             document: $document,
@@ -81,14 +92,5 @@ final class EpcisValidationProfileResolver
             libxml_clear_errors();
             libxml_use_internal_errors($previousErrorHandling);
         }
-    }
-
-    private function indicatesR13(?string $declaredVersion): bool
-    {
-        if ($declaredVersion === null || $declaredVersion === '') {
-            return false;
-        }
-
-        return str_contains($declaredVersion, '1.3') || str_contains(strtoupper($declaredVersion), 'R1.3');
     }
 }

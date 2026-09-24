@@ -5,12 +5,18 @@ namespace App\Support\Receiving;
 use App\Models\Epcis\Epc;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Whether an EPC is already confirmed/unexpected on a different open receive session.
  */
 final class EpcOnAnotherOpenReceivingSession
 {
+    public function __construct(
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
+    ) {}
+
     public function exists(Epc $epc, ReceivingSession $current): bool
     {
         return $this->otherSession($epc, $current) !== null;
@@ -18,18 +24,14 @@ final class EpcOnAnotherOpenReceivingSession
 
     public function existsOnAnyExclusiveSession(Epc $epc): bool
     {
-        return ReceivingScanLine::query()
-            ->where('epc_id', $epc->getKey())
-            ->whereIn('status', ['confirmed', 'unexpected'])
-            ->whereHas('session', fn ($query) => $this->applyExclusiveSessionScope($query))
-            ->exists();
+        return $this->exclusiveGate->existsOnAnyExclusiveSession($epc);
     }
 
     public function otherSession(Epc $epc, ReceivingSession $current): ?ReceivingSession
     {
         $line = ReceivingScanLine::query()
             ->where('epc_id', $epc->getKey())
-            ->whereIn('status', ['confirmed', 'unexpected'])
+            ->whereIn('status', EpcExclusiveSessionGate::RECEIVING_RESERVATION_STATUSES)
             ->whereHas('session', function ($query) use ($current): void {
                 $this->applyExclusiveSessionScope($query);
                 $query->whereKeyNot($current->getKey());
@@ -42,7 +44,7 @@ final class EpcOnAnotherOpenReceivingSession
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder<ReceivingSession>  $query
+     * @param  Builder<ReceivingSession>  $query
      */
     private function applyExclusiveSessionScope($query): void
     {

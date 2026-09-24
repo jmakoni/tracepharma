@@ -36,6 +36,13 @@
                     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <div class="flex flex-wrap items-center gap-1.5">
                             <span class="badge badge-success badge-outline">Completed</span>
+                            @php($refs = $this->orderRefs())
+                            @if ($refs['po'] !== null)
+                                <span class="badge badge-outline">PO {{ $refs['po'] }}</span>
+                            @endif
+                            @if ($refs['asn'] !== null)
+                                <span class="badge badge-outline">ASN {{ $refs['asn'] }}</span>
+                            @endif
                             <span>{{ $session->tradingPartner?->name ?? 'No partner on file' }}</span>
                             @if ($session->site?->name)
                                 <span aria-hidden="true">·</span>
@@ -72,6 +79,12 @@
                         </div>
                     </div>
 
+                    @if ($warning = $this->poOverReceiptWarning())
+                        <div role="status" class="alert alert-warning">
+                            <span class="text-sm">{{ $warning }}</span>
+                        </div>
+                    @endif
+
                     <p class="text-sm opacity-70">
                         Use the header actions to file shortage, overage, or damaged claims.
                         These open Exception cases (and quarantine for damaged) — they are not on the scan HUD.
@@ -86,6 +99,31 @@
                     <h2 class="card-title text-base">Open exceptions for this shipment</h2>
                     <ul class="divide-y divide-base-200">
                         @foreach ($cases as $case)
+                            <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                                <div class="flex flex-col gap-0.5">
+                                    <span class="font-medium">{{ $case->title }}</span>
+                                    <span class="opacity-70">
+                                        {{ $case->type?->code ?? 'UNCLASSIFIED' }}
+                                        · {{ $case->status?->label() ?? $case->status }}
+                                    </span>
+                                </div>
+                                @if ($url = $this->exceptionUrl($case))
+                                    <a href="{{ $url }}" class="btn btn-sm btn-outline">Open</a>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
+
+        @if ($this->session() && ($autoCases = $this->autoAuthoredCasesForSession())->isNotEmpty())
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body gap-3">
+                    <h2 class="card-title text-base">Receive exceptions from scan or complete</h2>
+                    <p class="text-sm opacity-70">Read-only. Filed automatically during receive. Use Exceptions to investigate.</p>
+                    <ul class="divide-y divide-base-200">
+                        @foreach ($autoCases as $case)
                             <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                                 <div class="flex flex-col gap-0.5">
                                     <span class="font-medium">{{ $case->title }}</span>

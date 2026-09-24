@@ -78,7 +78,7 @@ final class ConfirmTransferringReceiveScan
             if ($session->status === 'completed') {
                 return [
                     'ok' => true,
-                    'message' => 'Transfer already received.',
+                    'message' => 'Already received on this transfer',
                     'line' => null,
                     'epc' => $epc,
                     'effect' => 'completed',
@@ -181,7 +181,7 @@ final class ConfirmTransferringReceiveScan
             return [
                 'ok' => true,
                 'message' => $sessionCompleted
-                    ? 'Received — transfer complete.'
+                    ? 'Transfer receive complete'
                     : 'Received at destination.',
                 'line' => $line->refresh(),
                 'epc' => $epc,

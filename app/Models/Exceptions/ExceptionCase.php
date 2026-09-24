@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
@@ -45,6 +46,8 @@ class ExceptionCase extends Model
         'assigned_to',
         'assigned_at',
         'due_at',
+        'condition_still_true',
+        'sla_stopped_at',
         'first_response_at',
         'resolved_at',
         'closed_at',
@@ -65,6 +68,8 @@ class ExceptionCase extends Model
             'disposition' => ExceptionDisposition::class,
             'assigned_at' => 'datetime',
             'due_at' => 'datetime',
+            'condition_still_true' => 'boolean',
+            'sla_stopped_at' => 'datetime',
             'first_response_at' => 'datetime',
             'resolved_at' => 'datetime',
             'closed_at' => 'datetime',
@@ -76,7 +81,7 @@ class ExceptionCase extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'severity', 'assigned_to', 'resolved_at', 'closed_at'])
+            ->logOnly(['status', 'severity', 'assigned_to', 'resolved_at', 'closed_at', 'condition_still_true', 'sla_stopped_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }
@@ -89,6 +94,45 @@ class ExceptionCase extends Model
     public function document(): BelongsTo
     {
         return $this->belongsTo(EpcisDocument::class, 'document_id');
+    }
+
+    /**
+     * EPCIS file that opened this case: {@see $document_id}, else the ingest
+     * signal named in activity meta `epcis_exception_id`, else a linked signal.
+     */
+    public function sourceEpcisDocument(): ?EpcisDocument
+    {
+        $this->loadMissing('document');
+        if ($this->document instanceof EpcisDocument) {
+            return $this->document;
+        }
+
+        $this->loadMissing('activities');
+        foreach ($this->activities as $activity) {
+            $meta = $activity->meta;
+            if (! is_array($meta)) {
+                continue;
+            }
+
+            $signalId = $meta['epcis_exception_id'] ?? null;
+            if (! is_numeric($signalId) || (int) $signalId < 1) {
+                continue;
+            }
+
+            $signal = EpcisException::query()->with('document')->find((int) $signalId);
+            if ($signal?->document instanceof EpcisDocument) {
+                return $signal->document;
+            }
+        }
+
+        $this->loadMissing('signals.document');
+        foreach ($this->signals as $signal) {
+            if ($signal->document instanceof EpcisDocument) {
+                return $signal->document;
+            }
+        }
+
+        return null;
     }
 
     public function event(): BelongsTo
@@ -215,6 +259,8 @@ class ExceptionCase extends Model
             ExceptionStatus::Resolved->value,
             ExceptionStatus::Closed->value,
             ExceptionStatus::Cancelled->value,
+            ExceptionStatus::Cleared->value,
+            ExceptionStatus::Overridden->value,
         ]);
     }
 
@@ -266,9 +312,51 @@ class ExceptionCase extends Model
             ->where('resolved_at', '>=', now()->subDays($days));
     }
 
+    /**
+     * Honesty board: predicate still true or not yet re-checked.
+     * No-ops until the tenant migration adds condition_still_true.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeConditionStillTrue(Builder $query): Builder
+    {
+        if (! Schema::hasColumn($this->getTable(), 'condition_still_true')) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $inner): void {
+            $inner->where('condition_still_true', true)
+                ->orWhereNull('condition_still_true');
+        });
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeConditionCleared(Builder $query): Builder
+    {
+        if (! Schema::hasColumn($this->getTable(), 'condition_still_true')) {
+            return $query->where('status', ExceptionStatus::Cleared->value);
+        }
+
+        return $query->where(function (Builder $inner): void {
+            $inner->where('status', ExceptionStatus::Cleared->value)
+                ->orWhere('condition_still_true', false);
+        });
+    }
+
+    public static function hasHonestyColumns(): bool
+    {
+        return Schema::hasColumn((new self)->getTable(), 'condition_still_true');
+    }
+
     public function isOverdue(): bool
     {
         return $this->status->isOpen()
+            && $this->sla_stopped_at === null
+            && $this->status !== ExceptionStatus::WaitingPartner
             && $this->due_at !== null
             && $this->due_at->isPast();
     }

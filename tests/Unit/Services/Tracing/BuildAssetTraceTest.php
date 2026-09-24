@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Tracing;
 
+use App\Enums\EpcisAuthoredKind;
 use App\Enums\PartnerType;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\AggregationLink;
@@ -47,6 +48,9 @@ class BuildAssetTraceTest extends TestCase
 
     /** @var list<int> */
     private array $partnerIds = [];
+
+    /** @var list<int> */
+    private array $extraDocumentIds = [];
 
     #[Test]
     public function it_builds_a_full_trace_for_a_found_sgtin_with_events_lot_and_parties(): void
@@ -258,6 +262,56 @@ class BuildAssetTraceTest extends TestCase
             $quarantinedResult = app(BuildAssetTrace::class)->handle("(01){$gtin14}(21){$serial}");
             $this->assertSame('Quarantined', $quarantinedResult['status']);
             $this->assertSame('warn', $quarantinedResult['status_tone']);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function sscc_on_authored_transfer_ship_shows_in_transit_not_not_in_custody(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $sscc18 = '003011610012345661';
+            $uri = 'urn:epc:id:sscc:030116.01001234566';
+            $sscc = Epc::fromUri($uri);
+            $sscc->forceFill(['sscc18' => $sscc18])->save();
+            $this->epcId = (int) $sscc->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Transferring,
+                'creation_date' => now()->subMinutes(5),
+                'received_at' => now()->subMinutes(5),
+                'notes' => 'Generated transferring EPCIS (intracompany custody) for transferring session #7.',
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            $shippingEvent = EpcisEvent::query()->create([
+                'document_id' => $document->getKey(),
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subMinute(),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+                'disposition' => 'urn:epcglobal:cbv:disp:in_transit',
+                'read_point_gln' => '0614141999903',
+                'biz_location_gln' => '0614141999903',
+            ]);
+
+            DB::table('event_epcs')->insert([
+                'event_id' => $shippingEvent->getKey(),
+                'epc_id' => $sscc->getKey(),
+                'role' => 'epcList',
+            ]);
+
+            $result = app(BuildAssetTrace::class)->handle('(00)'.$sscc18);
+
+            $this->assertTrue($result['found']);
+            $this->assertSame('In transit', $result['status']);
+            $this->assertSame('warn', $result['status_tone']);
+            $this->assertSame('in_transit', $result['disposition']);
         } finally {
             $this->cleanup();
         }
@@ -708,6 +762,91 @@ class BuildAssetTraceTest extends TestCase
     }
 
     #[Test]
+    public function authored_receiving_parties_prefer_inbound_trade_document(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $suffix = (string) random_int(10000000, 99999999);
+            $itemRef = substr($suffix, 0, 6);
+            $serial = 'SN-RCV-'.$suffix;
+            $uri = "urn:epc:id:sgtin:030116.3{$itemRef}.{$serial}";
+
+            $supplier = TradingPartner::factory()->create([
+                'name' => 'Xttrium Laboratories',
+                'partner_type' => PartnerType::Manufacturer,
+            ]);
+            $this->partnerIds[] = (int) $supplier->getKey();
+
+            $inbound = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'creation_date' => now()->subHour(),
+                'received_at' => now()->subHour(),
+                'sender_gln' => '0301160000009',
+                'receiver_gln' => '0614141999903',
+                'ship_from_name' => 'Xttrium Laboratories',
+                'ship_from_gln' => '0301160000009',
+                'ship_from_site_name' => 'Xttrium Glenview',
+                'ship_to_name' => 'Demo Organisation HQ',
+                'ship_to_gln' => '0614141999903',
+                'ship_to_site_name' => 'Demo Organisation HQ',
+            ]);
+            $this->documentId = (int) $inbound->getKey();
+
+            $receiving = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Receiving,
+                'trading_partner_id' => $supplier->getKey(),
+                'creation_date' => now(),
+                'received_at' => now(),
+                'notes' => 'Generated receiving EPCIS (custody attestation, not TI/TS)',
+                'original_filename' => 'receiving-test.xml',
+            ]);
+            $this->extraDocumentIds[] = (int) $receiving->getKey();
+
+            $epc = Epc::fromUri($uri);
+            $epc->save();
+            $this->epcId = (int) $epc->getKey();
+
+            $inboundShip = EpcisEvent::query()->create([
+                'document_id' => $inbound->getKey(),
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subMinutes(20),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:shipping',
+                'disposition' => 'urn:epcglobal:cbv:disp:in_transit',
+            ]);
+
+            $receiveEvent = EpcisEvent::query()->create([
+                'document_id' => $receiving->getKey(),
+                'event_type' => 'ObjectEvent',
+                'event_time' => now()->subMinutes(2),
+                'action' => 'OBSERVE',
+                'biz_step' => 'urn:epcglobal:cbv:bizstep:receiving',
+                'disposition' => 'urn:epcglobal:cbv:disp:in_progress',
+            ]);
+
+            DB::table('event_epcs')->insert([
+                ['event_id' => $inboundShip->getKey(), 'epc_id' => $epc->getKey(), 'role' => 'epcList'],
+                ['event_id' => $receiveEvent->getKey(), 'epc_id' => $epc->getKey(), 'role' => 'epcList'],
+            ]);
+
+            $result = app(BuildAssetTrace::class)->handle("(01){$epc->gtin14}(21){$serial}");
+
+            $this->assertTrue($result['found']);
+            $this->assertArrayHasKey('Seller', $result['parties']);
+            $this->assertStringContainsString('Xttrium Laboratories', (string) $result['parties']['Seller']);
+            $this->assertArrayHasKey('Sold-to', $result['parties']);
+            $this->assertStringContainsString('Demo Organisation HQ', (string) $result['parties']['Sold-to']);
+            $this->assertStringNotContainsString('Xttrium Laboratories', (string) $result['parties']['Sold-to']);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function it_returns_a_not_found_result_for_an_unresolvable_scan(): void
     {
         $this->initializeDemo2Tenant();
@@ -973,14 +1112,15 @@ class BuildAssetTraceTest extends TestCase
             Epc::query()->whereIn('id', $epcIds)->delete();
         }
 
-        if ($this->documentId !== null) {
-            $eventIds = EpcisEvent::query()->where('document_id', $this->documentId)->pluck('id');
+        $documentIds = array_values(array_filter([...$this->extraDocumentIds, $this->documentId]));
+        if ($documentIds !== []) {
+            $eventIds = EpcisEvent::query()->whereIn('document_id', $documentIds)->pluck('id');
             if ($eventIds->isNotEmpty()) {
                 DB::table('event_locations')->whereIn('event_id', $eventIds)->delete();
                 DB::table('event_biz_transactions')->whereIn('event_id', $eventIds)->delete();
             }
-            EpcisEvent::query()->where('document_id', $this->documentId)->delete();
-            EpcisDocument::query()->whereKey($this->documentId)->delete();
+            EpcisEvent::query()->whereIn('document_id', $documentIds)->delete();
+            EpcisDocument::query()->whereIn('id', $documentIds)->delete();
         }
 
         if ($this->productId !== null) {
@@ -1001,6 +1141,7 @@ class BuildAssetTraceTest extends TestCase
         $this->childEpcId = null;
         $this->parentEpcId = null;
         $this->documentId = null;
+        $this->extraDocumentIds = [];
         $this->productId = null;
 
         tenancy()->end();

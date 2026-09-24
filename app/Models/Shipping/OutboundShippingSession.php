@@ -49,6 +49,9 @@ class OutboundShippingSession extends Model
         'opened_at',
         'completed_at',
         'cancelled_at',
+        'voided_at',
+        'voided_by_user_id',
+        'void_epcis_document_id',
         'notes',
         'wms_idempotency_key',
         'wms_complete',
@@ -68,6 +71,7 @@ class OutboundShippingSession extends Model
             'opened_at' => 'datetime',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'voided_at' => 'datetime',
             'split_declared_at' => 'datetime',
             'quantity_gate_overridden_at' => 'datetime',
             'shipping_events_generated_at' => 'datetime',
@@ -102,6 +106,16 @@ class OutboundShippingSession extends Model
     public function epcisDocument(): BelongsTo
     {
         return $this->belongsTo(EpcisDocument::class, 'epcis_document_id');
+    }
+
+    public function voidEpcisDocument(): BelongsTo
+    {
+        return $this->belongsTo(EpcisDocument::class, 'void_epcis_document_id');
+    }
+
+    public function voidedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by_user_id');
     }
 
     /**
@@ -161,6 +175,19 @@ class OutboundShippingSession extends Model
     public function canCancel(): bool
     {
         return $this->isActive() && $this->epcis_document_id === null;
+    }
+
+    public function isVoided(): bool
+    {
+        return $this->voided_at !== null;
+    }
+
+    public function canVoid(): bool
+    {
+        return $this->status === 'completed'
+            && $this->epcis_document_id !== null
+            && $this->voided_at === null
+            && $this->epcisDocument?->transmission_status === 'sent';
     }
 
     public function canHardDelete(): bool

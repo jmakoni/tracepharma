@@ -13,10 +13,11 @@ final readonly class DscsaPurchaseExtension
         public ?string $qualifier,
         public ?string $statement,
         public array $indirectEpcUris = [],
+        public ?bool $booleanAffirmed = null,
     ) {}
 
     /**
-     * @return array{qualifier: ?string, statement: ?string, indirect_epc_uris: list<string>}
+     * @return array{qualifier: ?string, statement: ?string, indirect_epc_uris: list<string>, boolean_affirmed: ?bool}
      */
     public function toArray(): array
     {
@@ -24,6 +25,7 @@ final readonly class DscsaPurchaseExtension
             'qualifier' => $this->qualifier,
             'statement' => $this->statement,
             'indirect_epc_uris' => array_values($this->indirectEpcUris),
+            'boolean_affirmed' => $this->booleanAffirmed,
         ];
     }
 
@@ -37,6 +39,8 @@ final readonly class DscsaPurchaseExtension
             $uris = [];
         }
 
+        $boolean = $data['boolean_affirmed'] ?? null;
+
         return new self(
             qualifier: filled($data['qualifier'] ?? null) ? (string) $data['qualifier'] : null,
             statement: filled($data['statement'] ?? null) ? (string) $data['statement'] : null,
@@ -44,6 +48,7 @@ final readonly class DscsaPurchaseExtension
                 static fn (mixed $uri): ?string => is_string($uri) && trim($uri) !== '' ? trim($uri) : null,
                 $uris,
             ))),
+            booleanAffirmed: is_bool($boolean) ? $boolean : null,
         );
     }
 }

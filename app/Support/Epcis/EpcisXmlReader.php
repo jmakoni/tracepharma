@@ -768,6 +768,21 @@ final class EpcisXmlReader
             }
         }
 
+        $siblingDscsa = DscsaShippingExtensionParser::parseXmlExtension($event);
+        if ($siblingDscsa !== null && ! $siblingDscsa->isEmpty()) {
+            $extensionJson['dscsa'] = array_replace(
+                $extensionJson['dscsa'] ?? [],
+                $siblingDscsa->toArray(),
+            );
+        }
+
+        foreach ($this->childrenByLocalName($event, 'transactionDate') as $transactionDate) {
+            $value = trim((string) $transactionDate);
+            if ($value !== '') {
+                $extensionJson['transactionDate'] = $value;
+            }
+        }
+
         $parties = array_values($partiesByKey);
 
         // Also accept ilmd directly under the event (some producers omit extension wrapper).
@@ -854,7 +869,17 @@ final class EpcisXmlReader
                 continue;
             }
 
+            $localName = str_contains($localName, ':')
+                ? substr($localName, (int) strrpos($localName, ':') + 1)
+                : $localName;
+
             if (isset($known[$localName])) {
+                if ($known[$localName] === 'expiry_date' && self::isExpiryRedactionSentinel($value)) {
+                    $extra['expiry_redacted'] = true;
+
+                    continue;
+                }
+
                 $result[$known[$localName]] = $value;
 
                 continue;
@@ -866,6 +891,15 @@ final class EpcisXmlReader
         $result['extra_json'] = $extra !== [] ? $extra : null;
 
         return $result;
+    }
+
+    public static function isExpiryRedactionSentinel(?string $value): bool
+    {
+        if ($value === null || trim($value) === '') {
+            return false;
+        }
+
+        return str_starts_with(trim($value), '1970-01-01');
     }
 
     /**
@@ -1133,6 +1167,10 @@ final class EpcisXmlReader
     private function parseErrorDeclaration(\SimpleXMLElement $event): ?array
     {
         $node = $this->firstByLocalName($event, 'errorDeclaration');
+        if ($node === null) {
+            $base = $this->firstByLocalName($event, 'baseExtension');
+            $node = $base !== null ? $this->firstByLocalName($base, 'errorDeclaration') : null;
+        }
         if ($node === null) {
             return null;
         }

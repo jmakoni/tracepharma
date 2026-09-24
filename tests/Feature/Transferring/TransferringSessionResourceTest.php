@@ -25,7 +25,6 @@ use App\Models\Tenant;
 use App\Models\Transferring\TransferringScanLine;
 use App\Models\Transferring\TransferringSession;
 use App\Models\User;
-use App\Support\Auth\CurrentSite;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Gs1\Gtin;
 use App\Support\Receiving\EligibleReceiveSites;
@@ -41,6 +40,7 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class TransferringSessionResourceTest extends TestCase
@@ -163,7 +163,7 @@ class TransferringSessionResourceTest extends TestCase
             tenancy()->initialize($tenant->fresh());
 
             app(TenantRoleSeeder::class)->seedForProfile(TenantProfile::DrugWholesaler);
-            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             $settings = TenantSettings::forTenant(tenant());
             $priorJobRoles = $settings->jobRolesEnabled();
@@ -233,6 +233,10 @@ class TransferringSessionResourceTest extends TestCase
             $this->sessionId = (int) $session->getKey();
 
             $view = Livewire::test(ViewTransferringSession::class, ['record' => $session->getKey()]);
+
+            $view->assertSeeHtml('bg-base-200')
+                ->assertSeeHtml('stat-title')
+                ->assertSee('Confirmed');
 
             $confirmScan = $view->instance()->confirmScanAction();
             $this->assertFalse(

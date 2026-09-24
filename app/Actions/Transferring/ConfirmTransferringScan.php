@@ -12,13 +12,13 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Floor\EpcExclusiveSessionGate;
+use App\Support\Floor\ExclusiveSessionContext;
 use App\Support\Gs1\ElementString;
-use App\Support\Receiving\EpcOnAnotherOpenReceivingSession;
 use App\Support\Shipping\AssertOutermostSsccHasChildren;
-use App\Support\Shipping\EpcOnOpenShippingSession;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
-use App\Support\Transferring\EpcOnAnotherOpenTransferringSession;
+use App\Support\Transferring\DetectOpenParentHierarchyOnTransfer;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -37,12 +37,11 @@ final class ConfirmTransferringScan
     public function __construct(
         private readonly ResolveEpcFromScan $resolveEpcFromScan,
         private readonly ReceivingGate $receivingGate,
-        private readonly EpcOnAnotherOpenTransferringSession $epcOnAnotherOpenTransferringSession,
-        private readonly EpcOnOpenShippingSession $epcOnOpenShippingSession,
-        private readonly EpcOnAnotherOpenReceivingSession $epcOnAnotherOpenReceivingSession,
+        private readonly EpcExclusiveSessionGate $exclusiveGate,
         private readonly EpcCustodyGate $custodyGate,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly AssertOutermostSsccHasChildren $assertOutermostSsccHasChildren,
+        private readonly DetectOpenParentHierarchyOnTransfer $openParentHierarchyOnTransfer,
     ) {}
 
     /**
@@ -131,17 +130,17 @@ final class ConfirmTransferringScan
                 ];
             }
 
-            if ($this->epcOnAnotherOpenReceivingSession->existsOnAnyExclusiveSession($epc)) {
+            $exclusiveBlock = $this->exclusiveGate->checkScannedEpc($epc, ExclusiveSessionContext::forTransferring($session));
+            if ($exclusiveBlock !== null) {
                 return [
-                    'ok' => false,
-                    'message' => 'Already confirmed on an open receive session.',
+                    ...$exclusiveBlock->toScanResult(),
                     'line' => null,
                     'epc' => $epc,
-                    'effect' => 'on_open_receive',
                 ];
             }
 
-            if (! $this->shippableEpcsAtSite->contains((int) $session->from_site_id, (int) $epc->getKey())) {
+            $onHand = $this->shippableEpcsAtSite->contains((int) $session->from_site_id, (int) $epc->getKey());
+            if (! $onHand) {
                 return [
                     'ok' => false,
                     'message' => 'This unit is not on hand at the transfer-from site.',
@@ -165,16 +164,6 @@ final class ConfirmTransferringScan
                 ];
             }
 
-            if ($this->epcOnAnotherOpenTransferringSession->exists($epc, $session)) {
-                return [
-                    'ok' => false,
-                    'message' => 'Already on another open transfer session.',
-                    'line' => null,
-                    'epc' => $epc,
-                    'effect' => 'double_transfer',
-                ];
-            }
-
             try {
                 $this->assertOutermostSsccHasChildren->handle($epc);
             } catch (InvalidArgumentException $exception) {
@@ -187,13 +176,13 @@ final class ConfirmTransferringScan
                 ];
             }
 
-            if ($this->epcOnOpenShippingSession->exists($epc)) {
+            if ($this->openParentHierarchyOnTransfer->unexpectedParentForEpc($session, $epc) !== null) {
                 return [
                     'ok' => false,
-                    'message' => 'Already on another open ship order.',
+                    'message' => 'This unit is packed under a container that is not on this transfer — scan the outermost SSCC instead.',
                     'line' => null,
                     'epc' => $epc,
-                    'effect' => 'on_open_ship',
+                    'effect' => 'open_parent_hierarchy',
                 ];
             }
 

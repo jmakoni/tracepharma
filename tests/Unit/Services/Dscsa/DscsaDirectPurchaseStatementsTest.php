@@ -64,4 +64,36 @@ class DscsaDirectPurchaseStatementsTest extends TestCase
 
         $this->assertSame(PartnerType::Manufacturer, $this->statements()->tenantProfileToPartnerType($tenant));
     }
+
+    #[Test]
+    public function outbound_direct_purchase_is_null_for_pharmacy_even_when_affirmed(): void
+    {
+        $this->assertNull($this->statements()->outboundWholesalerDirectPurchaseStatement(
+            new Tenant(['profile' => TenantProfile::Pharmacy]),
+            true,
+            'Demo Pharmacy',
+        ));
+    }
+
+    #[Test]
+    public function outbound_direct_purchase_is_null_for_manufacturer_even_when_affirmed(): void
+    {
+        $this->assertNull($this->statements()->outboundWholesalerDirectPurchaseStatement(
+            new Tenant(['profile' => TenantProfile::Manufacturer]),
+            true,
+            'Xttrium Laboratories, Inc.',
+        ));
+    }
+
+    #[Test]
+    public function outbound_direct_purchase_emits_for_wholesaler_when_affirmed(): void
+    {
+        $statement = $this->statements()->outboundWholesalerDirectPurchaseStatement(
+            new Tenant(['profile' => TenantProfile::DrugWholesaler]),
+            true,
+            'Cardinal Health',
+        );
+
+        $this->assertStringContainsString('purchased directly from the manufacturer', (string) $statement);
+    }
 }

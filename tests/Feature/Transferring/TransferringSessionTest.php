@@ -5,17 +5,19 @@ namespace Tests\Feature\Transferring;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
+use App\Actions\Receiving\OpenTransferReceivingSession;
 use App\Actions\Transferring\CompleteTransferringSession;
 use App\Actions\Transferring\ConfirmTransferringReceiveScan;
 use App\Actions\Transferring\ConfirmTransferringScan;
 use App\Actions\Transferring\GenerateTransferringEpcisEvents;
 use App\Actions\Transferring\GenerateTransferringReceiveEpcisEvents;
 use App\Actions\Transferring\OpenTransferringSession;
-use App\Actions\Receiving\OpenTransferReceivingSession;
+use App\Enums\EpcisAuthoredKind;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Shipping\OutboundShippingScanLine;
@@ -31,6 +33,7 @@ use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Epcis\ResolveSiteLocationGlns;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
+use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Shipping\ResolveShipFromSite;
 use App\Support\TenantSettings;
 use DomainException;
@@ -117,7 +120,7 @@ class TransferringSessionTest extends TestCase
             $this->assertSame((int) $toSite->getKey(), (int) $session->to_site_id);
             $this->assertSame(0, (int) $session->confirmed_count);
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -250,7 +253,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -332,8 +335,8 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $receivedEpc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
-            $missingEpc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI_2));
+            $receivedEpc = $this->epcFromUri(self::EPC_URI);
+            $missingEpc = $this->epcFromUri(self::EPC_URI_2);
             $this->epcId = (int) $receivedEpc->getKey();
             $extraEpcIds[] = (int) $missingEpc->getKey();
 
@@ -441,8 +444,8 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $receivedEpc = Epc::query()->create(Epc::materializeAttributesFromUri($receivedUri));
-            $missingEpc = Epc::query()->create(Epc::materializeAttributesFromUri($missingUri));
+            $receivedEpc = $this->epcFromUri($receivedUri);
+            $missingEpc = $this->epcFromUri($missingUri);
             $this->epcId = (int) $receivedEpc->getKey();
             $extraEpcIds[] = (int) $missingEpc->getKey();
 
@@ -530,8 +533,8 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $receivedEpc = Epc::query()->create(Epc::materializeAttributesFromUri($receivedUri));
-            $missingEpc = Epc::query()->create(Epc::materializeAttributesFromUri($missingUri));
+            $receivedEpc = $this->epcFromUri($receivedUri);
+            $missingEpc = $this->epcFromUri($missingUri);
             $this->epcId = (int) $receivedEpc->getKey();
             $extraEpcIds[] = (int) $missingEpc->getKey();
 
@@ -611,7 +614,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $receivedEpc = Epc::query()->create(Epc::materializeAttributesFromUri($receivedUri));
+            $receivedEpc = $this->epcFromUri($receivedUri);
             $this->epcId = (int) $receivedEpc->getKey();
 
             $this->receiveAtSite($fromSite, $receivedEpc);
@@ -663,7 +666,7 @@ class TransferringSessionTest extends TestCase
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.RC'.$suffix;
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -707,7 +710,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -758,7 +761,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -817,7 +820,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -859,7 +862,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -901,7 +904,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -953,7 +956,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -999,7 +1002,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($epcUri));
+            $epc = $this->epcFromUri($epcUri);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1191,7 +1194,7 @@ class TransferringSessionTest extends TestCase
         $this->priorTenantGln = $tenant->gln;
 
         try {
-            $fromGln = '0366159000010';
+            $fromGln = '0366159000019';
             $toGln = '0366159000026';
             Site::query()->whereIn('gln', [$fromGln, $toGln])->delete();
 
@@ -1238,7 +1241,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1255,6 +1258,10 @@ class TransferringSessionTest extends TestCase
             $this->assertStringContainsString('<readPoint>', $payload);
             $this->assertStringContainsString('<bizLocation>', $payload);
             $this->assertStringContainsString('<id>'.$expectedFromUrn.'</id>', $payload);
+            $this->assertStringNotContainsString('gs1ushc', $payload);
+            $this->assertStringNotContainsString('dscsaTransactionStatement', $payload);
+            $this->assertSame(EpcisAuthoredKind::Transferring, $document->authored_kind);
+            $this->assertFalse((bool) $document->dscsa_affirm);
         } finally {
             $this->cleanup($tenant);
         }
@@ -1274,7 +1281,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $sessionA->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1290,7 +1297,8 @@ class TransferringSessionTest extends TestCase
             $second = app(ConfirmTransferringScan::class)->handle($sessionB, self::EPC_URI);
             $this->assertFalse($second['ok']);
             $this->assertSame('double_transfer', $second['effect']);
-            $this->assertSame('Already on another open transfer session.', $second['message']);
+            $this->assertStringContainsString('Already on another open transfer session', $second['message']);
+            $this->assertStringContainsString('#'.$sessionA->getKey(), $second['message']);
 
             // Cleanup second session (first cleaned via sessionId).
             TransferringScanLine::query()
@@ -1308,15 +1316,18 @@ class TransferringSessionTest extends TestCase
         $tenant = $this->initializeDemo2Tenant();
 
         try {
-            TenantSettings::forTenant($tenant)->setRequireTiForScanFirst(false);
+            $settings = TenantSettings::forTenant($tenant);
+            $settings->setRequireTiForScanFirst(false);
+            $settings->setReceivingEdgeMode(ReceivingEdgeMode::UnitsOnly);
             $tenant->save();
 
             [$fromSite, $toSite] = $this->createTransferSites($tenant);
 
             $suffix = (string) random_int(10000000, 99999999);
             $uri = 'urn:epc:id:sgtin:030116.3'.substr($suffix, 0, 6).'.TR'.$suffix;
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri($uri));
+            $epc = $this->epcFromUri($uri);
             $this->epcId = (int) $epc->getKey();
+            $this->receiveAtSite($fromSite, $epc);
 
             $receiveSession = app(OpenScanFirstReceivingSession::class)->handle((int) $fromSite->getKey());
             $received = app(ConfirmReceivingScan::class)->handle($receiveSession, $uri);
@@ -1332,7 +1343,8 @@ class TransferringSessionTest extends TestCase
 
             $this->assertFalse($result['ok']);
             $this->assertSame('on_open_receive', $result['effect']);
-            $this->assertSame('Already confirmed on an open receive session.', $result['message']);
+            $this->assertStringContainsString('Already confirmed on an open receive session', $result['message']);
+            $this->assertStringContainsString('#'.$receiveSession->getKey(), $result['message']);
             $this->assertSame(0, (int) $session->fresh()->confirmed_count);
 
             ReceivingScanLine::query()->where('receiving_session_id', $receiveSession->getKey())->delete();
@@ -1356,7 +1368,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::SHIP_BLOCK_EPC_URI));
+            $epc = $this->epcFromUri(self::SHIP_BLOCK_EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1383,7 +1395,8 @@ class TransferringSessionTest extends TestCase
 
             $this->assertFalse($result['ok']);
             $this->assertSame('on_open_ship', $result['effect']);
-            $this->assertSame('Already on another open ship order.', $result['message']);
+            $this->assertStringContainsString('Already on another open ship order', $result['message']);
+            $this->assertStringContainsString('#'.$shipSession->getKey(), $result['message']);
             $this->assertSame(0, (int) $session->fresh()->confirmed_count);
         } finally {
             $this->cleanup($tenant);
@@ -1404,7 +1417,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1487,7 +1500,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1552,7 +1565,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1591,7 +1604,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1630,7 +1643,7 @@ class TransferringSessionTest extends TestCase
             );
             $this->sessionId = (int) $session->getKey();
 
-            $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+            $epc = $this->epcFromUri(self::EPC_URI);
             $this->epcId = (int) $epc->getKey();
             $this->receiveAtSite($fromSite, $epc);
 
@@ -1783,7 +1796,7 @@ class TransferringSessionTest extends TestCase
         );
         $this->sessionId = (int) $session->getKey();
 
-        $epc = Epc::query()->create(Epc::materializeAttributesFromUri(self::EPC_URI));
+        $epc = $this->epcFromUri(self::EPC_URI);
         $this->epcId = (int) $epc->getKey();
         $this->receiveAtSite($fromSite, $epc);
 
@@ -1903,6 +1916,14 @@ class TransferringSessionTest extends TestCase
      * ResolveShipFromSite refuses to author from a site whose GLN falls outside the
      * organization's own GS1 company prefix, so transfer sites must be built on it.
      */
+    private function epcFromUri(string $uri): Epc
+    {
+        $attrs = Epc::materializeAttributesFromUri($uri);
+        $existing = Epc::query()->where('epc_uri', $attrs['epc_uri'])->first();
+
+        return $existing instanceof Epc ? $existing : Epc::query()->create($attrs);
+    }
+
     private function uniqueGln(): string
     {
         $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?: '03';
@@ -1988,7 +2009,7 @@ class TransferringSessionTest extends TestCase
             }
 
             if ($this->epcId !== null) {
-                \App\Models\Quarantine\QuarantineHold::query()->where('epc_id', $this->epcId)->delete();
+                QuarantineHold::query()->where('epc_id', $this->epcId)->delete();
                 DB::table('exception_epcs')->where('epc_id', $this->epcId)->delete();
                 DB::table('event_epcs')->where('epc_id', $this->epcId)->delete();
                 if (Schema::hasTable('document_epcs')) {

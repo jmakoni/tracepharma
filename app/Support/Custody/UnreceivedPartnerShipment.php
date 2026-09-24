@@ -57,7 +57,14 @@ final class UnreceivedPartnerShipment
             return false;
         }
 
-        return ! OutboundShipmentInTransit::matches($meta);
+        // Our authored shipment/transfer documents are never "someone else's
+        // shipment" — in-transit stays with OutboundShipmentInTransit; void_shipping
+        // on the same document returns the units to our dock.
+        if (OutboundShipmentInTransit::isAuthoredHandoffDocument($meta)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -71,7 +78,7 @@ final class UnreceivedPartnerShipment
      */
     public static function eventCondition(string $eventAlias = 'ev'): array
     {
-        [$authoredHandoffSql, $authoredHandoffBindings] = OutboundShipmentInTransit::eventCondition($eventAlias);
+        [$authoredHandoffSql, $authoredHandoffBindings] = OutboundShipmentInTransit::authoredHandoffDocumentCondition($eventAlias);
 
         $sql = "(
                     COALESCE({$eventAlias}.biz_step, '') LIKE ?

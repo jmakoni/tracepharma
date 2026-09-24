@@ -9,8 +9,11 @@ use App\Support\Gs1\ElementString;
 use DomainException;
 
 /**
- * Scan In only: GS1 GTIN (01) + lot (10) without serial maps to one expected ASN line.
- * Default Receive HUD never calls this.
+ * GS1 GTIN (01) + lot (10) without serial maps to one expected ASN line.
+ * Used by Scan In, Receive HUD confirm, and staged receive.
+ *
+ * Allowed only on explicitly lot-level inbound ASN sessions (no expected SSCC / hierarchy).
+ * Transfer receive and serialized ASN require (00) or (01)+(21).
  */
 final class ResolveLotLevelReceiveScan
 {
@@ -28,8 +31,16 @@ final class ResolveLotLevelReceiveScan
             return $scan;
         }
 
+        if ($session->isTransferReceive()) {
+            $this->rejectRequireSerialScan();
+        }
+
         if (! $session->isInboundAsn()) {
             throw new DomainException('Lot-level scan needs a matching ASN line, or scan the 2D serial.');
+        }
+
+        if (! $session->isLotLevelInboundAsn()) {
+            $this->rejectRequireSerialScan();
         }
 
         $matches = ReceivingScanLine::query()
@@ -52,5 +63,13 @@ final class ResolveLotLevelReceiveScan
         }
 
         return (string) $epc->epc_uri;
+    }
+
+    /**
+     * Existing Scan In rejection — not a new exception taxonomy.
+     */
+    private function rejectRequireSerialScan(): never
+    {
+        throw new DomainException('Scan the 2D serial.');
     }
 }

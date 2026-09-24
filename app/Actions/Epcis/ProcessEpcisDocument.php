@@ -5,6 +5,8 @@ namespace App\Actions\Epcis;
 use App\Actions\Labeling\StampSsccBatchCommissionedFromDocument;
 use App\Actions\Receiving\AttachInboundDocumentToShipment;
 use App\Actions\Receiving\AutoReceiveCmoInboundDocument;
+use App\Actions\Receiving\RecheckInboundDocumentExceptions;
+use App\Actions\Receiving\SyncInboundExpectedLinesFromDocument;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -15,6 +17,7 @@ use App\Services\Epcis\EpcisJsonLd20Parser;
 use App\Services\Epcis\EpcisXml20Parser;
 use App\Services\Epcis\EpcisXmlParser;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Epcis\DetectDscsaGuidelineRelease;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\EpcisXmlReader;
 use App\Support\Epcis\LiveAcceptedEpcisEventId;
@@ -180,8 +183,8 @@ final class ProcessEpcisDocument
                         if (! $dscsaPromoted) {
                             $bizStep = strtolower((string) ($eventData['biz_step'] ?? ''));
                             if ($bizStep !== '' && str_contains($bizStep, 'shipping')) {
-                                app(PromoteDscsaShippingExtensions::class)->handle($document, $eventData);
-                                $dscsaPromoted = true;
+                                $dscsaPromoted = app(PromoteDscsaShippingExtensions::class)
+                                    ->handle($document, $eventData);
                             }
                         }
 
@@ -253,6 +256,10 @@ final class ProcessEpcisDocument
                 app(RecordDestinationGlnMismatch::class)->handle($document);
             }
 
+            if (class_exists(RecordInboundErrorDeclaration::class)) {
+                app(RecordInboundErrorDeclaration::class)->handle($document);
+            }
+
             if (class_exists(RecordScheduledProductMissingDea::class)) {
                 app(RecordScheduledProductMissingDea::class)->handle($document);
             }
@@ -260,10 +267,18 @@ final class ProcessEpcisDocument
             app(ValidateEpcis12Document::class)->handle($document, $absolutePath);
             $document->refresh();
 
+            // Dual-run Domain hard gate: soft signal only — never flip out of validated.
+            // Ingest truth remains ValidateEpcis12Document (no ValidateAndCommitEpcisDocumentJob).
+            $this->recordDomainHardGateSoftSignal($document);
+
             if ($document->status === 'validated') {
                 app(StampSsccBatchCommissionedFromDocument::class)->handle($document);
                 app(AttachInboundDocumentToShipment::class)
                     ->expandOpenSessionAfterDocumentEligible($document->fresh());
+                // Expand already syncs when eligible; call Sync again so blank-ASN
+                // docs that attach late still get expected lines even if expand no-ops.
+                app(SyncInboundExpectedLinesFromDocument::class)
+                    ->handle($document->fresh() ?? $document, allowCorrection: true);
 
                 if ($document->inbound_connection_id !== null) {
                     $inboundConnection = InboundConnection::query()->find($document->inbound_connection_id);
@@ -325,6 +340,17 @@ final class ProcessEpcisDocument
 
             $this->recordDroppedEpcUriExceptions($document);
             $this->flushSharedIlmdLotMismatchExceptions($document);
+
+            if ((string) ($document->direction ?? '') === 'inbound') {
+                try {
+                    app(RecheckInboundDocumentExceptions::class)->handle($document->refresh());
+                } catch (Throwable $recheckError) {
+                    Log::warning('exception.honesty.ingest_recheck_failed', [
+                        'document_id' => $document->getKey(),
+                        'message' => $recheckError->getMessage(),
+                    ]);
+                }
+            }
 
             return $document->refresh();
         } catch (Throwable $e) {
@@ -783,6 +809,20 @@ final class ProcessEpcisDocument
         if (Schema::hasColumn('epcis_documents', 'sender_gln')) {
             $attributes['sender_gln'] = $parsed['sender_gln'] ?? null;
             $attributes['receiver_gln'] = $parsed['receiver_gln'] ?? null;
+        }
+
+        if (Schema::hasColumn('epcis_documents', 'dscsa_guideline_release')) {
+            $payloadPath = null;
+            try {
+                if (filled($document->payload_path)) {
+                    $payloadPath = $document->materializePayloadPath();
+                }
+            } catch (Throwable) {
+                $payloadPath = null;
+            }
+
+            $detection = DetectDscsaGuidelineRelease::fromPath($payloadPath);
+            $attributes['dscsa_guideline_release'] = $detection->mixed ? null : $detection->release;
         }
 
         $document->forceFill($attributes)->save();
@@ -1555,7 +1595,16 @@ final class ProcessEpcisDocument
         }
 
         $lotNumber = $ilmd['lot_number'] ?? null;
-        $expiryDate = $this->normalizeDate($ilmd['expiry_date'] ?? null);
+        $rawExpiry = $ilmd['expiry_date'] ?? null;
+        $expiryDate = $this->normalizeDate($rawExpiry);
+        $incomingRedacted = $this->isIlmdExpiryRedactionSentinel($rawExpiry)
+            || $this->isIlmdExpiryRedactionSentinel($expiryDate);
+        if ($incomingRedacted) {
+            $expiryDate = null;
+            $extra = is_array($ilmd['extra_json'] ?? null) ? $ilmd['extra_json'] : [];
+            $extra['expiry_redacted'] = true;
+            $ilmd['extra_json'] = $extra;
+        }
         $manufacturingDate = $this->normalizeDate($ilmd['manufacturing_date'] ?? null);
         $bestBeforeDate = $this->normalizeDate($ilmd['best_before_date'] ?? null);
         $additionalId = filled($ilmd['additional_id'] ?? null)
@@ -1615,6 +1664,9 @@ final class ProcessEpcisDocument
             if ($existing !== null) {
                 $existingLot = $existing->lot_number;
                 $existingExpiry = $this->normalizeDate($existing->expiry_date ?? null);
+                if ($this->isIlmdExpiryRedactionSentinel($existingExpiry)) {
+                    $existingExpiry = null;
+                }
                 $incomingLot = $lotNumber;
                 $incomingExpiry = $expiryDate;
 
@@ -1656,6 +1708,18 @@ final class ProcessEpcisDocument
                         $keptExtraJson = json_encode($existingExtra, JSON_THROW_ON_ERROR);
                     }
                 }
+            }
+
+            if ($incomingRedacted || $this->isIlmdExpiryRedactionSentinel($keptExpiry)) {
+                $keptExpiry = null;
+                $keptExtra = is_string($keptExtraJson) && $keptExtraJson !== ''
+                    ? json_decode($keptExtraJson, true)
+                    : [];
+                if (! is_array($keptExtra)) {
+                    $keptExtra = [];
+                }
+                $keptExtra['expiry_redacted'] = true;
+                $keptExtraJson = json_encode($keptExtra, JSON_THROW_ON_ERROR);
             }
 
             $row = [
@@ -1731,6 +1795,15 @@ final class ProcessEpcisDocument
         }
 
         return $left !== $right;
+    }
+
+    private function isIlmdExpiryRedactionSentinel(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        return EpcisXmlReader::isExpiryRedactionSentinel((string) $value);
     }
 
     /**
@@ -1846,6 +1919,33 @@ final class ProcessEpcisDocument
         // MISSING_BIZ_TRANSACTION is emitted by EpcisCatalogBusinessRules.
 
         $this->recordIncompleteProductMasterDataExceptions($document, $productClasses, $documentEpcUris);
+    }
+
+    /**
+     * Post-catalog Domain hard-gate soft signal. Records Domain failures into
+     * epcis_exceptions without changing document status. Unexpected errors are
+     * logged so ingest never breaks.
+     */
+    private function recordDomainHardGateSoftSignal(EpcisDocument $document): void
+    {
+        try {
+            $result = app(RunDomainEpcisHardGate::class)->handle($document);
+
+            if (! $result->isFailed() || $result->failure === null) {
+                return;
+            }
+
+            app(RecordEpcisValidationFailure::class)->handle(
+                $document,
+                $result->failure,
+                blocking: false,
+            );
+        } catch (Throwable $e) {
+            Log::warning('epcis.domain_hard_gate.soft_signal_failed', [
+                'document_id' => (int) $document->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

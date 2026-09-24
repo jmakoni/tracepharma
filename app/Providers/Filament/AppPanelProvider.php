@@ -9,9 +9,11 @@ use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsureLegalAcceptance;
 use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Http\Middleware\EnsureTenantIsActive;
+use App\Http\Middleware\RedirectUnmappedFloorShell;
 use App\Models\User;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
+use App\Support\Floor\FloorRouteMap;
 use BokshornIt\FilamentActivityTimeline\ActivityTimelinePlugin;
 use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
@@ -36,6 +38,7 @@ use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
 use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
+use Zvizvi\FilamentColumnFilters\FilamentColumnFiltersPlugin;
 use Zvizvi\FilamentNotificationsTabs\FilamentNotificationsTabsPlugin;
 
 class AppPanelProvider extends PanelProvider
@@ -50,10 +53,15 @@ class AppPanelProvider extends PanelProvider
             ->authPasswordBroker('users')
             ->authGuard('web')
             ->brandName('TracePharma')
-            ->brandLogo(asset('images/brand/logo.svg'))
-            ->darkModeBrandLogo(asset('images/brand/logo-dark.svg'))
+            ->brandLogo(fn (): string => FloorRouteMap::isFloorPath()
+                ? asset('images/brand/logo-mark.svg')
+                : asset('images/brand/logo.svg'))
+            ->darkModeBrandLogo(fn (): string => FloorRouteMap::isFloorPath()
+                ? asset('images/brand/logo-mark.svg')
+                : asset('images/brand/logo-dark.svg'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('images/brand/logo-mark.svg'))
+            ->homeUrl(fn (): string => Dashboard::getUrl(panel: 'app'))
             ->colors([
                 'primary' => Color::hex('#51BC8F'),
                 'secondary' => Color::hex('#838589'),
@@ -81,6 +89,7 @@ class AppPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => implode('', [
+                    '<script src="'.e($this->versionedPublicJs('js/tp-floor-viewport.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-scan-sounds.js')).'" data-navigate-track></script>',
@@ -108,10 +117,8 @@ class AppPanelProvider extends PanelProvider
                 FilamentUiExtrasPlugin::make()
                     ->stickyTableActions(true)
             )
-            ->plugin(
-                StickyTableHeaderPlugin::make()
-                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
-            );
+            ->plugin(StickyTableHeaderPlugin::make())
+            ->plugin(FilamentColumnFiltersPlugin::make());
 
         $panel = OptionalFilamentPlugins::register(
             $panel,
@@ -179,6 +186,7 @@ class AppPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                RedirectUnmappedFloorShell::class,
                 EnsureAccountIsUsable::class.':web',
                 EnsurePasswordChangeRequired::class,
                 EnsureLegalAcceptance::class,
@@ -188,6 +196,10 @@ class AppPanelProvider extends PanelProvider
                 fn (): string => view('filament.app.hooks.impersonation-banner')->render()
                     .view('filament.app.hooks.legal-acceptance-banner')->render()
                     .view('filament.app.hooks.tenant-announcement-banner')->render(),
+            )
+            ->renderHook(
+                PanelsRenderHook::BODY_START,
+                fn (): string => view('filament.app.partials.floor-desktop-gate')->render(),
             )
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,

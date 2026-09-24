@@ -7,6 +7,7 @@
     'confirmLabel' => 'Confirm',
     'showCamera' => false,
     'submitAction' => 'confirmScan',
+    'submitMethod' => null,
     'variant' => 'floor',
 ])
 
@@ -79,7 +80,13 @@
     x-on:destroy="stopCamera()"
 >
     <form
-        wire:submit.prevent="mountAction('{{ $submitAction }}')"
+        @if (filled($submitMethod))
+            x-on:submit.prevent="$wire.{{ $submitMethod }}($refs.scanInput.value)"
+            x-on:keydown.enter.prevent="$wire.{{ $submitMethod }}($refs.scanInput.value)"
+        @else
+            x-on:submit.prevent="$wire.set(@js($wireModel), $refs.scanInput.value).then(() => $wire.mountAction(@js($submitAction)))"
+            x-on:keydown.enter.prevent="$wire.set(@js($wireModel), $refs.scanInput.value).then(() => $wire.mountAction(@js($submitAction)))"
+        @endif
         x-init="$nextTick(() => $refs.scanInput?.focus())"
         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
         class="flex flex-col gap-3"

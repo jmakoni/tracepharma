@@ -160,6 +160,9 @@
           </gs1ushc:directPurchase>
           <gs1ushc:receivedDirectPurchaseFromPrevWhlsDist qualifier="PARTIALLY_DIRECT">
             <gs1ushc:receivedDirectPurchaseFromPrevWhlsDistStatement>Seller affirms receipt of directly purchased statement from previous wholesaler distributor for the indicated product(s).</gs1ushc:receivedDirectPurchaseFromPrevWhlsDistStatement>
+            <gs1ushc:prevReceivedinDirectPurchaseEPCs>
+              <epc>urn:epc:id:sgtin:030116.0200116.10000082001560</epc>
+            </gs1ushc:prevReceivedinDirectPurchaseEPCs>
           </gs1ushc:receivedDirectPurchaseFromPrevWhlsDist>
         </extension>
       </ObjectEvent>

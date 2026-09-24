@@ -8,12 +8,14 @@ use App\Enums\ExceptionActivityKind;
 use App\Enums\ExceptionActivityVisibility;
 use App\Enums\ExceptionStatus;
 use App\Exceptions\DuplicateEpcisUploadException;
+use App\Exceptions\InboundReceiverGlnRejected;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\TradingPartner;
 use App\Services\Exceptions\ExceptionService;
 use App\Services\Quarantine\QuarantineService;
 use App\Services\Quarantine\SupplierQuarantineTableBuilder;
+use App\Support\Epcis\AssertInboundReceiverGln;
 use App\Support\Epcis\EpcisSchemaVersion;
 use App\Support\Epcis\Exceptions\GroupDocumentExceptionSignals;
 use App\Support\Exceptions\ExceptionReceiveImpactMap;
@@ -250,6 +252,25 @@ class SupplierQuarantineController extends Controller
 
         try {
             $this->assertEpcis12Schema($absolutePath);
+
+            try {
+                AssertInboundReceiverGln::assertBelongsToCurrentTenant((string) file_get_contents($absolutePath));
+            } catch (InboundReceiverGlnRejected $e) {
+                $case->logActivity(
+                    ExceptionActivityKind::Comment,
+                    null,
+                    '[Supplier] Corrected EPCIS rejected: '.$e->getMessage(),
+                    ExceptionActivityVisibility::Partner,
+                    [
+                        'source' => 'supplier_quarantine_page',
+                        'rejected' => true,
+                    ],
+                );
+
+                return redirect()
+                    ->to(app(QuarantineService::class)->signedSupplierUrl($case))
+                    ->withErrors(['file' => $e->getMessage()]);
+            }
 
             $document = app(ReceiveEpcisUpload::class)->handle($absolutePath, [
                 'direction' => 'inbound',

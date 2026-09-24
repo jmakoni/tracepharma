@@ -213,6 +213,154 @@ class ResolveGlnToMasterDataTest extends TestCase
     }
 
     #[Test]
+    public function it_matches_a_read_point_stored_as_gln_digits_without_prefix_walk(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $source = (string) file_get_contents(base_path('app/Actions/Epcis/ResolveGlnToMasterData.php'));
+            $this->assertStringNotContainsString('range(6, 11)', $source);
+            $this->assertStringNotContainsString('range(6,11)', $source);
+
+            $partner = TradingPartner::query()->create([
+                'name' => 'Stored GLN Parent '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $partner->id;
+
+            $site = Site::query()->create([
+                'trading_partner_id' => $partner->id,
+                'name' => 'Stored GLN Site '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantSiteIds[] = (int) $site->id;
+
+            $body12 = '0620'.str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+            $readPointGln = $body12.Gtin::checkDigit($body12);
+
+            $readPoint = ReadPoint::query()->create([
+                'site_id' => $site->id,
+                'name' => 'Dock GLN '.uniqid(),
+                'code' => 'RP-GLN-'.strtoupper(uniqid()),
+                'sgln' => $readPointGln,
+                'is_active' => true,
+            ]);
+            $this->tenantReadPointIds[] = (int) $readPoint->id;
+
+            $result = app(ResolveGlnToMasterData::class)->handle($readPointGln);
+
+            $this->assertSame((int) $readPoint->id, $result['read_point_id']);
+        } finally {
+            $this->cleanupIntegrationFixtures();
+        }
+    }
+
+    #[Test]
+    public function it_resolves_read_point_when_input_is_stored_sgln_urn(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = TradingPartner::query()->create([
+                'name' => 'URN Input Parent '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $partner->id;
+
+            $site = Site::query()->create([
+                'trading_partner_id' => $partner->id,
+                'name' => 'URN Input Site '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantSiteIds[] = (int) $site->id;
+
+            $body12 = '0621'.str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+            $readPointGln = $body12.Gtin::checkDigit($body12);
+            $sgln = Sgln::toUrn($readPointGln, 7, '1');
+            $this->assertNotNull($sgln);
+
+            $readPoint = ReadPoint::query()->create([
+                'site_id' => $site->id,
+                'name' => 'Dock URN '.uniqid(),
+                'code' => 'RP-URN-'.strtoupper(uniqid()),
+                'sgln' => $sgln,
+                'is_active' => true,
+            ]);
+            $this->tenantReadPointIds[] = (int) $readPoint->id;
+
+            $result = app(ResolveGlnToMasterData::class)->handle($sgln);
+
+            $this->assertSame((int) $readPoint->id, $result['read_point_id']);
+            $this->assertSame($readPointGln, $result['gln']);
+        } finally {
+            $this->cleanupIntegrationFixtures();
+        }
+    }
+
+    #[Test]
+    public function it_does_not_match_read_point_when_only_six_digit_prefix_overlaps(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = TradingPartner::query()->create([
+                'name' => 'Prefix Overlap Parent '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'partner_type' => PartnerType::Wholesaler,
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantPartnerIds[] = (int) $partner->id;
+
+            $site = Site::query()->create([
+                'trading_partner_id' => $partner->id,
+                'name' => 'Prefix Overlap Site '.uniqid(),
+                'gln' => fake()->unique()->numerify('#############'),
+                'country_code' => 'US',
+                'is_active' => true,
+            ]);
+            $this->tenantSiteIds[] = (int) $site->id;
+
+            $storedBody12 = '0622'.str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+            $storedGln = $storedBody12.Gtin::checkDigit($storedBody12);
+            $sgln = Sgln::toUrn($storedGln, 6, '0');
+            $this->assertNotNull($sgln);
+
+            $readPoint = ReadPoint::query()->create([
+                'site_id' => $site->id,
+                'name' => 'Dock Prefix '.uniqid(),
+                'code' => 'RP-PX-'.strtoupper(uniqid()),
+                'sgln' => $sgln,
+                'is_active' => true,
+            ]);
+            $this->tenantReadPointIds[] = (int) $readPoint->id;
+
+            $overlapBody12 = substr($storedGln, 0, 6).'199999';
+            $overlapGln = $overlapBody12.Gtin::checkDigit($overlapBody12);
+            $this->assertNotSame($storedGln, $overlapGln);
+            $this->assertSame(substr($storedGln, 0, 6), substr($overlapGln, 0, 6));
+
+            $this->assertNull(app(ResolveGlnToMasterData::class)->handle($overlapGln)['read_point_id']);
+            $this->assertSame(
+                (int) $readPoint->id,
+                app(ResolveGlnToMasterData::class)->handle($storedGln)['read_point_id'],
+            );
+        } finally {
+            $this->cleanupIntegrationFixtures();
+        }
+    }
+
+    #[Test]
     public function it_returns_nulls_when_gln_is_unmatched(): void
     {
         $this->initializeDemo2Tenant();

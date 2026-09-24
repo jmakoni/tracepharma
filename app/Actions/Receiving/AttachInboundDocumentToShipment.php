@@ -11,13 +11,18 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Attach an inbound EPCIS document to an ASN shipment (seller + ASN), emit soft
- * signal when a second file joins, and expand any open receiving session's expected parents.
+ * signal when a second file joins, and expand every open/in_progress receiving
+ * session's expected parents (parallel-safe; oldest session claims first).
+ *
+ * When ASN is blank, uses synthetic key DOC:{document_uuid} so every inbound file
+ * still groups to a shipment row (unique per document).
  */
 final class AttachInboundDocumentToShipment
 {
     public function __construct(
         private readonly RecordOperationalEpcisException $recordException,
         private readonly ExpandReceivingSessionExpectedParents $expandExpectedParents,
+        private readonly ResolveAsnRootParentEpcIds $resolveAsnRootParentEpcIds,
     ) {}
 
     public function handle(EpcisDocument $document): ?InboundShipment
@@ -31,12 +36,17 @@ final class AttachInboundDocumentToShipment
             return null;
         }
 
-        $asn = trim((string) ($document->asn_number ?? ''));
-        if ($asn === '') {
+        $rawAsn = trim((string) ($document->asn_number ?? ''));
+        $isRealAsn = $rawAsn !== '';
+        $asn = $isRealAsn
+            ? $rawAsn
+            : 'DOC:'.trim((string) ($document->document_uuid ?? ''));
+
+        if ($asn === 'DOC:' || $asn === '') {
             return null;
         }
 
-        return DB::transaction(function () use ($document, $asn): ?InboundShipment {
+        return DB::transaction(function () use ($document, $asn, $isRealAsn): ?InboundShipment {
             $document = EpcisDocument::query()
                 ->whereKey($document->getKey())
                 ->lockForUpdate()
@@ -63,7 +73,8 @@ final class AttachInboundDocumentToShipment
                     ? trim((string) $shipment->customer_po)
                     : null;
 
-                if ($existingPo !== null && $po !== null && $existingPo !== $po) {
+                // PO mismatch soft-exception only for real ASNs (not DOC: synthetic keys).
+                if ($isRealAsn && $existingPo !== null && $po !== null && $existingPo !== $po) {
                     $this->recordException->handle(
                         $document,
                         'ASN_SHIPMENT_PO_MISMATCH',
@@ -88,7 +99,7 @@ final class AttachInboundDocumentToShipment
                     'trading_partner_key' => $partnerKey,
                     'asn_number' => $asn,
                     'customer_po' => $po,
-                    'status' => 'open',
+                    'status' => 'expected',
                     'document_count' => 0,
                 ]);
             }
@@ -135,47 +146,58 @@ final class AttachInboundDocumentToShipment
             return;
         }
 
-        $session = ReceivingSession::query()
+        // Expand every live session (not only newest). Oldest first so an active
+        // session claims free addendum parents before an empty parallel opener.
+        $sessions = ReceivingSession::query()
             ->where('inbound_shipment_id', $shipment->getKey())
             ->whereIn('status', ['open', 'in_progress'])
-            ->orderByDesc('id')
-            ->first();
+            ->orderBy('id')
+            ->get();
 
-        if ($session === null) {
+        if ($sessions->isEmpty()) {
             return;
         }
 
         $requireValidated = (bool) config('tracepharma.epcis.require_validated_for_receiving', true);
         $allowed = $requireValidated ? ['validated'] : ['parsed', 'validated'];
-        $opener = app(OpenReceivingSessionFromDocument::class);
 
         // Only expand from documents that are already receiving-eligible. Joining
         // files attach during enrich (pre-validate); their roots are added once validated.
-        $rootIds = $opener->resolveUnionRootParentEpcIds($shipment, $allowed);
+        $rootIds = $this->resolveAsnRootParentEpcIds->resolveUnionRootParentEpcIds($shipment, $allowed);
         if (in_array((string) ($joiningDocument->status ?? ''), $allowed, true)) {
             $rootIds = array_values(array_unique(array_merge(
                 $rootIds,
-                $opener->resolveRootParentEpcIds($joiningDocument),
+                $this->resolveAsnRootParentEpcIds->resolveRootParentEpcIds($joiningDocument),
             )));
         }
 
-        $this->expandExpectedParents->handle($session, $rootIds);
+        foreach ($sessions as $session) {
+            $this->expandExpectedParents->handle($session, $rootIds);
+        }
 
-        if ($shipment->status === 'open') {
-            $shipment->forceFill(['status' => 'receiving'])->save();
+        // Order status vocab is expected|open|complete|cancelled — do not mutate to legacy 'receiving'.
+        // Map any stale 'receiving' row to 'open' when expanding.
+        if ((string) ($shipment->status ?? '') === 'receiving') {
+            $shipment->forceFill(['status' => 'open'])->save();
         }
     }
 
     /**
-     * After a joining ASN file becomes receiving-eligible, expand any open session.
+     * After a joining ASN file becomes receiving-eligible, sync expected inbound
+     * lines then expand every open session so claims can succeed.
      */
     public function expandOpenSessionAfterDocumentEligible(EpcisDocument $document): void
     {
         if (! Schema::hasColumn('receiving_sessions', 'inbound_shipment_id')) {
+            // Still sync expected lines even when sessions column is absent.
+            $this->syncExpectedLinesIfEligible($document);
+
             return;
         }
 
         if ($document->inbound_shipment_id === null) {
+            $this->syncExpectedLinesIfEligible($document);
+
             return;
         }
 
@@ -185,11 +207,28 @@ final class AttachInboundDocumentToShipment
             return;
         }
 
+        // Sync before expand so InboundExpectedLineClaims can claim addendum parents.
+        $this->syncExpectedLinesIfEligible($document);
+
         $shipment = InboundShipment::query()->find($document->inbound_shipment_id);
         if ($shipment === null) {
             return;
         }
 
-        $this->expandOpenReceivingSession($shipment, $document);
+        $this->expandOpenReceivingSession($shipment, $document->fresh() ?? $document);
+    }
+
+    private function syncExpectedLinesIfEligible(EpcisDocument $document): void
+    {
+        $requireValidated = (bool) config('tracepharma.epcis.require_validated_for_receiving', true);
+        $allowed = $requireValidated ? ['validated'] : ['parsed', 'validated'];
+        if (! in_array((string) ($document->status ?? ''), $allowed, true)) {
+            return;
+        }
+
+        app(SyncInboundExpectedLinesFromDocument::class)->handle(
+            $document->fresh() ?? $document,
+            allowCorrection: true,
+        );
     }
 }

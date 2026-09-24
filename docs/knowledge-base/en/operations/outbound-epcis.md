@@ -46,7 +46,7 @@ Do not treat the live event table alone as the TI document. Custody and inventor
 
 Outbound shipping rebuilds manufacturer commission and packing by **replaying lossless DB pedigree XML fragments** (preferred) or **retained inbound / Guardian-authored payloads**, then appends the wholesaler shipping ObjectEvent. Packing `childEPCs` are filtered to the **current open aggregation tree** (removed cases stripped from TI only; fragment history kept for later ship). Fragments are written on successful ingest so TI survives payload file loss.
 
-**Retry transmit** mints a new SBDH InstanceIdentifier and a new outbound filename stamped at prepare time (not the original ship event time); for shipping docs it rebuilds TI from confirmed parents + open hierarchy (ship `eventTime` in XML unchanged), validates GS1 EPCIS 1.2 / GS1 US R1.3 (including portal), replaces the portal-facing file, then transmits. Unpack a case or unconfirm a pallet (allowed when transmission is failed/skipped) before retry when hierarchy changed.
+**Retry transmit** mints a new SBDH InstanceIdentifier and a new outbound filename stamped at prepare time (not the original ship event time); for shipping docs it rebuilds TI from confirmed parents + open hierarchy (ship `eventTime` in XML unchanged), validates EPCIS schema 1.2 XML against the partner’s GS1 US DSCSA guideline (R1.2 or R1.3), including portal, replaces the portal-facing file, then transmits. Unpack a case or unconfirm a pallet (allowed when transmission is failed/skipped) before retry when hierarchy changed.
 
 Backfill existing tenants: `php artisan tracepharma:epcis-backfill-pedigree-fragments --tenant=…`
 

@@ -58,6 +58,44 @@ XML;
     }
 
     #[Test]
+    public function it_extracts_error_declaration_nested_in_base_extension(): void
+    {
+        $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<epcis:EPCISDocument xmlns:epcis="urn:epcglobal:epcis:xsd:1" schemaVersion="1.2" creationDate="2026-07-15T20:15:49.056Z">
+  <EPCISBody>
+    <EventList>
+      <ObjectEvent>
+        <eventTime>2026-06-18T23:27:32.897Z</eventTime>
+        <eventTimeZoneOffset>-05:00</eventTimeZoneOffset>
+        <epcList>
+          <epc>urn:epc:id:sgtin:030116.0200116.10000082001560</epc>
+        </epcList>
+        <action>OBSERVE</action>
+        <baseExtension>
+          <eventID>urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</eventID>
+          <errorDeclaration>
+            <declarationTime>2026-06-19T01:00:00.000Z</declarationTime>
+            <reason>urn:epcglobal:cbv:er:incorrect_data</reason>
+          </errorDeclaration>
+        </baseExtension>
+      </ObjectEvent>
+    </EventList>
+  </EPCISBody>
+</epcis:EPCISDocument>
+XML;
+
+        $path = $this->writeTempXml($xml);
+        $parsed = (new EpcisXmlReader)->parse($path);
+        @unlink($path);
+
+        $this->assertSame(
+            'urn:epcglobal:cbv:er:incorrect_data',
+            $parsed['events'][0]['error_declaration']['reason'] ?? null,
+        );
+    }
+
+    #[Test]
     public function it_parses_transformation_input_and_output_epc_lists(): void
     {
         $xml = <<<'XML'

@@ -37,6 +37,7 @@ final class EpcisCbv20Mapper
         'inventory_check' => 'urn:epcglobal:cbv:bizstep:stock_taking',
         'dispensing' => 'urn:epcglobal:cbv:bizstep:dispensing',
         'repackaging' => 'urn:epcglobal:cbv:bizstep:repackaging',
+        'transforming' => 'urn:epcglobal:cbv:bizstep:transforming',
         'sampling' => 'urn:epcglobal:cbv:bizstep:sampling',
         'reserving' => 'urn:epcglobal:cbv:bizstep:reserving',
     ];

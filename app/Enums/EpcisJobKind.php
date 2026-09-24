@@ -17,6 +17,9 @@ enum EpcisJobKind: string
     case OutboundDestroy = 'outbound_destroy'; // reserved
     case OutboundReturning = 'outbound_returning';
     case OutboundCommissioning = 'outbound_commissioning';
+    case OutboundTransformation = 'outbound_transformation';
+    case OutboundDispensing = 'outbound_dispensing';
+    case OutboundInspecting = 'outbound_inspecting';
     case OutboundApi = 'outbound_api';
 
     public function label(): string
@@ -33,6 +36,9 @@ enum EpcisJobKind: string
             self::OutboundDestroy => 'Destroy',
             self::OutboundReturning => 'Returning',
             self::OutboundCommissioning => 'Commissioning',
+            self::OutboundTransformation => 'Transformation',
+            self::OutboundDispensing => 'Dispensing',
+            self::OutboundInspecting => 'Inspecting',
             self::OutboundApi => 'Outbound API',
         };
     }
@@ -49,6 +55,9 @@ enum EpcisJobKind: string
             self::OutboundDecommission,
             self::OutboundReturning,
             self::OutboundCommissioning,
+            self::OutboundTransformation,
+            self::OutboundDispensing,
+            self::OutboundInspecting,
             self::OutboundApi,
         ], true);
     }
@@ -70,6 +79,9 @@ enum EpcisJobKind: string
             EpcisAuthoredKind::Decommissioning => self::OutboundDecommission,
             EpcisAuthoredKind::Returning => self::OutboundReturning,
             EpcisAuthoredKind::Commissioning => self::OutboundCommissioning,
+            EpcisAuthoredKind::Transformation => self::OutboundTransformation,
+            EpcisAuthoredKind::Dispensing => self::OutboundDispensing,
+            EpcisAuthoredKind::Inspecting => self::OutboundInspecting,
         };
     }
 }

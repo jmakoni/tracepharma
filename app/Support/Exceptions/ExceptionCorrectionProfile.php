@@ -223,7 +223,7 @@ final class ExceptionCorrectionProfile
 
         $code = strtoupper(trim((string) $case->type?->code));
 
-        if ($code !== 'PARTIAL_SHIPMENT_UNDECLARED') {
+        if (! in_array($code, ['PARTIAL_SHIPMENT_UNDECLARED', 'SHORTAGE', 'DATA_NO_PRODUCT'], true)) {
             return true;
         }
 
@@ -466,6 +466,7 @@ final class ExceptionCorrectionProfile
 
         // Aggregation & Hierarchy
         'BROKEN_AGGREGATION' => self::FAMILY_AGGREGATION,
+        'AGGREGATION_BREAK' => self::FAMILY_AGGREGATION,
         'MISSING_PARENT' => self::FAMILY_AGGREGATION,
         'MISSING_CHILDREN' => self::FAMILY_AGGREGATION,
         'AGGREGATION_QUANTITY_MISMATCH' => self::FAMILY_AGGREGATION,
@@ -481,7 +482,17 @@ final class ExceptionCorrectionProfile
         'MISSING_EXPIRY' => self::FAMILY_DOCUMENT,
         'EXPIRED_PRODUCT_SHIPPED' => self::FAMILY_QUARANTINE,
         'MIXED_EXPIRY_SAME_LOT' => self::FAMILY_DOCUMENT,
-        'PARTIAL_SHIPMENT_UNDECLARED' => self::FAMILY_DOCUMENT, // hook-only today
+        'PARTIAL_SHIPMENT_UNDECLARED' => self::FAMILY_DOCUMENT, // reason only on receive desk
+        'SHORTAGE' => self::FAMILY_DOCUMENT,
+        'OVERAGE' => self::FAMILY_DOCUMENT,
+        'DATA_NO_PRODUCT' => self::FAMILY_DOCUMENT,
+        'PRODUCT_NO_DATA' => self::FAMILY_DOCUMENT,
+        'PI_MISMATCH' => self::FAMILY_DOCUMENT,
+        'WRONG_DESTINATION' => self::FAMILY_DOCUMENT,
+        'LATE_FAILED_EPCIS' => self::FAMILY_DOCUMENT,
+        'WRONG_ITEM' => self::FAMILY_DOCUMENT,
+        'REFUSED' => self::FAMILY_DOCUMENT,
+        'DAMAGED' => self::FAMILY_QUARANTINE,
         'OVER_SHIPMENT' => self::FAMILY_DOCUMENT, // hook-only today
 
         // Timing & Sequence
@@ -501,7 +512,9 @@ final class ExceptionCorrectionProfile
         'ENCODING_ERROR' => self::FAMILY_DOCUMENT, // hook-only today
         'MISSING_SOURCE_DESTINATION' => self::FAMILY_DOCUMENT,
         'MISSING_BIZ_TRANSACTION' => self::FAMILY_DOCUMENT,
+        'CASE_ONLY_PALLET_COVERED' => self::FAMILY_DOCUMENT, // ConfirmReceivingScan case_only outer pallet cover
         'ASN_SHIPMENT_FILE_ADDED' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
+        'ASN_SHIPMENT_CORRECTED' => self::FAMILY_DOCUMENT, // SyncInboundExpectedLinesFromDocument correction prune
         'ASN_SHIPMENT_PO_MISMATCH' => self::FAMILY_DOCUMENT, // AttachInboundDocumentToShipment
         'DESTINATION_OWNING_PARTY_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
         'DESTINATION_LOCATION_MISMATCH' => self::FAMILY_DOCUMENT, // RecordDestinationGlnMismatch
@@ -511,9 +524,13 @@ final class ExceptionCorrectionProfile
         'SERIAL_SHIPPED_NOT_COMMISSIONED' => self::FAMILY_QUARANTINE,
         'DECOMMISSIONED_SERIAL_SHIPPED' => self::FAMILY_QUARANTINE,
         'SUSPECT_PRODUCT' => self::FAMILY_QUARANTINE,
-        'VERIFICATION_FAILED' => self::FAMILY_QUARANTINE, // VRS hook exists but unwired; mapped for when it fires
+        'VERIFICATION_FAILED' => self::FAMILY_QUARANTINE,
+        'VOID_SHIPPING' => self::FAMILY_QUARANTINE,
+        'ERROR_DECLARATION' => self::FAMILY_DOCUMENT,
+        'INBOUND_RECEIVER_REJECTED' => self::FAMILY_DOCUMENT,
         'RETURNS_NOT_LINKED' => self::FAMILY_DOCUMENT,
         'DROP_SHIPMENT_INDICATOR_MISSING' => self::FAMILY_DOCUMENT,
+        'MIXED_DSCSA_GUIDELINE_RELEASE' => self::FAMILY_DOCUMENT,
         'OWNERSHIP_TRANSFER_UNCLEAR' => self::FAMILY_DOCUMENT,
 
         // System / Operational
@@ -610,6 +627,10 @@ final class ExceptionCorrectionProfile
             'resolutionAction' => 'request_partner_correction',
             'waive' => true,
         ],
+        'CASE_ONLY_PALLET_COVERED' => [
+            'blurb' => 'Case-only SOP auto-confirmed the outer logistics pallet after all nested cases were scanned. No pallet barcode was observed; waive after confirming the pallet SSCC was expected on the ASN.',
+            'waive' => true,
+        ],
         'OWNERSHIP_TRANSFER_UNCLEAR' => [
             'rootCause' => 'partner_data_error',
             'resolutionAction' => 'request_partner_correction',
@@ -657,6 +678,63 @@ final class ExceptionCorrectionProfile
             'resolutionAction' => 'request_partner_correction',
             'waive' => true,
         ],
+        'SHORTAGE' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
+        ],
+        'DATA_NO_PRODUCT' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
+        ],
+        'OVERAGE' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'quarantine' => true,
+            'waive' => false,
+        ],
+        'PRODUCT_NO_DATA' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'PI_MISMATCH' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'WRONG_DESTINATION' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'LATE_FAILED_EPCIS' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'WRONG_ITEM' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
+        'REFUSED' => [
+            'rootCause' => 'unknown',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => true,
+        ],
+        'DAMAGED' => [
+            'rootCause' => 'unknown',
+            'resolutionAction' => 'quarantine_product',
+            'quarantine' => true,
+            'waive' => false,
+        ],
+        'AGGREGATION_BREAK' => [
+            'rootCause' => 'partner_data_error',
+            'resolutionAction' => 'request_partner_correction',
+            'waive' => false,
+        ],
         'OVER_SHIPMENT' => [
             'rootCause' => 'partner_data_error',
             'resolutionAction' => 'request_partner_correction',
@@ -684,6 +762,10 @@ final class ExceptionCorrectionProfile
         'FILE_SIZE_EXCEEDED' => ['waive' => true],
         'ASN_SHIPMENT_FILE_ADDED' => [
             'blurb' => 'Another inbound EPCIS file joined this ASN shipment. Expected receive lines may expand; investigate only if the extra file was unexpected.',
+            'waive' => true,
+        ],
+        'ASN_SHIPMENT_CORRECTED' => [
+            'blurb' => 'A later inbound file corrected this ASN expected list. Unconfirmed serials absent from that file were cancelled; already-received serials were not changed.',
             'waive' => true,
         ],
         'ASN_SHIPMENT_PO_MISMATCH' => [

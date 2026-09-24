@@ -16,10 +16,13 @@ use App\Models\Exceptions\ExceptionType;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\Quarantine\QuarantineService;
+use App\Support\Auth\JobRoleAccess;
+use App\Support\Auth\Permissions;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Exceptions\AssortmentFromCatalog;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Filament\ProseContent;
+use App\Support\Receiving\ReceiveExceptionCondition;
 use App\Support\TenantFeatures;
 use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Support\Arr;
@@ -424,8 +427,12 @@ final class ExceptionService
      * @param  array<string, mixed>  $attributes
      * @param  list<int>  $epcIds
      */
-    public function create(array $attributes, array $epcIds = [], ?User $actor = null): ExceptionCase
-    {
+    public function create(
+        array $attributes,
+        array $epcIds = [],
+        ?User $actor = null,
+        bool $notify = true,
+    ): ExceptionCase {
         $attributes = Arr::only($attributes, self::CREATE_ATTRIBUTES);
 
         $typeId = $attributes['exception_type_id'] ?? null;
@@ -474,7 +481,10 @@ final class ExceptionService
         );
 
         $fresh = $case->fresh() ?? $case;
-        app(ExceptionNotificationDispatcher::class)->dispatchCreated($fresh);
+
+        if ($notify) {
+            app(ExceptionNotificationDispatcher::class)->dispatchCreated($fresh);
+        }
 
         return $fresh;
     }
@@ -565,11 +575,23 @@ final class ExceptionService
         if ($to === ExceptionStatus::Resolved) {
             $updates['resolved_at'] = now();
             $updates['closed_at'] = null;
+            $updates['sla_stopped_at'] = $case->sla_stopped_at ?? now();
         }
 
         if ($to === ExceptionStatus::Closed) {
             $updates['closed_at'] = now();
             $updates['resolved_at'] = $case->resolved_at ?? now();
+            $updates['sla_stopped_at'] = $case->sla_stopped_at ?? now();
+        }
+
+        if ($to === ExceptionStatus::Cleared) {
+            $updates['condition_still_true'] = false;
+            $updates['sla_stopped_at'] = $case->sla_stopped_at ?? now();
+        }
+
+        if ($to === ExceptionStatus::Overridden) {
+            $updates['resolved_at'] = now();
+            $updates['sla_stopped_at'] = $case->sla_stopped_at ?? now();
         }
 
         if ($to === ExceptionStatus::Investigating && $from === ExceptionStatus::Resolved) {
@@ -625,12 +647,15 @@ final class ExceptionService
         int $rootCauseId,
         int $resolutionActionId,
         string $resolutionNotes,
+        ?string $partnerRef = null,
     ): ExceptionCase {
         if (blank($resolutionNotes)) {
             throw ValidationException::withMessages([
                 'resolution_notes' => 'Resolution notes are required.',
             ]);
         }
+
+        $target = $this->honestyResolveTarget($case, $actor);
 
         $actionCode = ExceptionAction::query()->whereKey($resolutionActionId)->value('code');
 
@@ -650,10 +675,12 @@ final class ExceptionService
             return $this->resolveWithQuarantineProduct($case, $actor, $rootCauseId, $resolutionActionId, $resolutionNotes);
         }
 
-        $this->assertNoBlockingOpenHolds($case, 'resolve');
+        if ($target !== ExceptionStatus::Overridden) {
+            $this->assertNoBlockingOpenHolds($case, 'resolve');
+        }
 
-        if ($case->status !== ExceptionStatus::Resolved) {
-            if (! $case->status->allowsTransitionTo(ExceptionStatus::Resolved)) {
+        if ($case->status !== $target) {
+            if (! $case->status->allowsTransitionTo($target)) {
                 if ($case->status === ExceptionStatus::New) {
                     $this->transition($case, ExceptionStatus::Triaged, $actor);
                     $case->refresh();
@@ -664,7 +691,14 @@ final class ExceptionService
                 }
             }
 
-            $this->transition($case, ExceptionStatus::Resolved, $actor, 'Marked resolved.');
+            $this->transition(
+                $case,
+                $target,
+                $actor,
+                $target === ExceptionStatus::Overridden
+                    ? 'Marked overridden while condition still true.'
+                    : 'Marked resolved.',
+            );
         }
 
         $case->logActivity(
@@ -675,6 +709,8 @@ final class ExceptionService
             [
                 'root_cause_id' => $rootCauseId,
                 'resolution_action_id' => $resolutionActionId,
+                'partner_ref' => $partnerRef,
+                'honesty_status' => $target->value,
             ],
         );
 
@@ -1079,5 +1115,32 @@ final class ExceptionService
         $suffix = $signal->document_id ? ' · Document #'.$signal->document_id : '';
 
         return $type->name.$suffix;
+    }
+
+    private function honestyResolveTarget(ExceptionCase $case, User $actor): ExceptionStatus
+    {
+        $case->loadMissing('type');
+        $condition = app(ReceiveExceptionCondition::class);
+
+        if (! $condition->isPredicateGatedResolve($case)) {
+            return ExceptionStatus::Resolved;
+        }
+
+        if (! $condition->stillTrue($case)) {
+            return ExceptionStatus::Resolved;
+        }
+
+        if ($this->actorCanOverride($actor)) {
+            return ExceptionStatus::Overridden;
+        }
+
+        throw ValidationException::withMessages([
+            'resolution_notes' => 'This condition is still true. Re-check after the inbound file or serial appears, or use an override role.',
+        ]);
+    }
+
+    private function actorCanOverride(User $actor): bool
+    {
+        return JobRoleAccess::isOwner($actor) || $actor->can(Permissions::ExceptionOverride);
     }
 }

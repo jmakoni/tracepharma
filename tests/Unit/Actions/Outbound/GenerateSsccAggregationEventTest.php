@@ -89,6 +89,29 @@ class GenerateSsccAggregationEventTest extends TestCase
     }
 
     #[Test]
+    public function test_builds_hybrid_aggregation_with_instances_and_lgtin_quantity(): void
+    {
+        $label = new SsccLabel([
+            'sscc_urn' => 'urn:epc:id:sscc:030116.00000210167',
+        ]);
+        $child = 'urn:epc:id:sgtin:030116.5200116.00000000413101';
+        $lgtin = 'urn:epc:class:lgtin:030116.5200116.LOT-A';
+
+        $xml = app(GenerateSsccAggregationEvent::class)->execute(
+            $label,
+            [$child],
+            [['epcClass' => $lgtin, 'quantity' => 1]],
+            OutboundEpcisAggregationMode::Hybrid,
+            self::TEST_SETTINGS,
+        );
+
+        $this->assertStringContainsString('<childEPCs>', $xml);
+        $this->assertStringContainsString($child, $xml);
+        $this->assertStringContainsString('<childQuantityList>', $xml);
+        $this->assertStringContainsString($lgtin, $xml);
+    }
+
+    #[Test]
     public function test_full_cbv_urns_in_settings_are_not_double_prefixed(): void
     {
         $label = new SsccLabel([

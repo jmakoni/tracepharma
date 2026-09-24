@@ -106,7 +106,7 @@ final class RederiveOrganizationSglns
                 $current !== null ? [$current] : [],
                 $prefix,
                 OrganizationSglnPrefixes::forSite($location),
-            ) ?? SglnResolution::fromPrefixLength($gln, $prefix, $extension);
+            );
         }
 
         return SglnResolution::resolve($gln, $current !== null ? [$current] : [], $prefix);

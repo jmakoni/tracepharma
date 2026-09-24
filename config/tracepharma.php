@@ -25,7 +25,7 @@ return [
         'ssh_user' => env('STAGE_SSH_USER', 'www-data'),
         'deploy_path' => env('STAGE_DEPLOY_PATH', '/var/www/html/tracepharma-stage'),
     ],
-    'app_version' => env('APP_VERSION', '1.7.1'),
+    'app_version' => env('APP_VERSION', '1.8.0'),
     'demo_domains' => array_values(array_filter(array_map(
         trim(...),
         explode(',', (string) env('DEMO_DOMAINS', 'demo2.internal.vatengi.com,demo2.localhost'))
@@ -107,11 +107,19 @@ return [
         // Outbound is a transfer of ownership, so the ATP gate blocks the send.
         'enforce_atp_outbound_gate' => SafetyGate::enabled('TRACEPHARMA_EPCIS_ENFORCE_ATP_OUTBOUND'),
         'require_validated_for_receiving' => SafetyGate::enabled('TRACEPHARMA_EPCIS_REQUIRE_VALIDATED_RECEIVING'),
+        // Opt-in TI gate: MISSING_BIZ_TRANSACTION → HardBlocking when both PO and ASN empty
+        // (non-CMO ownership-change inbound). Default off preserves Soft back-compat.
+        'hard_gate_missing_biz_transaction' => SafetyGate::enabled(
+            'TRACEPHARMA_EPCIS_HARD_GATE_MISSING_BIZ_TRANSACTION',
+            default: false,
+        ),
         // Partitioning: redesign PK to include event_time before >50M rows; deferred.
         'partition_ready' => false,
 
         'validation' => [
             'default_profile' => env('TRACEPHARMA_EPCIS_VALIDATION_PROFILE', 'gs1us_r12'),
+            // Deprecated: ignored. Validation profile follows per-document
+            // DetectDscsaGuidelineRelease. Do not store one release for the tenant.
             'force_r13' => (bool) env('TRACEPHARMA_EPCIS_FORCE_R13', false),
             'hierarchy_depth_limit' => (int) env('TRACEPHARMA_EPCIS_HIERARCHY_DEPTH_LIMIT', 6),
             'future_event_skew_seconds' => (int) env('TRACEPHARMA_EPCIS_FUTURE_EVENT_SKEW', 300),

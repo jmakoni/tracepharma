@@ -102,12 +102,15 @@
                 </x-slot:context>
 
                 <x-slot:qty>
-                    <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
-                        Confirmed {{ $this->confirmedCount() }}
-                        @if ($session && (int) $session->expected_count > 0)
-                            / {{ (int) $session->expected_count }}
-                        @endif
-                    </span>
+                    @include('filament.app.partials.scanner-progress-stats', [
+                        'stats' => array_values(array_filter([
+                            ['title' => 'Confirmed', 'value' => $this->confirmedCount()],
+                            $session && (int) $session->expected_count > 0
+                                ? ['title' => 'Expected', 'value' => (int) $session->expected_count]
+                                : null,
+                        ])),
+                        'class' => 'stats stats-horizontal bg-base-200 shadow',
+                    ])
                 </x-slot:qty>
 
                 <x-slot:scan>

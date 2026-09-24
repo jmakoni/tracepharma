@@ -6,9 +6,12 @@ use App\Enums\ExceptionReceiveImpact;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
 use App\Enums\TenantProfile;
+use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionType;
+use App\Models\Receiving\InboundExpectedLine;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\Tenant;
 use Database\Seeders\ExceptionTypeSeeder;
@@ -34,6 +37,12 @@ class EpcisDocumentFloorReceiveStatusTest extends TestCase
 
     /** @var list<int> */
     private array $caseIds = [];
+
+    /** @var list<int> */
+    private array $shipmentIds = [];
+
+    /** @var list<int> */
+    private array $epcIds = [];
 
     #[Test]
     public function floor_receive_label_overlays_ingest_status_when_receiving_progresses(): void
@@ -151,6 +160,92 @@ class EpcisDocumentFloorReceiveStatusTest extends TestCase
         }
     }
 
+    #[Test]
+    public function completed_session_with_asn_remaining_is_partially_received_not_received(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $this->assertTrue(Schema::hasTable('inbound_expected_lines'));
+
+            $shipment = InboundShipment::query()->create([
+                'trading_partner_key' => 0,
+                'asn_number' => 'ASN-PARTIAL-FLOOR-'.random_int(1000, 9999),
+                'status' => 'open',
+                'document_count' => 1,
+                'expected_parent_count' => 6,
+                'confirmed_parent_count' => 2,
+                'expected_each_count' => 0,
+                'confirmed_each_count' => 0,
+            ]);
+            $this->shipmentIds[] = (int) $shipment->getKey();
+
+            $document = EpcisDocument::query()->create([
+                'document_uuid' => (string) str()->uuid(),
+                'direction' => 'inbound',
+                'creation_date' => now(),
+                'received_at' => now(),
+                'status' => 'validated',
+                'dscsa_affirm' => true,
+                'inbound_shipment_id' => $shipment->getKey(),
+            ]);
+            $this->documentIds[] = (int) $document->getKey();
+
+            for ($i = 0; $i < 6; $i++) {
+                $epc = Epc::query()->create(Epc::materializeAttributesFromUri(
+                    sprintf('urn:epc:id:sscc:030116.%011d', random_int(10000000000, 99999999999)),
+                ));
+                $this->epcIds[] = (int) $epc->getKey();
+
+                InboundExpectedLine::query()->create([
+                    'inbound_shipment_id' => $shipment->getKey(),
+                    'epc_id' => $epc->getKey(),
+                    'line_role' => 'parent',
+                    'status' => $i < 2 ? 'confirmed' : 'expected',
+                    'source' => 'epcis_ship',
+                    'confirmed_at' => $i < 2 ? now() : null,
+                ]);
+            }
+
+            $session = ReceivingSession::query()->create([
+                'epcis_document_id' => $document->getKey(),
+                'inbound_shipment_id' => $shipment->getKey(),
+                'status' => 'completed',
+                'expected_parent_count' => 2,
+                'confirmed_parent_count' => 2,
+                'expected_child_count' => 0,
+                'confirmed_child_count' => 0,
+                'opened_at' => now(),
+                'completed_at' => now(),
+            ]);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            $document->unsetRelation('receivingSession');
+            $document->unsetRelation('inboundShipment');
+            $document->load(['receivingSession', 'inboundShipment']);
+
+            $this->assertTrue($shipment->fresh()->hasRemainingExpected());
+            $this->assertSame('Partially Received', $document->floorReceiveStatusLabel());
+            $this->assertSame('warning', $document->floorReceiveStatusColor());
+            $this->assertFalse($document->isFloorReceived());
+
+            InboundExpectedLine::query()
+                ->where('inbound_shipment_id', $shipment->getKey())
+                ->where('status', 'expected')
+                ->update(['status' => 'confirmed', 'confirmed_at' => now()]);
+
+            $shipment->refreshRollups();
+            $document->unsetRelation('inboundShipment');
+            $document->load('inboundShipment');
+
+            $this->assertFalse($shipment->fresh()->hasRemainingExpected());
+            $this->assertSame('Received', $document->floorReceiveStatusLabel());
+            $this->assertTrue($document->isFloorReceived());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function initializeDemo2Tenant(): Tenant
     {
         $tenant = Tenant::query()->find(self::DEMO2_TENANT_ID);
@@ -174,12 +269,12 @@ class EpcisDocumentFloorReceiveStatusTest extends TestCase
                 '--force' => true,
             ])->assertSuccessful();
 
-            tenancy()->initialize($tenant);
-            $this->seed(ExceptionTypeSeeder::class);
             self::$demo2TenantReady = true;
-        } else {
-            tenancy()->initialize($tenant);
         }
+
+        tenancy()->initialize($tenant);
+        // Avoid $this->seed() — under tenancy it routes to db:seed requiring --tenants.
+        (new ExceptionTypeSeeder)->run();
 
         return $tenant;
     }
@@ -200,9 +295,23 @@ class EpcisDocumentFloorReceiveStatusTest extends TestCase
             $this->caseIds = [];
         }
 
+        if ($this->shipmentIds !== []) {
+            InboundExpectedLine::query()->whereIn('inbound_shipment_id', $this->shipmentIds)->delete();
+        }
+
         if ($this->documentIds !== []) {
             EpcisDocument::query()->whereIn('id', $this->documentIds)->delete();
             $this->documentIds = [];
+        }
+
+        if ($this->epcIds !== []) {
+            Epc::query()->whereIn('id', $this->epcIds)->delete();
+            $this->epcIds = [];
+        }
+
+        if ($this->shipmentIds !== []) {
+            InboundShipment::query()->whereIn('id', $this->shipmentIds)->delete();
+            $this->shipmentIds = [];
         }
 
         tenancy()->end();

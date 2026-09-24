@@ -4,10 +4,12 @@ namespace App\Actions\Receiving;
 
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
+use App\Support\Receiving\InboundExpectedLineClaims;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Add missing expected parent scan lines when a late ASN file joins an open receive session.
+ * Claims newly added parents on the session (parallel-safe).
  */
 final class ExpandReceivingSessionExpectedParents
 {
@@ -35,14 +37,25 @@ final class ExpandReceivingSessionExpectedParents
                 ->all();
 
             $existingSet = array_fill_keys($existing, true);
-            $toAdd = array_values(array_filter(
+            $candidates = array_values(array_filter(
                 $rootParentEpcIds,
                 fn (int $id): bool => ! isset($existingSet[$id]),
             ));
 
+            $claimed = InboundExpectedLineClaims::claimExpectedParents($session, $candidates);
+            // Re-assert claims for parents already on this session (resume path).
+            InboundExpectedLineClaims::claimExpectedParents($session, $existing);
+
+            $toAdd = $claimed;
+
             if ($toAdd === []) {
+                $parentCount = ReceivingScanLine::query()
+                    ->where('receiving_session_id', $session->getKey())
+                    ->where('line_role', 'parent')
+                    ->count();
+
                 $session->forceFill([
-                    'expected_parent_count' => max((int) $session->expected_parent_count, count($rootParentEpcIds)),
+                    'expected_parent_count' => $parentCount,
                 ])->save();
 
                 return $session->refresh();

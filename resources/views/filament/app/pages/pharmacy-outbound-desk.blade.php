@@ -127,6 +127,7 @@
                             placeholder="Scan SSCC or SGTIN"
                             confirm-label="ADD"
                             submit-action="confirmScan"
+                            submit-method="confirmScanInput"
                         />
                     @endif
 

@@ -4,29 +4,28 @@ namespace App\Support\Shipping;
 
 use App\Filament\App\Resources\OutboundShippingSessions\OutboundShippingSessionResource;
 use App\Models\Shipping\OutboundShippingSession;
+use App\Support\Floor\FloorLayout;
 
 /**
  * Desktop vs floor (mobile/tablet) outbound ship surfaces.
  *
- * Cookie {@see self::COOKIE}: `desktop` | `floor` forces a layout.
- * With no cookie, client Alpine redirects by viewport (&lt; lg → floor).
+ * Cookie {@see FloorLayout::COOKIE}: `desktop` | `floor` forces a layout.
+ * With no cookie, client Alpine redirects by viewport (phone/tablet → floor).
  */
 final class ShipLayout
 {
-    public const COOKIE = 'tp_ship_layout';
+    public const COOKIE = FloorLayout::COOKIE;
 
-    public const DESKTOP = 'desktop';
+    public const DESKTOP = FloorLayout::DESKTOP;
 
-    public const FLOOR = 'floor';
+    public const FLOOR = FloorLayout::FLOOR;
 
-    /** Tailwind `lg` breakpoint — floor below this width. */
-    public const BREAKPOINT_PX = 1024;
+    /** Tailwind `lg` breakpoint — desktop at/above this width. */
+    public const BREAKPOINT_PX = FloorLayout::DESKTOP_MIN_PX;
 
     public static function cookie(): ?string
     {
-        $value = request()->cookie(self::COOKIE);
-
-        return in_array($value, [self::DESKTOP, self::FLOOR], true) ? $value : null;
+        return FloorLayout::cookie();
     }
 
     /**

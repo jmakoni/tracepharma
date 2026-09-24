@@ -7,6 +7,7 @@ use App\Filament\Admin\Pages\Dashboard;
 use App\Http\Middleware\EnsureAccountIsUsable;
 use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Models\Admin;
+use App\Models\AppMenuLink;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
 use Bityukov\CommandCenter\Filament\CommandCenterPlugin;
@@ -101,7 +102,6 @@ class AdminPanelProvider extends PanelProvider
             )
             ->plugin(
                 StickyTableHeaderPlugin::make()
-                    ->shouldScrollToTopOnPageChanged(enabled: true, behavior: 'smooth')
             );
 
         $panel = OptionalFilamentPlugins::register(
@@ -152,7 +152,7 @@ class AdminPanelProvider extends PanelProvider
                     'footer' => 'Footer',
                 ])
                 ->modelSources([
-                    \App\Models\AppMenuLink::class,
+                    AppMenuLink::class,
                 ])
                 ->navigationGroup('Settings')
                 ->navigationLabel('Menus')
@@ -186,6 +186,10 @@ class AdminPanelProvider extends PanelProvider
                 EnsureAccountIsUsable::class.':admin',
                 EnsurePasswordChangeRequired::class,
             ])
+            ->renderHook(
+                PanelsRenderHook::FOOTER,
+                fn (): string => view('filament.admin.hooks.admin-footer')->render(),
+            )
             ->renderHook(
                 PanelsRenderHook::SIMPLE_PAGE_END,
                 fn (): string => view('filament.hooks.auth-legal-links')->render(),

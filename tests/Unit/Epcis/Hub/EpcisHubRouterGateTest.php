@@ -6,6 +6,7 @@ namespace Tests\Unit\Epcis\Hub;
 
 use App\Actions\Integrations\RegisterEpcisHubRoute;
 use App\Enums\InboundTransport;
+use App\Enums\PartnerType;
 use App\Enums\SerializationProvider;
 use App\Enums\TenantProfile;
 use App\Models\EpcisHubRoute;
@@ -244,7 +245,7 @@ class EpcisHubRouterGateTest extends TestCase
                 ['gln' => self::FIXTURE_SENDER_GLN],
                 [
                     'name' => 'Hub router fixture sender',
-                    'partner_type' => \App\Enums\PartnerType::Wholesaler,
+                    'partner_type' => PartnerType::Wholesaler,
                     'country_code' => 'US',
                     'is_active' => true,
                 ],
@@ -305,7 +306,7 @@ class EpcisHubRouterGateTest extends TestCase
                 ['gln' => self::FIXTURE_SENDER_GLN],
                 [
                     'name' => 'Hub router SGLN sender',
-                    'partner_type' => \App\Enums\PartnerType::Wholesaler,
+                    'partner_type' => PartnerType::Wholesaler,
                     'country_code' => 'US',
                     'is_active' => true,
                 ],
@@ -348,6 +349,19 @@ class EpcisHubRouterGateTest extends TestCase
     }
 
     #[Test]
+    public function sbdh_receiver_sgln_extension_not_zero_is_rejected(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SBDH Receiver SGLN extension is not 0');
+
+        app(EpcisHubRouter::class)->resolve(
+            'systech',
+            $this->xmlForReceiver('urn:epc:id:sgln:0366159.00001.1'),
+            'stage',
+        );
+    }
+
+    #[Test]
     public function senderless_payload_is_rejected_even_with_preferred_default_connection(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -368,7 +382,7 @@ class EpcisHubRouterGateTest extends TestCase
                 ['gln' => self::FIXTURE_SENDER_GLN],
                 [
                     'name' => 'Hub router senderless gate',
-                    'partner_type' => \App\Enums\PartnerType::Wholesaler,
+                    'partner_type' => PartnerType::Wholesaler,
                     'country_code' => 'US',
                     'is_active' => true,
                 ],
@@ -479,7 +493,7 @@ class EpcisHubRouterGateTest extends TestCase
                 ['gln' => self::FIXTURE_SENDER_GLN],
                 [
                     'name' => 'Hub router fixture sender',
-                    'partner_type' => \App\Enums\PartnerType::Wholesaler,
+                    'partner_type' => PartnerType::Wholesaler,
                     'country_code' => 'US',
                     'is_active' => true,
                 ],

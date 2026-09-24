@@ -110,6 +110,44 @@ class EmitSsccBatchCommissioningEpcisTest extends TestCase
     }
 
     #[Test]
+    public function authored_sscc_commission_xml_includes_sbdh(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            [$batch] = $this->createUncommissionedBatch($site);
+
+            app(EmitSsccBatchCommissioningEpcis::class)->execute($batch->fresh(['labels']), [
+                'site_id' => (int) $site->id,
+                'sync' => false,
+                'dispatch' => false,
+            ]);
+
+            $this->trackCommissioningArtifacts($batch);
+
+            $document = EpcisDocument::query()
+                ->where('notes', 'like', '%sscc_label_batch_id='.$batch->id.'%')
+                ->latest('id')
+                ->first();
+            $this->assertNotNull($document);
+            $xml = (string) Storage::disk($document->payload_disk)->get($document->payload_path);
+            $this->assertStringContainsString('<sbdh:StandardBusinessDocumentHeader>', $xml);
+            $this->assertStringContainsString('<sbdh:Identifier Authority="GLN">', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function successful_validated_ingest_sets_commissioned_at(): void
     {
         Storage::fake('local');

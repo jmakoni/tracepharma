@@ -3,6 +3,8 @@
 namespace App\Actions\Transferring;
 
 use App\Actions\Epcis\SyncDocumentEpcsFromEvents;
+use App\Actions\Outbound\AssertAuthoredObjectEventCandidate;
+use App\Domain\Epcis\Enums\EpcisAction;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Epcis\EpcisEvent;
@@ -21,6 +23,7 @@ use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -59,6 +62,7 @@ final class GenerateTransferringReceiveEpcisEvents
         private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly ReceivingGate $receivingGate,
         private readonly EpcCustodyGate $custodyGate,
+        private readonly AssertAuthoredObjectEventCandidate $assertObjectEventCandidate,
     ) {}
 
     /**
@@ -141,6 +145,13 @@ final class GenerateTransferringReceiveEpcisEvents
             /** @var Collection<int, Epc> $receivedEpcsById */
             $receivedEpcsById = Epc::query()->whereIn('id', $epcIds)->get()->keyBy('id');
 
+            $recordTime = now();
+            $receiveEventTime = $session->received_at !== null
+                ? Carbon::parse($session->received_at)
+                : $recordTime;
+
+            $this->softAssertTransferReceivingObjectEvent($session, $receivedEpcsById, $epcIds, $receiveEventTime);
+
             $shippingEvent = EpcisEvent::query()
                 ->where('document_id', $document->getKey())
                 ->where('biz_step', self::BIZ_STEP_SHIPPING)
@@ -165,10 +176,6 @@ final class GenerateTransferringReceiveEpcisEvents
             $fromLocation = $this->shipLegLocation($shippingEvent, (int) $session->from_site_id);
             $toLocation = $this->resolveSiteLocation((int) $session->to_site_id, 'Transfer destination site');
 
-            $recordTime = now();
-            $receiveEventTime = $session->received_at !== null
-                ? Carbon::parse($session->received_at)
-                : $recordTime;
             $timezoneOffset = $this->timezoneOffset($session->toSite, $receiveEventTime);
             $receivingUuid = (string) Str::uuid();
 
@@ -272,6 +279,48 @@ final class GenerateTransferringReceiveEpcisEvents
             'receivingEvent' => $built['receivingEvent'],
             'generated' => $generated,
         ];
+    }
+
+    /**
+     * Soft Domain preflight for the transfer receive ObjectEvent (OBSERVE / receiving / in_progress).
+     * Failures are logged only — dual-run vs transmit ValidateEpcis12Document.
+     *
+     * @param  Collection<int, Epc>  $epcsById
+     * @param  list<int>  $epcIds
+     */
+    private function softAssertTransferReceivingObjectEvent(
+        TransferringSession $session,
+        Collection $epcsById,
+        array $epcIds,
+        Carbon $eventTime,
+    ): void {
+        try {
+            $epcUris = [];
+            foreach ($epcIds as $epcId) {
+                $epc = $epcsById->get($epcId);
+                if ($epc !== null) {
+                    $epcUris[] = (string) $epc->epc_uri;
+                }
+            }
+
+            if ($epcUris === []) {
+                return;
+            }
+
+            $this->assertObjectEventCandidate->handle(
+                epcList: $epcUris,
+                action: EpcisAction::Observe,
+                bizStep: 'receiving',
+                disposition: 'in_progress',
+                eventTimeUtc: $eventTime->clone()->utc()->toDateTimeImmutable(),
+            );
+        } catch (Throwable $e) {
+            Log::warning('transferring.domain_object_event_assert_soft_fail', [
+                'session_id' => (int) $session->getKey(),
+                'leg' => 'receiving',
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

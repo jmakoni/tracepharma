@@ -120,8 +120,12 @@ class AssetTracking extends Page implements HasKnowledgeBase, HasTable
         return 'Scan a unit or pallet to see status and custody history. Optionally set As of (UTC) for a point-in-time snapshot.';
     }
 
-    public function runTrace(BuildAssetTrace $builder): void
+    public function runTrace(BuildAssetTrace $builder, ?string $raw = null): void
     {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 

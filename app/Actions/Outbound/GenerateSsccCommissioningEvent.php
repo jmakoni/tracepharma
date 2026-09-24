@@ -7,7 +7,9 @@ namespace App\Actions\Outbound;
 use App\Domain\Epcis\Enums\EpcisAction;
 use App\Domain\Gs1\Sscc18;
 use App\Domain\Gs1\SsccUri;
+use App\Models\Site;
 use App\Models\SsccLabel;
+use App\Support\Epcis\AuthoredEventTimezone;
 use InvalidArgumentException;
 
 final class GenerateSsccCommissioningEvent
@@ -45,13 +47,18 @@ final class GenerateSsccCommissioningEvent
         $canonicalUri = $candidate->epcList[0] ?? $ssccUri->toString();
 
         $sglnUrn = htmlspecialchars($this->resolveSglnUrn($settings ?? [], $siteId), ENT_XML1);
+        $site = $siteId !== null ? Site::query()->find($siteId) : null;
+        $timezoneOffset = htmlspecialchars(
+            AuthoredEventTimezone::offsetForSite($site instanceof Site ? $site : null),
+            ENT_XML1,
+        );
         $eventTime = htmlspecialchars(now()->toIso8601String(), ENT_XML1);
         $epc = htmlspecialchars($canonicalUri, ENT_XML1);
 
         return <<<XML
             <ObjectEvent>
                 <eventTime>{$eventTime}</eventTime>
-                <eventTimeZoneOffset>+00:00</eventTimeZoneOffset>
+                <eventTimeZoneOffset>{$timezoneOffset}</eventTimeZoneOffset>
                 <epcList>
                     <epc>{$epc}</epc>
                 </epcList>

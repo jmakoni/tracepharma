@@ -6,14 +6,18 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Labeling\BreakPalletAndReship;
 use App\Actions\Labeling\GenerateSsccLabelBatch;
 use App\Actions\Receiving\UnpackReceivingHierarchy;
+use App\Enums\PackingSessionKind;
 use App\Enums\SsccAllocationMode;
 use App\Enums\SsccReshipMode;
 use App\Enums\TenantProfile;
+use App\Filament\App\Pages\Concerns\InteractsWithPackingWorkstationSession;
 use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisEvent;
+use App\Models\Packing\PackingScanLine;
 use App\Models\Site;
 use App\Models\User;
 use App\Services\Custody\EpcCustodyGate;
@@ -30,9 +34,9 @@ use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Shipping\ShippableEpcsAtSite;
 use App\Support\TenantFeatures;
 use App\Support\TenantSsccSettings;
+use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
-use App\Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
@@ -45,6 +49,7 @@ use UnitEnum;
 
 class BreakPackWorkstation extends Page implements HasKnowledgeBase
 {
+    use InteractsWithPackingWorkstationSession;
     use ResolvesFloorSitePrincipal;
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;
@@ -86,6 +91,17 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             && JobRoleAccess::allows(Permissions::NavShip);
     }
 
+    public function mount(): void
+    {
+        $this->mountInteractsWithPackingWorkstationSession();
+        $this->restoreBreakPackSessionState();
+    }
+
+    protected function packingSessionKind(): PackingSessionKind
+    {
+        return PackingSessionKind::BreakPack;
+    }
+
     /**
      * Pharmacy break-pack stays Operations Hub–only (no sidebar), even with warehouse tools.
      */
@@ -103,6 +119,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         return 'Break children from a source pallet and commission a new parent SSCC under your organization company prefix.';
     }
 
+    /**
+     * @return array<Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            $this->confirmBreakPackAction(),
+        ];
+    }
+
     public function tenantNameDisplay(): string
     {
         return (string) (tenant()?->name ?? 'This organization');
@@ -113,11 +139,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         return (string) (TenantSsccSettings::resolve()['company_prefix'] ?? 'Configure in Organization settings');
     }
 
-    public function processScan(
-        ResolveEpcFromScan $resolveEpcFromScan,
-        EpcCustodyGate $custodyGate,
-        ShippableEpcsAtSite $shippable,
-    ): void {
+    public function processScan(?string $raw = null): void
+    {
+        if ($raw !== null) {
+            $this->scan = ElementString::normalize(trim($raw));
+        }
+
+        $resolveEpcFromScan = app(ResolveEpcFromScan::class);
+        $custodyGate = app(EpcCustodyGate::class);
+        $shippable = app(ShippableEpcsAtSite::class);
+
         $scan = ElementString::normalize(trim($this->scan));
         $this->scan = $scan;
 
@@ -145,6 +176,16 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
                 // Deselecting is always allowed; only adding a child to the pack needs custody.
                 $selecting = ! in_array($epcId, array_map('intval', $this->selectedChildIds), true);
 
+                // Camera passes $raw and often re-decodes the same child within cooldown.
+                // Re-toggle would deselect; keep selection stable for camera re-fires.
+                if (! $selecting && $raw !== null) {
+                    $this->scan = '';
+                    $this->dispatch('focus-scan');
+                    $this->dispatch('scan-result', tone: 'ok');
+
+                    return;
+                }
+
                 if ($selecting) {
                     if (! $this->passesOnHandGate($shippable, $epcId)) {
                         return;
@@ -163,7 +204,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             }
 
             if ($epcId === $this->parentEpcId) {
-                $this->flash('ok', 'Parent confirmed.');
+                $this->flash('warn', 'Parent locked — select children, then confirm break & pack.');
                 $this->scan = '';
                 $this->dispatch('focus-scan');
 
@@ -250,10 +291,99 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
                 $selected,
                 fn (int $id): bool => $id !== $childId,
             ));
+            $this->removePackingStagedChild($childId);
         } else {
+            if (! $this->reservePackingChildByEpcId($childId)) {
+                return;
+            }
+
             $selected[] = $childId;
             $this->selectedChildIds = array_values(array_unique($selected));
         }
+    }
+
+    public function deselectChild(int $childId): void
+    {
+        $this->selectedChildIds = array_values(array_filter(
+            array_map('intval', $this->selectedChildIds),
+            fn (int $id): bool => $id !== $childId,
+        ));
+        $this->removePackingStagedChild($childId);
+    }
+
+    /**
+     * @return list<array{epc_id: int, identifier: string, label: string, type: string, scanned_at: string, urn: string, present: bool, can_remove: bool}>
+     */
+    public function selectedScanRows(): array
+    {
+        $ids = array_values(array_filter(
+            array_map('intval', $this->selectedChildIds),
+            fn (int $id): bool => array_key_exists($id, $this->openChildren),
+        ));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $lines = collect();
+        if ($this->packingSessionId !== null) {
+            $lines = PackingScanLine::query()
+                ->where('packing_session_id', $this->packingSessionId)
+                ->whereIn('epc_id', $ids)
+                ->where('status', 'staged')
+                ->where('line_role', 'child')
+                ->with(['epc.ilmd'])
+                ->get()
+                ->keyBy(fn (PackingScanLine $line): int => (int) $line->epc_id);
+        }
+
+        $missingIds = array_values(array_filter(
+            $ids,
+            fn (int $id): bool => ! $lines->has($id),
+        ));
+        $epcs = $missingIds === []
+            ? collect()
+            : Epc::query()
+                ->whereIn('id', $missingIds)
+                ->with('ilmd')
+                ->get()
+                ->keyBy(fn (Epc $epc): int => (int) $epc->getKey());
+
+        $rows = [];
+        foreach ($ids as $id) {
+            $line = $lines->get($id);
+            $epc = $line instanceof PackingScanLine && $line->epc instanceof Epc
+                ? $line->epc
+                : $epcs->get($id);
+
+            if ($epc instanceof Epc) {
+                $display = Gs1DualDisplay::forEpc($epc);
+                $identifier = ($display['gs1_barcode'] ?? '') !== '' && $display['gs1_barcode'] !== '—'
+                    ? $display['gs1_barcode']
+                    : ($this->openChildren[$id] ?? $display['primary']);
+                $urn = ($display['urn'] ?? '') !== '' ? $display['urn'] : '—';
+            } else {
+                $identifier = $this->openChildren[$id] ?? '—';
+                $urn = '—';
+            }
+
+            $rows[] = [
+                'epc_id' => $id,
+                'identifier' => $identifier,
+                'label' => $identifier,
+                'type' => '',
+                'scanned_at' => $line instanceof PackingScanLine
+                    ? ($line->confirmed_at?->format('Y-m-d H:i:s')
+                        ?? $line->created_at?->format('Y-m-d H:i:s')
+                        ?? '—')
+                    : '—',
+                'urn' => $urn,
+                'present' => true,
+                'can_remove' => true,
+            ];
+        }
+
+        return $rows;
     }
 
     public function clearParent(): void
@@ -265,6 +395,7 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
 
     private function resetParentState(): void
     {
+        $this->clearPackingSessionState();
         $this->parentEpcId = null;
         $this->parentLabel = null;
         $this->parentUrn = null;
@@ -523,6 +654,8 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        $this->completePackingSession();
+
         Notification::make()
             ->title('Break & pack complete')
             ->body($modeNote.' Batch #'.$batch->getKey().'.')
@@ -585,6 +718,10 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
             return;
         }
 
+        if ($this->refuseIfEpcReserved($parent, (string) $parent->epc_uri, 'error')) {
+            return;
+        }
+
         $this->parentEpcId = (int) $parent->getKey();
         $this->parentLabel = $this->epcLabel($parent);
         $this->parentUrn = (string) $parent->epc_uri;
@@ -592,13 +729,44 @@ class BreakPackWorkstation extends Page implements HasKnowledgeBase
         $this->selectedChildIds = [];
         $this->sourceDocumentId = $this->resolveSourceDocumentId($parent);
 
+        $session = $this->ensurePackingSession($siteId);
+        $this->persistPackingSessionParent($session);
+        if (! $this->reservePackingParentScan($session, $parent)) {
+            $this->clearPackingSessionState();
+            $this->parentEpcId = null;
+            $this->parentLabel = null;
+            $this->parentUrn = null;
+            $this->openChildren = [];
+            $this->selectedChildIds = [];
+            $this->sourceDocumentId = null;
+
+            return;
+        }
+
         if ($this->openChildren === []) {
             $this->flash('warn', 'Parent loaded — no open children.');
         } elseif ($this->sourceDocumentId !== null) {
-            $this->flash('ok', 'Parent loaded from inbound document #'.$this->sourceDocumentId.'.');
+            $this->flash('warn', 'Parent loaded from inbound document #'.$this->sourceDocumentId.'. Select children, then confirm.');
         } else {
             $this->flash('warn', 'Parent loaded — source document unknown; confirm will unpack then pack.');
         }
+    }
+
+    private function restoreBreakPackSessionState(): void
+    {
+        $session = $this->packingSession();
+        if ($session === null) {
+            return;
+        }
+
+        if ($session->parent_epc_id !== null) {
+            $parent = Epc::query()->find($session->parent_epc_id);
+            if ($parent instanceof Epc) {
+                $this->loadParent($parent, app(ShippableEpcsAtSite::class));
+            }
+        }
+
+        $this->hydrateSelectedChildIdsFromPackingSession();
     }
 
     private function resolveSourceDocumentId(Epc $parent): ?int

@@ -1,9 +1,15 @@
 <?php
 
+use App\Http\Middleware\EnsureTenantIsActive;
+use App\Http\Middleware\InitializeTenancyForTenantHosts;
+use App\Support\Floor\FloorLayout;
+use App\Support\Floor\FloorShell;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,13 +25,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // Must run before StartSession so Livewire CSRF/session and Filament
         // panel logins both use the tenant connection (not central).
         $middleware->web(prepend: [
-            App\Http\Middleware\InitializeTenancyForTenantHosts::class,
+            InitializeTenancyForTenantHosts::class,
         ]);
 
         // Sanctum tokens live in the tenant DB — resolve tenancy from the host
         // before auth:sanctum on /api/* routes.
         $middleware->api(prepend: [
-            App\Http\Middleware\InitializeTenancyForTenantHosts::class,
+            InitializeTenancyForTenantHosts::class,
+        ]);
+
+        // Set by first-paint JS / Alpine layout toggle — must stay readable by PHP.
+        $middleware->encryptCookies(except: [
+            FloorShell::VIEWPORT_COOKIE,
+            FloorLayout::COOKIE,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request): ?string {
@@ -37,9 +49,9 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $middleware->alias([
-            'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
-            'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
-            'tenant.active' => App\Http\Middleware\EnsureTenantIsActive::class,
+            'abilities' => CheckAbilities::class,
+            'ability' => CheckForAnyAbility::class,
+            'tenant.active' => EnsureTenantIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

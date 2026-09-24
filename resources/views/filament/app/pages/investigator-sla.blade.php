@@ -4,7 +4,7 @@
             <div class="card-body gap-4">
                 <h2 class="card-title text-base">Receive-blocking exceptions</h2>
                 <p class="text-sm opacity-70">
-                    DSCSA 72-hour supplier correction. Open the existing Exceptions page for case work.
+                    DSCSA 72-hour supplier correction for HardBlocking / BusinessRule cases that are still true. Waiting on partner pauses the clock. Cleared and resolved cases leave this board.
                 </p>
 
                 @forelse ($this->blockingCases() as $case)
@@ -27,13 +27,31 @@
                                 · {{ $this->lastEmailLabel($case) }}
                             </p>
                         </div>
-                        <button
-                            type="button"
-                            class="btn btn-primary min-h-12"
-                            wire:click="mountAction('emailSupplier', { case: {{ (int) $case->getKey() }} })"
-                        >
-                            Email supplier
-                        </button>
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                class="btn btn-ghost min-h-12"
+                                wire:click="mountAction('recheckCondition', { case: {{ (int) $case->getKey() }} })"
+                            >
+                                Re-check
+                            </button>
+                            @if ($case->document_id)
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost min-h-12"
+                                    wire:click="mountAction('reevaluateFindingsCase', { case: {{ (int) $case->getKey() }} })"
+                                >
+                                    Re-evaluate findings
+                                </button>
+                            @endif
+                            <button
+                                type="button"
+                                class="btn btn-primary min-h-12"
+                                wire:click="mountAction('emailSupplier', { case: {{ (int) $case->getKey() }} })"
+                            >
+                                Email supplier
+                            </button>
+                        </div>
                     </div>
                 @empty
                     <p class="text-sm opacity-70">No open receive-blocking exceptions.</p>

@@ -12,7 +12,6 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Support\Gs1\Gtin;
-use App\Support\Gs1\SglnResolution;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
@@ -202,10 +201,9 @@ class RederiveOrganizationSglnsTest extends TestCase
 
             app(RederiveOrganizationSglns::class)->handle(self::NARROW_PREFIX);
 
-            $this->assertSame(
-                SglnResolution::fromPrefixLength($gln, self::NARROW_PREFIX),
+            $this->assertNull(
                 $site->fresh()->sgln,
-                'An organization facility with no stand-behind URN is encoded on the org prefix length.',
+                'An organization facility whose GLN is not under a known prefix is not guessed.',
             );
         } finally {
             $this->cleanup($tenant);

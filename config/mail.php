@@ -121,6 +121,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Non-deliverable recipients
+    |--------------------------------------------------------------------------
+    |
+    | Drop reserved / made-up test addresses before they reach ZeptoMail.
+    | Extra domains and TLDs merge with the built-in RFC 2606 / 6761 list.
+    |
+    */
+
+    'block_non_deliverable_recipients' => (bool) env('MAIL_BLOCK_NON_DELIVERABLE', true),
+
+    'blocked_recipient_domains' => [],
+
+    'blocked_recipient_tlds' => [],
+
+    /*
+    |--------------------------------------------------------------------------
     | Markdown Mail Settings
     |--------------------------------------------------------------------------
     */

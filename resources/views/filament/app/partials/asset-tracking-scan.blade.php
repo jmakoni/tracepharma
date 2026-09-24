@@ -32,10 +32,11 @@
         @endif
 
         <form
-            wire:submit.prevent="runTrace"
+            x-on:submit.prevent="$wire.runTrace($refs.scanInput.value)"
             x-data
             x-init="$nextTick(() => $refs.scanInput?.focus())"
             x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+            x-on:keydown.enter.prevent="$wire.runTrace($refs.scanInput.value)"
             class="flex flex-col gap-4"
         >
             <div class="form-control w-full gap-1.5">

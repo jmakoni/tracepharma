@@ -14,15 +14,18 @@ final class PromoteDscsaShippingExtensions
     /**
      * @param  array<string, mixed>  $eventData
      */
-    public function handle(EpcisDocument $document, array $eventData): void
+    /**
+     * @return bool True when at least one DSCSA shipping-extension column was written.
+     */
+    public function handle(EpcisDocument $document, array $eventData): bool
     {
         if (! Schema::hasColumn('epcis_documents', 'direct_purchase_statement')) {
-            return;
+            return false;
         }
 
         $parsed = DscsaShippingExtensionParser::fromEventData($eventData);
         if ($parsed === null) {
-            return;
+            return false;
         }
 
         $attributes = [];
@@ -41,9 +44,13 @@ final class PromoteDscsaShippingExtensions
             ));
         }
 
-        if ($attributes !== []) {
-            $document->forceFill($attributes)->save();
+        if ($attributes === []) {
+            return false;
         }
+
+        $document->forceFill($attributes)->save();
+
+        return true;
     }
 
     /**

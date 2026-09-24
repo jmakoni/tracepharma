@@ -193,6 +193,8 @@ Not the same as Filament’s side-column `inlineLabel()`.
 
 ## Filament 5 notes
 
-- Dual sub-nav requires a page view override because Filament’s sub-nav render hooks only fire when *its* sub-nav is present.
+- Dual sub-nav requires a page view override because Filament’s sub-nav render hooks only fire when *its* sub-nav is present. The override is rebased on Filament v5.7.8 `components/page/index.blade.php`; reconciling upgrades is a small three-slot diff (start / top / end).
 - Before-header uses `PAGE_HEADER_HEADING_BEFORE` with flex CSS so actions sit left of the heading.
+- Desktop sidebar collapse is two `x-show` buttons in Filament; extras CSS stacks them as one rotating chevron. No sidebar/topbar view override.
 - Coexists with `zeeshantariq/filament-sticky-columns`; sticky actions here are a separate opt-in.
+- `SelectFilter::hiddenLabel()` / `inlineLabel()` are macros (Filament’s filter class does not ship these). Call them on the filter, not the form field.

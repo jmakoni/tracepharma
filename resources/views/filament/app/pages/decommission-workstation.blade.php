@@ -10,9 +10,12 @@
 
                 <x-slot:qty>
                     @if ($this->confirmed !== [])
-                        <span class="tp-scan-qty text-2xl font-bold tabular-nums" aria-live="polite">
-                            Confirmed {{ count($this->confirmed) }}
-                        </span>
+                        @include('filament.app.partials.scanner-progress-stats', [
+                            'stats' => [
+                                ['title' => 'Confirmed', 'value' => count($this->confirmed)],
+                            ],
+                            'class' => 'stats stats-horizontal bg-base-200 shadow',
+                        ])
                     @endif
                 </x-slot:qty>
 
@@ -35,10 +38,11 @@
 
                 <x-slot:scan>
                     <form
-                        wire:submit.prevent="processScan"
+                        x-on:submit.prevent="$wire.processScan($refs.scanInput.value)"
                         x-data
                         x-init="$nextTick(() => $refs.scanInput?.focus())"
                         x-on:focus-scan.window="$nextTick(() => $refs.scanInput?.focus())"
+                        x-on:keydown.enter.prevent="$wire.processScan($refs.scanInput.value)"
                         class="flex flex-col gap-3"
                     >
                         <div class="flex w-full flex-col gap-3">

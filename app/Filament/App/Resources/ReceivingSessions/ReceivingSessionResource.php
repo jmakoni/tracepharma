@@ -4,6 +4,8 @@ namespace App\Filament\App\Resources\ReceivingSessions;
 
 use App\Filament\App\Resources\ReceivingSessions\Pages\CreateReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\Pages\ListReceivingSessions;
+use App\Filament\App\Resources\ReceivingSessions\Pages\MobileListReceivingSessions;
+use App\Filament\App\Resources\ReceivingSessions\Pages\MobileListScanFirstSessions;
 use App\Filament\App\Resources\ReceivingSessions\Pages\MobileViewReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\Pages\ViewReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\RelationManagers\ScanLinesRelationManager;
@@ -129,6 +131,8 @@ class ReceivingSessionResource extends Resource implements HasKnowledgeBase
         return [
             'index' => ListReceivingSessions::route('/'),
             'create' => CreateReceivingSession::route('/create'),
+            'list-floor' => MobileListReceivingSessions::route('/floor'),
+            'scan-first-floor' => MobileListScanFirstSessions::route('/scan-first-floor'),
             'view' => ViewReceivingSession::route('/{record}'),
             'floor' => MobileViewReceivingSession::route('/{record}/floor'),
         ];

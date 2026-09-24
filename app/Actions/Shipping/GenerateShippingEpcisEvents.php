@@ -3,8 +3,10 @@
 namespace App\Actions\Shipping;
 
 use App\Actions\Epcis\SyncDocumentEpcsFromEvents;
+use App\Actions\Outbound\AssertAuthoredObjectEventCandidate;
+use App\Domain\Epcis\Enums\EpcisAction;
 use App\Enums\EpcisAuthoredKind;
-use App\Enums\PartnerType;
+use App\Enums\EpcisGuideline;
 use App\Models\Epcis\AggregationLink;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
@@ -15,17 +17,23 @@ use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Models\TradingPartner;
 use App\Services\Custody\EpcCustodyGate;
 use App\Services\Dscsa\Support\DscsaDirectPurchaseStatements;
+use App\Services\Dscsa\Support\ResolveOutboundDscsaPurchaseExtensions;
 use App\Services\Epcis\Outbound\JsonLd20Writer;
 use App\Services\Epcis\Outbound\OutboundEpcisDocumentWriter;
 use App\Services\Epcis\Outbound\OutboundEpcisWriterResolver;
 use App\Support\Custody\PrincipalCustody;
 use App\Support\Epcis\BuildFullHistoryShippingEpcisXml;
 use App\Support\Epcis\EpcisSchemaVersion;
+use App\Support\Epcis\ExtractPriorPedigreeXml;
+use App\Support\Epcis\OutboundEpcClassVocabulary;
 use App\Support\Epcis\OutboundEpcisFilename;
+use App\Support\Epcis\PedigreeXmlFragmentsToJsonLdEvents;
 use App\Support\Epcis\PersistAuthoredEventLocations;
 use App\Support\Epcis\PersistEpcisXmlPayload;
+use App\Support\Epcis\ResolveOutboundEpcisGuideline;
 use App\Support\Epcis\SbdhInstanceIdentifier;
 use App\Support\Epcis\ScheduleOutboundEpcisTransmission;
 use App\Support\Epcis\ShippingTiTsFragments;
@@ -43,6 +51,7 @@ use DomainException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -57,9 +66,10 @@ use Throwable;
  * The live event projection stays a shipping ObjectEvent on the scanned outermost
  * units (custody). When those units still have an open aggregation tree — or prior
  * commissioning/packing documents exist for the confirmed EPCs — the on-disk partner
- * payload is the self-contained commission → pack → ship XML from
- * {@see BuildFullHistoryShippingEpcisXml}. Otherwise the lean shipping-only payload
- * is used (JSON-LD 2.0 always stays lean-writer path).
+ * payload is the self-contained commission → pack → ship TI: XML via
+ * {@see BuildFullHistoryShippingEpcisXml}, JSON-LD 2.0 via the same pedigree
+ * fragments converted by {@see PedigreeXmlFragmentsToJsonLdEvents}. Otherwise the
+ * lean shipping-only payload is used.
  *
  * Download / transmit always uses the on-disk partner TI payload. Live `epcis_events`
  * for the session document may list only the authored shipping ObjectEvent.
@@ -90,11 +100,15 @@ final class GenerateShippingEpcisEvents
         private readonly PersistAuthoredEventLocations $persistAuthoredEventLocations,
         private readonly EpcCustodyGate $custodyGate,
         private readonly BuildFullHistoryShippingEpcisXml $buildFullHistoryShippingEpcisXml,
+        private readonly ExtractPriorPedigreeXml $extractPriorPedigreeXml,
+        private readonly PedigreeXmlFragmentsToJsonLdEvents $pedigreeXmlFragmentsToJsonLd,
         private readonly ShippableEpcsAtSite $shippableEpcsAtSite,
         private readonly ResolveOutboundShipToSgln $resolveOutboundShipToSgln,
         private readonly OutboundEpcisWriterResolver $writerResolver,
         private readonly JsonLd20Writer $jsonLd20Writer,
         private readonly DscsaDirectPurchaseStatements $directPurchaseStatements,
+        private readonly ResolveOutboundDscsaPurchaseExtensions $purchaseExtensions,
+        private readonly AssertAuthoredObjectEventCandidate $assertObjectEventCandidate,
     ) {}
 
     /**
@@ -135,6 +149,18 @@ final class GenerateShippingEpcisEvents
             }
 
             $session->loadMissing(['site.tradingPartner', 'tradingPartner', 'shipToSite']);
+            if ($session->tradingPartner === null && $session->trading_partner_id !== null) {
+                $session->setRelation(
+                    'tradingPartner',
+                    TradingPartner::query()->find($session->trading_partner_id),
+                );
+            }
+            $guideline = ResolveOutboundEpcisGuideline::forPartner($session->tradingPartner);
+            if ((bool) $session->is_drop_shipment && $guideline !== EpcisGuideline::R13) {
+                throw new DomainException(
+                    'Drop shipment requires GS1 US DSCSA guideline R1.3 on the trading partner.',
+                );
+            }
 
             $tenant = tenant();
             if (! $tenant instanceof Tenant) {
@@ -148,10 +174,8 @@ final class GenerateShippingEpcisEvents
                 : null;
             $writer = $this->writerResolver->forConnection($connection);
             $isJson20 = $writer->schemaVersion() === EpcisSchemaVersion::V20;
-            $includeFullHistory = ! $isJson20 && (
-                $this->hasOpenAggregationDescendants($epcIds)
-                || $this->hasPriorCommissionOrPackDocuments($epcIds)
-            );
+            $includeFullHistory = $this->hasOpenAggregationDescendants($epcIds)
+                || $this->hasPriorCommissionOrPackDocuments($epcIds);
 
             /** @var Collection<int, Epc> $epcsById */
             $epcsById = Epc::query()->whereIn('id', $epcIds)->lockForUpdate()->get()->keyBy('id');
@@ -169,8 +193,14 @@ final class GenerateShippingEpcisEvents
                 ? Carbon::parse($session->completed_at)
                 : $recordTime;
             $timezoneOffset = $this->timezoneOffset($session->site, $eventTime);
+            $transactionDate = $this->resolveTransactionDateForShip($epcIds, $eventTime);
 
             $shippingUuid = (string) Str::uuid();
+
+            // Soft Domain Assert (Phase 3 PR J start): log failures, do not block ship.
+            // TODO(dual-run): compare Assert failures vs transmit-time ValidateEpcis12Document
+            // before raising to hard-block (mirrors ingest Domain soft signal).
+            $this->softAssertShippingObjectEvent($session, $epcsById, $epcIds, $eventTime);
 
             $document = $this->createAuthoredDocument(
                 session: $session,
@@ -180,45 +210,62 @@ final class GenerateShippingEpcisEvents
                 shipTo: $shipTo,
                 tenant: $tenant,
                 party: $party,
+                tiTs: $tiTs,
                 writer: $writer,
             );
 
-            // readPoint is the dock the unit was scanned at; bizLocation is where it comes
-            // to rest — the customer. Custody hangs off bizLocation, so naming the
-            // ship-from site there would keep shipped stock reading as ours. The XML omits
-            // bizLocation per the GS1 US IG and carries the customer on destinationList.
-            $shippingEvent = EpcisEvent::query()->create($this->authoredEventAttributes([
-                'document_id' => $document->getKey(),
-                'event_id' => 'urn:uuid:'.$shippingUuid,
-                'event_type' => 'ObjectEvent',
-                'event_time' => $eventTime,
-                'record_time' => $recordTime,
-                'event_timezone_offset' => $timezoneOffset,
-                'action' => 'OBSERVE',
-                'biz_step' => self::BIZ_STEP_SHIPPING,
-                'disposition' => self::DISPOSITION_IN_TRANSIT,
-                'read_point_gln' => $fromLocation['gln'],
-                'biz_location_gln' => $shipTo['gln'],
-                'trading_partner_id' => $session->trading_partner_id,
-            ]));
-            $this->persistAuthoredEventLocations->handle($shippingEvent, [
-                [
-                    'location_type' => 'readPoint',
-                    'gln' => $fromLocation['gln'],
-                    'gln_uri' => $fromLocation['sgln_urn'],
-                    'site_id' => (int) $session->site_id,
-                ],
-            ]);
-            $this->attachEpcs($shippingEvent, $epcIds);
-            $this->attachTransactionIdentity($shippingEvent, $tiTs);
+            // readPoint is the dock the unit was scanned at. GS1 US shipping ObjectEvents
+            // omit bizLocation; the customer rides on destinationList. Custody for shipped
+            // stock is OutboundShipmentInTransit (shipping + in_transit), not bizLocation.
+            $detailEvent = $this->persistShippingObjectEvent(
+                document: $document,
+                session: $session,
+                eventTime: $eventTime->clone()->subSecond(),
+                recordTime: $recordTime,
+                timezoneOffset: $timezoneOffset,
+                eventUuid: (string) Str::uuid(),
+                fromLocation: $fromLocation,
+                shipTo: $shipTo,
+                epcIds: $epcIds,
+                tiTs: $tiTs,
+            );
+            unset($detailEvent);
+
+            $shippingEvent = $this->persistShippingObjectEvent(
+                document: $document,
+                session: $session,
+                eventTime: $eventTime,
+                recordTime: $recordTime,
+                timezoneOffset: $timezoneOffset,
+                eventUuid: $shippingUuid,
+                fromLocation: $fromLocation,
+                shipTo: $shipTo,
+                epcIds: $epcIds,
+                tiTs: $tiTs,
+            );
             $epcCount = $this->syncDocumentEpcsFromEvents->handle($document);
 
-            $directPurchaseStatement = $this->resolveOutboundDirectPurchaseStatement((bool) $session->dscsa_affirm);
+            $purchase = $this->purchaseExtensions->handle(
+                $epcIds,
+                (bool) $session->dscsa_affirm,
+                tenant() instanceof Tenant ? tenant() : null,
+            );
+            $directPurchaseStatement = $purchase['statement'] ?? null;
+            $directPurchaseQualifier = $purchase['qualifier'] ?? 'ENTIRELY_DIRECT';
+            $indirectPurchaseEpcs = $purchase['indirect_uris'] ?? [];
+            $prevWholesalerStatement = $purchase['prev_wholesaler_statement'] ?? null;
+            $prevWholesalerQualifier = $purchase['prev_wholesaler_qualifier'] ?? 'ENTIRELY_DIRECT';
 
             $payloadPath = (string) $document->payload_path;
-            $eventCount = 1;
+            $eventCount = 2;
 
             if ($isJson20) {
+                $pedigreeEvents = [];
+                if ($includeFullHistory) {
+                    $session->forceFill(['epcis_document_id' => $document->getKey()])->save();
+                    $session->setRelation('epcisDocument', $document);
+                    $pedigreeEvents = $this->jsonLdPedigreeEvents($session);
+                }
                 $payload = $this->buildJsonLd20(
                     epcsById: $epcsById,
                     eventTime: $eventTime,
@@ -230,13 +277,21 @@ final class GenerateShippingEpcisEvents
                     affirmTransactionStatement: (bool) $session->dscsa_affirm,
                     isDropShipment: (bool) $session->is_drop_shipment,
                     directPurchaseStatement: $directPurchaseStatement,
+                    guideline: $guideline,
+                    pedigreeEvents: $pedigreeEvents,
+                    transactionDate: $transactionDate,
+                    directPurchaseQualifier: $directPurchaseQualifier,
+                    indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                    prevWholesalerStatement: $prevWholesalerStatement,
+                    prevWholesalerQualifier: $prevWholesalerQualifier,
                 );
+                $eventCount = $this->jsonLdEventListCount($payload);
             } elseif ($includeFullHistory) {
                 // Full-history builder resolves the shipping event id via the session document.
                 $session->forceFill(['epcis_document_id' => $document->getKey()])->save();
                 $session->setRelation('epcisDocument', $document);
 
-                $built = $this->buildFullHistoryShippingEpcisXml->handle($session);
+                $built = $this->buildFullHistoryShippingEpcisXml->handle($session, $guideline, $transactionDate);
                 $payload = $built['xml'];
                 $payloadPath = $built['path'];
                 $eventCount = substr_count($payload, '<ObjectEvent>') + substr_count($payload, '<AggregationEvent>');
@@ -259,12 +314,19 @@ final class GenerateShippingEpcisEvents
                     affirmTransactionStatement: (bool) $session->dscsa_affirm,
                     isDropShipment: (bool) $session->is_drop_shipment,
                     directPurchaseStatement: $directPurchaseStatement,
+                    guideline: $guideline,
+                    transactionDate: $transactionDate,
+                    directPurchaseQualifier: $directPurchaseQualifier,
+                    indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                    prevWholesalerStatement: $prevWholesalerStatement,
+                    prevWholesalerQualifier: $prevWholesalerQualifier,
                 );
             }
 
             ShippingTiTsFragments::assertDropShipmentEmitted(
                 isDropShipment: (bool) $session->is_drop_shipment,
                 payload: $payload,
+                guideline: $guideline,
             );
 
             $document->forceFill([
@@ -355,7 +417,8 @@ final class GenerateShippingEpcisEvents
                 ->whereHas('session', function ($query) use ($session): void {
                     $query
                         ->whereKeyNot($session->getKey())
-                        ->whereNotNull('shipping_events_generated_at');
+                        ->whereNotNull('shipping_events_generated_at')
+                        ->whereNull('voided_at');
                 })
                 ->exists();
 
@@ -397,6 +460,47 @@ final class GenerateShippingEpcisEvents
     }
 
     /**
+     * Soft Domain preflight for the shipping ObjectEvent (OBSERVE / shipping / in_transit).
+     * Failures are logged only — shipping must not break while dual-running vs transmit ValidateEpcis12Document.
+     *
+     * @param  Collection<int, Epc>  $epcsById
+     * @param  list<int>  $epcIds
+     */
+    private function softAssertShippingObjectEvent(
+        OutboundShippingSession $session,
+        Collection $epcsById,
+        array $epcIds,
+        Carbon $eventTime,
+    ): void {
+        try {
+            $epcUris = [];
+            foreach ($epcIds as $epcId) {
+                $epc = $epcsById->get($epcId);
+                if ($epc !== null) {
+                    $epcUris[] = (string) $epc->epc_uri;
+                }
+            }
+
+            if ($epcUris === []) {
+                return;
+            }
+
+            $this->assertObjectEventCandidate->handle(
+                epcList: $epcUris,
+                action: EpcisAction::Observe,
+                bizStep: 'shipping',
+                disposition: 'in_transit',
+                eventTimeUtc: $eventTime->clone()->utc()->toDateTimeImmutable(),
+            );
+        } catch (Throwable $e) {
+            Log::warning('shipping.domain_object_event_assert_soft_fail', [
+                'session_id' => (int) $session->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Every confirmed line is a directly scanned unit and belongs on the epcList — no
      * ship path nests lines under a parent, and rows authored before bare SGTINs were
      * recorded as 'parent' would otherwise drop out of the shipment.
@@ -414,6 +518,47 @@ final class GenerateShippingEpcisEvents
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<int>  $epcIds
+     */
+    /**
+     * @param  list<int>  $epcIds
+     */
+    private function resolveTransactionDateForShip(array $epcIds, Carbon $shipAt): ?string
+    {
+        $lookupIds = $epcIds;
+        if ($epcIds !== []) {
+            $childIds = AggregationLink::query()
+                ->open()
+                ->whereIn('parent_epc_id', $epcIds)
+                ->pluck('child_epc_id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            $lookupIds = array_values(array_unique([...$epcIds, ...$childIds]));
+        }
+
+        if ($lookupIds === []) {
+            return null;
+        }
+
+        $raw = DB::table('epcis_events')
+            ->join('event_epcs', 'event_epcs.event_id', '=', 'epcis_events.id')
+            ->whereIn('event_epcs.epc_id', $lookupIds)
+            ->where('epcis_events.biz_step', 'like', '%receiving%')
+            ->max('epcis_events.event_time');
+
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        $transferAt = Carbon::parse((string) $raw);
+        if ($shipAt->lessThanOrEqualTo($transferAt->copy()->addHours(24))) {
+            return null;
+        }
+
+        return $transferAt->toDateString();
     }
 
     /**
@@ -460,13 +605,53 @@ final class GenerateShippingEpcisEvents
     }
 
     /**
+     * Replay manufacturer commission/pack XML as JSON-LD event arrays for the
+     * confirmed parent tree (or outermost confirmed units when there is no parent role).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function jsonLdPedigreeEvents(OutboundShippingSession $session): array
+    {
+        $rootIds = OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->where('line_role', 'parent')
+            ->orderBy('id')
+            ->pluck('epc_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($rootIds === []) {
+            $rootIds = $this->outermostConfirmedEpcIds($session);
+        }
+
+        if ($rootIds === []) {
+            return [];
+        }
+
+        $pedigree = $this->extractPriorPedigreeXml->forOpenTree($rootIds);
+
+        return $this->pedigreeXmlFragmentsToJsonLd->handle($pedigree['event_xml']);
+    }
+
+    private function jsonLdEventListCount(string $payload): int
+    {
+        $decoded = json_decode($payload, true);
+        $list = is_array($decoded) ? ($decoded['epcisBody']['eventList'] ?? []) : [];
+
+        return is_array($list) ? count($list) : 0;
+    }
+
+    /**
      * Ship-to identity for the authored event and document: the GLN, the site it
      * came from when we know it, and the SGLN to write as the destination location.
      *
-     * Both are required. Custody hangs off bizLocation and the customer is named on
-     * destinationList, so authoring the ship-from location in either place would read
-     * as goods that never left the building. ValidateOutboundShippingSend stops the
-     * send first; this is the backstop for any other path into authoring.
+     * Both are required. The customer is named on destinationList; shipping events
+     * omit bizLocation per the GS1 US IG. OutboundShipmentInTransit is the custody
+     * exclusion. ValidateOutboundShippingSend stops the send first; this is the
+     * backstop for any other path into authoring.
      *
      * @return array{gln: string, site_id: ?int, sgln_urn: string}
      */
@@ -615,16 +800,14 @@ final class GenerateShippingEpcisEvents
 
         $sourceOwningSgln = $this->owningPartySgln(
             $party['sender_gln'],
-            $fromLocation['gln'],
-            $sourceLocationSgln,
             $this->sglnCandidates($fromLocation['site']->getAttribute('sgln')),
+            partnerLocation: false,
         );
 
         $destOwningSgln = $this->owningPartySgln(
             $party['receiver_gln'],
-            $shipTo['gln'],
-            $destLocationSgln,
             $this->resolveOutboundShipToSgln->candidates($session),
+            partnerLocation: true,
         );
 
         $partnerId = $session->trading_partner_id !== null ? (int) $session->trading_partner_id : null;
@@ -698,28 +881,28 @@ final class GenerateShippingEpcisEvents
     }
 
     /**
-     * Owning-party SGLN from master data / candidates for the owning GLN.
-     * When unresolved, fall back to the location SGLN without rewriting its extension.
+     * Owning-party SGLN from recorded facility/org identity only.
+     * Never copies a dock/readPoint location SGLN (extension) onto sdt:owning_party.
      *
      * @param  list<string>  $candidates
      */
     private function owningPartySgln(
         ?string $owningGln,
-        ?string $locationGln,
-        string $locationSgln,
         array $candidates,
+        bool $partnerLocation = false,
     ): string {
-        $resolved = null;
+        $resolved = $owningGln !== null
+            ? $this->resolveSglnUrnForGln($owningGln, $candidates, partnerLocation: $partnerLocation)
+            : null;
 
-        if ($owningGln !== null && $owningGln !== $locationGln) {
-            $resolved = $this->resolveSglnUrnForGln($owningGln, $candidates, partnerLocation: true);
+        if ($resolved === null) {
+            throw new DomainException(
+                'Cannot author shipping EPCIS: owning-party SGLN is unresolved. '
+                .'Record the organization or facility SGLN; do not substitute a dock or read-point location.',
+            );
         }
 
-        if ($resolved === null && $owningGln !== null) {
-            $resolved = $this->resolveSglnUrnForGln($owningGln, $candidates, partnerLocation: true);
-        }
-
-        return $resolved ?? $locationSgln;
+        return Sgln::toFacilityUrn($resolved);
     }
 
     private function reference(mixed $value): ?string
@@ -744,6 +927,7 @@ final class GenerateShippingEpcisEvents
      *     sender_gln: ?string,
      *     receiver_gln: ?string
      * }  $party
+     * @param  array{sender_gln: ?string, receiver_gln: ?string}  $tiTs
      */
     private function createAuthoredDocument(
         OutboundShippingSession $session,
@@ -753,6 +937,7 @@ final class GenerateShippingEpcisEvents
         array $shipTo,
         Tenant $tenant,
         array $party,
+        array $tiTs,
         OutboundEpcisDocumentWriter $writer,
     ): EpcisDocument {
         // Authored outbound payloads stay on local tenant storage; inbound S3 disk is for uploads.
@@ -774,8 +959,8 @@ final class GenerateShippingEpcisEvents
             'authored_kind' => EpcisAuthoredKind::Shipping,
             'trading_partner_id' => $session->trading_partner_id,
             'ship_to_partner_id' => $session->trading_partner_id,
-            'sender_gln' => $party['sender_gln'],
-            'receiver_gln' => $party['receiver_gln'],
+            'sender_gln' => $tiTs['sender_gln'] ?? $party['sender_gln'],
+            'receiver_gln' => $tiTs['receiver_gln'] ?? $party['receiver_gln'],
             'format' => $format,
             'original_filename' => $filename,
             'payload_disk' => $disk,
@@ -799,6 +984,10 @@ final class GenerateShippingEpcisEvents
             'customer_po' => $session->customer_po,
             'invoice_number' => $session->invoice_number,
         ];
+
+        if (Schema::hasColumn('epcis_documents', 'dscsa_guideline_release')) {
+            $attributes['dscsa_guideline_release'] = ResolveOutboundEpcisGuideline::forPartner($session->tradingPartner);
+        }
 
         if ($session->outbound_connection_id !== null) {
             $attributes['outbound_connection_id'] = $session->outbound_connection_id;
@@ -883,7 +1072,12 @@ final class GenerateShippingEpcisEvents
                 : (filled($tenant->name) ? (string) $tenant->name : null);
 
             $orgGln = TenantSettings::forTenant($tenant)->gln();
-            $senderGln = $orgGln ?? Sgln::normalizeGln($shipFromSite?->gln);
+            if ($orgGln === null || $orgGln === '') {
+                throw new DomainException(
+                    'Cannot author shipping EPCIS: organization GLN is required for SBDH Sender.',
+                );
+            }
+            $senderGln = $orgGln;
         }
 
         $receiverGln = filled($partner?->gln)
@@ -933,16 +1127,29 @@ final class GenerateShippingEpcisEvents
     }
 
     /**
-     * When principal custody is enforced, agent TI requires a principal with a GLN.
+     * Agent TI requires a principal when the session is tagged, custody is
+     * enforced, or confirmed EPCs already belong to a principal.
      */
     private function assertAgentPrincipalReady(OutboundShippingSession $session): void
     {
+        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
+        $hasSessionPrincipal = $principalId !== null && $principalId > 0;
+
+        if (
+            ! $hasSessionPrincipal
+            && TenantFeatures::forTenant(tenant())->supportsPrincipals()
+            && $this->confirmedLinesBelongToAPrincipal($session)
+        ) {
+            throw new DomainException(
+                'This shipment contains principal-owned EPCs — select a principal before authoring TI.',
+            );
+        }
+
         if (! PrincipalCustody::forTenant()->isEnforced()) {
             return;
         }
 
-        $principalId = $session->principal_id !== null ? (int) $session->principal_id : null;
-        if ($principalId === null || $principalId <= 0) {
+        if (! $hasSessionPrincipal) {
             throw new DomainException(
                 'Principal custody is enforced — select a principal before authoring this shipment.',
             );
@@ -960,6 +1167,66 @@ final class GenerateShippingEpcisEvents
                 'Principal custody is enforced — set a GLN on the principal before authoring agent TI/TS.',
             );
         }
+    }
+
+    private function confirmedLinesBelongToAPrincipal(OutboundShippingSession $session): bool
+    {
+        if ($session->getKey() === null) {
+            return false;
+        }
+
+        return OutboundShippingScanLine::query()
+            ->where('outbound_shipping_session_id', $session->getKey())
+            ->where('status', 'confirmed')
+            ->whereHas('epc', fn ($query) => $query->whereNotNull('principal_id'))
+            ->exists();
+    }
+
+    /**
+     * @param  array{gln: ?string, sgln_urn: ?string}  $fromLocation
+     * @param  array{gln: ?string}  $shipTo
+     * @param  list<int>  $epcIds
+     * @param  array<string, mixed>  $tiTs
+     */
+    private function persistShippingObjectEvent(
+        EpcisDocument $document,
+        OutboundShippingSession $session,
+        Carbon $eventTime,
+        Carbon $recordTime,
+        string $timezoneOffset,
+        string $eventUuid,
+        array $fromLocation,
+        array $shipTo,
+        array $epcIds,
+        array $tiTs,
+    ): EpcisEvent {
+        $event = EpcisEvent::query()->create($this->authoredEventAttributes([
+            'document_id' => $document->getKey(),
+            'event_id' => 'urn:uuid:'.$eventUuid,
+            'event_type' => 'ObjectEvent',
+            'event_time' => $eventTime,
+            'record_time' => $recordTime,
+            'event_timezone_offset' => $timezoneOffset,
+            'action' => 'OBSERVE',
+            'biz_step' => self::BIZ_STEP_SHIPPING,
+            'disposition' => self::DISPOSITION_IN_TRANSIT,
+            'read_point_gln' => $fromLocation['gln'],
+            'biz_location_gln' => null,
+            'trading_partner_id' => $session->trading_partner_id,
+        ]));
+
+        $this->persistAuthoredEventLocations->handle($event, [
+            [
+                'location_type' => 'readPoint',
+                'gln' => $fromLocation['gln'],
+                'gln_uri' => $fromLocation['sgln_urn'],
+                'site_id' => (int) $session->site_id,
+            ],
+        ]);
+        $this->attachEpcs($event, $epcIds);
+        $this->attachTransactionIdentity($event, $tiTs);
+
+        return $event;
     }
 
     /**
@@ -1054,6 +1321,7 @@ final class GenerateShippingEpcisEvents
      *     receiver_gln: ?string,
      *     parties: array<string, TiTsParty>
      * }  $tiTs
+     * @param  list<array<string, mixed>>  $pedigreeEvents
      */
     private function buildJsonLd20(
         Collection $epcsById,
@@ -1066,6 +1334,13 @@ final class GenerateShippingEpcisEvents
         bool $affirmTransactionStatement = false,
         bool $isDropShipment = false,
         ?string $directPurchaseStatement = null,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        array $pedigreeEvents = [],
+        ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $parties = $tiTs['parties'];
 
@@ -1106,12 +1381,51 @@ final class GenerateShippingEpcisEvents
             $event['bizTransactionList'] = $bizTransactionList;
         }
 
-        if ($directPurchaseStatement !== null && $directPurchaseStatement !== '') {
-            $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson($directPurchaseStatement));
+        if ($directPurchaseStatement !== null && $directPurchaseStatement !== '' && $guideline === EpcisGuideline::R13) {
+            $event = array_merge($event, ShippingTiTsFragments::directPurchaseExtensionJson(
+                $directPurchaseStatement,
+                $directPurchaseQualifier,
+                $indirectPurchaseEpcs,
+            ));
+            if ($prevWholesalerStatement !== null && $prevWholesalerStatement !== '') {
+                $event = array_merge($event, ShippingTiTsFragments::receivedPrevWholesalerExtensionJson(
+                    $prevWholesalerStatement,
+                    $prevWholesalerQualifier,
+                ));
+            }
+        } elseif ($directPurchaseStatement !== null && $directPurchaseStatement !== '' && $guideline === EpcisGuideline::R12) {
+            $event['gs1ushc:directPurchase'] = true;
+        }
+
+        if ($transactionDate !== null && $transactionDate !== '') {
+            $event = array_merge($event, ShippingTiTsFragments::transactionDateExtensionJson($transactionDate));
+        }
+
+        $detail = $event;
+        $detail['eventID'] = 'urn:uuid:'.(string) Str::uuid();
+        $detail['eventTime'] = $eventTime->clone()->subSecond()->utc()->format(DateTimeInterface::ATOM);
+        unset(
+            $detail['directPurchase'],
+            $detail['gs1ushc:directPurchase'],
+            $detail['gs1ushc:directPurchaseStatement'],
+            $detail['receivedDirectPurchaseFromPrevWhlsDist'],
+            $detail['gs1ushc:receivedDirectPurchaseFromPrevWhlsDist'],
+            $detail['gs1ushc:transactionDate'],
+            $detail['transactionDate'],
+        );
+        foreach (array_keys($detail) as $key) {
+            if (is_string($key) && str_starts_with($key, 'gs1ushc:')) {
+                unset($detail[$key]);
+            }
+        }
+        $events = [$detail, $event];
+
+        if ($pedigreeEvents !== []) {
+            $events = [...$pedigreeEvents, ...$events];
         }
 
         $json = $this->jsonLd20Writer->buildFromDomainEvents(
-            [$event],
+            $events,
             $recordTime->clone()->utc()->format(DateTimeInterface::ATOM),
             $instanceId,
         );
@@ -1120,7 +1434,9 @@ final class GenerateShippingEpcisEvents
             $json = ShippingTiTsFragments::withDscsaTransactionStatementDocumentField($json);
         }
 
-        $json = ShippingTiTsFragments::withDropShipmentDocumentField($json, $isDropShipment);
+        if ($guideline === EpcisGuideline::R13) {
+            $json = ShippingTiTsFragments::withDropShipmentDocumentField($json, $isDropShipment);
+        }
 
         return $json;
     }
@@ -1146,27 +1462,99 @@ final class GenerateShippingEpcisEvents
         bool $affirmTransactionStatement,
         bool $isDropShipment = false,
         ?string $directPurchaseStatement = null,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
     ): string {
         $creationDate = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
+        $eventsXml = '';
+
+        $eventsXml .= $this->shippingObjectEventXml(
+            epcsById: $epcsById,
+            eventTime: $eventTime->clone()->subSecond(),
+            recordTime: $recordTime,
+            timezoneOffset: $timezoneOffset,
+            eventUuid: (string) Str::uuid(),
+            tiTs: $tiTs,
+            directPurchaseStatement: null,
+            guideline: $guideline,
+        )."\n";
+
+        $eventsXml .= $this->shippingObjectEventXml(
+            epcsById: $epcsById,
+            eventTime: $eventTime,
+            recordTime: $recordTime,
+            timezoneOffset: $timezoneOffset,
+            eventUuid: $shippingUuid,
+            tiTs: $tiTs,
+            directPurchaseStatement: $directPurchaseStatement,
+            guideline: $guideline,
+            transactionDate: $transactionDate,
+            directPurchaseQualifier: $directPurchaseQualifier,
+            indirectPurchaseEpcs: $indirectPurchaseEpcs,
+            prevWholesalerStatement: $prevWholesalerStatement,
+            prevWholesalerQualifier: $prevWholesalerQualifier,
+        );
+
+        return
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".
+            "<epcis:EPCISDocument\n".
+            "    xmlns:epcis=\"urn:epcglobal:epcis:xsd:1\"\n".
+            "    xmlns:sbdh=\"http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader\"\n".
+            "    xmlns:cbvmda=\"urn:epcglobal:cbv:mda\"\n".
+            "    xmlns:gs1ushc=\"http://epcis.gs1us.org/hc/ns\"\n".
+            "    schemaVersion=\"1.2\"\n".
+            "    creationDate=\"{$creationDate}\">\n".
+            $this->headerXml($tiTs, $instanceId, $creationDate, $affirmTransactionStatement, $isDropShipment, $guideline, $epcsById).
+            "  <EPCISBody>\n".
+            "    <EventList>\n".
+            "{$eventsXml}\n".
+            "    </EventList>\n".
+            "  </EPCISBody>\n".
+            "</epcis:EPCISDocument>\n";
+    }
+
+    /**
+     * @param  Collection<int, Epc>  $epcsById
+     * @param  array<string, mixed>  $tiTs
+     */
+    private function shippingObjectEventXml(
+        Collection $epcsById,
+        Carbon $eventTime,
+        Carbon $recordTime,
+        string $timezoneOffset,
+        string $eventUuid,
+        array $tiTs,
+        ?string $directPurchaseStatement,
+        EpcisGuideline $guideline,
+        ?string $transactionDate = null,
+        string $directPurchaseQualifier = 'ENTIRELY_DIRECT',
+        array $indirectPurchaseEpcs = [],
+        ?string $prevWholesalerStatement = null,
+        string $prevWholesalerQualifier = 'ENTIRELY_DIRECT',
+    ): string {
         $eventTimeXml = $eventTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
-        $recordTimeXml = $creationDate;
+        $recordTimeXml = $recordTime->clone()->utc()->format('Y-m-d\TH:i:s.v\Z');
         $offsetXml = htmlspecialchars($timezoneOffset, ENT_XML1);
         $parties = $tiTs['parties'];
-
         $epcList = $epcsById
             ->map(fn (Epc $epc): string => '          <epc>'.htmlspecialchars((string) $epc->epc_uri, ENT_XML1).'</epc>')
             ->implode("\n");
-
         $readPoint = htmlspecialchars($parties['source_location']['sgln'], ENT_XML1);
+        $transactionDateXml = $transactionDate !== null && $transactionDate !== ''
+            ? ShippingTiTsFragments::transactionDateXml($transactionDate)
+            : '';
 
-        // GS1 US R1.3 / TraceLink: omit bizLocation on shipping ObjectEvents.
-        $shippingEvent =
+        return
             "      <ObjectEvent>\n".
             "        <eventTime>{$eventTimeXml}</eventTime>\n".
             "        <recordTime>{$recordTimeXml}</recordTime>\n".
             "        <eventTimeZoneOffset>{$offsetXml}</eventTimeZoneOffset>\n".
             "        <baseExtension>\n".
-            "          <eventID>urn:uuid:{$shippingUuid}</eventID>\n".
+            "          <eventID>urn:uuid:{$eventUuid}</eventID>\n".
             "        </baseExtension>\n".
             "        <epcList>\n".
             "{$epcList}\n".
@@ -1189,29 +1577,19 @@ final class GenerateShippingEpcisEvents
                 destOwningSgln: $parties['dest_owning']['sgln'],
                 destLocationSgln: $parties['dest_location']['sgln'],
                 directPurchaseStatement: $directPurchaseStatement,
+                guideline: $guideline,
+                directPurchaseQualifier: $directPurchaseQualifier,
+                indirectPurchaseEpcs: $indirectPurchaseEpcs,
+                prevWholesalerStatement: $prevWholesalerStatement,
+                prevWholesalerQualifier: $prevWholesalerQualifier,
             ).
+            $transactionDateXml.
             '      </ObjectEvent>';
-
-        return
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".
-            "<epcis:EPCISDocument\n".
-            "    xmlns:epcis=\"urn:epcglobal:epcis:xsd:1\"\n".
-            "    xmlns:sbdh=\"http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader\"\n".
-            "    xmlns:cbvmda=\"urn:epcglobal:cbv:mda\"\n".
-            "    xmlns:gs1ushc=\"http://epcis.gs1us.org/hc/ns\"\n".
-            "    schemaVersion=\"1.2\"\n".
-            "    creationDate=\"{$creationDate}\">\n".
-            $this->headerXml($tiTs, $instanceId, $creationDate, $affirmTransactionStatement, $isDropShipment).
-            "  <EPCISBody>\n".
-            "    <EventList>\n".
-            "{$shippingEvent}\n".
-            "    </EventList>\n".
-            "  </EPCISBody>\n".
-            "</epcis:EPCISDocument>\n";
     }
 
     /**
      * @param  array{sender_gln: ?string, receiver_gln: ?string}  $tiTs
+     * @param  Collection<int, Epc>  $epcsById
      */
     private function headerXml(
         array $tiTs,
@@ -1219,6 +1597,8 @@ final class GenerateShippingEpcisEvents
         string $creationDate,
         bool $affirmTransactionStatement,
         bool $isDropShipment = false,
+        EpcisGuideline $guideline = EpcisGuideline::R13,
+        Collection $epcsById = new Collection,
     ): string {
         $header = '';
 
@@ -1228,17 +1608,20 @@ final class GenerateShippingEpcisEvents
                 receiverGln: (string) $tiTs['receiver_gln'],
                 instanceId: $instanceId,
                 creationDate: $creationDate,
+                guideline: $guideline,
             );
         }
 
+        $header .= OutboundEpcClassVocabulary::masterDataXml($epcsById, $guideline);
+
         $extras = '';
-        $extras .= "    <gs1ushc:guidelineVersion>R1.3</gs1ushc:guidelineVersion>\n";
+        $extras .= ShippingTiTsFragments::guidelineVersionXml($guideline);
         if ($affirmTransactionStatement) {
             $extras .= ShippingTiTsFragments::dscsaTransactionStatementXml('    ');
         }
-        $extras .= ShippingTiTsFragments::dropShipmentIndicatorXml($isDropShipment, '    ');
+        $extras .= ShippingTiTsFragments::dropShipmentIndicatorXml($isDropShipment, '    ', $guideline);
 
-        // Lean header has no MasterData: emit HC as EPCISHeader ##other (not inside <extension>).
+        // HC extras stay EPCISHeader siblings (not inside <extension>).
         if ($extras !== '') {
             $header .= $extras;
         }
@@ -1250,18 +1633,13 @@ final class GenerateShippingEpcisEvents
 
     private function resolveOutboundDirectPurchaseStatement(bool $affirmTransactionStatement): ?string
     {
-        if (! $affirmTransactionStatement) {
-            return null;
-        }
-
-        $partnerType = $this->directPurchaseStatements->tenantProfileToPartnerType(tenant());
-        if ($partnerType !== PartnerType::Wholesaler) {
-            return null;
-        }
-
         $sellerName = filled(tenant()?->name) ? (string) tenant()->name : 'Seller';
 
-        return $this->directPurchaseStatements->statementForSeller($partnerType, $sellerName);
+        return $this->directPurchaseStatements->outboundWholesalerDirectPurchaseStatement(
+            tenant() instanceof Tenant ? tenant() : null,
+            $affirmTransactionStatement,
+            $sellerName,
+        );
     }
 
     private function timezoneOffset(?Site $site, Carbon $at): string

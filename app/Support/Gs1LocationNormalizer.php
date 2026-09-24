@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Rules\ValidGln;
 use App\Support\Gs1\Gtin;
 use App\Support\Gs1\Sgln;
 
@@ -26,7 +27,7 @@ class Gs1LocationNormalizer
         }
 
         if (preg_match('/^\d{13}$/', $value)) {
-            return $value;
+            return ValidGln::normalize($value);
         }
 
         if (str_contains($value, ':')) {
@@ -65,7 +66,7 @@ class Gs1LocationNormalizer
         $parsed = Sgln::fromUrn($uri);
 
         if ($parsed !== null) {
-            return $parsed['gln'];
+            return ValidGln::normalize($parsed['gln']);
         }
 
         $normalizedGln = Sgln::normalizeGln($value);
@@ -79,7 +80,7 @@ class Gs1LocationNormalizer
             $digits = preg_replace('/\D/', '', $value) ?? '';
 
             if (strlen($digits) === 13) {
-                return $digits;
+                return ValidGln::normalize($digits);
             }
 
             if (strlen($digits) === 12) {
@@ -104,6 +105,6 @@ class Gs1LocationNormalizer
             return null;
         }
 
-        return $base.Gtin::checkDigit($base);
+        return ValidGln::normalize($base.Gtin::checkDigit($base));
     }
 }

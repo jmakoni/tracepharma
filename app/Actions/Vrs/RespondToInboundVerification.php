@@ -10,6 +10,8 @@ use App\Services\Vrs\Contracts\VrsClient;
 use App\Support\Auth\SiteAccess;
 use App\Support\Custody\ResolveEpcLastKnownGln;
 use App\Support\Custody\TerminalEpcDisposition;
+use App\Support\Gs1\Gtin;
+use InvalidArgumentException;
 
 /**
  * Local custody lookup for inbound partner VRS requests (tenant-as-responder).
@@ -39,8 +41,11 @@ final class RespondToInboundVerification
         ?string $expiryYymmdd = null,
         array $requestPayload = [],
     ): array {
-        $gtin14 = str_pad(preg_replace('/\D+/', '', $gtin14) ?? '', 14, '0', STR_PAD_LEFT);
-        $serial = trim($serial);
+        $parsedGtin = Gtin::fromUpc($gtin14);
+        if ($parsedGtin === null) {
+            throw new InvalidArgumentException('GTIN must be a valid GS1 GTIN-8/12/13/14.');
+        }
+        $gtin14 = $parsedGtin;
 
         $epc = Epc::query()
             ->where('epc_type', 'sgtin')
@@ -68,6 +73,24 @@ final class RespondToInboundVerification
                         'reason' => 'quarantined',
                     ],
                     exceptionId: $hold->exception_id !== null ? (int) $hold->exception_id : null,
+                );
+            }
+
+            $ilmdFailure = $this->ilmdMismatchFailure($epc, $lot, $expiryYymmdd);
+            if ($ilmdFailure !== null) {
+                return $this->blockedResponse(
+                    epc: $epc,
+                    gtin14: $gtin14,
+                    serial: $serial,
+                    lot: $lot,
+                    expiryYymmdd: $expiryYymmdd,
+                    requestPayload: $requestPayload,
+                    status: 'failed',
+                    message: $ilmdFailure['message'],
+                    responseExtras: [
+                        'blocked_by' => 'ilmd_mismatch',
+                        'reason' => $ilmdFailure['reason'],
+                    ],
                 );
             }
 
@@ -197,6 +220,43 @@ final class RespondToInboundVerification
             'message' => $message,
             'found' => true,
         ];
+    }
+
+    /**
+     * Request lot/expiry that disagree with persisted ILMD fail closed.
+     * Empty request fields or missing ILMD are not a mismatch.
+     *
+     * @return array{message: string, reason: string}|null
+     */
+    private function ilmdMismatchFailure(Epc $epc, ?string $lot, ?string $expiryYymmdd): ?array
+    {
+        $epc->loadMissing('ilmd');
+        $ilmd = $epc->ilmd;
+        if ($ilmd === null) {
+            return null;
+        }
+
+        $requestedLot = trim((string) $lot);
+        $storedLot = trim((string) ($ilmd->lot_number ?? ''));
+        if ($requestedLot !== '' && $storedLot !== '' && strcasecmp($requestedLot, $storedLot) !== 0) {
+            return [
+                'message' => 'Requested lot does not match responder ILMD.',
+                'reason' => 'lot_mismatch',
+            ];
+        }
+
+        $requestedExpiry = trim((string) $expiryYymmdd);
+        if ($requestedExpiry !== '' && $ilmd->expiry_date !== null) {
+            $storedExpiry = $ilmd->expiry_date->format('ymd');
+            if ($requestedExpiry !== $storedExpiry) {
+                return [
+                    'message' => 'Requested expiry does not match responder ILMD.',
+                    'reason' => 'expiry_mismatch',
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function resolveSiteIdForEpc(?Epc $epc): ?int

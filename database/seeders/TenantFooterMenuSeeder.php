@@ -3,13 +3,14 @@
 namespace Database\Seeders;
 
 use App\Models\AppMenuLink;
+use App\Support\Marketing\LegalDocumentUrls;
 use Illuminate\Database\Seeder;
 use NoteBrainsLab\FilamentMenuManager\Models\Menu;
 use NoteBrainsLab\FilamentMenuManager\Models\MenuItem;
 use NoteBrainsLab\FilamentMenuManager\Models\MenuLocation;
 
 /**
- * Seeds the tenant Footer menu with secondary legal/help/account links.
+ * Seeds the tenant Footer menu with a short account/help row plus legal links.
  */
 class TenantFooterMenuSeeder extends Seeder
 {
@@ -21,23 +22,7 @@ class TenantFooterMenuSeeder extends Seeder
     private const APP_ITEMS = [
         ['path' => '/settings-hub', 'title' => 'Settings', 'icon' => 'heroicon-o-cog-6-tooth'],
         ['path' => '/my-profile', 'title' => 'My profile', 'icon' => 'heroicon-o-user-circle'],
-        ['path' => '/dashboard-preferences', 'title' => 'My dashboard', 'icon' => 'heroicon-o-squares-2x2'],
         ['path' => '/onboarding-wizard', 'title' => 'Getting started', 'icon' => 'heroicon-o-rocket-launch'],
-        ['path' => '/accept-legal-documents', 'title' => 'Legal documents', 'icon' => 'heroicon-o-document-check'],
-        ['path' => '/integration-health', 'title' => 'Integration health', 'icon' => 'heroicon-o-signal'],
-        ['path' => '/compliance-alert-center', 'title' => 'Alert center', 'icon' => 'heroicon-o-bell-alert'],
-    ];
-
-    /**
-     * Custom (non-catalog) footer links.
-     *
-     * @var list<array{title: string, url: string, target: string, icon: string|null}>
-     */
-    private const CUSTOM_ITEMS = [
-        ['title' => 'Documentation', 'url' => '/help', 'target' => '_self', 'icon' => 'heroicon-o-book-open'],
-        ['title' => 'Terms of Service', 'url' => 'https://tracepharma.io/tos', 'target' => '_blank', 'icon' => 'heroicon-o-document-text'],
-        ['title' => 'Privacy Policy', 'url' => 'https://tracepharma.io/privacy', 'target' => '_blank', 'icon' => 'heroicon-o-shield-check'],
-        ['title' => 'Support', 'url' => 'mailto:support@tracepharma.io', 'target' => '_self', 'icon' => 'heroicon-o-lifebuoy'],
     ];
 
     public function run(): void
@@ -96,18 +81,22 @@ class TenantFooterMenuSeeder extends Seeder
             ]);
         }
 
-        foreach (self::CUSTOM_ITEMS as $item) {
-            $url = $item['url'];
-            if ($item['title'] === 'Support') {
-                $email = (string) config('tracepharma.platform_support_email', 'support@tracepharma.io');
-                $url = 'mailto:'.$email;
-            }
+        $supportEmail = (string) config('tracepharma.platform_support_email', 'support@tracepharma.io');
 
+        $customItems = [
+            ['title' => 'Documentation', 'url' => '/help', 'target' => '_self', 'icon' => 'heroicon-o-book-open'],
+            ['title' => 'Legal', 'url' => LegalDocumentUrls::legalSummaryUrl(), 'target' => '_blank', 'icon' => 'heroicon-o-scale'],
+            ['title' => 'Terms of Service', 'url' => LegalDocumentUrls::termsUrl(), 'target' => '_blank', 'icon' => 'heroicon-o-document-text'],
+            ['title' => 'Privacy Policy', 'url' => LegalDocumentUrls::privacyUrl(), 'target' => '_blank', 'icon' => 'heroicon-o-shield-check'],
+            ['title' => 'Support', 'url' => 'mailto:'.$supportEmail, 'target' => '_self', 'icon' => 'heroicon-o-lifebuoy'],
+        ];
+
+        foreach ($customItems as $item) {
             MenuItem::query()->create([
                 'menu_id' => $menu->id,
                 'parent_id' => null,
                 'title' => $item['title'],
-                'url' => $url,
+                'url' => $item['url'],
                 'target' => $item['target'],
                 'icon' => $item['icon'],
                 'type' => 'custom',

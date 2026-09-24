@@ -5,6 +5,7 @@ namespace App\Filament\App\Resources\ReceivingSessions\Pages;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\Resources\Pages\CreateRecord;
+use App\Support\Receiving\ReceiveLayout;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
@@ -32,6 +33,15 @@ class CreateReceivingSession extends CreateRecord
     protected function getCreatedNotificationTitle(): ?string
     {
         return 'Scan-first receive opened';
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        if (function_exists('floorShell') && floorShell()) {
+            return ReceiveLayout::floorUrl($this->getRecord());
+        }
+
+        return $this->getResourceUrl('view', $this->getRedirectUrlParameters());
     }
 
     /**

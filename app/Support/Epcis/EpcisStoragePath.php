@@ -12,8 +12,9 @@ use DomainException;
  * Local tenant disks keep short paths: epcis/{inbound|outbound}/...
  *
  * S3 (hub IAM inbound/*):
- *   new inbound uploads → inbound/{filename}.xml
- *   already-stored hub or legacy tenants/{id}/epcis/... keys → returned as-is
+ *   new inbound uploads, tenancy on or tenant id passed → inbound/{tenantId}/{filename}
+ *   new inbound uploads with tenancy off and no tenant id → inbound/{filename}
+ *   already-stored hub, tenant-prefixed, or legacy tenants/{id}/epcis/... keys → returned as-is
  *   outbound on S3 → rejected (authored payloads use the local disk)
  */
 final class EpcisStoragePath
@@ -40,6 +41,11 @@ final class EpcisStoragePath
             $file = substr($normalized, strlen('epcis/inbound/'));
             if ($file === '' || str_contains($file, '/')) {
                 throw new DomainException('Hub inbound S3 key must be inbound/{filename}.');
+            }
+
+            $resolvedTenantId = self::resolvedTenantId($tenantId);
+            if ($resolvedTenantId !== null) {
+                return 'inbound/'.$resolvedTenantId.'/'.$file;
             }
 
             return 'inbound/'.$file;
@@ -73,7 +79,33 @@ final class EpcisStoragePath
             return true;
         }
 
+        if (preg_match('#^inbound/[^/]+/[^/]+$#', $path) === 1) {
+            return true;
+        }
+
         return preg_match('#^tenants/[^/]+/epcis/.+#', $path) === 1;
+    }
+
+    private static function resolvedTenantId(?string $tenantId): ?string
+    {
+        $candidate = is_string($tenantId) && $tenantId !== '' ? $tenantId : null;
+
+        if ($candidate === null && function_exists('tenancy') && tenancy()->initialized) {
+            $current = tenant();
+            if ($current !== null) {
+                $candidate = (string) $current->getTenantKey();
+            }
+        }
+
+        if ($candidate === null || $candidate === '') {
+            return null;
+        }
+
+        if (str_contains($candidate, '/') || str_contains($candidate, '\\')) {
+            throw new DomainException('Tenant id cannot contain a path separator in an S3 inbound key.');
+        }
+
+        return $candidate;
     }
 
     private static function normalizeRelative(string $relativePath): string

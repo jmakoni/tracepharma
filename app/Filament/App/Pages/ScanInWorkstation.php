@@ -6,12 +6,14 @@ use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Receiving\CompleteReceivingSession;
 use App\Actions\Receiving\ConfirmReceivingScan;
 use App\Actions\Receiving\DeleteReceivingSession;
+use App\Actions\Receiving\HoldFilelessScanFirstReceivingSession;
 use App\Actions\Receiving\OpenScanFirstReceivingSession;
 use App\Actions\Receiving\UnconfirmReceivingScanLine;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\Epc;
+use App\Models\Receiving\InboundShipment;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\User;
@@ -21,10 +23,17 @@ use App\Support\Auth\SiteAccess;
 use App\Support\Floor\UnsubmittedSessionDelete;
 use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
+use App\Support\Receiving\ExpectedInboundOrderHeader;
+use App\Support\Receiving\ReceiveLayout;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingPolicy;
+use App\Support\Receiving\ReceivingSessionCompleteCopy;
+use App\Support\Receiving\ReceivingSessionProgress;
 use App\Support\Receiving\ReceivingSessionStatus;
 use App\Support\Receiving\ResolveLotLevelReceiveScan;
 use App\Support\TenantFeatures;
+use App\Support\TenantSettings;
 use App\Support\Tracing\Gs1DualDisplay;
 use DomainException;
 use Filament\Actions\Action;
@@ -63,6 +72,23 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
     /** @var 'ok'|'warn'|'error'|null */
     public ?string $lastScanTone = null;
+
+    /** Session-scoped seal ack after "Seal intact?" confirmation. */
+    public bool $sessionSealAcknowledged = false;
+
+    public function shouldAskSealIntact(): bool
+    {
+        if (! TenantSettings::forTenant(tenant())->requireSealQuestion()) {
+            return false;
+        }
+
+        return ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren();
+    }
+
+    public function sealAcknowledgedForConfirm(): bool
+    {
+        return ! $this->shouldAskSealIntact() || $this->sessionSealAcknowledged;
+    }
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -110,6 +136,10 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
 
         $this->loadSession($id);
+
+        if ($this->sessionId !== null && $this->preferFloorHud()) {
+            $this->redirect(ReceiveLayout::floorUrl($this->sessionId));
+        }
     }
 
     /**
@@ -129,8 +159,8 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             return null;
         }
 
-        return $this->sessionsQuery()
-            ->with(['document', 'tradingPartner', 'site'])
+        return $this->sessionsQuery(includeHeld: true)
+            ->with(['document', 'document.inboundShipment', 'inboundShipment', 'tradingPartner', 'site'])
             ->whereKey($this->sessionId)
             ->first();
     }
@@ -164,6 +194,81 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
             ->count();
     }
 
+    public function sessionProgress(): ?ReceivingSessionProgress
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return null;
+        }
+
+        return ReceivingSessionProgress::for($session, ReceivingPolicy::forTenant(tenant()));
+    }
+
+    /**
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
+     */
+    public function receiveExceptionBadgeCounts(): array
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return ReceiveSessionExceptionQuery::emptyBadgeCounts();
+        }
+
+        return ReceiveSessionExceptionQuery::floorBadgeCounts($session);
+    }
+
+    public function receiveExceptionInboxUrl(string $badgeKey): ?string
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return null;
+        }
+
+        $codes = ReceiveSessionExceptionQuery::badgeTypeCodes()[$badgeKey] ?? [];
+
+        return ReceiveSessionExceptionInbox::url($session, $codes);
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public function receiveExceptionInboxUrls(): array
+    {
+        $session = $this->session();
+
+        return $session !== null
+            ? ReceiveSessionExceptionInbox::badgeUrls($session)
+            : [];
+    }
+
+    public function expectedOrderShipment(): ?InboundShipment
+    {
+        $session = $this->session();
+
+        return $session !== null ? ExpectedInboundOrderHeader::shipmentFor($session) : null;
+    }
+
+    /**
+     * @return array{
+     *     po: ?string,
+     *     asn: ?string,
+     *     status: string,
+     *     parents_confirmed: int,
+     *     parents_expected: int,
+     *     eaches_confirmed: int,
+     *     eaches_expected: int
+     * }|null
+     */
+    public function expectedOrderHeader(): ?array
+    {
+        $session = $this->session();
+
+        return $session !== null ? ExpectedInboundOrderHeader::forSession($session) : null;
+    }
+
     public function contextSiteLabel(): string
     {
         $session = $this->session();
@@ -175,14 +280,29 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
     public function promptCopy(): array
     {
-        return ReceivingPolicy::forTenant(tenant())->promptCopy($this->session());
+        $session = $this->session();
+        $copy = ReceivingPolicy::forTenant(tenant())->promptCopy($session);
+
+        if ($session !== null) {
+            $complete = ReceivingSessionCompleteCopy::for($session);
+            $copy['completeTitle'] = $complete['title'];
+            $copy['completeBody'] = $complete['body'];
+            $copy['documentComplete'] = $complete['document_complete'];
+        }
+
+        return $copy;
     }
 
     public function confirmScanAction(): Action
     {
         return Action::make('confirmScan')
             ->label('Confirm')
+            ->requiresConfirmation(fn (): bool => $this->shouldAskSealIntact())
+            ->modalHeading('Seal intact?')
+            ->modalDescription('Confirm the outer seal is intact before receiving this sealed hierarchy.')
+            ->modalSubmitActionLabel('Seal intact')
             ->action(function (): void {
+                $this->sessionSealAcknowledged = true;
                 $session = $this->session();
                 if ($session === null) {
                     $this->flashScan('error', 'Open a receive session first.');
@@ -233,8 +353,9 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                         $session,
                         $scan,
                         auth()->id(),
-                        false,
+                        ReceivingPolicy::forTenant(tenant())->defaultAutoConfirmChildren(),
                         unpack: ReceivingPolicy::forTenant(tenant())->canUnpackAtReceive(),
+                        sealAcknowledged: $this->sealAcknowledgedForConfirm(),
                     );
                 } catch (InvalidArgumentException|DomainException $e) {
                     $this->flashScan('error', $e->getMessage());
@@ -265,28 +386,11 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                 ->color('primary')
                 ->visible(fn (): bool => $this->sessionId === null)
                 ->action(function (): void {
-                    try {
-                        $session = app(OpenScanFirstReceivingSession::class)->handle(
-                            openedBy: auth()->id(),
-                        );
-                    } catch (InvalidArgumentException|DomainException $e) {
-                        Notification::make()
-                            ->title('Could not open scan-first')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->ephemeral()->send();
-
-                        return;
-                    }
-
-                    $this->sessionId = (int) $session->getKey();
-                    $this->lastScanMessage = null;
-                    $this->lastScanTone = null;
-                    $this->scan = '';
+                    $this->startScanFirstFromPicker();
                 }),
             RegulatoryCompliance::apply(
                 Action::make('completeReceiving')
-                    ->label('Complete receive')
+                    ->label('Complete session')
                     ->icon(Heroicon::OutlinedCheckCircle)
                     ->color('primary')
                     ->visible(fn (): bool => $this->canCompleteManually())
@@ -321,9 +425,11 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                             return;
                         }
 
-                        $this->flashScan('ok', 'Receiving complete');
+                        $session = $session->fresh() ?? $session;
+                        $completeTitle = ReceivingSessionCompleteCopy::for($session)['title'];
+                        $this->flashScan('ok', $completeTitle);
                         Notification::make()
-                            ->title('Receiving complete')
+                            ->title($completeTitle)
                             ->success()
                             ->ephemeral()->send();
 
@@ -332,6 +438,48 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                 'receiving_complete_scan_first',
                 requireReason: false,
             ),
+            Action::make('completeToHold')
+                ->label('Complete to hold — waiting for EPCIS')
+                ->icon(Heroicon::OutlinedPauseCircle)
+                ->color('warning')
+                ->visible(fn (): bool => $this->canCompleteToHold())
+                ->requiresConfirmation()
+                ->modalHeading('Complete to hold — waiting for EPCIS')
+                ->modalDescription('Clears the gun and holds confirmed serials until inbound EPCIS arrives. Does not author a sellable receiving document. Complete still requires a file.')
+                ->modalSubmitActionLabel('Complete to hold')
+                ->action(function (): void {
+                    $session = $this->session();
+                    if ($session === null) {
+                        return;
+                    }
+
+                    if (! $this->assertSessionSiteAccess($session)) {
+                        return;
+                    }
+
+                    try {
+                        $held = app(HoldFilelessScanFirstReceivingSession::class)->handle(
+                            $session,
+                            auth()->id(),
+                        );
+                    } catch (InvalidArgumentException|DomainException $e) {
+                        Notification::make()
+                            ->title('Complete to hold blocked')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->ephemeral()->send();
+
+                        return;
+                    }
+
+                    $this->flashScan('ok', 'Held — waiting for EPCIS');
+                    Notification::make()
+                        ->title('Held — waiting for EPCIS')
+                        ->success()
+                        ->ephemeral()->send();
+
+                    $this->openNextInboundIfAvailable($held);
+                }),
             UnsubmittedSessionDeleteAction::forReceivingHud(
                 fn (): bool => $this->session()?->canHardDelete() ?? false,
                 function (): int {
@@ -379,7 +527,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         $this->sessionId = (int) $next->getKey();
         $this->scan = '';
         Notification::make()
-            ->title('Opened next inbound')
+            ->title('Opened next receive session')
             ->success()
             ->ephemeral()->send();
     }
@@ -388,11 +536,16 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
     {
         $session = $this->session();
 
-        if ($session === null || $session->status === 'completed') {
+        if ($session === null || in_array($session->status, ['completed', 'held'], true)) {
             return false;
         }
 
         return $this->confirmedLineCount() > 0;
+    }
+
+    public function canCompleteToHold(): bool
+    {
+        return $this->session()?->canCompleteToHold() ?? false;
     }
 
     /**
@@ -407,6 +560,14 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         return ReceivingScanLine::query()
             ->where('receiving_session_id', $this->sessionId)
             ->where('status', 'confirmed')
+            ->where(function ($query): void {
+                $query->where('line_role', 'parent')
+                    ->orWhere('status', 'unexpected')
+                    ->orWhere(function ($child): void {
+                        $child->where('line_role', 'child')
+                            ->whereNull('parent_epc_id');
+                    });
+            })
             ->with([
                 'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
                 'epc.ilmd',
@@ -425,61 +586,6 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
                     'scanned_at' => $line->confirmed_at?->format('Y-m-d H:i:s') ?? '—',
                     'urn' => $display['urn'] !== '' ? $display['urn'] : '—',
                     'present' => true,
-                ];
-            })
-            ->values();
-    }
-
-    /**
-     * @return Collection<int, array{line_id: int, identifier: string, scanned_at: string, urn: string, present: bool, serial: string, label: string, confirmed: bool}>
-     */
-    public function caseRows(): Collection
-    {
-        if ($this->sessionId === null) {
-            return collect();
-        }
-
-        $parentIds = ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->sessionId)
-            ->where('line_role', 'parent')
-            ->where('status', 'confirmed')
-            ->pluck('epc_id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
-
-        if ($parentIds === []) {
-            return collect();
-        }
-
-        return ReceivingScanLine::query()
-            ->where('receiving_session_id', $this->sessionId)
-            ->where('line_role', 'child')
-            ->whereIn('parent_epc_id', $parentIds)
-            ->with([
-                'epc:id,epc_type,gtin14,serial_number,epc_uri,sscc18,ai_00,ai_01_21',
-                'epc.ilmd',
-            ])
-            ->orderBy('id')
-            ->get()
-            ->map(function (ReceivingScanLine $line): array {
-                $epc = $line->epc;
-                $serial = $epc?->serial_number ?? '';
-                $display = $epc instanceof Epc
-                    ? Gs1DualDisplay::forEpc($epc)
-                    : ['gs1_barcode' => $serial, 'urn' => '', 'primary' => $serial];
-                $confirmed = $line->status === 'confirmed';
-
-                return [
-                    'line_id' => (int) $line->getKey(),
-                    'serial' => $serial,
-                    'label' => $display['primary'] ?? $serial,
-                    'identifier' => ($display['gs1_barcode'] ?? '') !== '' ? $display['gs1_barcode'] : '—',
-                    'scanned_at' => $confirmed
-                        ? ($line->confirmed_at?->format('Y-m-d H:i:s') ?? '—')
-                        : '—',
-                    'urn' => ($display['urn'] ?? '') !== '' ? $display['urn'] : '—',
-                    'present' => $confirmed,
-                    'confirmed' => $confirmed,
                 ];
             })
             ->values();
@@ -522,34 +628,42 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         $this->flashScan('ok', 'Removed from this receive.');
     }
 
-    public function removeCase(int $lineId): void
+    public function startScanFirstFromPicker(): void
     {
-        $session = $this->session();
-        if ($session === null || $session->status === 'completed') {
-            return;
-        }
-
-        $line = ReceivingScanLine::query()
-            ->where('receiving_session_id', $session->getKey())
-            ->whereKey($lineId)
-            ->where('line_role', 'child')
-            ->first();
-
-        if ($line === null) {
-            $this->flashScan('error', 'Case not found on this session.');
+        try {
+            $session = app(OpenScanFirstReceivingSession::class)->handle(
+                openedBy: auth()->id(),
+            );
+        } catch (InvalidArgumentException|DomainException $e) {
+            Notification::make()
+                ->title('Could not open scan-first')
+                ->body($e->getMessage())
+                ->danger()
+                ->ephemeral()->send();
 
             return;
         }
 
-        $this->removeConfirmed($lineId);
-        if ($this->lastScanTone === 'ok') {
-            $this->flashScan('ok', 'Case removed from this receive.');
+        if ($this->preferFloorHud()) {
+            $this->redirect(ReceiveLayout::floorUrl($session));
+
+            return;
         }
+
+        $this->sessionId = (int) $session->getKey();
+        $this->lastScanMessage = null;
+        $this->lastScanTone = null;
+        $this->scan = '';
+    }
+
+    private function preferFloorHud(): bool
+    {
+        return function_exists('floorShell') && floorShell();
     }
 
     private function loadSession(int $sessionId): void
     {
-        $session = $this->sessionsQuery()
+        $session = $this->sessionsQuery(includeHeld: true)
             ->whereKey($sessionId)
             ->first();
 
@@ -566,6 +680,7 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
 
         $this->sessionId = (int) $session->getKey();
         $this->scan = '';
+        $this->sessionSealAcknowledged = false;
     }
 
     private function clearSession(): void
@@ -574,15 +689,21 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         $this->scan = '';
         $this->lastScanMessage = null;
         $this->lastScanTone = null;
+        $this->sessionSealAcknowledged = false;
     }
 
     /**
      * @return Builder<ReceivingSession>
      */
-    private function sessionsQuery(): Builder
+    private function sessionsQuery(bool $includeHeld = false): Builder
     {
+        $statuses = ['open', 'in_progress'];
+        if ($includeHeld) {
+            $statuses[] = 'held';
+        }
+
         $query = ReceivingSession::query()
-            ->whereIn('status', ['open', 'in_progress'])
+            ->whereIn('status', $statuses)
             ->latest('opened_at')
             ->latest('id');
 

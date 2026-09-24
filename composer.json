@@ -52,6 +52,7 @@
         "tracepharma/filament-ui-extras": "1.0.0",
         "watheqalshowaiter/filament-sticky-table-header": "*",
         "zeeshantariq/filament-sticky-columns": "*",
+        "zvizvi/filament-column-filters": "^0.0.6",
         "zvizvi/filament-notifications-tabs": "^0.0.2"
     },
     "require-dev": {
@@ -75,7 +76,8 @@
             "vendor/filament/actions/src/Concerns/HasLabel.php"
         ],
         "files": [
-            "app/Filament/Overrides/Actions/HasLabel.php"
+            "app/Filament/Overrides/Actions/HasLabel.php",
+            "app/Support/Floor/helpers.php"
         ]
     },
     "autoload-dev": {

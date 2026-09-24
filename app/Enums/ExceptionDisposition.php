@@ -10,7 +10,7 @@ enum ExceptionDisposition: string
     public function label(): string
     {
         return match ($this) {
-            self::Cleared => 'Cleared for distribution',
+            self::Cleared => 'Hold cleared for distribution',
             self::Illegitimate => 'Illegitimate',
         };
     }

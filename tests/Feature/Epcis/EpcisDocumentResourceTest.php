@@ -19,6 +19,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
+use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -147,6 +148,23 @@ class EpcisDocumentResourceTest extends TestCase
     }
 
     #[Test]
+    public function status_filter_includes_floor_receive_and_ingest_options(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+
+        $table = EpcisDocumentsTable::configure(Table::make(new ListEpcisDocuments));
+        $filter = $table->getFilter('status');
+        $this->assertNotNull($filter);
+
+        $options = $filter->getOptions();
+        $this->assertSame('Received', $options['Floor receive']['floor_received'] ?? null);
+        $this->assertSame('Partially Received', $options['Floor receive']['floor_partially_received'] ?? null);
+        $this->assertSame('Receive Blocked', $options['Floor receive']['floor_receive_blocked'] ?? null);
+        $this->assertSame('Validated', $options['Ingest']['validated'] ?? null);
+        $this->assertSame('Uploaded', $options['Ingest']['received'] ?? null);
+    }
+
+    #[Test]
     public function list_table_sees_ingested_xttrium_document(): void
     {
         $this->initializeDemo2Tenant();
@@ -221,7 +239,7 @@ class EpcisDocumentResourceTest extends TestCase
 
             $this->actingAs($owner, 'web');
 
-            \Livewire\Livewire::withQueryParams(['findRecall' => '1'])
+            Livewire::withQueryParams(['findRecall' => '1'])
                 ->test(ListEpcisDocuments::class)
                 ->assertSet('defaultAction', 'findRecall');
         } finally {

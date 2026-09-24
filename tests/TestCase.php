@@ -11,6 +11,8 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         // Keep the broader suite green; enable per-test when asserting the gate.
-        config(['tracepharma.regulatory_compliance.password_gate' => false]);
+        config([
+            'tracepharma.regulatory_compliance.password_gate' => false,
+        ]);
     }
 }

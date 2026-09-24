@@ -12,6 +12,7 @@ use App\Models\Epcis\EpcisEvent;
 use App\Models\Receiving\ReceivingScanLine;
 use App\Models\Receiving\ReceivingSession;
 use App\Models\TradingPartner;
+use App\Support\Receiving\ResolveInboundAggregationChildEpcs;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use DomainException;
@@ -32,6 +33,7 @@ final class AutoReceiveCmoInboundDocument
         private readonly OpenReceivingSessionFromDocument $openReceivingSessionFromDocument,
         private readonly ConfirmReceivingScan $confirmReceivingScan,
         private readonly CompleteReceivingSession $completeReceivingSession,
+        private readonly ResolveInboundAggregationChildEpcs $resolveInboundAggregationChildEpcs,
     ) {}
 
     public function handle(EpcisDocument $document): ?ReceivingSession
@@ -62,11 +64,17 @@ final class AutoReceiveCmoInboundDocument
                     throw new DomainException('Expected parent line is missing an EPC URI.');
                 }
 
+                $childIds = $this->resolveInboundAggregationChildEpcs->childEpcIdsForParent(
+                    $session,
+                    $line->epc,
+                    (int) $document->getKey(),
+                );
+
                 $confirm = $this->confirmReceivingScan->handle(
                     $session->fresh() ?? $session,
                     $uri,
                     userId: null,
-                    autoConfirmChildren: true,
+                    autoConfirmChildren: $childIds !== [],
                 );
 
                 if (! ($confirm['ok'] ?? false)) {

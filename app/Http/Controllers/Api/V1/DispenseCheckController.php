@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Actions\Disposition\EmitDispensingEpcis;
 use App\Actions\Epcis\ResolveEpcFromScan;
 use App\Actions\Vrs\RunProductVerification;
 use App\Exceptions\VrsConfigurationException;
@@ -10,11 +11,14 @@ use App\Http\Requests\Api\V1\DispenseCheckRequest;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\User;
 use App\Services\Receiving\ReceivingGate;
+use App\Support\Auth\CurrentSite;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
+use Throwable;
 
 final class DispenseCheckController extends Controller
 {
@@ -28,9 +32,8 @@ final class DispenseCheckController extends Controller
             abort(403, 'VRS is not enabled for this tenant profile.');
         }
 
-        $scan = $this->resolveScan($request);
-
         try {
+            $scan = $this->resolveScan($request);
             $result = $verification->handle($scan, $request->user());
         } catch (InvalidArgumentException $exception) {
             return response()->json(['message' => $exception->getMessage(), 'allowed' => false], 422);
@@ -44,6 +47,13 @@ final class DispenseCheckController extends Controller
 
         $record = $result['verification'];
         $allowed = $record->status === 'verified';
+        if ($allowed) {
+            try {
+                app(EmitDispensingEpcis::class)->maybeForVerifiedScan($scan, CurrentSite::id());
+            } catch (Throwable) {
+                // Dispense check already succeeded; authored EPCIS is best-effort.
+            }
+        }
         $message = $record->message;
         $status = $record->status;
         $exceptionId = $result['exception_id'];
@@ -142,12 +152,15 @@ final class DispenseCheckController extends Controller
         }
 
         $gtin = $request->input('gtin14') ?? $request->input('gtin');
-        $gtin14 = str_pad(preg_replace('/\D+/', '', (string) $gtin) ?? '', 14, '0', STR_PAD_LEFT);
-        $serial = trim((string) $request->input('serial'));
+        $gtin14 = Gtin::fromUpc((string) $gtin);
+        if ($gtin14 === null) {
+            throw new InvalidArgumentException('GTIN must be a valid GS1 GTIN-8/12/13/14.');
+        }
+        $serial = (string) $request->input('serial');
         $scan = '(01)'.$gtin14.'(21)'.$serial;
 
         if ($request->filled('lot')) {
-            $scan .= '(10)'.trim((string) $request->input('lot'));
+            $scan .= '(10)'.(string) $request->input('lot');
         }
 
         if ($request->filled('expiry')) {

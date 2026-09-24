@@ -192,6 +192,50 @@ final class ElementString
     }
 
     /**
+     * Operator-facing scan label: SGTIN shows 01+GTIN+21+serial only (no AI 17/10).
+     * SSCC shows parenthesized AI 00 + SSCC-18. Pure Identity URNs are converted to
+     * the same human forms — never returned as urn:epc:id:….
+     */
+    public static function identityBarcodeDisplay(string $input): string
+    {
+        $normalized = self::normalize($input);
+
+        if ($normalized === '') {
+            return $input;
+        }
+
+        if (str_starts_with(strtolower($normalized), 'urn:epc:id:sscc:')) {
+            $sscc = Sscc::fromUrn($normalized);
+
+            return $sscc !== null
+                ? '(00)'.$sscc['sscc18']
+                : $normalized;
+        }
+
+        if (str_starts_with(strtolower($normalized), 'urn:epc:id:sgtin:')) {
+            $sgtin = Sgtin::fromUrn($normalized);
+
+            return $sgtin !== null
+                ? $sgtin['ai_01_21']
+                : $normalized;
+        }
+
+        $sscc = self::ssccIdentity($normalized);
+
+        if ($sscc !== null) {
+            return '(00)'.$sscc['sscc18'];
+        }
+
+        $sgtin = self::sgtinIdentity($normalized);
+
+        if ($sgtin !== null) {
+            return $sgtin['ai_01_21'];
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Extract SSCC identity from 18-digit, 20-digit (00…), or (00)… forms.
      *
      * @return array{sscc18: string, ai_00: string}|null

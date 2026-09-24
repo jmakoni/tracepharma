@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
+use App\Support\Receiving\InboundExpectedLineClaims;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -18,9 +19,10 @@ final class CancelReceivingSession
 {
     public function __construct(
         private readonly RevertTransferReceiveReceivingMarks $revertTransferReceiveReceivingMarks,
+        private readonly AuthorReceiveSessionException $authorReceiveSessionException,
     ) {}
 
-    public function handle(ReceivingSession $session, ?int $actorId = null): ReceivingSession
+    public function handle(ReceivingSession $session, ?int $actorId = null, ?string $reason = null): ReceivingSession
     {
         if (! JobRoleAccess::allows(Permissions::NavReceive)) {
             throw new DomainException('Receiving is not authorized for your job role.');
@@ -31,7 +33,11 @@ final class CancelReceivingSession
             $this->assertCanAccessSessionSite($user, $session);
         }
 
-        return DB::transaction(function () use ($session): ReceivingSession {
+        $cancelReason = filled($reason)
+            ? trim((string) $reason)
+            : 'Operator cancelled receive.';
+
+        return DB::transaction(function () use ($session, $user, $cancelReason): ReceivingSession {
             $session = ReceivingSession::query()->whereKey($session->getKey())->lockForUpdate()->firstOrFail();
 
             if ($session->receiving_events_generated_at !== null || $session->receiving_epcis_document_id !== null) {
@@ -46,10 +52,18 @@ final class CancelReceivingSession
                 $this->revertTransferReceiveReceivingMarks->handle($session);
             }
 
+            $this->authorReceiveSessionException->refused(
+                $session,
+                $cancelReason,
+                $user instanceof User ? $user : null,
+            );
+
             $session->forceFill([
                 'status' => 'cancelled',
                 'completed_at' => now(),
             ])->save();
+
+            InboundExpectedLineClaims::releaseUnconfirmedForSession($session);
 
             return $session->refresh();
         });

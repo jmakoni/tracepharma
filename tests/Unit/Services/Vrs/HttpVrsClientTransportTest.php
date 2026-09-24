@@ -80,6 +80,25 @@ class HttpVrsClientTransportTest extends TestCase
     }
 
     #[Test]
+    public function not_in_network_reason_returns_unavailable_not_suspect(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response([
+                'verified' => false,
+                'reason_code' => 'not_in_network',
+                'message' => 'No VRS coverage for this GTIN',
+            ], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('unavailable', $result['status']);
+        $this->assertNotSame('suspect', $result['status']);
+        $this->assertNotSame('failed', $result['status']);
+        $this->assertStringContainsString('coverage', strtolower($result['message']));
+    }
+
+    #[Test]
     public function timeout_returns_unavailable_not_verified(): void
     {
         Http::fake(function (): never {
@@ -132,6 +151,42 @@ class HttpVrsClientTransportTest extends TestCase
         $this->assertSame('verified', $result['status']);
         $this->assertSame(200, $result['http_status']);
         $this->assertStringContainsString('verified', (string) $result['http_body']);
+    }
+
+    #[Test]
+    public function lms_verification_response_unwraps_to_verified(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response([
+                'verificationResponse' => [
+                    'verified' => true,
+                    'message' => 'LMS ok',
+                ],
+            ], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('verified', $result['status']);
+        $this->assertStringContainsString('LMS ok', $result['message']);
+    }
+
+    #[Test]
+    public function lms_not_in_network_reason_returns_unavailable(): void
+    {
+        Http::fake([
+            'https://vrs.test/verify' => Http::response([
+                'verificationResponse' => [
+                    'verified' => false,
+                    'reasonCode' => 'not_in_network',
+                    'message' => 'No VRS coverage for this GTIN',
+                ],
+            ], 200),
+        ]);
+
+        $result = app(HttpVrsClient::class)->verify('00301164024167', 'SN1');
+
+        $this->assertSame('unavailable', $result['status']);
     }
 
     #[Test]

@@ -2,11 +2,13 @@
 
 namespace Tests\Unit\Models\Epcis;
 
+use App\Enums\EpcisAuthoredKind;
 use App\Enums\TenantProfile;
 use App\Models\Epcis\EpcisDocument;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
+use App\Support\TenantSettings;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -171,6 +173,52 @@ class EpcisDocumentShippingPartiesSummaryTest extends TestCase
         $this->assertNotSame('Inbound Supplier Co', $summary['sold_to']['name']);
         $this->assertSame('0614141123452', $summary['sold_to']['gln']);
         $this->assertSame('Inbound Supplier Co', $summary['seller']['name']);
+    }
+
+    #[Test]
+    public function authored_receiving_treats_supplier_as_seller_and_tenant_as_sold_to(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+        $priorGln = $tenant->gln;
+
+        try {
+            TenantSettings::forTenant($tenant)->setGln('0614141999903');
+            $tenant->save();
+
+            $supplier = new TradingPartner([
+                'name' => 'Xttrium Laboratories',
+                'gln' => '0301160000009',
+            ]);
+
+            $document = new EpcisDocument([
+                'direction' => 'outbound',
+                'authored_kind' => EpcisAuthoredKind::Receiving,
+                'notes' => 'Generated receiving EPCIS (custody attestation, not TI/TS)',
+                'original_filename' => 'receiving-test.xml',
+                'ship_from_name' => null,
+                'ship_to_name' => null,
+                'sender_gln' => null,
+                'receiver_gln' => null,
+            ]);
+            $document->setRelation('tradingPartner', $supplier);
+            $document->setRelation('shipToPartner', null);
+            $document->setRelation('shipFromSite', null);
+            $document->setRelation('shipToSite', null);
+
+            $summary = $document->shippingPartiesSummary();
+
+            $this->assertSame('Xttrium Laboratories', $summary['seller']['name']);
+            $this->assertSame('0301160000009', $summary['seller']['gln']);
+            $this->assertSame((string) $tenant->name, $summary['sold_to']['name']);
+            $this->assertSame('0614141999903', $summary['sold_to']['gln']);
+            $this->assertNotSame('Xttrium Laboratories', $summary['sold_to']['name']);
+        } finally {
+            TenantSettings::forTenant($tenant)->setGln($priorGln !== null ? (string) $priorGln : null);
+            $tenant->save();
+            if (tenancy()->initialized) {
+                tenancy()->end();
+            }
+        }
     }
 
     private function initializeDemo2Tenant(): Tenant

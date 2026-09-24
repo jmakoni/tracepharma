@@ -4,6 +4,7 @@ namespace App\Filament\App\Resources\OutboundShippingSessions;
 
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\CreateOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\ListOutboundShippingSessions;
+use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileListOutboundShippingSessions;
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\MobileViewOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\Pages\ViewOutboundShippingSession;
 use App\Filament\App\Resources\OutboundShippingSessions\RelationManagers\ScanLinesRelationManager;
@@ -131,6 +132,7 @@ class OutboundShippingSessionResource extends Resource implements HasKnowledgeBa
         return [
             'index' => ListOutboundShippingSessions::route('/'),
             'create' => CreateOutboundShippingSession::route('/create'),
+            'list-floor' => MobileListOutboundShippingSessions::route('/floor'),
             'view' => ViewOutboundShippingSession::route('/{record}'),
             'floor' => MobileViewOutboundShippingSession::route('/{record}/floor'),
         ];

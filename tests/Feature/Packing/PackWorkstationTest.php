@@ -38,6 +38,7 @@ use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -149,6 +150,102 @@ class PackWorkstationTest extends TestCase
             $this->assertStringContainsString('0399991', $description);
             $this->assertStringContainsString('Commission new parent SSCC', (string) $component->instance()->confirmPackAction()->getModalHeading());
             $this->assertTrue($component->instance()->confirmPackAction()->isConfirmationRequired());
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function desktop_pack_blade_exposes_confirm_pack_macro(): void
+    {
+        $blade = File::get(resource_path('views/filament/app/pages/pack-workstation.blade.php'));
+
+        $this->assertStringContainsString("mountAction('confirmPack')", $blade);
+        $this->assertStringContainsString('Confirm pack', $blade);
+        $this->assertStringContainsString('min-h-14', $blade);
+    }
+
+    #[Test]
+    public function desktop_break_pack_blade_exposes_confirm_break_pack_macro(): void
+    {
+        $blade = File::get(resource_path('views/filament/app/pages/break-pack-workstation.blade.php'));
+
+        $this->assertStringContainsString("mountAction('confirmBreakPack')", $blade);
+        $this->assertStringContainsString('Confirm break', $blade);
+        $this->assertStringContainsString('min-h-14', $blade);
+    }
+
+    #[Test]
+    public function desktop_workstation_blades_use_live_blur_and_enter_scan(): void
+    {
+        $blades = [
+            'views/filament/app/pages/pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/break-pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/unpack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/verify-product.blade.php' => 'verifyScan',
+            'views/filament/app/pages/decommission-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/return-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/saleable-return-workstation.blade.php' => 'processScan',
+        ];
+
+        foreach ($blades as $path => $method) {
+            $blade = File::get(resource_path($path));
+            $this->assertStringContainsString('wire:model="scan"', $blade, $path);
+            $this->assertStringContainsString('keydown.enter.prevent="$wire.'.$method.'($refs.scanInput.value)"', $blade, $path);
+            $this->assertStringContainsString('x-on:submit.prevent="$wire.'.$method.'($refs.scanInput.value)"', $blade, $path);
+            $this->assertStringNotContainsString('wire:model.live.blur', $blade, $path);
+        }
+
+        $scanField = File::get(resource_path('views/components/scan-field.blade.php'));
+        $this->assertStringContainsString('wire:model="{{ $wireModel }}"', $scanField);
+        $this->assertStringContainsString('$refs.scanInput.value', $scanField);
+        $this->assertStringNotContainsString('wire:model.live.blur', $scanField);
+    }
+
+    #[Test]
+    public function floor_workstation_blades_wire_camera_confirm_method(): void
+    {
+        $blades = [
+            'views/filament/app/pages/mobile-pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-break-pack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-unpack-workstation.blade.php' => 'processScan',
+            'views/filament/app/pages/mobile-verify-product.blade.php' => 'verifyScan',
+        ];
+
+        foreach ($blades as $path => $method) {
+            $blade = File::get(resource_path($path));
+            $this->assertStringContainsString("tpFloorReceiveConfig('{$method}')", $blade, $path);
+            $this->assertStringNotContainsString('confirmScanInput', $blade, $path);
+        }
+    }
+
+    #[Test]
+    public function desktop_pack_shows_confirm_action_when_children_are_staged(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            $site = $this->createCommissionSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            $childUri = 'urn:epc:id:sgtin:030116.5200116.'.(string) random_int(90000000000000, 99999999999999);
+            $child = Epc::query()->firstOrCreate(
+                ['epc_uri' => $childUri],
+                Epc::materializeAttributesFromUri($childUri),
+            );
+            $this->epcIds[] = (int) $child->getKey();
+            $this->receiveAtSite($site, $child);
+
+            Livewire::test(PackWorkstation::class)
+                ->set('scan', $childUri)
+                ->call('processScan')
+                ->assertCount('children', 1)
+                ->assertSet('lastTone', 'warn')
+                ->assertSee('Confirm pack')
+                ->assertActionVisible('confirmPack');
         } finally {
             $this->cleanup($tenant);
         }
@@ -493,6 +590,42 @@ class PackWorkstationTest extends TestCase
     }
 
     #[Test]
+    public function break_pack_selected_rows_show_scan_time_and_transcoded_urn(): void
+    {
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            [$parent, $child] = $this->seedOpenHierarchy($site);
+
+            $component = Livewire::test(BreakPackWorkstation::class)
+                ->set('scan', (string) $parent->epc_uri)
+                ->call('processScan')
+                ->assertSet('parentEpcId', (int) $parent->getKey())
+                ->call('toggleChild', (int) $child->getKey());
+
+            $rows = $component->instance()->selectedScanRows();
+            $this->assertCount(1, $rows);
+            $this->assertSame((int) $child->getKey(), $rows[0]['epc_id']);
+            $this->assertNotSame('—', $rows[0]['scanned_at'], 'Scan time should come from the packing scan line.');
+            $this->assertNotSame('—', $rows[0]['urn'], 'Transcoded Value should be the EPC URN.');
+            $this->assertSame((string) $child->epc_uri, $rows[0]['urn']);
+            $this->assertNotSame('', trim((string) $rows[0]['identifier']));
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
     public function break_pack_rejects_when_parent_sscc_lock_is_held(): void
     {
         $tenant = $this->initializeDemo2Tenant();
@@ -616,7 +749,7 @@ class PackWorkstationTest extends TestCase
                 ->set('scan', (string) $label->sscc_18)
                 ->call('processScan')
                 ->assertSet('parentLabelId', (int) $label->getKey())
-                ->assertSet('lastTone', 'ok')
+                ->assertSet('lastTone', 'warn')
                 ->assertCount('children', 0);
 
             $this->assertTrue($component->instance()->isMixedLogisticsUnit() === false);
@@ -738,6 +871,52 @@ class PackWorkstationTest extends TestCase
             $this->documentIds = array_merge(
                 $this->documentIds,
                 collect($afterSecond)->pluck('id')->map(fn ($id): int => (int) $id)->all(),
+            );
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function pack_authored_xml_uses_packing_not_inspecting(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->setProfile($tenant, TenantProfile::DrugWholesaler);
+            TenantSettings::forTenant($tenant)->saveOrganization([
+                'gln' => '0399991000008',
+                'company_prefix' => '0399991',
+            ]);
+
+            $site = $this->createCommissionSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+            $this->prepareSerialPool($this->uniqueSerialBase());
+
+            $label = $this->generateEmptySscc($site);
+            $child = $this->createReceivedChild($site, 'LOT-PACK');
+
+            Livewire::test(PackWorkstation::class)
+                ->set('scan', (string) $label->sscc_urn)
+                ->call('processScan')
+                ->set('scan', (string) $child->epc_uri)
+                ->call('processScan')
+                ->callAction('confirmPack')
+                ->assertSet('lastTone', 'ok');
+
+            $documents = $this->aggregationDocumentsForLabel($label);
+            $this->assertNotEmpty($documents);
+            $xml = Storage::disk((string) $documents[0]->payload_disk)->get((string) $documents[0]->payload_path);
+            $this->assertIsString($xml);
+            $this->assertStringContainsString('urn:epcglobal:cbv:bizstep:packing', $xml);
+            $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:inspecting', $xml);
+
+            $this->documentIds = array_merge(
+                $this->documentIds,
+                collect($documents)->pluck('id')->map(fn ($id): int => (int) $id)->all(),
             );
         } finally {
             $this->cleanup($tenant);
@@ -1130,7 +1309,7 @@ class PackWorkstationTest extends TestCase
                 ->set('scan', (string) $bottle->epc_uri)
                 ->call('processScan')
                 ->assertCount('children', 1)
-                ->assertSet('lastTone', 'ok')
+                ->assertSet('lastTone', 'warn')
                 ->callAction('confirmPack')
                 ->assertSet('lastTone', 'ok');
 

@@ -9,6 +9,7 @@ use App\Enums\TenantProfile;
 use App\Enums\TenantRole;
 use App\Models\Epcis\Epc;
 use App\Models\Principal;
+use App\Models\Shipping\OutboundShippingScanLine;
 use App\Models\Shipping\OutboundShippingSession;
 use App\Models\Site;
 use App\Models\Tenant;
@@ -16,6 +17,7 @@ use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Custody\PrincipalCustody;
+use App\Support\Epcis\BuildFullHistoryShippingEpcisXml;
 use App\Support\Gs1\Gtin;
 use App\Support\TenantSettings;
 use DomainException;
@@ -49,6 +51,9 @@ class PrincipalAgentWaveCTest extends TestCase
 
     /** @var list<int> */
     private array $userIds = [];
+
+    /** @var list<int> */
+    private array $sessionIds = [];
 
     #[Test]
     public function exception_create_inherits_principal_from_site(): void
@@ -126,6 +131,14 @@ class PrincipalAgentWaveCTest extends TestCase
 
             $this->assertSame($principalGln, $party['sender_gln']);
             $this->assertSame((string) $principal->name, $party['ship_from_name']);
+
+            $sbdh = new ReflectionMethod(BuildFullHistoryShippingEpcisXml::class, 'resolveSbdhSenderGln');
+            $sbdh->setAccessible(true);
+            $this->assertSame(
+                $principalGln,
+                $sbdh->invoke(app(BuildFullHistoryShippingEpcisXml::class), $session, $tenant),
+                'Full-history SBDH Sender must be the principal GLN on agent TI.',
+            );
             $this->assertSame((string) $site->name, $party['ship_from_site_name']);
         } finally {
             $this->cleanup($tenant);
@@ -157,6 +170,61 @@ class PrincipalAgentWaveCTest extends TestCase
                 $this->fail('Expected DomainException when principal has no GLN.');
             } catch (DomainException $e) {
                 $this->assertStringContainsString('GLN', $e->getMessage());
+            }
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function author_requires_principal_when_confirmed_epcs_belong_to_one(): void
+    {
+        $tenant = $this->initializeDemo2Tenant(TenantProfile::Logistics3pl);
+
+        try {
+            $this->actingAs($this->createOwner());
+            TenantSettings::forTenant($tenant)->setPrincipalCustodyEnforced(false);
+            $tenant->save();
+
+            $principal = $this->createPrincipal('Owned Stock', gln: $this->uniqueGln());
+            $site = Site::query()->create([
+                'name' => 'Agent Dock '.Str::random(4),
+                'gln' => $this->uniqueGln(),
+                'is_active' => true,
+                'is_organization_facility' => true,
+                'trading_partner_id' => null,
+            ]);
+            $this->siteIds[] = (int) $site->getKey();
+
+            $epc = $this->createEpc($principal->getKey());
+            $session = OutboundShippingSession::query()->create([
+                'site_id' => $site->getKey(),
+                'principal_id' => null,
+                'status' => 'open',
+                'opened_by' => auth()->id(),
+                'opened_at' => now(),
+                'confirmed_count' => 1,
+            ]);
+            $this->sessionIds[] = (int) $session->getKey();
+
+            OutboundShippingScanLine::query()->create([
+                'outbound_shipping_session_id' => $session->getKey(),
+                'epc_id' => $epc->getKey(),
+                'line_role' => 'parent',
+                'status' => 'confirmed',
+                'scan_raw' => (string) $epc->epc_uri,
+                'confirmed_at' => now(),
+            ]);
+
+            $action = app(GenerateShippingEpcisEvents::class);
+            $method = new ReflectionMethod($action, 'assertAgentPrincipalReady');
+            $method->setAccessible(true);
+
+            try {
+                $method->invoke($action, $session->fresh());
+                $this->fail('Expected DomainException when principal-owned EPCs ship without a session principal.');
+            } catch (DomainException $e) {
+                $this->assertStringContainsString('principal-owned EPCs', $e->getMessage());
             }
         } finally {
             $this->cleanup($tenant);
@@ -300,6 +368,14 @@ class PrincipalAgentWaveCTest extends TestCase
                     $settings->setPrincipalCustodyEnforced($this->priorEnforced);
                 }
                 $tenant->save();
+
+                if ($this->sessionIds !== []) {
+                    OutboundShippingScanLine::query()
+                        ->whereIn('outbound_shipping_session_id', $this->sessionIds)
+                        ->delete();
+                    OutboundShippingSession::query()->whereIn('id', $this->sessionIds)->delete();
+                    $this->sessionIds = [];
+                }
 
                 if ($this->epcIds !== []) {
                     Epc::query()->whereIn('id', $this->epcIds)->delete();

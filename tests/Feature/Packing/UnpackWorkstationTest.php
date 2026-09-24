@@ -123,6 +123,8 @@ class UnpackWorkstationTest extends TestCase
             $payload = Storage::disk((string) $document->payload_disk)->get((string) $document->payload_path);
             $this->assertIsString($payload);
             $this->assertStringContainsString('<baseExtension>', $payload);
+            $this->assertStringContainsString('urn:epcglobal:cbv:bizstep:unpacking', $payload);
+            $this->assertStringNotContainsString('urn:epcglobal:cbv:bizstep:inspecting', $payload);
             $this->assertEpcis12SchemaValid($payload);
 
             $this->assertFalse(
@@ -509,7 +511,7 @@ class UnpackWorkstationTest extends TestCase
                 ->set('scan', (string) $childA->epc_uri)
                 ->call('processScan')
                 ->assertSet('parentEpcId', (int) $parent->getKey())
-                ->assertSet('lastTone', 'ok');
+                ->assertSet('lastTone', 'warn');
 
             $instance = $component->instance();
             $this->assertSame([(int) $childA->getKey()], array_keys($instance->selectedChildren()));
@@ -768,8 +770,12 @@ class UnpackWorkstationTest extends TestCase
 
     private function uniqueSiteGln(): string
     {
+        $prefix = TenantSettings::forTenant(tenant())->companyPrefix() ?: '0399991';
+        $fill = max(1, 12 - strlen($prefix));
+
         for ($attempt = 0; $attempt < 30; $attempt++) {
-            $body = '03'.str_pad((string) random_int(0, 9999999999), 10, '0', STR_PAD_LEFT);
+            $serial = str_pad((string) random_int(0, (int) str_repeat('9', $fill)), $fill, '0', STR_PAD_LEFT);
+            $body = substr($prefix.$serial, 0, 12);
             $sum = 0;
             foreach (str_split(strrev($body)) as $index => $digit) {
                 $sum += ((int) $digit) * ($index % 2 === 0 ? 3 : 1);

@@ -16,6 +16,7 @@ use App\Models\Exceptions\ExceptionType;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\User;
 use App\Services\Exceptions\ExceptionService;
+use App\Support\Receiving\LinkVerifyCaseToOpenReceive;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
@@ -27,6 +28,7 @@ final class QuarantineService
         private readonly OpenQuarantineHold $openHold,
         private readonly ReleaseQuarantineHold $releaseHold,
         private readonly ExceptionService $exceptions,
+        private readonly LinkVerifyCaseToOpenReceive $linkVerifyCaseToOpenReceive,
     ) {}
 
     /**
@@ -255,7 +257,7 @@ final class QuarantineService
             ]);
         }
 
-        $this->releaseForCase($case, $actor, 'Cleared for distribution: '.$notes);
+        $this->releaseForCase($case, $actor, 'Hold cleared for distribution: '.$notes);
 
         $case->refresh();
 
@@ -278,7 +280,7 @@ final class QuarantineService
         $case->logActivity(
             ExceptionActivityKind::Resolution,
             $actor,
-            'Disposition: Cleared for distribution. '.$notes,
+            'Disposition: Hold cleared for distribution. '.$notes,
             ExceptionActivityVisibility::Internal,
             ['disposition' => ExceptionDisposition::Cleared->value],
         );
@@ -359,7 +361,9 @@ final class QuarantineService
                 'status' => ExceptionStatus::New->value,
             ], $epcIds, $actor);
 
-            $this->openForCase($case, $epcIds, $reason, $actor, $document);
+            $sessionMeta = $this->linkVerifyCaseToOpenReceive->stamp($case, $epcIds, $actor);
+
+            $this->openForCase($case, $epcIds, $reason, $actor, $document, $sessionMeta);
 
             return $case->fresh(['type', 'epcs']) ?? $case;
         });

@@ -4,16 +4,19 @@ namespace App\Filament\App\Resources\EpcisDocuments\Tables;
 
 use App\Actions\Epcis\EnrichEpcisDocumentShippingFields;
 use App\Actions\Epcis\ReprocessEpcisDocument;
+use App\Enums\ExceptionReceiveImpact;
 use App\Filament\App\Resources\EpcisDocuments\Actions\StartReceivingAction;
 use App\Filament\App\Support\QueueSerializedTrackTraceExport;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Exceptions\ExceptionCase;
 use App\Models\User;
 use App\Services\Dscsa\TransactionReportGenerator;
 use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
+use App\Support\Copy\OperatorNouns;
 use App\Support\Dscsa\DscsaTransactionStatementUi;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
 use Filament\Actions\Action;
@@ -35,6 +38,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class EpcisDocumentsTable
 {
@@ -52,7 +56,8 @@ class EpcisDocumentsTable
                 TextColumn::make('creation_date')
                     ->label('Date')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()->syncWith('creation_date')),
                 TextColumn::make('seller_display')
                     ->label('Seller')
                     ->state(fn (EpcisDocument $r): ?string => $r->shippingPartiesSummary()['seller']['name'])
@@ -63,7 +68,12 @@ class EpcisDocumentsTable
                         $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
 
                         return $query->orderBy('ship_from_name', $dir);
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::search()
+                            ->attribute('ship_from_name')
+                            ->label('Seller'),
+                    ),
                 TextColumn::make('ship_from_display')
                     ->label('Ship-from')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_from_site_name
@@ -79,7 +89,10 @@ class EpcisDocumentsTable
                         return $query->orderByRaw(
                             'COALESCE(NULLIF(ship_from_site_name, \'\'), ship_from_gln) '.$dir
                         );
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::search()->syncWith('ship_from_gln', ['value' => 'value']),
+                    ),
                 TextColumn::make('sold_to_display')
                     ->label('Sold-to')
                     ->state(function (EpcisDocument $r): ?string {
@@ -95,7 +108,12 @@ class EpcisDocumentsTable
                         $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
 
                         return $query->orderBy('ship_to_name', $dir);
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::search()
+                            ->attribute('ship_to_name')
+                            ->label('Sold-to'),
+                    ),
                 TextColumn::make('ship_to_site_display')
                     ->label('Ship-to')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_to_site_name
@@ -111,7 +129,10 @@ class EpcisDocumentsTable
                         return $query->orderByRaw(
                             'COALESCE(NULLIF(ship_to_site_name, \'\'), ship_to_gln) '.$dir
                         );
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::search()->syncWith('ship_to_gln', ['value' => 'value']),
+                    ),
                 TextColumn::make('asn_number')
                     ->label('ASN')
                     ->fontFamily(FontFamily::Mono)
@@ -120,7 +141,10 @@ class EpcisDocumentsTable
                     ->copyable()
                     ->limit(16)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::search()->syncWith('asn_number', ['value' => 'value']),
+                    ),
                 TextColumn::make('customer_po')
                     ->label('Customer PO')
                     ->fontFamily(FontFamily::Mono)
@@ -129,19 +153,24 @@ class EpcisDocumentsTable
                     ->copyable()
                     ->limit(16)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::search()->syncWith('customer_po', ['value' => 'value']),
+                    ),
                 TextColumn::make('event_count')
                     ->label('Events')
                     ->numeric()
                     ->sortable()
                     ->alignEnd()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('epc_count')
                     ->label('EPCs')
                     ->numeric()
                     ->sortable()
                     ->alignEnd()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('direction')
                     ->badge()
                     ->formatStateUsing(fn (EpcisDocument $record, mixed $state): string => $record->directionDisplayLabel())
@@ -152,7 +181,8 @@ class EpcisDocumentsTable
                     ->label('Schema')
                     ->badge()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::select()->syncWith('schema_version')),
                 TextColumn::make('document_uuid')
                     ->label('UUID')
                     ->limit(12)
@@ -160,13 +190,15 @@ class EpcisDocumentsTable
                     ->copyable()
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::search()),
                 TextColumn::make('original_filename')
                     ->label('Filename')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::search()),
                 IconColumn::make('dscsa_affirm')
                     ->label('DSCSA')
                     ->getStateUsing(function (EpcisDocument $record): ?bool {
@@ -180,11 +212,13 @@ class EpcisDocumentsTable
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('received_at')
-                    ->label('Received')
+                    ->label('Uploaded')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()->syncWith('received_at')),
                 TextColumn::make('status')
+                    ->label('Status')
                     ->badge()
                     ->formatStateUsing(function (EpcisDocument $record, mixed $state): string {
                         return $record->floorReceiveStatusLabel()
@@ -199,25 +233,35 @@ class EpcisDocumentsTable
                             default => 'gray',
                         };
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
             ])
             ->defaultSort('creation_date', 'desc')
             ->filters([
                 SelectFilter::make('status')
+                    ->label('Status')
                     ->options([
-                        'received' => 'Received',
-                        'parsing' => 'Parsing',
-                        'parsed' => 'Parsed',
-                        'validated' => 'Validated',
-                        'error' => 'Error',
-                        'voided' => 'Voided',
-                    ]),
+                        'Floor receive' => [
+                            'floor_received' => OperatorNouns::FLOOR_RECEIVED,
+                            'floor_partially_received' => OperatorNouns::FLOOR_PARTIALLY_RECEIVED,
+                            'floor_receive_blocked' => OperatorNouns::FLOOR_RECEIVE_BLOCKED,
+                        ],
+                        'Ingest' => [
+                            'received' => 'Uploaded',
+                            'parsing' => 'Parsing',
+                            'parsed' => 'Parsed',
+                            'validated' => 'Validated',
+                            'error' => 'Error',
+                            'voided' => 'Voided',
+                        ],
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => self::applyStatusFilter($query, $data)),
                 SelectFilter::make('schema_version')
                     ->label('Schema version')
                     ->options([
-                        '1.2' => 'EPCIS 1.2',
-                        '1.3' => 'EPCIS 1.3',
-                        '2.0' => 'EPCIS 2.0',
+                        '1.2' => 'EPCIS schema 1.2',
+                        '1.3' => 'EPCIS schema 1.3',
+                        '2.0' => 'EPCIS schema 2.0',
                     ]),
                 SelectFilter::make('format')
                     ->label('Format')
@@ -337,12 +381,12 @@ class EpcisDocumentsTable
                         $data['until'] ?? null,
                     )),
                 Filter::make('received_at')
-                    ->label('Received')
+                    ->label('Uploaded')
                     ->schema([
                         DatePicker::make('from')
-                            ->label('Received from'),
+                            ->label('Uploaded from'),
                         DatePicker::make('until')
-                            ->label('Received until'),
+                            ->label('Uploaded until'),
                     ])
                     ->query(fn (Builder $query, array $data): Builder => self::applyDateRangeFilter(
                         $query,
@@ -362,6 +406,9 @@ class EpcisDocumentsTable
                     ->iconButton()
                     ->color('secondary')
                     ->tooltip(__('View')),
+                StartReceivingAction::forTable()
+                    ->iconButton()
+                    ->color('secondary'),
                 Action::make('trackTrace')
                     ->label('Track & Trace')
                     ->icon(Heroicon::OutlinedMap)
@@ -460,7 +507,6 @@ class EpcisDocumentsTable
                                 ->success()
                                 ->send();
                         }),
-                    StartReceivingAction::forTable(),
                     Action::make('downloadXml')
                         ->label('Download EPCIS')
                         ->icon(Heroicon::OutlinedArrowDownTray)
@@ -507,6 +553,181 @@ class EpcisDocumentsTable
         }
 
         return preg_match('/^\d{13}$/', $state) === 1 ? FontFamily::Mono : null;
+    }
+
+    /**
+     * Status column / modal filter: floor receive badges + ingest pipeline values.
+     *
+     * @param  Builder<EpcisDocument>  $query
+     * @param  array<string, mixed>  $data
+     * @return Builder<EpcisDocument>
+     */
+    private static function applyStatusFilter(Builder $query, array $data): Builder
+    {
+        $value = $data['value'] ?? null;
+
+        if (! filled($value)) {
+            return $query;
+        }
+
+        return match ((string) $value) {
+            'floor_received' => self::constrainFloorReceived($query),
+            'floor_partially_received' => self::constrainFloorPartiallyReceived($query),
+            'floor_receive_blocked' => self::constrainFloorReceiveBlocked($query),
+            default => $query->where($query->getModel()->getTable().'.status', (string) $value),
+        };
+    }
+
+    /**
+     * Approximate {@see EpcisDocument::floorReceiveStatusLabel()} === Received.
+     *
+     * @param  Builder<EpcisDocument>  $query
+     * @return Builder<EpcisDocument>
+     */
+    private static function constrainFloorReceived(Builder $query): Builder
+    {
+        return $query->where(function (Builder $outer): void {
+            $outer
+                ->whereHas('inboundShipment', function (Builder $shipment): void {
+                    $shipment
+                        ->where(function (Builder $activity): void {
+                            $activity->where('confirmed_parent_count', '>', 0)
+                                ->orWhere('confirmed_each_count', '>', 0)
+                                ->orWhereHas('expectedLines', fn (Builder $line): Builder => $line->where('status', 'confirmed'));
+                        })
+                        ->whereDoesntHave('expectedLines', fn (Builder $line): Builder => $line->where('status', 'expected'));
+                })
+                ->orWhere(function (Builder $sessionPath): void {
+                    $sessionPath
+                        ->where(function (Builder $noOpenShipmentRemain): void {
+                            $noOpenShipmentRemain
+                                ->whereDoesntHave('inboundShipment')
+                                ->orWhereHas('inboundShipment', function (Builder $shipment): void {
+                                    $shipment->whereDoesntHave(
+                                        'expectedLines',
+                                        fn (Builder $line): Builder => $line->where('status', 'expected'),
+                                    );
+                                });
+                        })
+                        ->whereHas('receivingSession', function (Builder $session): void {
+                            $session->where('status', '!=', 'cancelled')
+                                ->where(function (Builder $done): void {
+                                    $done->where('status', 'completed')
+                                        ->orWhere(function (Builder $counts): void {
+                                            $counts
+                                                ->where(function (Builder $parents): void {
+                                                    $parents->where('expected_parent_count', 0)
+                                                        ->orWhereColumn('confirmed_parent_count', '>=', 'expected_parent_count');
+                                                })
+                                                ->where(function (Builder $children): void {
+                                                    $children->where('expected_child_count', 0)
+                                                        ->orWhereColumn('confirmed_child_count', '>=', 'expected_child_count');
+                                                })
+                                                ->where(function (Builder $activity): void {
+                                                    $activity->where('expected_parent_count', '>', 0)
+                                                        ->orWhere('expected_child_count', '>', 0)
+                                                        ->orWhere('confirmed_parent_count', '>', 0)
+                                                        ->orWhere('confirmed_child_count', '>', 0);
+                                                });
+                                        });
+                                });
+                        });
+                });
+        });
+    }
+
+    /**
+     * Approximate {@see EpcisDocument::floorReceiveStatusLabel()} === Partially Received.
+     *
+     * @param  Builder<EpcisDocument>  $query
+     * @return Builder<EpcisDocument>
+     */
+    private static function constrainFloorPartiallyReceived(Builder $query): Builder
+    {
+        return $query->where(function (Builder $outer): void {
+            $outer
+                ->whereHas('inboundShipment', function (Builder $shipment): void {
+                    $shipment
+                        ->where(function (Builder $activity): void {
+                            $activity->where('confirmed_parent_count', '>', 0)
+                                ->orWhere('confirmed_each_count', '>', 0)
+                                ->orWhereHas('expectedLines', fn (Builder $line): Builder => $line->where('status', 'confirmed'))
+                                ->orWhereHas('receivingSessions', function (Builder $session): void {
+                                    $session->where('status', '!=', 'cancelled')
+                                        ->where(function (Builder $active): void {
+                                            $active->whereIn('status', ['in_progress', 'completed'])
+                                                ->orWhere('confirmed_parent_count', '>', 0)
+                                                ->orWhere('confirmed_child_count', '>', 0);
+                                        });
+                                });
+                        })
+                        ->whereHas('expectedLines', fn (Builder $line): Builder => $line->where('status', 'expected'));
+                })
+                ->orWhere(function (Builder $sessionPath): void {
+                    $sessionPath
+                        ->whereDoesntHave('inboundShipment', function (Builder $shipment): void {
+                            $shipment
+                                ->where(function (Builder $activity): void {
+                                    $activity->where('confirmed_parent_count', '>', 0)
+                                        ->orWhere('confirmed_each_count', '>', 0);
+                                })
+                                ->whereDoesntHave(
+                                    'expectedLines',
+                                    fn (Builder $line): Builder => $line->where('status', 'expected'),
+                                );
+                        })
+                        ->whereHas('receivingSession', function (Builder $session): void {
+                            $session->where('status', '!=', 'cancelled')
+                                ->where('status', '!=', 'completed')
+                                ->where(function (Builder $partial): void {
+                                    $partial->where('status', 'in_progress')
+                                        ->orWhere('confirmed_parent_count', '>', 0)
+                                        ->orWhere('confirmed_child_count', '>', 0);
+                                })
+                                ->where(function (Builder $notFullyDone): void {
+                                    $notFullyDone
+                                        ->where(function (Builder $parents): void {
+                                            $parents->where('expected_parent_count', '>', 0)
+                                                ->whereColumn('confirmed_parent_count', '<', 'expected_parent_count');
+                                        })
+                                        ->orWhere(function (Builder $children): void {
+                                            $children->where('expected_child_count', '>', 0)
+                                                ->whereColumn('confirmed_child_count', '<', 'expected_child_count');
+                                        })
+                                        ->orWhere(function (Builder $openProgress): void {
+                                            $openProgress->where('status', 'in_progress')
+                                                ->where('expected_parent_count', 0)
+                                                ->where('expected_child_count', 0);
+                                        });
+                                });
+                        });
+                });
+        });
+    }
+
+    /**
+     * Approximate {@see EpcisDocument::floorReceiveStatusLabel()} === Receive Blocked.
+     *
+     * @param  Builder<EpcisDocument>  $query
+     * @return Builder<EpcisDocument>
+     */
+    private static function constrainFloorReceiveBlocked(Builder $query): Builder
+    {
+        $blockingImpacts = [
+            ExceptionReceiveImpact::HardBlocking->value,
+            ExceptionReceiveImpact::BusinessRule->value,
+        ];
+
+        $documentTable = $query->getModel()->getTable();
+
+        return $query->whereIn($documentTable.'.id', ExceptionCase::query()
+            ->open()
+            ->whereDoesntHave('epcs')
+            ->whereHas('type', function (Builder $type) use ($blockingImpacts): void {
+                $type->whereIn('receive_impact', $blockingImpacts);
+            })
+            ->whereNotNull('document_id')
+            ->select('document_id'));
     }
 
     /**

@@ -12,11 +12,15 @@ use App\Enums\TenantProfile;
 use App\Models\AtpLicense;
 use App\Models\Epcis\Epc;
 use App\Models\Epcis\EpcisDocument;
+use App\Models\Epcis\EpcisEvent;
 use App\Models\Epcis\EpcisException;
+use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
 use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\TradingPartner;
 use App\Services\Epcis\EpcisIngestionService;
+use Database\Seeders\ExceptionTypeSeeder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -667,6 +671,72 @@ class ProcessEpcisDocumentSoftSignalTest extends TestCase
         return $tenant;
     }
 
+    #[Test]
+    public function inbound_error_declaration_opens_error_declaration_case(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $fixture = base_path('tests/Fixtures/epcis/minimal_object_shipping.xml');
+            $this->assertFileExists($fixture);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'epcis_errdec_').'.xml';
+            $xml = file_get_contents($fixture);
+            $this->assertNotFalse($xml);
+            $xml = str_replace('11111111-2222-3333-4444-555555555555', (string) str()->uuid(), $xml);
+            $xml = preg_replace(
+                '/<action>ADD<\/action>/',
+                "<action>ADD</action>\n        <errorDeclaration>\n          <declarationTime>2026-06-19T01:00:00.000Z</declarationTime>\n          <reason>urn:epcglobal:cbv:er:incorrect_data</reason>\n        </errorDeclaration>",
+                $xml,
+                1,
+            );
+            $this->assertIsString($xml);
+            file_put_contents($tmp, $xml);
+
+            $document = app(ReceiveEpcisUpload::class)->handle($tmp, [
+                'direction' => 'inbound',
+                'original_filename' => 'error-declaration.xml',
+                'dispatch' => false,
+            ]);
+            $this->documentId = (int) $document->getKey();
+
+            app(EpcisIngestionService::class)->process($document);
+
+            $event = EpcisEvent::query()
+                ->where('document_id', $document->getKey())
+                ->whereNotNull('error_declaration')
+                ->first();
+            $this->assertNotNull($event);
+            $this->assertSame(
+                'urn:epcglobal:cbv:er:incorrect_data',
+                $event->error_declaration['reason'] ?? null,
+            );
+
+            $errorType = ExceptionType::query()->where('code', 'ERROR_DECLARATION')->first()
+                ?? ExceptionTypeSeeder::ensure('ERROR_DECLARATION');
+            $this->assertNotNull($errorType);
+
+            $cases = ExceptionCase::query()
+                ->where('document_id', $document->getKey())
+                ->where('exception_type_id', $errorType->getKey())
+                ->get();
+            $this->assertCount(1, $cases);
+            $this->assertTrue($cases->first()?->status?->isOpen());
+
+            app(EpcisIngestionService::class)->process($document->fresh());
+            $this->assertSame(
+                1,
+                ExceptionCase::query()
+                    ->where('document_id', $document->getKey())
+                    ->where('exception_type_id', $errorType->getKey())
+                    ->count(),
+                'Reprocess must not open a second ERROR_DECLARATION case.',
+            );
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function cleanup(): void
     {
         if (! tenancy()->initialized) {
@@ -674,6 +744,7 @@ class ProcessEpcisDocumentSoftSignalTest extends TestCase
         }
 
         if ($this->documentId !== null) {
+            ExceptionCase::query()->where('document_id', $this->documentId)->delete();
             EpcisException::query()->where('document_id', $this->documentId)->delete();
             EpcisDocument::query()->whereKey($this->documentId)->delete();
             $this->documentId = null;

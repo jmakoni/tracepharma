@@ -15,6 +15,7 @@ use App\Models\Site;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Tracing\BuildAssetTrace;
+use App\Support\Epcis\AuthoredEventTimezone;
 use App\Support\Gs1\Gtin;
 use App\Support\TenantFeatures;
 use App\Support\TenantSettings;
@@ -70,6 +71,7 @@ class AuthorTransformationRepackTest extends TestCase
             $this->setProfile($tenant, TenantProfile::Prepackager);
             $this->configureOrganization($tenant);
             $site = $this->createSite($tenant);
+            $site->forceFill(['timezone' => 'America/Chicago'])->save();
             $this->actingAsWithSiteAccess($site);
 
             $input = $this->createEpc('IN');
@@ -111,6 +113,65 @@ class AuthorTransformationRepackTest extends TestCase
             $this->assertNotNull($output);
             $this->epcIds[] = (int) $output->getKey();
             $this->assertSame('outputEPC', $roles[(int) $output->getKey()] ?? null);
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $offset = AuthoredEventTimezone::offsetForSite($site->fresh());
+            $this->assertNotSame('+00:00', $offset);
+            $this->assertStringContainsString('<eventTimeZoneOffset>'.$offset.'</eventTimeZoneOffset>', $xml);
+        } finally {
+            $this->cleanup($tenant);
+        }
+    }
+
+    #[Test]
+    public function prepackager_authors_transformation_event_with_transforming_biz_step(): void
+    {
+        Storage::fake('local');
+
+        $tenant = $this->initializeDemo2Tenant();
+
+        try {
+            $this->setProfile($tenant, TenantProfile::Prepackager);
+            $this->configureOrganization($tenant);
+            $site = $this->createSite($tenant);
+            $this->actingAsWithSiteAccess($site);
+
+            $input = $this->createEpc('IN');
+            $this->receiveAtSite($site, $input);
+
+            $outputUri = 'urn:epc:id:sgtin:0399991.000001.'.(string) random_int(100000000, 999999999);
+
+            $result = app(AuthorTransformationRepack::class)->handle(
+                siteId: (int) $site->getKey(),
+                inputEpcIds: [(int) $input->getKey()],
+                outputUris: [$outputUri],
+                options: ['sync' => true, 'dispatch' => true],
+            );
+
+            $this->assertNotNull($result['document']);
+            $this->documentIds[] = (int) $result['document']->getKey();
+
+            $event = EpcisEvent::query()
+                ->where('document_id', $result['document']->getKey())
+                ->where('event_type', 'TransformationEvent')
+                ->first();
+            $this->assertNotNull($event);
+            $this->eventIds[] = (int) $event->getKey();
+            $this->assertSame('urn:epcglobal:cbv:bizstep:transforming', (string) $event->biz_step);
+
+            $output = Epc::query()->where('epc_uri', $outputUri)->first();
+            $this->assertNotNull($output);
+            $this->epcIds[] = (int) $output->getKey();
+
+            $xml = (string) Storage::disk($result['document']->payload_disk)->get($result['document']->payload_path);
+            $this->assertStringContainsString(
+                '<bizStep>urn:epcglobal:cbv:bizstep:transforming</bizStep>',
+                $xml,
+            );
+            $this->assertStringNotContainsString(
+                '<bizStep>urn:epcglobal:cbv:bizstep:commissioning</bizStep>',
+                $xml,
+            );
         } finally {
             $this->cleanup($tenant);
         }

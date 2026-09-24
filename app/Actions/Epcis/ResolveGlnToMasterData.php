@@ -33,7 +33,10 @@ final class ResolveGlnToMasterData
     {
         $empty = $this->emptyResult('');
 
-        $glnNormalized = Sgln::normalizeGln($token);
+        $token = trim($token);
+        $glnNormalized = str_starts_with($token, 'urn:epc:id:sgln:')
+            ? (Sgln::fromUrn($token)['gln'] ?? null)
+            : Sgln::normalizeGln($token);
         if ($glnNormalized !== null) {
             $result = $this->resolveGlnLadder($glnNormalized);
             if ($this->hasMasterDataMatch($result)) {
@@ -239,40 +242,26 @@ final class ResolveGlnToMasterData
     }
 
     /**
-     * The read point whose SGLN encodes this GLN.
-     *
-     * `read_points` carries no GLN of its own — the SGLN is where its identity lives, and
-     * the GLN it encodes is only readable once the company-prefix split is known. Every
-     * legal split of this GLN is a prefix of the URN a read point would hold, so the
-     * candidates are matched in SQL and then confirmed by parsing.
+     * The read point whose stored GLN or stored SGLN URN matches this GLN.
+     * Does not invent company-prefix splits.
      */
     private function findReadPointForGln(string $gln): ?ReadPoint
     {
-        $candidates = [];
-
-        foreach (range(6, 11) as $companyPrefixLength) {
-            $prefix = Sgln::toUrn($gln, $companyPrefixLength, '');
-
-            if ($prefix !== null) {
-                $candidates[] = $prefix;
-            }
-        }
-
-        if ($candidates === []) {
-            return null;
-        }
-
         return ReadPoint::query()
             ->with('site.tradingPartner')
-            ->where(function (Builder $query) use ($candidates): void {
-                foreach ($candidates as $candidate) {
-                    $query->orWhere('sgln', 'like', $candidate.'%');
-                }
+            ->where(function (Builder $query) use ($gln): void {
+                $query->where('sgln', $gln)
+                    ->orWhere('sgln', 'like', 'urn:epc:id:sgln:%');
             })
             ->orderBy('id')
             ->get()
             ->first(function (ReadPoint $readPoint) use ($gln): bool {
-                $parsed = Sgln::fromUrn((string) $readPoint->sgln);
+                $stored = trim((string) $readPoint->sgln);
+                if ($stored === $gln) {
+                    return true;
+                }
+
+                $parsed = Sgln::fromUrn($stored);
 
                 return $parsed !== null && $parsed['gln'] === $gln;
             });

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AtpLicenseExpirationStatus;
 use App\Enums\AtpVerificationSource;
 use App\Enums\CmoOwnership;
+use App\Enums\EpcisGuideline;
 use App\Enums\PartnerType;
 use App\Enums\SsccNumberRangeStatus;
 use App\Models\Concerns\DerivesSgln;
@@ -98,6 +99,7 @@ class TradingPartner extends Model
         'hin_number',
         'chemical_reg_number',
         'partner_type',
+        'epcis_guideline',
         'street_address',
         'street_address_2',
         'city',
@@ -129,6 +131,7 @@ class TradingPartner extends Model
     {
         return [
             'partner_type' => PartnerType::class,
+            'epcis_guideline' => EpcisGuideline::class,
             'atp_verification_source' => AtpVerificationSource::class,
             'atp_verified_at' => 'datetime',
             'is_active' => 'boolean',

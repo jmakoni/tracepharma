@@ -75,5 +75,14 @@
     <div class="flex flex-wrap gap-2">
         <button type="button" wire:click="goToStep(2)" class="btn btn-ghost btn-sm">← Customer</button>
         <button type="button" wire:click="mountAction('saveReferences')" class="btn btn-primary btn-sm">Save references</button>
+        <button
+            type="button"
+            class="btn btn-success btn-sm min-h-14"
+            wire:click="mountAction('sendShipment')"
+            wire:loading.attr="disabled"
+            @disabled($this->sendShipmentMissingRequiredRefs())
+        >
+            Send shipment
+        </button>
     </div>
 </div>

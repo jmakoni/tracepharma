@@ -88,4 +88,67 @@ XML;
 
         (new EpcisSoapDocumentNormalizer)->normalize($xml, requirePure: false);
     }
+
+    #[Test]
+    public function soap_with_operation_wrapper_unwraps_epcis_document(): void
+    {
+        $inner = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($inner);
+        $lines = explode("\n", $inner);
+        if (str_starts_with($lines[0] ?? '', '<?xml')) {
+            array_shift($lines);
+        }
+        $bodyDoc = implode("\n", $lines);
+
+        $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ich:submitEPCISDocument xmlns:ich="http://example.test/ich">
+{$bodyDoc}
+    </ich:submitEPCISDocument>
+  </soapenv:Body>
+</soapenv:Envelope>
+XML;
+
+        $result = (new EpcisSoapDocumentNormalizer)->normalize($xml, requirePure: false);
+
+        $this->assertTrue($result['unwrapped']);
+        $this->assertStringContainsString('EPCISDocument', $result['content']);
+        $this->assertStringNotContainsString('soapenv:Envelope', $result['content']);
+        $this->assertStringNotContainsString('soapenv:Body', $result['content']);
+        $this->assertStringNotContainsString('submitEPCISDocument', $result['content']);
+    }
+
+    #[Test]
+    public function soap_with_two_operation_wrapped_epcis_documents_is_rejected(): void
+    {
+        $inner = file_get_contents(base_path('tests/Fixtures/epcis/minimal_object_shipping.xml'));
+        $this->assertNotFalse($inner);
+        $lines = explode("\n", $inner);
+        if (str_starts_with($lines[0] ?? '', '<?xml')) {
+            array_shift($lines);
+        }
+        $bodyDoc = implode("\n", $lines);
+
+        $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <ns:Op1 xmlns:ns="http://example.test/op">
+{$bodyDoc}
+    </ns:Op1>
+    <ns:Op2 xmlns:ns="http://example.test/op">
+{$bodyDoc}
+    </ns:Op2>
+  </soapenv:Body>
+</soapenv:Envelope>
+XML;
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SOAP envelope does not contain a single EPCISDocument');
+
+        (new EpcisSoapDocumentNormalizer)->normalize($xml, requirePure: false);
+    }
 }
