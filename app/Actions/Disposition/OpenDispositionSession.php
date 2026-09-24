@@ -32,6 +32,11 @@ final class OpenDispositionSession
                     throw new DomainException('Session type does not match this workstation.');
                 }
 
+                $user = auth()->user();
+                if ($user instanceof User) {
+                    SiteAccess::assertCanAccessSite($user, (int) $existing->site_id);
+                }
+
                 return $existing;
             }
         }
