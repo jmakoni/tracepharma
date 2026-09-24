@@ -58,9 +58,12 @@ final class ReevaluateEpcisDocumentFindings
     {
         $this->refreshUnmatchedGlns->handle($document);
 
+        $validationFailed = false;
+
         try {
             $findings = $this->validator->computeFindings($document);
         } catch (InvalidArgumentException|Throwable $e) {
+            $validationFailed = true;
             $findings = [
                 new EpcisValidationFinding(
                     exceptionType: 'INGESTION_PARSE_ERROR',
@@ -86,7 +89,7 @@ final class ReevaluateEpcisDocumentFindings
             $code = strtoupper(trim((string) $case->type?->code));
             $openedAt = $case->created_at?->toDateTimeString();
 
-            if ($this->mustLeaveOpen($code, $emitted)) {
+            if ($validationFailed || $this->mustLeaveOpen($code, $emitted)) {
                 $case->forceFill(['condition_still_true' => true])->save();
                 $case->logActivity(
                     ExceptionActivityKind::System,
@@ -321,6 +324,8 @@ final class ReevaluateEpcisDocumentFindings
             return;
         }
 
+        $priorStatus = $case->status;
+
         $case->forceFill([
             'status' => ExceptionStatus::Cleared,
             'condition_still_true' => false,
@@ -331,7 +336,7 @@ final class ReevaluateEpcisDocumentFindings
             $actor,
             'Re-evaluate findings: type no longer emitted.',
             ExceptionActivityVisibility::Internal,
-            ['from' => $case->status?->value, 'to' => ExceptionStatus::Cleared->value],
+            ['from' => $priorStatus?->value, 'to' => ExceptionStatus::Cleared->value],
         );
     }
 

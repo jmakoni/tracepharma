@@ -7,11 +7,13 @@ All notable releases of TracePharma are documented here.
 ### Added
 
 - **Inbound EPCIS column filters** — Excel-style header filters on `/inbound-epcis` via `zvizvi/filament-column-filters` (synced with existing modal filters where they overlap). Status filter includes floor receive badges (Received / Partially Received / Receive Blocked) plus ingest values.
+- **Exception → EPCIS document** — Exception case view links back to the inbound EPCIS document when one is on the case.
 - **Non-deliverable mail recipients** — Outbound mail to reserved or made-up test domains (`.test`, `example.com`, `.invalid`, `.localhost`, `.local`) is dropped before ZeptoMail. Override with `MAIL_BLOCK_NON_DELIVERABLE=false`.
 - **GS1/QA P3 tests** — Lean-path EPCClass NDC (R1.2 `FDA_NDC_11` / R1.3 `US_FDA_NDC`), SSCC commission has no ILMD, saleable-return verified complete, VRS `not_in_network` → `unavailable`, and R1.3 transitional `FDA_NDC_11` ingest is not MIXED.
 
 ### Changed
 
+- **Exclusive serial on complete, not confirm** — Receive, ship, transfer, pack, and disposition confirm/stage check only the scanned EPC. Complete and emit walk open ancestors and descendants and name the reserved unit. Floor receive/ship/transfer HUDs skip desktop-only chips and toasts so a sealed SSCC scan stays fast.
 - **Table column order** — Every Filament table can show, hide, and drag columns from the column manager. The layout stays in the session.
 - **Floor brand mark** — Floor paths use the favicon shield (`logo-mark.svg`) in the Filament topbar instead of the wordmark.
 - **Floor pack camera** — Mobile pack / break-pack / unpack / verify call `processScan` / `verifyScan` with the decoded barcode. Camera re-fire on an already-selected break-pack child stays selected. Packing scan lines stamp `confirmed_at` so selected rows show scan time and transcoded URN.
@@ -30,6 +32,7 @@ All notable releases of TracePharma are documented here.
 
 ### Fixed
 
+- **Re-evaluate leftover signals** — Re-evaluate findings does not clear a case whose finding would still be emitted. When it does clear a case, linked `epcis_exceptions` close, then a leftover-signal pass finishes rows that would otherwise stay open against a cleared case.
 - **JSON-LD R1.3 detail** — The earlier shipping event no longer copies `directPurchase` from the main event.
 - **JSON-LD `transactionDate`** — Main shipping event emits `gs1ushc:transactionDate` when ship is more than 24h after transfer (same rule as XML).
 - **Transform transmit jobs** — `EpcisAuthoredKind::Transformation` maps to `outbound_transformation` so jobs-on enqueue no longer throws.
