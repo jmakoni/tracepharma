@@ -32,9 +32,14 @@ final class OpenDispositionSession
                     throw new DomainException('Session type does not match this workstation.');
                 }
 
+                $existingSiteId = $existing->site_id !== null ? (int) $existing->site_id : null;
+                if ($existingSiteId === null) {
+                    throw new DomainException('This disposition session has no site. Start a new session.');
+                }
+
                 $user = auth()->user();
                 if ($user instanceof User) {
-                    SiteAccess::assertCanAccessSite($user, (int) $existing->site_id);
+                    SiteAccess::assertCanAccessSite($user, $existingSiteId);
                 }
 
                 return $existing;

@@ -33,18 +33,6 @@ use Throwable;
  */
 final class ReevaluateEpcisDocumentFindings
 {
-    /**
-     * Types that must stay open when the new finding set still contains them.
-     *
-     * @var list<string>
-     */
-    public const NEVER_CLEAR_WHILE_PRESENT = [
-        'MIXED_PACKAGING_LEVELS',
-        'MASTER_DATA_SYNC_LAG',
-        'EVENTS_OUT_OF_ORDER',
-        'PACK_HIERARCHY_TIME_INVERSION',
-    ];
-
     public function __construct(
         private readonly ValidateEpcis12Document $validator,
         private readonly RefreshUnmatchedGlnsFromMasterData $refreshUnmatchedGlns,
@@ -89,7 +77,22 @@ final class ReevaluateEpcisDocumentFindings
             $code = strtoupper(trim((string) $case->type?->code));
             $openedAt = $case->created_at?->toDateTimeString();
 
-            if ($validationFailed || $this->mustLeaveOpen($code, $emitted)) {
+            if ($validationFailed) {
+                $case->logActivity(
+                    ExceptionActivityKind::System,
+                    $actor,
+                    'Re-evaluate findings: validation failed; case left open.',
+                    ExceptionActivityVisibility::Internal,
+                    [
+                        'opened_at' => $openedAt,
+                    ],
+                );
+                $leftOpen[] = (int) $case->getKey();
+
+                continue;
+            }
+
+            if ($this->mustLeaveOpen($code, $emitted)) {
                 $case->forceFill(['condition_still_true' => true])->save();
                 $case->logActivity(
                     ExceptionActivityKind::System,
@@ -111,7 +114,9 @@ final class ReevaluateEpcisDocumentFindings
             $cleared[] = (int) $case->getKey();
         }
 
-        $this->closeLeftoverSignalsForDocument($document, $emitted);
+        if (! $validationFailed) {
+            $this->closeLeftoverSignalsForDocument($document, $emitted);
+        }
 
         return [
             'cleared' => $cleared,
@@ -165,15 +170,7 @@ final class ReevaluateEpcisDocumentFindings
      */
     private function mustLeaveOpen(string $code, array $emitted): bool
     {
-        if (in_array($code, $emitted, true)) {
-            return true;
-        }
-
-        if (in_array($code, self::NEVER_CLEAR_WHILE_PRESENT, true) && in_array($code, $emitted, true)) {
-            return true;
-        }
-
-        return false;
+        return in_array($code, $emitted, true);
     }
 
     /**
