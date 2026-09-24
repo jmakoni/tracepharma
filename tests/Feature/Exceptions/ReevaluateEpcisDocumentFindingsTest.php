@@ -343,7 +343,8 @@ class ReevaluateEpcisDocumentFindingsTest extends TestCase
             $this->assertStringContainsString('validation failed; case left open.', $glnNotes);
 
             $parseNotes = $parseCase->activities()->pluck('body')->implode("\n");
-            $this->assertStringContainsString('INGESTION_PARSE_ERROR still emitted', $parseNotes);
+            $this->assertStringNotContainsString('INGESTION_PARSE_ERROR still emitted', $parseNotes);
+            $this->assertStringContainsString('validation failed; case left open.', $parseNotes);
         } finally {
             $this->cleanup();
         }
