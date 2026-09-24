@@ -89,7 +89,22 @@ final class ReevaluateEpcisDocumentFindings
             $code = strtoupper(trim((string) $case->type?->code));
             $openedAt = $case->created_at?->toDateTimeString();
 
-            if ($validationFailed || $this->mustLeaveOpen($code, $emitted)) {
+            if ($validationFailed) {
+                $case->logActivity(
+                    ExceptionActivityKind::System,
+                    $actor,
+                    'Re-evaluate findings: validation failed; case left open.',
+                    ExceptionActivityVisibility::Internal,
+                    [
+                        'opened_at' => $openedAt,
+                    ],
+                );
+                $leftOpen[] = (int) $case->getKey();
+
+                continue;
+            }
+
+            if ($this->mustLeaveOpen($code, $emitted)) {
                 $case->forceFill(['condition_still_true' => true])->save();
                 $case->logActivity(
                     ExceptionActivityKind::System,
@@ -111,7 +126,9 @@ final class ReevaluateEpcisDocumentFindings
             $cleared[] = (int) $case->getKey();
         }
 
-        $this->closeLeftoverSignalsForDocument($document, $emitted);
+        if (! $validationFailed) {
+            $this->closeLeftoverSignalsForDocument($document, $emitted);
+        }
 
         return [
             'cleared' => $cleared,

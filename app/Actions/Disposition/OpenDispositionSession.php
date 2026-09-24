@@ -9,6 +9,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use DomainException;
+use Illuminate\Auth\Access\AuthorizationException;
 
 /**
  * Open or resume an unsubmitted disposition batch session.
@@ -34,7 +35,13 @@ final class OpenDispositionSession
 
                 $user = auth()->user();
                 if ($user instanceof User) {
-                    SiteAccess::assertCanAccessSite($user, (int) $existing->site_id);
+                    if ($existing->site_id === null) {
+                        if (! $user->can(Permissions::SitesAccessAll)) {
+                            throw new AuthorizationException('You do not have access to this disposition session.');
+                        }
+                    } else {
+                        SiteAccess::assertCanAccessSite($user, (int) $existing->site_id);
+                    }
                 }
 
                 return $existing;
