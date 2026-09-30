@@ -7,6 +7,7 @@ use App\Filament\App\Resources\BuyingGroupMembers\Actions\BuyingGroupMembershipA
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\BuyingGroupMember;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -14,6 +15,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class BuyingGroupMembersTable
 {
@@ -23,58 +25,98 @@ class BuyingGroupMembersTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'name')),
+                    ),
                 TextColumn::make('external_ref')
                     ->label('External ref')
                     ->toggleable()
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('external_ref')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'external_ref')),
+                    ),
                 TextColumn::make('dea_number')
                     ->label('DEA')
                     ->toggleable()
                     ->searchable()
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('dea_number')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'dea_number')),
+                    ),
                 TextColumn::make('npi')
                     ->label('NPI')
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->searchable()
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('npi')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'npi')),
+                    ),
                 TextColumn::make('primary_gln')
                     ->label('Primary GLN')
                     ->toggleable()
                     ->searchable()
                     ->copyable()
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('primary_gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'primary_gln')),
+                    ),
                 TextColumn::make('affiliation_code')
                     ->label('Affiliation')
                     ->toggleable()
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('affiliation_code')),
                 TextColumn::make('program_sku')
                     ->label('Program SKU')
                     ->toggleable(isToggledHiddenByDefault: true)
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('program_sku')),
                 TextColumn::make('sites_count')
                     ->label('Sites')
                     ->numeric()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('member_tenant_id')
                     ->label('Tenant ID')
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->copyable()
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('member_tenant_id')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'member_tenant_id')),
+                    ),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn ($state): string => $state instanceof BuyingGroupMemberStatus
                         ? $state->label()
-                        : (string) $state),
+                        : (string) $state)
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('contact_email')
                     ->label('Contact')
                     ->searchable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('contact_email')
+                            ->options(fn (): array => DistinctColumnOptions::of(BuyingGroupMember::class, 'contact_email')),
+                    ),
                 TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->defaultSort('name')
             ->emptyStateHeading('No members yet')

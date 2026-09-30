@@ -4,15 +4,18 @@ namespace App\Filament\App\Resources\FdaProducts\Tables;
 
 use App\Filament\App\Resources\FdaProducts\Actions\AddFdaProductPackagesAction;
 use App\Filament\Support\RecordActionGroup;
+use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaProduct;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\FdaRegistryStatus;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\ViewAction;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class FdaProductsTable
 {
@@ -27,7 +30,12 @@ class FdaProductsTable
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('product_ndc')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'product_ndc')),
+                    ),
                 TextColumn::make('brand_name')
                     ->label('Name')
                     ->searchable()
@@ -41,14 +49,29 @@ class FdaProductsTable
                         $generic = DisplayName::clean($record->getAttribute('generic_name'));
 
                         return filled($generic) ? $generic : '—';
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('brand_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'brand_name')),
+                    ),
                 TextColumn::make('generic_name')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('generic_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'generic_name')),
+                    ),
                 TextColumn::make('dosage_form')
                     ->label('Dosage')
                     ->searchable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('dosage_form')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'dosage_form')),
+                    ),
                 TextColumn::make('dea_schedule')
                     ->label('DEA')
                     ->badge()
@@ -59,12 +82,22 @@ class FdaProductsTable
                         'CIII', 'CIV', 'CV' => 'warning',
                         default => 'gray',
                     })
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('dea_schedule')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'dea_schedule')),
+                    ),
                 TextColumn::make('strength')
                     ->label('Strength')
                     ->wrap()
                     ->state(fn (FdaProduct $record): ?string => $record->activeIngredientStrength())
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('strength')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'strength')),
+                    ),
                 TextColumn::make('net_contents')
                     ->label('Net contents')
                     ->wrap()
@@ -77,7 +110,16 @@ class FdaProductsTable
                 TextColumn::make('fdaOrganization.name')
                     ->label('Labeler')
                     ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('fda_organization_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                FdaProduct::class,
+                                'fda_organization_id',
+                                FdaOrganization::class,
+                            )),
+                    ),
             ])
             ->defaultSort('product_ndc')
             ->searchPlaceholder('NDC, brand, or generic name')

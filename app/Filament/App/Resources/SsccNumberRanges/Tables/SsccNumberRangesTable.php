@@ -9,12 +9,14 @@ use App\Filament\App\Resources\Sites\SiteResource;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\SsccNumberRange;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class SsccNumberRangesTable
 {
@@ -25,11 +27,17 @@ class SsccNumberRangesTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(SsccNumberRange::class, 'name')),
+                    ),
                 TextColumn::make('scope')
                     ->badge()
                     ->formatStateUsing(fn (?SsccNumberRangeScope $state): ?string => $state?->label())
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('scope')),
                 TextColumn::make('owner')
                     ->label('Owner')
                     ->state(fn (SsccNumberRange $record): string => $record->ownerLabel())
@@ -46,25 +54,39 @@ class SsccNumberRangesTable
                         : null),
                 TextColumn::make('company_prefix')
                     ->label('Prefix')
-                    ->fontFamily(FontFamily::Mono),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('company_prefix')
+                            ->options(fn (): array => DistinctColumnOptions::of(SsccNumberRange::class, 'company_prefix')),
+                    ),
                 TextColumn::make('extension_digit')
                     ->label('Ext')
-                    ->alignCenter(),
+                    ->alignCenter()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('extension_digit')
+                            ->options(fn (): array => DistinctColumnOptions::of(SsccNumberRange::class, 'extension_digit')),
+                    ),
                 TextColumn::make('index')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('remaining')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('threshold_percentage')
                     ->label('Threshold')
                     ->suffix('%')
                     ->alignEnd()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (?SsccNumberRangeStatus $state): ?string => $state?->label())
                     ->color(fn (?SsccNumberRangeStatus $state): string => $state?->badgeColor() ?? 'gray')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
             ])
             ->defaultSort('index')
             ->filters([

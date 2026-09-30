@@ -14,6 +14,7 @@ use App\Services\Quarantine\SupplierPortalService;
 use App\Support\Catalog\DisplayName;
 use App\Support\MasterData\TradingPartnerReferences;
 use App\Support\Scout\TenantModelSearch;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Js;
 use RuntimeException;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class TradingPartnersTable
 {
@@ -44,33 +46,65 @@ class TradingPartnersTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(TradingPartner::class, 'name')),
+                    ),
                 TextColumn::make('street_address')
                     ->label('Street address')
                     ->searchable()
                     ->toggleable()
                     ->wrap()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('street_address')
+                            ->options(fn (): array => DistinctColumnOptions::of(TradingPartner::class, 'street_address')),
+                    ),
                 TextColumn::make('gln')
                     ->label('GLN')
                     ->searchable()
                     ->copyable()
-                    ->fontFamily(FontFamily::Mono),
-                TextColumn::make('partner_type')->badge(),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(TradingPartner::class, 'gln')),
+                    ),
+                TextColumn::make('partner_type')
+                    ->badge()
+                    ->columnFilter(ColumnFilter::select()->syncWith('partner_type')),
                 TextColumn::make('city')
                     ->searchable()
                     ->sortable()
                     ->toggleable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('city')
+                            ->options(fn (): array => DistinctColumnOptions::of(TradingPartner::class, 'city')),
+                    ),
                 TextColumn::make('state')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('state')
+                            ->options(fn (): array => DistinctColumnOptions::of(TradingPartner::class, 'state')),
+                    ),
                 TextColumn::make('is_active')
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (?bool $state): string => $state ? 'Active' : 'Inactive')
-                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray'),
+                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
                 TextColumn::make('portal_share_uuid')
                     ->label('Portal')
                     ->badge()

@@ -6,10 +6,12 @@ use App\Enums\AnnouncementSeverity;
 use App\Enums\AnnouncementStatus;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Announcement;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class AnnouncementsTable
 {
@@ -20,7 +22,12 @@ class AnnouncementsTable
                 TextColumn::make('title')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('title')
+                            ->options(fn (): array => DistinctColumnOptions::of(Announcement::class, 'title')),
+                    ),
                 TextColumn::make('severity')
                     ->badge()
                     ->sortable()
@@ -29,7 +36,12 @@ class AnnouncementsTable
                         AnnouncementSeverity::Critical => 'danger',
                         AnnouncementSeverity::Warning => 'warning',
                         default => 'info',
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('severity')
+                            ->options(DistinctColumnOptions::enum(AnnouncementSeverity::class)),
+                    ),
                 TextColumn::make('status')
                     ->badge()
                     ->sortable()
@@ -38,21 +50,30 @@ class AnnouncementsTable
                         AnnouncementStatus::Published => 'success',
                         AnnouncementStatus::Retired => 'gray',
                         default => 'warning',
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('status')
+                            ->options(DistinctColumnOptions::enum(AnnouncementStatus::class)),
+                    ),
                 TextColumn::make('tenants_count')
                     ->label('Tenants')
                     ->counts('tenants')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('published_at')
                     ->dateTime()
                     ->sortable()
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('fan_out_succeeded_count')
                     ->label('Fan-out OK')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('fan_out_failed_count')
                     ->label('Fan-out failed')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
             ])
             ->defaultSort('created_at', 'desc')
             ->recordActions(RecordActionGroup::make([

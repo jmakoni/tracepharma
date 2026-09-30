@@ -19,6 +19,7 @@
 }
 
 @import '../../daisyui/tracepharma-themes.css';
+@import '../table-ops-sheet.css';
 
 .fi-topbar-item.tp-nav-icon-only .fi-topbar-item-label,
 .fi-sidebar-item.tp-nav-icon-only .fi-sidebar-item-label {

@@ -8,6 +8,7 @@ use App\Models\Admin;
 use App\Models\DemoRequest;
 use App\Support\Auth\Permissions;
 use App\Support\CustomerOnboarding\OrganizationTypeMapper;
+use App\Support\Tables\DistinctColumnOptions;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -19,6 +20,7 @@ use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class DemoRequestResource extends Resource implements HasKnowledgeBase
 {
@@ -97,15 +99,42 @@ class DemoRequestResource extends Resource implements HasKnowledgeBase
         return $table
             ->defaultSort('created_at', 'desc')
             ->columns([
-                TextColumn::make('company')->searchable()->sortable(),
-                TextColumn::make('name')->searchable(),
-                TextColumn::make('email')->searchable(),
+                TextColumn::make('company')
+                    ->searchable()
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('company')
+                            ->options(fn (): array => DistinctColumnOptions::of(DemoRequest::class, 'company')),
+                    ),
+                TextColumn::make('name')
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(DemoRequest::class, 'name')),
+                    ),
+                TextColumn::make('email')
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('email')
+                            ->options(fn (): array => DistinctColumnOptions::of(DemoRequest::class, 'email')),
+                    ),
                 TextColumn::make('organization_type')
                     ->label('Type')
                     ->formatStateUsing(fn (?string $state): string => $state
                         ? (OrganizationTypeMapper::options()[$state] ?? $state)
-                        : '—'),
-                TextColumn::make('created_at')->dateTime()->sortable(),
+                        : '—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('organization_type')
+                            ->options(fn (): array => DistinctColumnOptions::of(DemoRequest::class, 'organization_type')),
+                    ),
+                TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ]);
     }
 

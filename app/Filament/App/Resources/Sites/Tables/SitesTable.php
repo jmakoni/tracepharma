@@ -11,6 +11,7 @@ use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\Site;
+use App\Models\TradingPartner;
 use App\Support\Catalog\DisplayName;
 use App\Support\MasterData\AtpDisclosure;
 use App\Support\MasterData\AtpLicenseExpiry;
@@ -18,6 +19,7 @@ use App\Support\MasterData\AtpLicenseRelevance;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\MasterData\SiteReferences;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -36,6 +38,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class SitesTable
 {
@@ -143,7 +146,12 @@ class SitesTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'name')),
+                    ),
                 TextColumn::make('ownership')
                     ->label('Ownership')
                     ->extraHeaderAttributes([
@@ -155,45 +163,90 @@ class SitesTable
                         }
 
                         return DisplayName::clean($record->tradingPartner?->name) ?? 'Partner';
-                    }),
+                    })
+                    ->columnFilter(ColumnFilter::select()->syncWith('ownership')),
                 TextColumn::make('receive_eligible')
                     ->label('Receive-eligible')
                     ->badge()
                     ->state(fn (Site $record): string => EligibleReceiveSites::isEligible($record) ? 'Yes' : 'No')
-                    ->color(fn (Site $record): string => EligibleReceiveSites::isEligible($record) ? 'success' : 'gray'),
+                    ->color(fn (Site $record): string => EligibleReceiveSites::isEligible($record) ? 'success' : 'gray')
+                    ->columnFilter(ColumnFilter::select()->syncWith('receive_eligible')),
                 TextColumn::make('tradingPartner.name')
                     ->label('Partner')
                     ->toggleable()
                     ->placeholder('—')
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('trading_partner_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                Site::class,
+                                'trading_partner_id',
+                                TradingPartner::class,
+                            )),
+                    ),
                 TextColumn::make('street_address')
                     ->label('Street address')
                     ->searchable()
                     ->toggleable()
                     ->wrap()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('street_address')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'street_address')),
+                    ),
                 TextColumn::make('gln')
                     ->label('GLN')
                     ->searchable()
                     ->copyable()
-                    ->fontFamily(FontFamily::Mono),
-                TextColumn::make('code')->searchable()->toggleable(),
+                    ->fontFamily(FontFamily::Mono)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'gln')),
+                    ),
+                TextColumn::make('code')
+                    ->searchable()
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('code')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'code')),
+                    ),
                 TextColumn::make('atp_readiness')
                     ->label('ATP readiness')
                     ->extraHeaderAttributes(['title' => AtpDisclosure::SOURCE])
                     ->badge()
                     ->state(fn (Site $record): string => SiteAtpReadiness::badgeLabel($record))
                     ->color(fn (Site $record): string => SiteAtpReadiness::summarize($record)['status']->badgeColor())
-                    ->description(fn (Site $record): ?string => SiteAtpReadiness::badgeDescription($record)),
+                    ->description(fn (Site $record): ?string => SiteAtpReadiness::badgeDescription($record))
+                    ->columnFilter(ColumnFilter::select()->syncWith('atp_readiness')),
                 TextColumn::make('city')
                     ->toggleable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
-                TextColumn::make('state')->toggleable(),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('city')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'city')),
+                    ),
+                TextColumn::make('state')
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('state')
+                            ->options(fn (): array => DistinctColumnOptions::of(Site::class, 'state')),
+                    ),
                 TextColumn::make('is_active')
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (?bool $state): string => $state ? 'Active' : 'Inactive')
-                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray'),
+                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('GLN, code, or site name')

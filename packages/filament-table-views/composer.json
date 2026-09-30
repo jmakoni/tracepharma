@@ -1,0 +1,26 @@
+{
+    "name": "tracepharma/filament-table-views",
+    "description": "First-party Filament v5 named table views (presets, favorites, public/global share).",
+    "type": "library",
+    "version": "1.0.0",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "filament/filament": "^5.0",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tracepharma\\FilamentTableViews\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Tracepharma\\FilamentTableViews\\FilamentTableViewsServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

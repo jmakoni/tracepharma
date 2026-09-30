@@ -2,6 +2,9 @@
 
 namespace App\Filament\App\Resources\Verifications\Tables;
 
+use App\Models\User;
+use App\Models\Verification;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\Tracing\AssetTrackingUrl;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -12,6 +15,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class VerificationsTable
 {
@@ -34,12 +38,18 @@ class VerificationsTable
                 TextColumn::make('created_at')
                     ->label('When')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 AssetTrackingUrl::linkScanColumn(
                     TextColumn::make('gtin14')
                         ->label('GTIN')
                         ->searchable()
-                        ->fontFamily(FontFamily::Mono),
+                        ->fontFamily(FontFamily::Mono)
+                        ->columnFilter(
+                            ColumnFilter::select()
+                                ->attribute('gtin14')
+                                ->options(fn (): array => DistinctColumnOptions::of(Verification::class, 'gtin14')),
+                        ),
                     function (mixed $record): ?string {
                         if (! $record instanceof Model) {
                             return null;
@@ -60,7 +70,12 @@ class VerificationsTable
                         ->toggleable(isToggledHiddenByDefault: true)
                         ->limit(36)
                         ->tooltip(fn (?string $state): ?string => $state)
-                        ->placeholder('—'),
+                        ->placeholder('—')
+                        ->columnFilter(
+                            ColumnFilter::select()
+                                ->attribute('scanned_barcode')
+                                ->options(fn (): array => DistinctColumnOptions::of(Verification::class, 'scanned_barcode')),
+                        ),
                     fn (mixed $record): ?string => $record instanceof Model && filled($record->scanned_barcode)
                         ? (string) $record->scanned_barcode
                         : null,
@@ -71,7 +86,12 @@ class VerificationsTable
                         ->label('Serial')
                         ->searchable()
                         ->copyable()
-                        ->fontFamily(FontFamily::Mono),
+                        ->fontFamily(FontFamily::Mono)
+                        ->columnFilter(
+                            ColumnFilter::select()
+                                ->attribute('serial')
+                                ->options(fn (): array => DistinctColumnOptions::of(Verification::class, 'serial')),
+                        ),
                     function (mixed $record): ?string {
                         if (! $record instanceof Model) {
                             return null;
@@ -102,11 +122,21 @@ class VerificationsTable
                         'failed', 'error' => 'danger',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('verifiedByUser.name')
                     ->label('Verified by')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('verified_by')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                Verification::class,
+                                'verified_by',
+                                User::class,
+                            )),
+                    ),
                 TextColumn::make('disposition')
                     ->label('Disposition')
                     ->placeholder('—')
@@ -126,7 +156,12 @@ class VerificationsTable
                     ->limit(48)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('message')
+                            ->options(fn (): array => DistinctColumnOptions::of(Verification::class, 'message')),
+                    ),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([

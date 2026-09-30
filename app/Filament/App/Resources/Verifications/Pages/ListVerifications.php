@@ -7,9 +7,12 @@ use App\Filament\App\Resources\Verifications\VerificationResource;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListVerifications extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = VerificationResource::class;
 
     protected function getHeaderActions(): array

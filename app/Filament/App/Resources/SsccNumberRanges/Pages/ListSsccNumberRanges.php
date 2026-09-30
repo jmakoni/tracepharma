@@ -9,9 +9,12 @@ use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListSsccNumberRanges extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = SsccNumberRangeResource::class;
 
     public function getSubheading(): ?string

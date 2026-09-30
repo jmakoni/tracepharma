@@ -9,6 +9,7 @@ use App\Filament\App\Resources\SsccLabels\SsccLabelResource;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\SsccLabel;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\Tracing\AssetTrackingUrl;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -19,6 +20,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class SsccLabelsTable
 {
@@ -30,7 +32,12 @@ class SsccLabelsTable
                     TextColumn::make('sscc_18')
                         ->label('SSCC-18')
                         ->searchable()
-                        ->fontFamily(FontFamily::Mono),
+                        ->fontFamily(FontFamily::Mono)
+                        ->columnFilter(
+                            ColumnFilter::select()
+                                ->attribute('sscc_18')
+                                ->options(fn (): array => DistinctColumnOptions::of(SsccLabel::class, 'sscc_18')),
+                        ),
                     fn (mixed $record): ?string => $record instanceof SsccLabel
                         ? AssetTrackingUrl::scanForSsccLabel([
                             'sscc18' => $record->sscc_18,
@@ -41,17 +48,28 @@ class SsccLabelsTable
                 ),
                 TextColumn::make('serial_reference_int')
                     ->label('Serial ref')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('allocation_mode')
                     ->badge()
                     ->formatStateUsing(fn (?SsccAllocationMode $state): string => $state?->label() ?? '—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('allocation_mode')
+                            ->options(DistinctColumnOptions::enum(SsccAllocationMode::class)),
+                    ),
                 TextColumn::make('batch_id')
                     ->label('Batch')
                     ->url(fn (SsccLabel $record): ?string => $record->batch_id
                         ? SsccLabelResource::getUrl('view-batch', ['record' => $record->batch_id])
                         : null)
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('batch_id')
+                            ->options(fn (): array => DistinctColumnOptions::of(SsccLabel::class, 'batch_id')),
+                    ),
                 TextColumn::make('print_status')
                     ->badge()
                     ->formatStateUsing(fn (?SsccLabelPrintStatus $state): string => $state?->label() ?? '—')
@@ -62,14 +80,21 @@ class SsccLabelsTable
                         SsccLabelPrintStatus::Skipped => 'gray',
                         default => 'gray',
                     })
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('print_status')),
                 TextColumn::make('ship_to_name')
                     ->label('Ship to')
                     ->placeholder('—')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('ship_to_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(SsccLabel::class, 'ship_to_name')),
+                    ),
                 TextColumn::make('created_at')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('print_status')

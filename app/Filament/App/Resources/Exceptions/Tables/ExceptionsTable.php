@@ -9,10 +9,14 @@ use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
 use App\Enums\ExceptionTypeCategory;
 use App\Models\Exceptions\ExceptionCase;
+use App\Models\Exceptions\ExceptionType;
+use App\Models\TradingPartner;
+use App\Models\User;
 use App\Support\Exceptions\ExceptionCorrectionProfile;
 use App\Support\Exceptions\ExceptionHonestyStatus;
 use App\Support\Receiving\ReceiveExceptionTypes;
 use App\Support\Receiving\ReceiveSessionExceptionQuery;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\TenantFeatures;
 use Filament\Actions\BulkAction;
 use Filament\Actions\ViewAction;
@@ -26,6 +30,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class ExceptionsTable
 {
@@ -46,59 +51,98 @@ class ExceptionsTable
                 TextColumn::make('title')
                     ->searchable()
                     ->limit(40)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('title')
+                            ->options(fn (): array => DistinctColumnOptions::of(ExceptionCase::class, 'title')),
+                    ),
                 TextColumn::make('principal.name')
                     ->label('Principal')
                     ->placeholder('—')
                     ->toggleable()
-                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals()),
+                    ->visible(fn (): bool => TenantFeatures::forTenant(tenant())->supportsPrincipals())
+                    ->columnFilter(ColumnFilter::select()->syncWith('principal_id')),
                 TextColumn::make('type.name')
                     ->label('Type')
                     ->placeholder('—')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('exception_type_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ExceptionCase::class,
+                                'exception_type_id',
+                                ExceptionType::class,
+                            )),
+                    ),
                 TextColumn::make('type.receive_impact')
                     ->label('Receive impact')
                     ->badge()
                     ->formatStateUsing(fn (?ExceptionReceiveImpact $state): ?string => $state?->label())
                     ->color(fn (?ExceptionReceiveImpact $state): string => $state?->badgeColor() ?? 'gray')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('receive_impact')),
                 TextColumn::make('severity')
                     ->badge()
                     ->formatStateUsing(fn (?ExceptionSeverity $state): ?string => $state?->label())
                     ->color(fn (?ExceptionSeverity $state): string => $state?->badgeColor() ?? 'gray')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('severity')),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (?ExceptionStatus $state): ?string => $state?->label())
                     ->color(fn (?ExceptionStatus $state): string => $state?->badgeColor() ?? 'gray')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('condition_still_true')
                     ->label('Condition')
                     ->badge()
                     ->visible(fn (): bool => ExceptionCase::hasHonestyColumns())
                     ->state(fn (ExceptionCase $record): string => ExceptionHonestyStatus::conditionLabel($record))
-                    ->color(fn (string $state): string => $state === 'cleared' ? 'success' : 'warning'),
+                    ->color(fn (string $state): string => $state === 'cleared' ? 'success' : 'warning')
+                    ->columnFilter(ColumnFilter::select()->syncWith('condition')),
                 TextColumn::make('tradingPartner.name')
                     ->label('Partner')
                     ->placeholder('—')
                     ->limit(28)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('trading_partner_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ExceptionCase::class,
+                                'trading_partner_id',
+                                TradingPartner::class,
+                            )),
+                    ),
                 TextColumn::make('assignee.name')
                     ->label('Assignee')
                     ->placeholder('—')
                     ->limit(24)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('assigned_to')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ExceptionCase::class,
+                                'assigned_to',
+                                User::class,
+                            )),
+                    ),
                 TextColumn::make('due_at')
                     ->label('Due')
                     ->dateTime()
                     ->sortable()
                     ->placeholder('—')
                     ->color(fn (ExceptionCase $record): ?string => $record->isOverdue() ? 'danger' : null)
-                    ->weight(fn (ExceptionCase $record): ?FontWeight => $record->isOverdue() ? FontWeight::Bold : null),
+                    ->weight(fn (ExceptionCase $record): ?FontWeight => $record->isOverdue() ? FontWeight::Bold : null)
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('created_at')
                     ->label('Created')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([

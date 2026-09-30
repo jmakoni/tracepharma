@@ -11,6 +11,7 @@ use App\Http\Middleware\EnsurePasswordChangeRequired;
 use App\Http\Middleware\EnsureTenantIsActive;
 use App\Http\Middleware\RedirectUnmappedFloorShell;
 use App\Models\User;
+use App\Support\Auth\Permissions;
 use App\Support\Auth\TracepharmaBreezyCore;
 use App\Support\Filament\OptionalFilamentPlugins;
 use App\Support\Floor\FloorRouteMap;
@@ -36,6 +37,7 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 use OccTherapist\AdvancedTableExportForFilament\AdvancedTableExportForFilamentPlugin;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
+use Tracepharma\FilamentTableViews\FilamentTableViewsPlugin;
 use Tracepharma\FilamentUiExtras\FilamentUiExtrasPlugin;
 use WatheqAlshowaiter\FilamentStickyTableHeader\StickyTableHeaderPlugin;
 use Zvizvi\FilamentColumnFilters\FilamentColumnFiltersPlugin;
@@ -88,7 +90,7 @@ class AppPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/app/theme.css')
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
-                fn (): string => implode('', [
+                fn (): string => view('filament.app.partials.floor-pwa-meta')->render().implode('', [
                     '<script src="'.e($this->versionedPublicJs('js/tp-floor-viewport.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/vendor/BrowserPrint.min.js')).'" data-navigate-track></script>',
                     '<script src="'.e($this->versionedPublicJs('js/tp-client-label-print.js')).'" data-navigate-track></script>',
@@ -118,7 +120,11 @@ class AppPanelProvider extends PanelProvider
                     ->stickyTableActions(true)
             )
             ->plugin(StickyTableHeaderPlugin::make())
-            ->plugin(FilamentColumnFiltersPlugin::make());
+            ->plugin(FilamentColumnFiltersPlugin::make())
+            ->plugin(
+                FilamentTableViewsPlugin::make()
+                    ->sharePermission(Permissions::UsersManage)
+            );
 
         $panel = OptionalFilamentPlugins::register(
             $panel,

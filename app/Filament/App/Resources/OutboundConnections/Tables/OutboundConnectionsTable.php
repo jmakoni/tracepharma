@@ -10,10 +10,12 @@ use App\Enums\SerializationProvider;
 use App\Models\OutboundConnection;
 use App\Support\Integrations\ConnectionHealthTracker;
 use App\Support\Integrations\CredentialExpiry;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class OutboundConnectionsTable
 {
@@ -23,7 +25,12 @@ class OutboundConnectionsTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(OutboundConnection::class, 'name')),
+                    ),
                 TextColumn::make('hub_badge')
                     ->label('Send via')
                     ->state(function (OutboundConnection $record): string {
@@ -42,7 +49,8 @@ class OutboundConnectionsTable
                         OutboundConnectionKind::ProviderHub => 'info',
                         OutboundConnectionKind::DirectPartner => 'warning',
                         OutboundConnectionKind::LocalDelivery => 'gray',
-                    }),
+                    })
+                    ->columnFilter(ColumnFilter::select()->syncWith('serialization_provider')),
                 TextColumn::make('tradingPartners.name')
                     ->label('Customers')
                     ->badge()
@@ -50,29 +58,42 @@ class OutboundConnectionsTable
                     ->placeholder('Global')
                     ->toggleable(),
                 IconColumn::make('is_active')
-                    ->boolean(),
+                    ->boolean()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
                 TextColumn::make('approval_status')
                     ->label('Review')
                     ->badge()
                     ->formatStateUsing(fn (ConnectionApprovalStatus $state): string => $state->label())
-                    ->color(fn (ConnectionApprovalStatus $state): string => $state === ConnectionApprovalStatus::Approved ? 'gray' : $state->color()),
+                    ->color(fn (ConnectionApprovalStatus $state): string => $state === ConnectionApprovalStatus::Approved ? 'gray' : $state->color())
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('approval_status')
+                            ->options(DistinctColumnOptions::enum(ConnectionApprovalStatus::class)),
+                    ),
                 TextColumn::make('credentials_expire_at')
                     ->label('Credentials')
                     ->badge()
                     ->formatStateUsing(fn ($state): string => CredentialExpiry::label($state))
                     ->color(fn ($state): string => CredentialExpiry::badgeColor($state))
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('consecutive_failures')
                     ->label('Health')
                     ->badge()
                     ->formatStateUsing(fn (int $state): string => $state === 0 ? 'Healthy' : "{$state} failure(s)")
                     ->color(fn (int $state): string => $state >= ConnectionHealthTracker::ALERT_THRESHOLD ? 'danger' : ($state > 0 ? 'warning' : 'success'))
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('last_sent_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('serialization_provider')

@@ -2,12 +2,16 @@
 
 namespace App\Filament\Admin\Resources\Fda\FdaOrganizations\Tables;
 
+use App\Enums\PartnerType;
 use App\Filament\Admin\Support\FdaRegistryBadges;
 use App\Filament\Support\RecordActionGroup;
+use App\Models\Fda\FdaOrganization;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class FdaOrganizationsTable
 {
@@ -26,15 +30,56 @@ class FdaOrganizationsTable
                     ->description(fn ($record): ?string => $record->canonical_name)
                     ->formatStateUsing(fn (mixed $state, $record): string => filled($state)
                         ? (string) $state
-                        : (string) ($record->original_name ?? '')),
-                FdaRegistryBadges::partnerTypeColumn(),
-                FdaRegistryBadges::identifierColumn('gln', 'GLN'),
-                FdaRegistryBadges::identifierColumn('duns_number', 'DUNS'),
-                TextColumn::make('street_address')->searchable()->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('establishments_count')->label('Establishments')->sortable(),
-                TextColumn::make('wdd_facilities_count')->label('WDD facilities')->sortable(),
-                TextColumn::make('products_count')->label('Products')->sortable(),
-                FdaRegistryBadges::activeColumn(),
+                        : (string) ($record->original_name ?? ''))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaOrganization::class, 'name')),
+                    ),
+                FdaRegistryBadges::partnerTypeColumn()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('partner_type')
+                            ->options(DistinctColumnOptions::enum(PartnerType::class)),
+                    ),
+                FdaRegistryBadges::identifierColumn('gln', 'GLN')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaOrganization::class, 'gln')),
+                    ),
+                FdaRegistryBadges::identifierColumn('duns_number', 'DUNS')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('duns_number')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaOrganization::class, 'duns_number')),
+                    ),
+                TextColumn::make('street_address')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('street_address')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaOrganization::class, 'street_address')),
+                    ),
+                TextColumn::make('establishments_count')
+                    ->label('Establishments')
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
+                TextColumn::make('wdd_facilities_count')
+                    ->label('WDD facilities')
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
+                TextColumn::make('products_count')
+                    ->label('Products')
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
+                FdaRegistryBadges::activeColumn()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('Name, GLN, DUNS, or street')

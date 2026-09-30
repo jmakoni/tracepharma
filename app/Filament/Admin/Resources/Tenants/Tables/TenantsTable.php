@@ -5,9 +5,11 @@ namespace App\Filament\Admin\Resources\Tenants\Tables;
 use App\Actions\Tenants\ActivateTenant;
 use App\Actions\Tenants\DeleteTenantPair;
 use App\Actions\Tenants\SuspendTenant;
+use App\Enums\TenantProfile;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Tenant;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -21,6 +23,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class TenantsTable
 {
@@ -28,7 +31,14 @@ class TenantsTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
+                TextColumn::make('name')
+                    ->searchable()
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(Tenant::class, 'name')),
+                    ),
                 TextColumn::make('domains.domain')
                     ->label('Host')
                     ->searchable()
@@ -38,12 +48,27 @@ class TenantsTable
                     ->label('Access')
                     ->badge()
                     ->placeholder('—'),
-                TextColumn::make('profile')->badge()->sortable(),
-                TextColumn::make('status')->badge()->sortable(),
+                TextColumn::make('profile')
+                    ->badge()
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('profile')
+                            ->options(DistinctColumnOptions::enum(TenantProfile::class)),
+                    ),
+                TextColumn::make('status')
+                    ->badge()
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('status')
+                            ->options(fn (): array => DistinctColumnOptions::of(Tenant::class, 'status')),
+                    ),
                 TextColumn::make('inbound_environment')
                     ->label('Inbound env')
                     ->badge()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('inbound_environment')),
                 TextColumn::make('hub_providers')
                     ->label('Hub providers')
                     ->formatStateUsing(function (mixed $state): string {
@@ -54,8 +79,19 @@ class TenantsTable
                         return implode(', ', $state);
                     })
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('gln')->label('GLN')->copyable()->toggleable(),
-                TextColumn::make('created_at')->dateTime()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('gln')
+                    ->label('GLN')
+                    ->copyable()
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(Tenant::class, 'gln')),
+                    ),
+                TextColumn::make('created_at')
+                    ->dateTime()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('inbound_environment')

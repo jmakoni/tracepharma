@@ -5,9 +5,11 @@ namespace App\Filament\App\Resources\TransferringSessions\Tables;
 use App\Actions\Transferring\DeleteTransferringSession;
 use App\Filament\App\Resources\ReceivingSessions\ReceivingSessionResource;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
+use App\Models\Site;
 use App\Models\Transferring\TransferringSession;
 use App\Support\Auth\CurrentSite;
 use App\Support\Receiving\EligibleReceiveSites;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\Transferring\TransferLayout;
 use App\Support\Transferring\TransferringSessionStatus;
 use Filament\Actions\ViewAction;
@@ -19,6 +21,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class TransferringSessionsTable
 {
@@ -40,44 +43,69 @@ class TransferringSessionsTable
                         'open' => 'warning',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('fromSite.name')
                     ->label('From')
                     ->placeholder('—')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('from_site_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                TransferringSession::class,
+                                'from_site_id',
+                                Site::class,
+                            )),
+                    ),
                 TextColumn::make('toSite.name')
                     ->label('To')
                     ->placeholder('—')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('to_site_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                TransferringSession::class,
+                                'to_site_id',
+                                Site::class,
+                            )),
+                    ),
                 TextColumn::make('confirmed_count')
                     ->label('Confirmed')
                     ->alignEnd()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('received_count')
                     ->label('Received')
                     ->alignEnd()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('opened_at')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('shipped_at')
                     ->dateTime()
                     ->placeholder('—')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('received_at')
                     ->dateTime()
                     ->placeholder('—')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('completed_at')
                     ->dateTime()
                     ->placeholder('—')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('receivingSession.id')
                     ->label('Receive')
                     ->formatStateUsing(fn (?int $state): string => $state !== null ? '#'.$state : '—')

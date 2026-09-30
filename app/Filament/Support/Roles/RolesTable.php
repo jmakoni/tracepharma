@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Filament\Support\Roles;
 
 use App\Filament\Support\RecordActionGroup;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\Models\Role;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 final class RolesTable
 {
@@ -29,14 +31,26 @@ final class RolesTable
                     ->label('Role')
                     ->formatStateUsing(fn (string $state): string => RolePermissionEditor::roleLabel($state, $guard))
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(
+                                Role::class,
+                                'name',
+                                constrain: fn (Builder $query): Builder => $query
+                                    ->where('guard_name', $guard)
+                                    ->whereIn('name', $roleNames),
+                            )),
+                    ),
                 TextColumn::make('name_key')
                     ->label('Key')
                     ->state(fn (Role $record): string => (string) $record->name)
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('permissions_count')
                     ->label('Permissions')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::range()),
             ])
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(25)

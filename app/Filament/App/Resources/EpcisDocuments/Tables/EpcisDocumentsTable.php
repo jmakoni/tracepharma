@@ -70,9 +70,10 @@ class EpcisDocumentsTable
                         return $query->orderBy('ship_from_name', $dir);
                     })
                     ->columnFilter(
-                        ColumnFilter::search()
+                        ColumnFilter::select()
                             ->attribute('ship_from_name')
-                            ->label('Seller'),
+                            ->label('Seller')
+                            ->options(fn (): array => self::distinctInboundOptions('ship_from_name')),
                     ),
                 TextColumn::make('ship_from_display')
                     ->label('Ship-from')
@@ -91,7 +92,18 @@ class EpcisDocumentsTable
                         );
                     })
                     ->columnFilter(
-                        ColumnFilter::search()->syncWith('ship_from_gln', ['value' => 'value']),
+                        ColumnFilter::select()
+                            ->label('Ship-from')
+                            ->options(fn (): array => self::distinctInboundSiteOptions(
+                                'ship_from_site_name',
+                                'ship_from_gln',
+                            ))
+                            ->applyUsing(fn (Builder $query, array $data): Builder => self::applySelectedSiteFilter(
+                                $query,
+                                $data,
+                                'ship_from_site_name',
+                                'ship_from_gln',
+                            )),
                     ),
                 TextColumn::make('sold_to_display')
                     ->label('Sold-to')
@@ -110,9 +122,10 @@ class EpcisDocumentsTable
                         return $query->orderBy('ship_to_name', $dir);
                     })
                     ->columnFilter(
-                        ColumnFilter::search()
+                        ColumnFilter::select()
                             ->attribute('ship_to_name')
-                            ->label('Sold-to'),
+                            ->label('Sold-to')
+                            ->options(fn (): array => self::distinctInboundOptions('ship_to_name')),
                     ),
                 TextColumn::make('ship_to_site_display')
                     ->label('Ship-to')
@@ -131,7 +144,18 @@ class EpcisDocumentsTable
                         );
                     })
                     ->columnFilter(
-                        ColumnFilter::search()->syncWith('ship_to_gln', ['value' => 'value']),
+                        ColumnFilter::select()
+                            ->label('Ship-to')
+                            ->options(fn (): array => self::distinctInboundSiteOptions(
+                                'ship_to_site_name',
+                                'ship_to_gln',
+                            ))
+                            ->applyUsing(fn (Builder $query, array $data): Builder => self::applySelectedSiteFilter(
+                                $query,
+                                $data,
+                                'ship_to_site_name',
+                                'ship_to_gln',
+                            )),
                     ),
                 TextColumn::make('asn_number')
                     ->label('ASN')
@@ -143,7 +167,9 @@ class EpcisDocumentsTable
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
                     ->columnFilter(
-                        ColumnFilter::search()->syncWith('asn_number', ['value' => 'value']),
+                        ColumnFilter::select()
+                            ->attribute('asn_number')
+                            ->options(fn (): array => self::distinctInboundOptions('asn_number')),
                     ),
                 TextColumn::make('customer_po')
                     ->label('Customer PO')
@@ -155,7 +181,9 @@ class EpcisDocumentsTable
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
                     ->columnFilter(
-                        ColumnFilter::search()->syncWith('customer_po', ['value' => 'value']),
+                        ColumnFilter::select()
+                            ->attribute('customer_po')
+                            ->options(fn (): array => self::distinctInboundOptions('customer_po')),
                     ),
                 TextColumn::make('event_count')
                     ->label('Events')
@@ -191,14 +219,22 @@ class EpcisDocumentsTable
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)
-                    ->columnFilter(ColumnFilter::search()),
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('document_uuid')
+                            ->options(fn (): array => self::distinctInboundOptions('document_uuid')),
+                    ),
                 TextColumn::make('original_filename')
                     ->label('Filename')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)
-                    ->columnFilter(ColumnFilter::search()),
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('original_filename')
+                            ->options(fn (): array => self::distinctInboundOptions('original_filename')),
+                    ),
                 IconColumn::make('dscsa_affirm')
                     ->label('DSCSA')
                     ->getStateUsing(function (EpcisDocument $record): ?bool {
@@ -579,12 +615,25 @@ class EpcisDocumentsTable
     }
 
     /**
+     * Validated inbound files that are not yet fully floor-received.
+     *
+     * @param  Builder<EpcisDocument>  $query
+     * @return Builder<EpcisDocument>
+     */
+    public static function constrainNotFloorReceived(Builder $query): Builder
+    {
+        return $query->whereNot(function (Builder $received): void {
+            self::constrainFloorReceived($received);
+        });
+    }
+
+    /**
      * Approximate {@see EpcisDocument::floorReceiveStatusLabel()} === Received.
      *
      * @param  Builder<EpcisDocument>  $query
      * @return Builder<EpcisDocument>
      */
-    private static function constrainFloorReceived(Builder $query): Builder
+    public static function constrainFloorReceived(Builder $query): Builder
     {
         return $query->where(function (Builder $outer): void {
             $outer
@@ -908,5 +957,93 @@ class EpcisDocumentsTable
                 filled($until),
                 fn (Builder $query): Builder => $query->whereDate($column, '<=', $until),
             );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function distinctInboundOptions(string $column, int $limit = 250): array
+    {
+        $values = EpcisDocument::query()
+            ->inboundCatalog()
+            ->whereNotNull($column)
+            ->where($column, '!=', '')
+            ->distinct()
+            ->orderBy($column)
+            ->limit($limit)
+            ->pluck($column)
+            ->filter(fn (mixed $value): bool => filled($value));
+
+        $options = [];
+
+        foreach ($values as $value) {
+            $options[(string) $value] = (string) $value;
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function distinctInboundSiteOptions(string $nameColumn, string $glnColumn, int $limit = 250): array
+    {
+        $rows = EpcisDocument::query()
+            ->inboundCatalog()
+            ->select([$nameColumn, $glnColumn])
+            ->where(function (Builder $query) use ($nameColumn, $glnColumn): void {
+                $query->where(function (Builder $named) use ($nameColumn): void {
+                    $named->whereNotNull($nameColumn)->where($nameColumn, '!=', '');
+                })->orWhere(function (Builder $gln) use ($glnColumn): void {
+                    $gln->whereNotNull($glnColumn)->where($glnColumn, '!=', '');
+                });
+            })
+            ->limit($limit)
+            ->get();
+
+        $options = [];
+
+        foreach ($rows as $row) {
+            $name = trim((string) ($row->getAttribute($nameColumn) ?? ''));
+            $gln = trim((string) ($row->getAttribute($glnColumn) ?? ''));
+            $value = $gln !== '' ? $gln : $name;
+            $label = $name !== '' ? $name : $gln;
+
+            if ($value === '') {
+                continue;
+            }
+
+            $options[$value] = $label;
+        }
+
+        natcasesort($options);
+
+        return $options;
+    }
+
+    /**
+     * @param  Builder<EpcisDocument>  $query
+     * @param  array<string, mixed>  $data
+     * @return Builder<EpcisDocument>
+     */
+    private static function applySelectedSiteFilter(
+        Builder $query,
+        array $data,
+        string $nameColumn,
+        string $glnColumn,
+    ): Builder {
+        $values = array_values(array_filter(
+            (array) ($data['values'] ?? $data['value'] ?? []),
+            fn (mixed $value): bool => filled($value),
+        ));
+
+        if ($values === []) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $inner) use ($values, $nameColumn, $glnColumn): void {
+            $inner->whereIn($glnColumn, $values)
+                ->orWhereIn($nameColumn, $values);
+        });
     }
 }

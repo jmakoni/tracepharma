@@ -21,10 +21,12 @@ use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\On;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListSsccLabels extends ListRecords
 {
     use DispatchesClientLabelPrint;
+    use HasColumnFilters;
 
     protected static string $resource = SsccLabelResource::class;
 

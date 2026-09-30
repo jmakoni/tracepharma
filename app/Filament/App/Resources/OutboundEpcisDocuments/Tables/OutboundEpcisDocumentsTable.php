@@ -13,6 +13,7 @@ use App\Models\Epcis\EpcisDocument;
 use App\Models\User;
 use App\Support\Dscsa\DscsaTransactionStatementUi;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -27,6 +28,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class OutboundEpcisDocumentsTable
 {
@@ -45,13 +47,15 @@ class OutboundEpcisDocumentsTable
                 TextColumn::make('creation_date')
                     ->label('Date')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()->syncWith('creation_date')),
                 TextColumn::make('direction')
                     ->label('Type')
                     ->badge()
                     ->formatStateUsing(fn (EpcisDocument $record, mixed $state): string => $record->directionDisplayLabel())
                     ->color('gray')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('authored_kind')),
                 TextColumn::make('ship_from_display')
                     ->label('Ship-from')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_from_site_name
@@ -59,7 +63,23 @@ class OutboundEpcisDocumentsTable
                         ?: $r->ship_from_gln)
                     ->placeholder('—')
                     ->limit(28)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->label('Ship-from')
+                            ->options(fn (): array => DistinctColumnOptions::sitePair(
+                                EpcisDocument::class,
+                                'ship_from_site_name',
+                                'ship_from_gln',
+                                constrain: fn (Builder $query): Builder => $query->where('direction', 'outbound'),
+                            ))
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applySiteFilter(
+                                $query,
+                                $data,
+                                'ship_from_site_name',
+                                'ship_from_gln',
+                            )),
+                    ),
                 TextColumn::make('sold_to_display')
                     ->label('Sold-to')
                     ->state(fn (EpcisDocument $r): ?string => $r->ship_to_name
@@ -68,21 +88,48 @@ class OutboundEpcisDocumentsTable
                         ?: $r->ship_to_gln)
                     ->placeholder('—')
                     ->limit(28)
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('ship_to_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(
+                                EpcisDocument::class,
+                                'ship_to_name',
+                                constrain: fn (Builder $query): Builder => $query->where('direction', 'outbound'),
+                            )),
+                    ),
                 TextColumn::make('asn_number')
                     ->label('ASN')
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
                     ->copyable()
                     ->limit(16)
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('asn_number')
+                            ->options(fn (): array => DistinctColumnOptions::of(
+                                EpcisDocument::class,
+                                'asn_number',
+                                constrain: fn (Builder $query): Builder => $query->where('direction', 'outbound'),
+                            )),
+                    ),
                 TextColumn::make('customer_po')
                     ->label('Customer PO')
                     ->fontFamily(FontFamily::Mono)
                     ->searchable()
                     ->copyable()
                     ->limit(16)
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('customer_po')
+                            ->options(fn (): array => DistinctColumnOptions::of(
+                                EpcisDocument::class,
+                                'customer_po',
+                                constrain: fn (Builder $query): Builder => $query->where('direction', 'outbound'),
+                            )),
+                    ),
                 TextColumn::make('transmission_status')
                     ->label('Transmit')
                     ->badge()
@@ -94,7 +141,8 @@ class OutboundEpcisDocumentsTable
                         default => 'gray',
                     })
                     ->placeholder('—')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('transmission_status')),
                 TextColumn::make('status')
                     ->badge()
                     ->color(fn (?string $state): string => match ($state) {
@@ -103,13 +151,23 @@ class OutboundEpcisDocumentsTable
                         'error' => 'danger',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('original_filename')
                     ->label('Filename')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('original_filename')
+                            ->options(fn (): array => DistinctColumnOptions::of(
+                                EpcisDocument::class,
+                                'original_filename',
+                                constrain: fn (Builder $query): Builder => $query->where('direction', 'outbound'),
+                            )),
+                    ),
                 IconColumn::make('dscsa_affirm')
                     ->label('DSCSA')
                     ->getStateUsing(function (EpcisDocument $record): ?bool {

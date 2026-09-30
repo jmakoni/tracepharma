@@ -9,6 +9,7 @@ use App\Models\Admin;
 use App\Models\CustomerOnboarding;
 use App\Support\Auth\Permissions;
 use App\Support\CustomerOnboarding\OrganizationTypeMapper;
+use App\Support\Tables\DistinctColumnOptions;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -21,6 +22,7 @@ use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class CustomerOnboardingResource extends Resource implements HasKnowledgeBase
 {
@@ -152,20 +154,42 @@ class CustomerOnboardingResource extends Resource implements HasKnowledgeBase
             ->columns([
                 TextColumn::make('company_display_name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('company_display_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(CustomerOnboarding::class, 'company_display_name')),
+                    ),
                 TextColumn::make('contact_name')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('contact_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(CustomerOnboarding::class, 'contact_name')),
+                    ),
                 TextColumn::make('contact_email')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('contact_email')
+                            ->options(fn (): array => DistinctColumnOptions::of(CustomerOnboarding::class, 'contact_email')),
+                    ),
                 TextColumn::make('organization_type')
                     ->label('Type')
-                    ->formatStateUsing(fn (string $state): string => OrganizationTypeMapper::options()[$state] ?? $state),
+                    ->formatStateUsing(fn (string $state): string => OrganizationTypeMapper::options()[$state] ?? $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('organization_type')
+                            ->options(fn (): array => DistinctColumnOptions::of(CustomerOnboarding::class, 'organization_type')),
+                    ),
                 TextColumn::make('status')
                     ->badge()
-                    ->formatStateUsing(fn (CustomerOnboardingStatus $state): string => $state->label()),
+                    ->formatStateUsing(fn (CustomerOnboardingStatus $state): string => $state->label())
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('created_at')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('status')

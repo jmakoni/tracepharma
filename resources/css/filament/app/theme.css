@@ -2,6 +2,7 @@
 @import '../../../../vendor/zeeshantariq/filament-sticky-columns/resources/css/filament-sticky-columns.css';
 @import '../../../../vendor/watheqalshowaiter/filament-sticky-table-header/resources/css/sticky-table-header.css';
 @import '../../../../packages/filament-ui-extras/resources/css/filament-ui-extras.css';
+@import '../../../../packages/filament-table-views/resources/css/filament-table-views.css';
 
 @plugin "@tailwindcss/typography";
 
@@ -16,6 +17,7 @@
 @source '../../../../vendor/bokshorn-it/filament-activity-timeline/resources/**/*.blade.php';
 @source '../../../../vendor/zvizvi/filament-notifications-tabs/resources/views/**/*.blade.php';
 @source '../../../../packages/filament-ui-extras/resources/views/**/*.blade.php';
+@source '../../../../packages/filament-table-views/resources/views/**/*.blade.php';
 
 /*
  * Topbar menus (profile + site) must paint above page content and floor sticky
@@ -79,6 +81,7 @@
 }
 
 @import '../../daisyui/tracepharma-themes.css';
+@import '../table-ops-sheet.css';
 
 /* Asset Tracking identifier cells: plain text links, no hover underline */
 .tp-identifier-trace .fi-ta-text-item,

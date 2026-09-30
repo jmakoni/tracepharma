@@ -4,7 +4,10 @@ namespace App\Filament\App\Resources\ReadPoints\Tables;
 
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
+use App\Models\ReadPoint;
+use App\Models\Site;
 use App\Support\Catalog\DisplayName;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -13,6 +16,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class ReadPointsTable
 {
@@ -24,19 +28,52 @@ class ReadPointsTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
-                TextColumn::make('site.name')->label('Site')->sortable(),
-                TextColumn::make('code')->searchable()->toggleable(),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(ReadPoint::class, 'name')),
+                    ),
+                TextColumn::make('site.name')
+                    ->label('Site')
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('site_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ReadPoint::class,
+                                'site_id',
+                                Site::class,
+                            )),
+                    ),
+                TextColumn::make('code')
+                    ->searchable()
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('code')
+                            ->options(fn (): array => DistinctColumnOptions::of(ReadPoint::class, 'code')),
+                    ),
                 TextColumn::make('sgln')
                     ->label('SGLN')
                     ->copyable()
                     ->fontFamily(FontFamily::Mono)
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('sgln')
+                            ->options(fn (): array => DistinctColumnOptions::of(ReadPoint::class, 'sgln')),
+                    ),
                 TextColumn::make('is_active')
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (?bool $state): string => $state ? 'Active' : 'Inactive')
-                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray'),
+                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean()),
+                    ),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('Name, code, SGLN, or site')
