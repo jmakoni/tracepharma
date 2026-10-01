@@ -3,19 +3,22 @@
 namespace App\Filament\Admin\Resources\Fda\FdaWdd3plStagings\Pages;
 
 use App\Filament\Admin\Resources\Fda\FdaWdd3plStagings\FdaWdd3plStagingResource;
+use App\Filament\Notifications\Notification;
 use App\Jobs\ImportFdaDatasetJob;
 use App\Models\Fda\FdaWdd3plStaging;
 use App\Models\Fda\FdaWdd3plUnmatched;
 use App\Support\Auth\Permissions;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListFdaWdd3plStagings extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = FdaWdd3plStagingResource::class;
 
     public function getSubheading(): string|Htmlable|null

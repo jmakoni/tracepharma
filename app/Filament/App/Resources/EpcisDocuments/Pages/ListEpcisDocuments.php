@@ -8,6 +8,7 @@ use App\Enums\EpcisReceivedVia;
 use App\Exceptions\DuplicateEpcisUploadException;
 use App\Exceptions\InboundReceiverGlnRejected;
 use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
+use App\Filament\App\Resources\EpcisDocuments\Tables\EpcisDocumentsTable;
 use App\Filament\App\Support\EpcisSchemaSearchForm;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RegulatoryCompliance;
@@ -32,6 +33,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -43,11 +45,14 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
+use Tracepharma\FilamentTableViews\Concerns\HasTableViews;
+use Tracepharma\FilamentTableViews\Support\PresetView;
 use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListEpcisDocuments extends ListRecords
 {
     use HasColumnFilters;
+    use HasTableViews;
 
     protected static string $resource = EpcisDocumentResource::class;
 
@@ -70,6 +75,37 @@ class ListEpcisDocuments extends ListRecords
 
     /** @var array<int, int|null> */
     private array $shipToSiteByEpcId = [];
+
+    /**
+     * @return array<string, PresetView>
+     */
+    public function getPresetViews(): array
+    {
+        return [
+            'all' => PresetView::make('All')
+                ->icon('heroicon-o-document-text')
+                ->color('gray')
+                ->default(),
+            'needs_attention' => PresetView::make('Needs attention')
+                ->icon('heroicon-o-exclamation-triangle')
+                ->color('warning')
+                ->query(fn (EloquentBuilder $query): EloquentBuilder => $query->whereIn('status', [
+                    'error',
+                    'received',
+                    'parsing',
+                ])),
+            'received' => PresetView::make('Received')
+                ->icon('heroicon-o-inbox')
+                ->color('info')
+                ->query(fn (EloquentBuilder $query): EloquentBuilder => $query->where('status', 'received')),
+            'ready_to_receive' => PresetView::make('Ready to Receive')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->query(fn (EloquentBuilder $query): EloquentBuilder => EpcisDocumentsTable::constrainNotFloorReceived(
+                    $query->where('status', 'validated'),
+                )),
+        ];
+    }
 
     public function mount(): void
     {

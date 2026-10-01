@@ -23,6 +23,9 @@ use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
+use Zvizvi\FilamentColumnFilters\FilamentColumnFilters;
+use Zvizvi\FilamentColumnFilters\Filters\SearchColumnFilter;
+use Zvizvi\FilamentColumnFilters\Filters\SelectColumnFilter;
 
 class EpcisDocumentResourceTest extends TestCase
 {
@@ -162,6 +165,33 @@ class EpcisDocumentResourceTest extends TestCase
         $this->assertSame('Receive Blocked', $options['Floor receive']['floor_receive_blocked'] ?? null);
         $this->assertSame('Validated', $options['Ingest']['validated'] ?? null);
         $this->assertSame('Uploaded', $options['Ingest']['received'] ?? null);
+    }
+
+    #[Test]
+    public function inbound_column_filters_use_select_not_search(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+
+        $table = EpcisDocumentsTable::configure(Table::make(new ListEpcisDocuments));
+
+        foreach ([
+            'seller_display',
+            'ship_from_display',
+            'sold_to_display',
+            'ship_to_site_display',
+            'asn_number',
+            'customer_po',
+            'document_uuid',
+            'original_filename',
+            'status',
+            'schema_version',
+        ] as $columnName) {
+            $column = $table->getColumn($columnName);
+            $this->assertNotNull($column, $columnName);
+            $filter = FilamentColumnFilters::getColumnFilter($column);
+            $this->assertInstanceOf(SelectColumnFilter::class, $filter, $columnName);
+            $this->assertNotInstanceOf(SearchColumnFilter::class, $filter, $columnName);
+        }
     }
 
     #[Test]

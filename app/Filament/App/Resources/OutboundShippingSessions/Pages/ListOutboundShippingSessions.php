@@ -20,9 +20,11 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListOutboundShippingSessions extends ListRecords
 {
+    use HasColumnFilters;
     use ShowsPrincipalsHonestyBanner;
 
     protected static string $resource = OutboundShippingSessionResource::class;

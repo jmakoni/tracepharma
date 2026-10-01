@@ -5,9 +5,12 @@ namespace App\Filament\Admin\Resources\Fda\FdaWdd3plUnmatcheds\Pages;
 use App\Filament\Admin\Resources\Fda\FdaWdd3plUnmatcheds\FdaWdd3plUnmatchedResource;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Contracts\Support\Htmlable;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListFdaWdd3plUnmatcheds extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = FdaWdd3plUnmatchedResource::class;
 
     public function getSubheading(): string|Htmlable|null

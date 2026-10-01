@@ -4,19 +4,22 @@ namespace App\Filament\Admin\Resources\Fda\FdaImportRuns\Pages;
 
 use App\Filament\Admin\Resources\Fda\FdaImportRuns\FdaImportRunResource;
 use App\Filament\Admin\Resources\Fda\FdaWdd3plStagings\FdaWdd3plStagingResource;
+use App\Filament\Notifications\Notification;
 use App\Jobs\ImportFdaDatasetJob;
 use App\Support\Auth\Permissions;
 use App\Support\Fda\FdaImportRunStatus;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Toggle;
-use App\Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListFdaImportRuns extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = FdaImportRunResource::class;
 
     public function getSubheading(): string|Htmlable|null

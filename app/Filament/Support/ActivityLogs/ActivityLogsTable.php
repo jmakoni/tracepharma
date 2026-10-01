@@ -3,6 +3,7 @@
 namespace App\Filament\Support\ActivityLogs;
 
 use App\Filament\Support\RecordActionGroup;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
@@ -11,6 +12,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Models\Activity;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 final class ActivityLogsTable
 {
@@ -23,24 +25,37 @@ final class ActivityLogsTable
                     ->label('When')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('description')
                     ->searchable()
                     ->wrap()
-                    ->limit(80),
+                    ->limit(80)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('description')
+                            ->options(fn (): array => DistinctColumnOptions::of(Activity::class, 'description')),
+                    ),
                 TextColumn::make('event')
                     ->badge()
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('event')),
                 TextColumn::make('log_name')
                     ->label('Log')
                     ->badge()
                     ->color('gray')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::select()->syncWith('log_name')),
                 TextColumn::make('subject_type')
                     ->label('Subject')
                     ->formatStateUsing(fn (?string $state, Model $record): string => self::formatMorph($state, $record->getAttribute('subject_id')))
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('subject_type')
+                            ->options(fn (): array => DistinctColumnOptions::of(Activity::class, 'subject_type')),
+                    ),
                 TextColumn::make('causer_type')
                     ->label('Causer')
                     ->formatStateUsing(function (?string $state, Model $record): string {

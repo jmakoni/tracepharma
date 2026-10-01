@@ -7,11 +7,13 @@ namespace App\Filament\Admin\Resources\OutboundNetworkProfiles\Tables;
 use App\Enums\OutboundTransport;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\OutboundNetworkProfile;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class OutboundNetworkProfilesTable
 {
@@ -22,7 +24,12 @@ class OutboundNetworkProfilesTable
                 TextColumn::make('label')
                     ->label('Network')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('label')
+                            ->options(fn (): array => DistinctColumnOptions::of(OutboundNetworkProfile::class, 'label')),
+                    ),
                 TextColumn::make('environment')
                     ->badge()
                     ->sortable()
@@ -30,23 +37,44 @@ class OutboundNetworkProfilesTable
                         'prod' => 'success',
                         'stage' => 'warning',
                         default => 'gray',
-                    }),
+                    })
+                    ->columnFilter(ColumnFilter::select()->syncWith('environment')),
                 TextColumn::make('default_transport')
                     ->label('Default')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => OutboundTransport::tryFrom($state)?->label() ?? $state),
+                    ->formatStateUsing(fn (string $state): string => OutboundTransport::tryFrom($state)?->label() ?? $state)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('default_transport')
+                            ->options(DistinctColumnOptions::enum(OutboundTransport::class)),
+                    ),
                 TextColumn::make('endpoint_url')
                     ->label('HTTPS endpoint')
                     ->limit(48)
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('endpoint_url')
+                            ->options(fn (): array => DistinctColumnOptions::of(OutboundNetworkProfile::class, 'endpoint_url')),
+                    ),
                 TextColumn::make('as2_to')
                     ->label('AS2-To')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('as2_to')
+                            ->options(fn (): array => DistinctColumnOptions::of(OutboundNetworkProfile::class, 'as2_to')),
+                    ),
                 IconColumn::make('is_locked')
                     ->label('Locked')
-                    ->boolean(),
+                    ->boolean()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_locked')
+                            ->options(DistinctColumnOptions::boolean('Locked', 'Unlocked')),
+                    ),
             ])
             ->defaultSort('label')
             ->filters([

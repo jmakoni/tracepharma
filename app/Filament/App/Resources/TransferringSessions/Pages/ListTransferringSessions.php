@@ -7,9 +7,12 @@ use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListTransferringSessions extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = TransferringSessionResource::class;
 
     public function getDefaultActiveTab(): string|int|null

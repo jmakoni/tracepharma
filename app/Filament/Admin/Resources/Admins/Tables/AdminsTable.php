@@ -5,6 +5,7 @@ namespace App\Filament\Admin\Resources\Admins\Tables;
 use App\Enums\AdminRole;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Admin;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -15,6 +16,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class AdminsTable
 {
@@ -25,15 +27,30 @@ class AdminsTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(Admin::class, 'name')),
+                    ),
                 TextColumn::make('email')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('email')
+                            ->options(fn (): array => DistinctColumnOptions::of(Admin::class, 'email')),
+                    ),
                 IconColumn::make('is_active')
                     ->label('Active')
                     ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
                 TextColumn::make('security_status')
                     ->label('Security')
                     ->badge()
@@ -60,10 +77,20 @@ class AdminsTable
                 TextColumn::make('user_principal_name')
                     ->label('UPN')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('user_principal_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(Admin::class, 'user_principal_name')),
+                    ),
                 TextColumn::make('department')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('department')
+                            ->options(fn (): array => DistinctColumnOptions::of(Admin::class, 'department')),
+                    ),
                 TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
@@ -77,11 +104,17 @@ class AdminsTable
                         return $role?->label() ?? $state;
                     })
                     ->separator(',')
-                    ->wrap(),
+                    ->wrap()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('roles.name')
+                            ->options(DistinctColumnOptions::enum(AdminRole::class)),
+                    ),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('Name or email')

@@ -12,9 +12,12 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListHubRoutes extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = HubRouteResource::class;
 
     public function getSubheading(): ?string

@@ -7,7 +7,9 @@ namespace App\Filament\Admin\Resources\HubRoutes;
 use App\Filament\Admin\Resources\HubRoutes\Pages\ListHubRoutes;
 use App\Models\Admin;
 use App\Models\EpcisHubRoute;
+use App\Models\Tenant;
 use App\Support\Auth\Permissions;
+use App\Support\Tables\DistinctColumnOptions;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -20,6 +22,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class HubRouteResource extends Resource
 {
@@ -74,15 +77,30 @@ class HubRouteResource extends Resource
                 TextColumn::make('gln')
                     ->label('Receiver GLN')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('gln')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisHubRoute::class, 'gln')),
+                    ),
                 TextColumn::make('provider')
                     ->badge()
                     ->color('primary')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('provider')),
                 TextColumn::make('tenant.name')
                     ->label('Tenant')
                     ->placeholder('—')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('tenant_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                EpcisHubRoute::class,
+                                'tenant_id',
+                                Tenant::class,
+                            )),
+                    ),
                 TextColumn::make('tenant.inbound_environment')
                     ->label('Environment')
                     ->badge()
@@ -92,19 +110,35 @@ class HubRouteResource extends Resource
                     ->label('Claimed via')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => $state === EpcisHubRoute::CLAIMED_VIA_ADMIN ? 'Admin' : 'Connection')
-                    ->color(fn (string $state): string => $state === EpcisHubRoute::CLAIMED_VIA_ADMIN ? 'info' : 'gray'),
+                    ->color(fn (string $state): string => $state === EpcisHubRoute::CLAIMED_VIA_ADMIN ? 'info' : 'gray')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('claimed_via')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisHubRoute::class, 'claimed_via')),
+                    ),
                 TextColumn::make('default_inbound_connection_id')
                     ->label('Default connection')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('default_inbound_connection_id')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisHubRoute::class, 'default_inbound_connection_id')),
+                    ),
                 IconColumn::make('is_active')
                     ->label('Active')
-                    ->boolean(),
+                    ->boolean()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
                 TextColumn::make('last_routed_at')
                     ->label('Last routed')
                     ->dateTime()
                     ->placeholder('Never')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('provider')

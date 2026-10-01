@@ -7,12 +7,14 @@ namespace App\Filament\App\Resources\EpcisSubscriptions\Tables;
 use App\Filament\Notifications\Notification;
 use App\Models\Epcis\EpcisSubscription;
 use App\Support\Epcis\EpcisSubscriptionUrl;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class EpcisSubscriptionsTable
 {
@@ -20,12 +22,50 @@ class EpcisSubscriptionsTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
-                TextColumn::make('target_url')->limit(40)->tooltip(fn (EpcisSubscription $record): string => (string) $record->target_url),
-                TextColumn::make('directions')->badge(),
-                IconColumn::make('is_active')->boolean()->label('Active'),
-                TextColumn::make('last_delivered_at')->dateTime()->placeholder('—'),
-                TextColumn::make('last_error')->limit(40)->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('name')
+                    ->searchable()
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisSubscription::class, 'name')),
+                    ),
+                TextColumn::make('target_url')
+                    ->limit(40)
+                    ->tooltip(fn (EpcisSubscription $record): string => (string) $record->target_url)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('target_url')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisSubscription::class, 'target_url')),
+                    ),
+                TextColumn::make('directions')
+                    ->badge()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('directions')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisSubscription::class, 'directions')),
+                    ),
+                IconColumn::make('is_active')
+                    ->boolean()
+                    ->label('Active')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
+                TextColumn::make('last_delivered_at')
+                    ->dateTime()
+                    ->placeholder('—')
+                    ->columnFilter(ColumnFilter::date()),
+                TextColumn::make('last_error')
+                    ->limit(40)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('last_error')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisSubscription::class, 'last_error')),
+                    ),
             ])
             ->recordActions([
                 EditAction::make(),

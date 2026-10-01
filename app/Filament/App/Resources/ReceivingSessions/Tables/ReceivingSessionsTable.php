@@ -9,11 +9,14 @@ use App\Filament\App\Resources\TransferringSessions\TransferringSessionResource;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\Floor\UnsubmittedSessionDeleteAction;
 use App\Filament\Support\RegulatoryCompliance;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\Receiving\ReceivingSession;
+use App\Models\User;
 use App\Support\Auth\CurrentSite;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceiveLayout;
 use App\Support\Receiving\ReceivingSessionStatus;
+use App\Support\Tables\DistinctColumnOptions;
 use DomainException;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -27,6 +30,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class ReceivingSessionsTable
 {
@@ -53,12 +57,14 @@ class ReceivingSessionsTable
                         ReceivingSessionKind::TransferReceive => 'warning',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('session_kind')),
                 TextColumn::make('site.name')
                     ->label('Site')
                     ->placeholder('—')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('site_id')),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => ReceivingSessionStatus::label($state))
@@ -69,13 +75,23 @@ class ReceivingSessionsTable
                         'open' => 'gray',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('openedByUser.name')
                     ->label('User')
                     ->placeholder('—')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('opened_by')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ReceivingSession::class,
+                                'opened_by',
+                                User::class,
+                            )),
+                    ),
                 TextColumn::make('source')
                     ->label('Source')
                     ->state(function (ReceivingSession $record): string {
@@ -110,25 +126,39 @@ class ReceivingSessionsTable
                     ->label('Parents')
                     ->formatStateUsing(fn ($state, ReceivingSession $record): string => ((int) $record->confirmed_parent_count).'/'.((int) $state))
                     ->alignEnd()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('expected_child_count')
                     ->label('Children')
                     ->formatStateUsing(fn ($state, ReceivingSession $record): string => ((int) $record->confirmed_child_count).'/'.((int) $state))
                     ->alignEnd()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('opened_at')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('completed_at')
                     ->dateTime()
                     ->placeholder('—')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('document.document_uuid')
                     ->label('UUID')
                     ->limit(12)
                     ->fontFamily(FontFamily::Mono)
                     ->copyable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('epcis_document_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ReceivingSession::class,
+                                'epcis_document_id',
+                                EpcisDocument::class,
+                                'document_uuid',
+                            )),
+                    ),
             ])
             ->defaultSort('id', 'desc')
             ->searchDebounce('500ms')

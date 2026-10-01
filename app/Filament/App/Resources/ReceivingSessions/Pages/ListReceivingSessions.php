@@ -9,9 +9,11 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListReceivingSessions extends ListRecords
 {
+    use HasColumnFilters;
     use ShowsPrincipalsHonestyBanner;
 
     protected static string $resource = ReceivingSessionResource::class;

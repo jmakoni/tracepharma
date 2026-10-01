@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Fda\FdaWdd3plUnmatcheds\Tables;
 
 use App\Enums\FacilityType;
 use App\Enums\PartnerType;
+use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaWdd3plUnmatched;
@@ -11,10 +12,10 @@ use App\Support\Auth\Permissions;
 use App\Support\Catalog\DisplayName;
 use App\Support\Fda\CompanyNameNormalizer;
 use App\Support\Fda\WddUnmatchedTriage;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use App\Filament\Notifications\Notification;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
@@ -23,6 +24,7 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class FdaWdd3plUnmatchedsTable
 {
@@ -40,12 +42,22 @@ class FdaWdd3plUnmatchedsTable
                 TextColumn::make('facility_name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('facility_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaWdd3plUnmatched::class, 'facility_name')),
+                    ),
                 TextColumn::make('slug_attempt')
                     ->searchable()
                     ->sortable()
                     ->fontFamily(FontFamily::Mono)
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('slug_attempt')
+                            ->options(fn (): array => DistinctColumnOptions::of(FdaWdd3plUnmatched::class, 'slug_attempt')),
+                    ),
                 TextColumn::make('facility_type')
                     ->label('FDA type')
                     ->badge()
@@ -54,17 +66,24 @@ class FdaWdd3plUnmatchedsTable
                         $state instanceof FacilityType => $state->label(),
                         is_string($state) => FacilityType::tryFrom($state)?->label() ?? $state,
                         default => null,
-                    }),
+                    })
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('facility_type')
+                            ->options(DistinctColumnOptions::enum(FacilityType::class)),
+                    ),
                 TextColumn::make('row_count')
                     ->label('Rows')
                     ->sortable()
-                    ->alignEnd(),
+                    ->alignEnd()
+                    ->columnFilter(ColumnFilter::range()),
                 TextColumn::make('last_seen_at')
                     ->label('Last seen')
                     ->dateTime()
                     ->since()
                     ->tooltip(fn (FdaWdd3plUnmatched $record): ?string => $record->last_seen_at?->toDayDateTimeString())
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('resolved_at')
                     ->label('Status')
                     ->badge()
@@ -75,7 +94,16 @@ class FdaWdd3plUnmatchedsTable
                     ->searchable()
                     ->sortable()
                     ->placeholder('—')
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('fda_organization_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                FdaWdd3plUnmatched::class,
+                                'fda_organization_id',
+                                FdaOrganization::class,
+                            )),
+                    ),
             ])
             ->defaultSort('last_seen_at', 'desc')
             ->filters([

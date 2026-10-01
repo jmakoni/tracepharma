@@ -6,9 +6,12 @@ use App\Filament\App\Resources\Fda3911Reports\Fda3911ReportResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Contracts\Support\Htmlable;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListFda3911Reports extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = Fda3911ReportResource::class;
 
     public function getSubheading(): string|Htmlable|null

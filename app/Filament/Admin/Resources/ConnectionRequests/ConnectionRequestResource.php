@@ -9,7 +9,9 @@ use App\Filament\Admin\Resources\ConnectionRequests\Pages\ListConnectionRequests
 use App\Filament\Admin\Resources\ConnectionRequests\Pages\ViewConnectionRequest;
 use App\Models\Admin;
 use App\Models\ConnectionApprovalRequest;
+use App\Models\Tenant;
 use App\Support\Auth\Permissions;
+use App\Support\Tables\DistinctColumnOptions;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -22,6 +24,7 @@ use Filament\Tables\Table;
 use Guava\FilamentKnowledgeBase\Contracts\HasKnowledgeBase;
 use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class ConnectionRequestResource extends Resource implements HasKnowledgeBase
 {
@@ -90,37 +93,79 @@ class ConnectionRequestResource extends Resource implements HasKnowledgeBase
                 TextColumn::make('tenant.name')
                     ->label('Tenant')
                     ->placeholder('—')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('tenant_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                ConnectionApprovalRequest::class,
+                                'tenant_id',
+                                Tenant::class,
+                            )),
+                    ),
                 TextColumn::make('direction')
                     ->badge()
                     ->color(fn (string $state): string => $state === ConnectionApprovalRequest::DIRECTION_INBOUND ? 'info' : 'primary')
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state)),
+                    ->formatStateUsing(fn (string $state): string => ucfirst($state))
+                    ->columnFilter(ColumnFilter::select()->syncWith('direction')),
                 TextColumn::make('connection_name')
                     ->label('Connection')
-                    ->searchable(),
+                    ->searchable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('connection_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'connection_name')),
+                    ),
                 TextColumn::make('provider')
-                    ->formatStateUsing(fn (?string $state): string => SerializationProvider::tryFrom((string) $state)?->label() ?? ($state ?? '—')),
+                    ->formatStateUsing(fn (?string $state): string => SerializationProvider::tryFrom((string) $state)?->label() ?? ($state ?? '—'))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('provider')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'provider')),
+                    ),
                 TextColumn::make('transport')
-                    ->formatStateUsing(fn (?string $state): string => $state !== null && $state !== '' ? ucfirst($state) : '—'),
+                    ->formatStateUsing(fn (?string $state): string => $state !== null && $state !== '' ? ucfirst($state) : '—')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('transport')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'transport')),
+                    ),
                 TextColumn::make('counterparty')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('counterparty')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'counterparty')),
+                    ),
                 TextColumn::make('endpoint_host')
                     ->label('Endpoint host')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('endpoint_host')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'endpoint_host')),
+                    ),
                 TextColumn::make('requested_by')
                     ->label('Requested by')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('requested_by')
+                            ->options(fn (): array => DistinctColumnOptions::of(ConnectionApprovalRequest::class, 'requested_by')),
+                    ),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (ConnectionApprovalStatus $state): string => $state->label())
-                    ->color(fn (ConnectionApprovalStatus $state): string => $state->color()),
+                    ->color(fn (ConnectionApprovalStatus $state): string => $state->color())
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('created_at')
                     ->label('Requested at')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->filters([
                 SelectFilter::make('status')

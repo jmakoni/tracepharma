@@ -6,6 +6,7 @@ use App\Enums\TenantRole;
 use App\Filament\Support\RecordActionGroup;
 use App\Filament\Support\RegulatoryCompliance;
 use App\Models\User;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -16,6 +17,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class UsersTable
 {
@@ -26,15 +28,30 @@ class UsersTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(User::class, 'name')),
+                    ),
                 TextColumn::make('email')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('email')
+                            ->options(fn (): array => DistinctColumnOptions::of(User::class, 'email')),
+                    ),
                 IconColumn::make('is_active')
                     ->label('Active')
                     ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
                 TextColumn::make('security_status')
                     ->label('Security')
                     ->badge()
@@ -61,10 +78,20 @@ class UsersTable
                 TextColumn::make('user_principal_name')
                     ->label('UPN')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('user_principal_name')
+                            ->options(fn (): array => DistinctColumnOptions::of(User::class, 'user_principal_name')),
+                    ),
                 TextColumn::make('department')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('department')
+                            ->options(fn (): array => DistinctColumnOptions::of(User::class, 'department')),
+                    ),
                 TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
@@ -78,11 +105,17 @@ class UsersTable
                         return $role?->label() ?? $state;
                     })
                     ->separator(',')
-                    ->wrap(),
+                    ->wrap()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('roles.name')
+                            ->options(DistinctColumnOptions::enum(TenantRole::class)),
+                    ),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(ColumnFilter::date()),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('Name or email')

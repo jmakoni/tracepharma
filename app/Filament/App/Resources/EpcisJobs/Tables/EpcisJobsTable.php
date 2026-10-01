@@ -11,8 +11,13 @@ use App\Enums\EpcisJobStatus;
 use App\Filament\App\Resources\EpcisJobs\EpcisJobResource;
 use App\Filament\Notifications\Notification;
 use App\Filament\Support\RecordActionGroup;
+use App\Models\Epcis\EpcisDocument;
 use App\Models\EpcisJob;
+use App\Models\OutboundConnection;
+use App\Models\Site;
+use App\Models\User;
 use App\Support\EpcisJobs\EpcisJobSla;
+use App\Support\Tables\DistinctColumnOptions;
 use App\Support\TenantFeatures;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
@@ -28,6 +33,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 use Throwable;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class EpcisJobsTable
 {
@@ -48,11 +54,17 @@ class EpcisJobsTable
                     ->copyable()
                     ->limit(12)
                     ->tooltip(fn (?string $state): ?string => $state)
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('receipt')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisJob::class, 'receipt')),
+                    ),
                 TextColumn::make('kind')
                     ->label('Kind')
                     ->formatStateUsing(fn (?EpcisJobKind $state): string => $state?->label() ?? '—')
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('kind')),
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (?EpcisJobStatus $state): string => $state?->label() ?? '—')
@@ -63,36 +75,80 @@ class EpcisJobsTable
                         EpcisJobStatus::Cancelled => 'gray',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::select()->syncWith('status')),
                 TextColumn::make('requestedByUser.name')
                     ->label('Requested by')
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('requested_by')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                EpcisJob::class,
+                                'requested_by',
+                                User::class,
+                            )),
+                    ),
                 TextColumn::make('received_at')
                     ->label('Received')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->columnFilter(ColumnFilter::date()),
                 TextColumn::make('outboundConnection.name')
                     ->label('Connection')
                     ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('outbound_connection_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                EpcisJob::class,
+                                'outbound_connection_id',
+                                OutboundConnection::class,
+                            )),
+                    ),
                 TextColumn::make('shipFromSite.name')
                     ->label('Ship-from')
                     ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('ship_from_site_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                EpcisJob::class,
+                                'ship_from_site_id',
+                                Site::class,
+                            )),
+                    ),
                 TextColumn::make('original_filename')
                     ->label('Filename')
                     ->limit(28)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('original_filename')
+                            ->options(fn (): array => DistinctColumnOptions::of(EpcisJob::class, 'original_filename')),
+                    ),
                 TextColumn::make('document.asn_number')
                     ->label('ASN')
                     ->fontFamily(FontFamily::Mono)
                     ->limit(16)
                     ->copyable()
                     ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('epcis_document_id')
+                            ->options(fn (): array => DistinctColumnOptions::related(
+                                EpcisJob::class,
+                                'epcis_document_id',
+                                EpcisDocument::class,
+                                'asn_number',
+                            )),
+                    ),
             ])
             ->defaultSort('received_at', 'desc')
             ->searchDebounce('500ms')

@@ -13,6 +13,7 @@ use App\Support\Fda\FdaRegistryStatus;
 use App\Support\Gs1\Ndc;
 use App\Support\MasterData\ProductComplianceStatus;
 use App\Support\Scout\TenantModelSearch;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -22,6 +23,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Zvizvi\FilamentColumnFilters\Filters\ColumnFilter;
 
 class ProductsTable
 {
@@ -36,7 +38,12 @@ class ProductsTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state)),
+                    ->formatStateUsing(fn (?string $state): ?string => DisplayName::clean($state))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('name')
+                            ->options(fn (): array => DistinctColumnOptions::of(Product::class, 'name')),
+                    ),
                 TextColumn::make('ndc')
                     ->label('NDC')
                     ->searchable()
@@ -44,8 +51,19 @@ class ProductsTable
                     ->fontFamily(FontFamily::Mono)
                     ->formatStateUsing(fn (?string $state, Product $record): ?string => Ndc::formatDisplay(
                         $record->package_ndc ?? $record->ndc11 ?? $state,
-                    )),
-                TextColumn::make('strength')->toggleable(),
+                    ))
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('ndc')
+                            ->options(fn (): array => DistinctColumnOptions::of(Product::class, 'ndc')),
+                    ),
+                TextColumn::make('strength')
+                    ->toggleable()
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('strength')
+                            ->options(fn (): array => DistinctColumnOptions::of(Product::class, 'strength')),
+                    ),
                 TextColumn::make('sourcing_paths')
                     ->label('Sourcing paths')
                     ->wrap()
@@ -106,7 +124,12 @@ class ProductsTable
                     ->label('Active')
                     ->badge()
                     ->formatStateUsing(fn (?bool $state): string => $state ? 'Active' : 'Inactive')
-                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray'),
+                    ->color(fn (?bool $state): string => $state ? 'success' : 'gray')
+                    ->columnFilter(
+                        ColumnFilter::select()
+                            ->attribute('is_active')
+                            ->options(DistinctColumnOptions::boolean('Active', 'Inactive')),
+                    ),
             ])
             ->defaultSort('name')
             ->searchPlaceholder('Name, NDC, or GTIN')

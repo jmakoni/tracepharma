@@ -12,9 +12,12 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Zvizvi\FilamentColumnFilters\Concerns\HasColumnFilters;
 
 class ListBuyingGroupMembers extends ListRecords
 {
+    use HasColumnFilters;
+
     protected static string $resource = BuyingGroupMemberResource::class;
 
     protected function getHeaderActions(): array
