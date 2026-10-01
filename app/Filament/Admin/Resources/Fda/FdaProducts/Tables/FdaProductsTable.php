@@ -67,7 +67,10 @@ class FdaProductsTable
                 TextColumn::make('packaging_count')
                     ->label('Packages')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'packaging_count')),
+                    ),
                 FdaRegistryBadges::activeColumn()
                     ->columnFilter(
                         ColumnFilter::select()
