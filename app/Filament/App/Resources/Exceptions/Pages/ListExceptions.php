@@ -4,7 +4,11 @@ namespace App\Filament\App\Resources\Exceptions\Pages;
 
 use App\Enums\ExceptionStatus;
 use App\Filament\App\Resources\Exceptions\ExceptionResource;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
+use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Tracepharma\FilamentTableViews\Concerns\HasTableViews;
 use Tracepharma\FilamentTableViews\Support\PresetView;
@@ -62,5 +66,31 @@ class ListExceptions extends ListRecords
                 ->color('gray')
                 ->query(fn (Builder $query): Builder => $query->resolvedRecently()),
         ];
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        $parent = parent::content($schema);
+
+        return $schema->components([
+            View::make('filament.app.partials.receive-exception-badges'),
+            ...$parent->getComponents(),
+        ]);
+    }
+
+    /**
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
+     */
+    public function receiveExceptionBadgeCounts(): array
+    {
+        return ReceiveSessionExceptionQuery::openInboxBadgeCounts();
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public function receiveExceptionInboxUrls(): array
+    {
+        return ReceiveSessionExceptionInbox::openInboxBadgeUrls();
     }
 }

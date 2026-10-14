@@ -73,4 +73,25 @@ class AddressFingerprintTest extends TestCase
 
         $this->assertSame($five, $plus4);
     }
+
+    #[Test]
+    public function locality_key_ignores_postal_code(): void
+    {
+        $withZip = AddressFingerprint::localityKey('3400 W Lake Ave', 'Glenview', 'IL', 'US');
+        $withoutZip = AddressFingerprint::localityKey('3400 W. Lake Ave', 'Glenview', 'IL', 'US');
+
+        $this->assertNotNull($withZip);
+        $this->assertSame($withZip, $withoutZip);
+        $this->assertNotSame(
+            AddressFingerprint::make('3400 W Lake Ave', 'Glenview', 'IL', '60026', 'US'),
+            AddressFingerprint::make('3400 W Lake Ave', 'Glenview', 'IL', null, 'US'),
+        );
+    }
+
+    #[Test]
+    public function locality_key_is_null_without_street_or_city(): void
+    {
+        $this->assertNull(AddressFingerprint::localityKey(null, 'Glenview', 'IL', 'US'));
+        $this->assertNull(AddressFingerprint::localityKey('3400 W Lake Ave', null, 'IL', 'US'));
+    }
 }

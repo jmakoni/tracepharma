@@ -1,0 +1,82 @@
+plugins {
+    id "com.android.application"
+}
+
+def signingPropsFile = rootProject.file("signing.properties")
+def signingProps = new Properties()
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { signingProps.load(it) }
+}
+
+android {
+    namespace "com.tracepharma.floor"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.tracepharma.floor"
+        minSdk 21
+        targetSdk 35
+        versionCode 2
+        versionName "1.0.1"
+    }
+
+    flavorDimensions "channel"
+    productFlavors {
+        qa {
+            dimension "channel"
+            versionNameSuffix "-qa"
+        }
+        production {
+            dimension "channel"
+        }
+        enterprise {
+            dimension "channel"
+            versionNameSuffix "-enterprise"
+            def lockedHost = (project.findProperty("enterpriseHost") ?: "demo2.internal.vatengi.com").toString()
+            resValue "string", "hostName", lockedHost
+            resValue "string", "launchUrl", "https://${lockedHost}/floor"
+            resValue "string", "assetStatements",
+                "[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://${lockedHost}\" } }]"
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (signingPropsFile.exists()) {
+                storeFile rootProject.file(signingProps["storeFile"] ?: "android.keystore")
+                storePassword signingProps["storePassword"]
+                keyAlias signingProps["keyAlias"] ?: "upload"
+                keyPassword signingProps["keyPassword"]
+                storeType signingProps["storeType"] ?: "PKCS12"
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            if (signingPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force "androidx.browser:browser:1.8.0"
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.6.2"
+    implementation "androidx.browser:browser:1.8.0"
+}

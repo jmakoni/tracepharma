@@ -25,8 +25,6 @@ use App\Support\Gs1\ElementString;
 use App\Support\Recalls\OpenRecallFlag;
 use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\ReceiveLayout;
-use App\Support\Receiving\ReceiveSessionExceptionInbox;
-use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionCompleteCopy;
 use App\Support\Receiving\ReceivingSessionProgress;
@@ -203,45 +201,6 @@ class ScanInWorkstation extends Page implements HasKnowledgeBase
         }
 
         return ReceivingSessionProgress::for($session, ReceivingPolicy::forTenant(tenant()));
-    }
-
-    /**
-     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
-     */
-    public function receiveExceptionBadgeCounts(): array
-    {
-        $session = $this->session();
-
-        if ($session === null) {
-            return ReceiveSessionExceptionQuery::emptyBadgeCounts();
-        }
-
-        return ReceiveSessionExceptionQuery::floorBadgeCounts($session);
-    }
-
-    public function receiveExceptionInboxUrl(string $badgeKey): ?string
-    {
-        $session = $this->session();
-
-        if ($session === null) {
-            return null;
-        }
-
-        $codes = ReceiveSessionExceptionQuery::badgeTypeCodes()[$badgeKey] ?? [];
-
-        return ReceiveSessionExceptionInbox::url($session, $codes);
-    }
-
-    /**
-     * @return array<string, string|null>
-     */
-    public function receiveExceptionInboxUrls(): array
-    {
-        $session = $this->session();
-
-        return $session !== null
-            ? ReceiveSessionExceptionInbox::badgeUrls($session)
-            : [];
     }
 
     public function expectedOrderShipment(): ?InboundShipment

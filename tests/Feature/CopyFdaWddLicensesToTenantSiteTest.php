@@ -224,6 +224,58 @@ class CopyFdaWddLicensesToTenantSiteTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function unstamped_site_copies_licenses_when_wdd_address_matches_without_postal(): void
+    {
+        $org = $this->organization(PartnerType::Manufacturer, 'SSOR ATP ADDR');
+        $facility = FdaWddFacility::query()->create([
+            'fda_organization_id' => $org->id,
+            'facility_type' => FacilityType::Wdd,
+            'name' => 'SSOR ATP Glenview DC',
+            'facility_name' => 'SSOR ATP Glenview DC',
+            'street_address' => '3400 W Lake Ave',
+            'city' => 'Glenview',
+            'state_province' => 'IL',
+            'postal_code' => null,
+            'country_code' => 'US',
+            'address_fingerprint' => AddressFingerprint::make('3400 W Lake Ave', 'Glenview', 'IL', null, 'US'),
+            'is_active' => true,
+        ]);
+
+        FdaWddLicense::query()->create([
+            'fda_wdd_facility_id' => $facility->id,
+            'license_number' => 'SSOR-ATP-GLENVIEW',
+            'jurisdiction' => 'IL',
+            'expiration_date' => now()->addYear(),
+            'reporting_year' => (int) now()->year,
+            'is_active' => true,
+        ]);
+
+        $this->initializeDemo2Tenant();
+
+        $partner = $this->tenantPartner($org, PartnerType::Manufacturer);
+        $site = $this->tenantSite($partner, [
+            'name' => 'Xttrium Glenview Match',
+            'street_address' => '3400 W Lake Ave',
+            'city' => 'Glenview',
+            'state' => 'IL',
+            'zipcode' => '60026',
+            'country_code' => 'US',
+        ]);
+
+        $this->assertNull($site->fda_wdd_facility_id);
+
+        $copied = app(CopyFdaWddLicensesToTenantSite::class)->handle($site);
+
+        $this->assertSame(1, $copied);
+        $this->assertSame($facility->id, $site->fresh()->fda_wdd_facility_id);
+        $this->assertDatabaseHas('atp_licenses', [
+            'site_id' => $site->id,
+            'license_number' => 'SSOR-ATP-GLENVIEW',
+            'is_active' => 1,
+        ]);
+    }
+
     /**
      * The phone number on the listing is how a receiving clerk reaches the facility
      * about a licence question, so it has to survive the copy.

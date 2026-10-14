@@ -33,6 +33,7 @@ RSYNC_EXCLUDES=(
     --exclude bootstrap/cache/*.php
     --exclude .playwright-mcp
     --exclude receiving-session-7-hud.png
+    --exclude android
 )
 
 echo "==> Syncing ${SOURCE_DIR} to ${TARGET}"

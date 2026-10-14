@@ -53,6 +53,28 @@ final class AddressFingerprint
         return self::make($street, $city, $state, $zip, 'US');
     }
 
+    /**
+     * Street + city + state + country, ignoring postal code. WDD rows often omit ZIP
+     * while the tenant site has one, so exact fingerprints miss an otherwise unique match.
+     */
+    public static function localityKey(
+        ?string $street,
+        ?string $city,
+        ?string $stateProvince,
+        ?string $countryCode = 'US',
+    ): ?string {
+        $streetNorm = self::normalizePart($street);
+        $cityNorm = self::normalizePart($city);
+        $stateNorm = self::normalizeState($stateProvince);
+        $countryNorm = self::normalizeCountry($countryCode);
+
+        if ($streetNorm === '' || $cityNorm === '') {
+            return null;
+        }
+
+        return hash('sha256', implode('|', [$streetNorm, $cityNorm, $stateNorm, $countryNorm]));
+    }
+
     private static function normalizePart(?string $value): string
     {
         $value = strtoupper(trim((string) $value));

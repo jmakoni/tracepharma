@@ -30,3 +30,13 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+/android/floor-twa/.gradle
+/android/floor-twa/build
+/android/floor-twa/app/build
+/android/floor-twa/local.properties
+/android/floor-twa/*.keystore
+/android/floor-twa/*.jks
+/android/floor-twa/signing.properties
+/android/dist/
+
+/public/downloads/

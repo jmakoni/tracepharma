@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appName">TracePharma Floor</string>
+    <string name="launcherName">Floor</string>
+    <string name="fallbackType">webview</string>
+    <string name="orientation">portrait</string>
+    <integer name="splashScreenFadeOutDuration">300</integer>
+</resources>

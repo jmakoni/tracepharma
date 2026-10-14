@@ -58,8 +58,6 @@
                     'class' => 'tp-floor-receive__progress-stats stats stats-horizontal bg-base-200 shadow',
                 ])
 
-                @include('filament.app.partials.receive-exception-badges')
-
                 @if ($lockedTote = $this->openToteLockedParentLabel())
                     <div class="text-sm font-medium">
                         Open tote {{ $lockedTote }}

@@ -24,7 +24,7 @@ class ViewSite extends ViewRecord
     {
         parent::mount($record);
 
-        $this->getRecord()->loadMissing('tradingPartner');
+        $this->getRecord()->loadMissing(['tradingPartner', 'fdaEstablishment']);
     }
 
     public function getHeading(): string|Htmlable|null

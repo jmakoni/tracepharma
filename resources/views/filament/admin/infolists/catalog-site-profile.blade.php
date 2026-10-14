@@ -35,60 +35,65 @@
         )
         : null;
 
-    $muted = 'text-gray-500 dark:text-gray-400';
+    $muted = 'text-sm text-base-content/60';
     $isAppPanel = filament()->getCurrentPanel()?->getId() === 'app';
     $tradingPartner = ($record instanceof Site && filled($record->tradingPartner))
         ? $record->tradingPartner
         : null;
+    $partnerName = $tradingPartner
+        ? DisplayName::clean($tradingPartner->name)
+        : null;
+    $headingAlreadyNamesPartner = filled($partnerName)
+        && filled($heading)
+        && str_starts_with($heading, $partnerName);
+    $showSiteName = filled($siteName)
+        && $siteName !== $heading
+        && ! str_starts_with($heading, $siteName.' -');
+    $identityRows = $record instanceof Site
+        ? \App\Support\Catalog\SiteIdentityIdentifiers::rows($record)
+        : [];
+    $wrapInCard = $wrapInCard ?? false;
 @endphp
 
 @if ($record)
-    <div @class(['tp-site-profile w-full', 'space-y-4' => ! $compact, 'space-y-2' => $compact])>
-        <div class="space-y-2">
-            <h2 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                {{ $heading }}
-            </h2>
+    @if ($wrapInCard)
+        <div class="card w-full bg-base-100 shadow-xl">
+            <div @class(['card-body', 'gap-4' => ! $compact, 'gap-3' => $compact])>
+    @endif
+    <div @class(['tp-site-profile w-full', 'space-y-4' => ! $compact, 'space-y-3' => $compact])>
+        <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+            <div class="min-w-0 space-y-1">
+                <h2 class="text-2xl font-bold tracking-tight text-base-content">
+                    {{ $heading }}
+                </h2>
 
-            @if (filled($siteName) && $siteName !== $heading && ! str_starts_with($heading, $siteName.' -'))
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    {{ $siteName }}
-                </p>
-            @endif
-
-            @if (! $compact && filled($displayCode))
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    Code {{ $displayCode }}
-                </p>
-            @endif
-
-            @if ($tradingPartner && $isAppPanel)
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    Partner:
-                    <a
-                        href="{{ TradingPartnerResource::getUrl('view', ['record' => $tradingPartner]) }}"
-                        class="link link-hover font-medium text-gray-700 dark:text-gray-200"
-                    >
-                        {{ DisplayName::clean($tradingPartner->name) }}
-                    </a>
-                </p>
-            @endif
-
-            <p class="text-sm text-gray-500 dark:text-gray-400 font-mono flex items-center gap-1.5">
-                <span>GLN {{ $val($record->gln) }}</span>
-                @if (filled($record->gln))
-                    <button
-                        type="button"
-                        x-data
-                        x-on:click.prevent.stop="window.navigator.clipboard.writeText({{ \Illuminate\Support\Js::from($record->gln) }}); $tooltip('Copied', { theme: $store.theme, timeout: 2000 })"
-                        class="inline-flex text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                        title="Copy GLN"
-                    >
-                        <x-filament::icon icon="heroicon-m-clipboard" class="h-3.5 w-3.5" />
-                    </button>
+                @if ($showSiteName || (! $compact && filled($displayCode)) || ($tradingPartner && $isAppPanel && ! $headingAlreadyNamesPartner))
+                    <p class="{{ $muted }}">
+                        @if ($showSiteName)
+                            {{ $siteName }}
+                        @endif
+                        @if ($showSiteName && ! $compact && filled($displayCode))
+                            <span class="text-base-content/30"> · </span>
+                        @endif
+                        @if (! $compact && filled($displayCode))
+                            Code {{ $displayCode }}
+                        @endif
+                        @if ($tradingPartner && $isAppPanel && ! $headingAlreadyNamesPartner)
+                            @if ($showSiteName || (! $compact && filled($displayCode)))
+                                <span class="text-base-content/30"> · </span>
+                            @endif
+                            <a
+                                href="{{ TradingPartnerResource::getUrl('view', ['record' => $tradingPartner]) }}"
+                                class="link link-hover font-medium text-base-content/80"
+                            >
+                                {{ $partnerName }}
+                            </a>
+                        @endif
+                    </p>
                 @endif
-            </p>
+            </div>
 
-            <div class="flex flex-wrap items-center gap-2 pt-1">
+            <div class="flex flex-wrap items-center gap-1.5">
                 @if ($record->is_headquarters)
                     <span class="badge badge-sm badge-primary">HQ</span>
                 @endif
@@ -96,21 +101,36 @@
             </div>
         </div>
 
-        @unless ($compact)
-            <hr class="border-t border-gray-200 dark:border-gray-800">
+        @if ($identityRows !== [])
+            <div class="flex flex-wrap items-center gap-2" aria-label="Site identifiers">
+                @foreach ($identityRows as $identifier)
+                    <span class="inline-flex max-w-full items-center gap-1.5 rounded-md bg-base-200 px-2 py-1 text-xs leading-5">
+                        <span class="shrink-0 font-semibold uppercase tracking-wide text-base-content/50">{{ $identifier['label'] }}</span>
+                        <x-copyable-identifier
+                            :value="$val($identifier['value'])"
+                            :title="'Copy '.$identifier['label']"
+                            class="min-w-0 break-all text-sm text-base-content"
+                        />
+                    </span>
+                @endforeach
+            </div>
+        @endif
 
-            <section class="min-w-0 space-y-0.5 text-sm text-gray-900 dark:text-gray-100">
-                @forelse ($addressLines as $line)
-                    <p>{{ $line }}</p>
-                @empty
-                    <p class="{{ $muted }}">{{ $dash }}</p>
-                @endforelse
-                @if (filled($timezoneLine))
-                    <p class="pt-1 text-gray-700 dark:text-gray-300">{{ $timezoneLine }}</p>
-                @else
-                    <p class="pt-1 {{ $muted }}">Timezone: {{ $dash }}</p>
-                @endif
-            </section>
-        @endunless
+        <section class="min-w-0 space-y-0.5 text-sm text-base-content" aria-label="Physical address">
+            @forelse ($addressLines as $line)
+                <p>{{ $line }}</p>
+            @empty
+                <p class="text-base-content/60">{{ $dash }}</p>
+            @endforelse
+            @if (filled($timezoneLine))
+                <p class="pt-1 text-base-content/80">{{ $timezoneLine }}</p>
+            @else
+                <p class="pt-1 text-base-content/60">Timezone: {{ $dash }}</p>
+            @endif
+        </section>
     </div>
+    @if ($wrapInCard)
+            </div>
+        </div>
+    @endif
 @endif

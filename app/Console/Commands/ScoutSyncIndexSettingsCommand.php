@@ -71,9 +71,9 @@ class ScoutSyncIndexSettingsCommand extends Command
     }
 
     /**
-     * @return \Generator<int, Tenant>|null
+     * @return iterable<int, Tenant>|null
      */
-    private function resolveTenants(): ?\Generator
+    private function resolveTenants(): ?iterable
     {
         if ((bool) $this->option('all-tenants')) {
             if (filled($this->option('tenant'))) {
@@ -101,8 +101,6 @@ class ScoutSyncIndexSettingsCommand extends Command
             return null;
         }
 
-        return (function () use ($tenant): \Generator {
-            yield $tenant;
-        })();
+        return [$tenant];
     }
 }

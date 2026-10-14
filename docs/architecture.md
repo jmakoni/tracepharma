@@ -14,13 +14,22 @@ Tenancy: `stancl/tenancy` with `InitializeTenancyByDomain` on the App panel.
 | Admin | `ADMIN_DOMAIN` (default `admin2.internal.vatengi.com`) | `admin` | `App\Models\Admin` |
 | App | Tenant domains (e.g. `demo2.internal.vatengi.com`) | `web` | `App\Models\User` |
 
+## Handheld TWA
+
+Operators install **TracePharma Floor** (`com.tracepharma.floor`) from Play or an enterprise APK. The APK is a Trusted Web Activity around existing `/floor` pages — no second scan engine.
+
+- Laravel serves `GET /manifest.webmanifest` and `GET /.well-known/assetlinks.json` on every origin (chooser + tenant).
+- QA chooser host is `FLOOR_CHOOSER_DOMAIN` (default `floor.internal.vatengi.com`); production listing uses `floor.tracepharma.io`. The picker allow-lists `*.tracepharma.io` and `*.internal.vatengi.com` only.
+- Android project lives in `android/floor-twa/` (excluded from PHP deploy tarball). Signing keys stay in the org vault, not this repo.
+- Test/demo tenants stay on `*.internal.vatengi.com`. See `docs/handheld/`.
+
 ## Feature gating
 
 `TenantProfile` → `TenantFeatures` → Filament `canAccess()` / navigation. Optional tenant setting `access.job_roles_enabled` further restricts via Spatie `nav.*` capabilities (`JobRoleAccess`). Spatie roles are seeded per profile; personas only enforce when that flag is on. Enabling job roles in Organization → Access runs `TenantRoleSeeder` automatically; **Owner** always retains Organization Settings access as an escape hatch.
 
 ## Lean rules
 
-Thin helpers only (`TenantFeatures`, `TenantDatabaseName`). Simple Actions for one-shot work (`SeedMasterData`). No service layer for Phase 0–2. Later business logic goes in simple Actions.
+Thin helpers (`TenantFeatures`, `TenantDatabaseName`) plus Actions for one-shot work (`SeedMasterData`). Domain services exist for receiving, exceptions, EPCIS outbound, and related gates — not every rule lives in an Action.
 
 ## Phase 2 master data (tenant DB)
 
@@ -31,7 +40,7 @@ Products, Trading Partners, Sites, Read Points, Devices, Location Devices (GLN/S
 - FDA WDD/3PL staging (`fda_wdd_3pl_staging`) feeds `ImportFdaWddToRegistry` (via `tracepharma:import-fda-wdd-3pl`) into Pure FDA facilities/licenses; tenant ATP copies come from `SyncTenantAtpLicensesFromFda`.
 - FDA product data is central-only (`fda_products` + related tables); tenant/catalog products link to it via `fda_product_id`.
 - Manufacturer/labeler identity is FK-only, never free text: `fda_products.catalog_trading_partner_id` and `catalog_products.catalog_trading_partner_id` point at `catalog_trading_partners`; tenant `products.trading_partner_id` is an optional **manufacturer** mirror (labeler → tenant manufacturer partner), not the sole receive-from link. `App\Support\PartnerSlug` is only used to *resolve* a partner during import/backfill, never stored as a display string.
-- Product identity is **NDC11-primary** (`products.ndc11`, derived from `package_ndc` / `ndc` via `App\Support\Gs1\Ndc`); GTIN is optional when present on catalog. Find-or-create and dedupe prefer NDC11, then `catalog_product_id`, then GTIN.
+- Product match for serialization and UNKNOWN_GTIN is **exact GTIN-14** (`products.gtin` / `gtin14` equals `epcs.gtin14`). Pack-level GTIN-14s are separate product rows — do not derive a case/each from the company prefix. Catalog NDC-11 (`products.ndc11`) is FDA/package identity, not a substitute for that GTIN-14 match.
 - Receive-from assortment is `trading_partner_product` (unique `trading_partner_id` + `product_id`): which partners this tenant expects to receive a given product from (wholesaler, distributor, 3PL, or manufacturer direct). The same product can attach to multiple partners via the pivot with per-partner authorization (`authorization_status`, `authorized_at`, optional `partner_item_number`, `uom_code`, `units_per_case`, `is_primary`).
 - A trading partner's headquarters `Site`/`CatalogSite` is created by `App\Actions\MasterData\CreateHqSiteForTradingPartner` (no DB triggers), invoked from the `afterCreate()` hook on the partner's create page.
 - **One headquarters per owner.** Saving a site with `is_headquarters` set demotes its siblings: `Site` scopes that to the owning trading partner (or the organization when the site carries none), `CatalogSite` to the `catalog_trading_partner_id`. The catalog invariant matters because a tenant facility with no catalog row of its own inherits the licenses of its partner's catalog HQ; where legacy rows still leave two, `CopyCatalogAtpLicensesToTenantSite` takes the lowest id so the inherited set does not change with row order.

@@ -390,6 +390,8 @@ final class EpcisCatalogBusinessRules
 
     /**
      * UNKNOWN_GTIN — SGTIN GTIN-14s on this document absent from the product master.
+     * Match is exact against the file indicator stored on epcs.gtin14.
+     * Saving a shorter products.gtin does not invent a pack-level indicator.
      *
      * @param  list<int>  $documentEpcIds
      * @param  list<EpcisValidationFinding>  $findings

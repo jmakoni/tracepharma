@@ -30,6 +30,7 @@ return [
             env('CENTRAL_DOMAIN', 'localhost'),
             env('ADMIN_DOMAIN', 'admin2.localhost'),
             env('MARKETING_DOMAIN', env('CENTRAL_DOMAIN', 'localhost')),
+            env('FLOOR_CHOOSER_DOMAIN', 'floor.internal.vatengi.com'),
         ],
         in_array(env('APP_ENV', 'production'), ['local', 'testing'], true)
             ? ['localhost', '127.0.0.1']

@@ -71,6 +71,35 @@ class TradingPartnerAtpVerificationTest extends TestCase
     }
 
     #[Test]
+    public function view_partner_profile_uses_the_site_style_card(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            $this->createUserWithRole(TenantRole::Owner);
+            $dea = 'BD'.strtoupper(Str::random(7));
+            $partner = $this->createPartner([
+                'street_address' => '3400 W Lake Ave',
+                'city' => 'Glenview',
+                'state' => 'IL',
+                'dea_number' => $dea,
+            ]);
+
+            Livewire::test(ViewTradingPartner::class, ['record' => $partner->getKey()])
+                ->assertSee('shadow-xl', false)
+                ->assertSee('Physical address', false)
+                ->assertSee('3400 W Lake Ave', false)
+                ->assertSee('GLN', false)
+                ->assertSee($partner->gln, false)
+                ->assertSee('DEA', false)
+                ->assertSee($dea, false);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function source_options_include_fda_decrs(): void
     {
         $options = AtpVerificationSource::options();

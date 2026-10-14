@@ -11,6 +11,9 @@
 
     /** @var \App\Models\Site|null $record */
     $record = $record ?? null;
+    $compact = $compact ?? false;
+    $linkableCounts = $linkableCounts ?? false;
+    $wrapInCard = $wrapInCard ?? false;
 
     if (! $record instanceof Site) {
         return;
@@ -29,15 +32,11 @@
         SiteAtpReadinessStatus::NeedsReceivingState => 'badge-neutral',
         SiteAtpReadinessStatus::NotMonitored => 'badge-neutral',
     };
-    $sectionHeading = 'text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 border-b border-gray-200 dark:border-gray-800 pb-1 mb-2';
-    $label = 'font-semibold text-gray-500 dark:text-gray-400';
-    $value = 'min-w-0 text-gray-900 dark:text-gray-100';
-    $muted = 'text-gray-500 dark:text-gray-400';
+    $muted = 'text-base-content/60';
     $tenantState = $stats['tenant_state'];
     $evaluationKeys = AtpLicenseRelevance::evaluationJurisdictionKeys();
     $hasFootprint = $evaluationKeys !== [];
     $jurisdictionLabel = AtpLicenseRelevance::evaluationJurisdictionsLabel();
-    $linkableCounts = $linkableCounts ?? false;
     $atpFilterUrl = fn (string $atpStatus): string => SiteResource::getUrl('view', [
         'record' => $record,
         'relation' => 1,
@@ -55,128 +54,112 @@
             $setReceivingStateUrl = TenantResource::getUrl('edit', ['record' => $currentTenant], panel: 'admin');
         }
     }
+
+    $relevantSummary = match (true) {
+        $status === SiteAtpReadinessStatus::FdaRegistered => 'All states (FDA registration)',
+        $status === SiteAtpReadinessStatus::NotMonitored => 'Not monitored',
+        $hasFootprint => number_format($stats['relevant_total']).' relevant for '.$jurisdictionLabel,
+        default => null,
+    };
+
+    $alertChips = [];
+    if ($hasFootprint && $stats['relevant_expired'] > 0) {
+        $alertChips[] = [
+            'label' => 'Expired '.$stats['relevant_expired'],
+            'class' => 'badge-error',
+            'url' => $linkableCounts ? $atpFilterUrl('expired') : null,
+        ];
+    }
+    if ($hasFootprint && $stats['relevant_expiring_within_90_days'] > 0) {
+        $alertChips[] = [
+            'label' => 'Expiring '.$stats['relevant_expiring_within_90_days'],
+            'class' => 'badge-warning',
+            'url' => $linkableCounts ? $atpFilterUrl('expiring') : null,
+        ];
+    }
+    if ($hasFootprint && $stats['relevant_unknown_expiry'] > 0) {
+        $alertChips[] = [
+            'label' => 'Unknown expiry '.$stats['relevant_unknown_expiry'],
+            'class' => 'badge-warning',
+            'url' => $linkableCounts ? $atpFilterUrl('unknown_expiry') : null,
+        ];
+    }
+    $outsideExpired = $stats['expired_total'] > 0 && $stats['relevant_expired'] !== $stats['expired_total']
+        ? $stats['expired_total'] - $stats['relevant_expired']
+        : 0;
 @endphp
 
-<section class="tp-site-atp-readiness w-full">
-    <h3 class="{{ $sectionHeading }}">ATP Readiness</h3>
+@if ($wrapInCard)
+    <div class="card w-full bg-base-100 shadow-xl">
+        <div @class(['card-body', 'gap-3' => $compact, 'gap-4' => ! $compact])>
+@endif
+<section @class([
+    'tp-site-atp-readiness w-full',
+    'border-t border-base-300 pt-6' => ! $wrapInCard,
+    'space-y-3' => ! $compact,
+    'space-y-2' => $compact,
+])>
+    <div class="flex flex-wrap items-center gap-2">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">ATP Readiness</h3>
+        <span class="badge badge-sm {{ $statusBadgeClass }}">{{ $status->label() }}</span>
+        @foreach ($stats['facility_types'] as $facilityType)
+            <span class="badge badge-sm badge-neutral">{{ $facilityType->label() }}</span>
+        @endforeach
+    </div>
 
-    <p class="{{ $muted }} text-xs mb-2">{{ AtpDisclosure::SOURCE }}</p>
-
-    <div
-        class="grid items-start text-sm"
-        style="grid-template-columns: minmax(11rem, auto) minmax(0, 1fr); column-gap: 0.75rem; row-gap: 0.375rem;"
-    >
-        <span class="{{ $label }}">Preferred receiving state</span>
-        <span class="{{ $value }}">
-            @if ($tenantState !== null)
-                {{ $tenantState }}
-                <span class="{{ $muted }} block text-xs mt-0.5">Badge label preference — license checks use all organization site jurisdictions.</span>
-            @else
-                @if ($setReceivingStateUrl)
-                    <a href="{{ $setReceivingStateUrl }}" class="link link-primary font-medium">
-                        Set preferred receiving state
-                    </a>
-                @else
-                    <span class="{{ $muted }}">Not set (optional).</span>
-                @endif
-                <span class="{{ $muted }} block text-xs mt-0.5">
-                    ATP readiness uses organization facility states even when this is unset.
-                </span>
-            @endif
-        </span>
-
-        <span class="{{ $label }}">Status</span>
-        <span class="{{ $value }}">
-            <span class="badge badge-sm {{ $statusBadgeClass }}">{{ $status->label() }}</span>
-        </span>
-
-        <span class="{{ $label }}">Relevant licenses</span>
-        <span class="{{ $value }}">
-            @if ($status === SiteAtpReadinessStatus::FdaRegistered)
-                All states (FDA registration)
-            @elseif ($status === SiteAtpReadinessStatus::NotMonitored)
-                <span class="{{ $muted }}">Not monitored</span>
-            @elseif ($hasFootprint)
-                {{ number_format($stats['relevant_total']) }} for {{ $jurisdictionLabel }}
-            @else
-                <span class="{{ $muted }}">Add organization sites with state/country to evaluate licenses.</span>
-            @endif
-        </span>
-
-        <span class="{{ $label }}">Expired (relevant)</span>
-        <span class="{{ $value }}">
-            @if ($hasFootprint && $stats['relevant_expired'] > 0)
-                @if ($linkableCounts)
-                    <a href="{{ $atpFilterUrl('expired') }}" class="badge badge-sm badge-error hover:opacity-80">
-                        {{ number_format($stats['relevant_expired']) }}
-                    </a>
-                @else
-                    <span class="badge badge-sm badge-error">{{ number_format($stats['relevant_expired']) }}</span>
-                @endif
-            @elseif ($hasFootprint)
-                <span class="{{ $muted }}">0</span>
-            @else
-                <span class="{{ $muted }}">—</span>
-            @endif
-        </span>
-
-        <span class="{{ $label }}">Expiring (90d, relevant)</span>
-        <span class="{{ $value }}">
-            @if ($hasFootprint && $stats['relevant_expiring_within_90_days'] > 0)
-                @if ($linkableCounts)
-                    <a href="{{ $atpFilterUrl('expiring') }}" class="badge badge-sm badge-warning hover:opacity-80">
-                        {{ number_format($stats['relevant_expiring_within_90_days']) }}
-                    </a>
-                @else
-                    <span class="badge badge-sm badge-warning">{{ number_format($stats['relevant_expiring_within_90_days']) }}</span>
-                @endif
-            @elseif ($hasFootprint)
-                <span class="{{ $muted }}">0</span>
-            @else
-                <span class="{{ $muted }}">—</span>
-            @endif
-        </span>
-
-        <span class="{{ $label }}">Unknown expiry (relevant)</span>
-        <span class="{{ $value }}">
-            @if ($hasFootprint && $stats['relevant_unknown_expiry'] > 0)
-                @if ($linkableCounts)
-                    <a href="{{ $atpFilterUrl('unknown_expiry') }}" class="badge badge-sm badge-warning hover:opacity-80">
-                        {{ number_format($stats['relevant_unknown_expiry']) }}
-                    </a>
-                @else
-                    <span class="badge badge-sm badge-warning">{{ number_format($stats['relevant_unknown_expiry']) }}</span>
-                @endif
-                <span class="{{ $muted }} ml-1">No expiration date on file — cannot be shown to be in force.</span>
-            @elseif ($hasFootprint)
-                <span class="{{ $muted }}">0</span>
-            @else
-                <span class="{{ $muted }}">—</span>
-            @endif
-        </span>
-
-        <span class="{{ $label }}">Total licenses</span>
-        <span class="{{ $value }}">{{ number_format($stats['total']) }}</span>
-
-        @if ($stats['expired_total'] > 0 && ($stats['relevant_expired'] !== $stats['expired_total']))
-            <span class="{{ $label }}">Expired (outside footprint)</span>
-            <span class="{{ $value }}">
-                <span class="badge badge-sm badge-neutral">{{ number_format($stats['expired_total'] - $stats['relevant_expired']) }}</span>
-                <span class="{{ $muted }} ml-1">Outside organization site jurisdictions — not used for readiness.</span>
-            </span>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        @if ($relevantSummary !== null)
+            <span class="text-base-content">{{ $relevantSummary }}</span>
+        @elseif ($setReceivingStateUrl)
+            <a href="{{ $setReceivingStateUrl }}" class="link link-primary font-medium">
+                Set preferred receiving state
+            </a>
+        @else
+            <span class="{{ $muted }}">Add organization sites with state/country to evaluate licenses.</span>
         @endif
 
-        <span class="{{ $label }}">Facility types</span>
-        <span class="{{ $value }}">
-            @if ($stats['facility_types']->isEmpty())
-                <span class="{{ $muted }}">—</span>
+        @if ($stats['total'] > 0)
+            <span class="{{ $muted }}">{{ number_format($stats['total']) }} total</span>
+        @endif
+
+        @if ($tenantState !== null)
+            <span class="{{ $muted }}" title="Badge label preference — license checks use all organization site jurisdictions.">
+                {{ $tenantState }} preferred
+            </span>
+        @elseif ($relevantSummary !== null && $setReceivingStateUrl)
+            <a href="{{ $setReceivingStateUrl }}" class="link link-hover text-sm">
+                Set preferred receiving state
+            </a>
+        @endif
+
+        @foreach ($alertChips as $chip)
+            @if (filled($chip['url']))
+                <a href="{{ $chip['url'] }}" class="badge badge-sm {{ $chip['class'] }} hover:opacity-80">{{ $chip['label'] }}</a>
             @else
-                <span class="flex flex-wrap gap-1.5">
-                    @foreach ($stats['facility_types'] as $facilityType)
-                        <span class="badge badge-sm badge-neutral">{{ $facilityType->label() }}</span>
-                    @endforeach
-                </span>
+                <span class="badge badge-sm {{ $chip['class'] }}">{{ $chip['label'] }}</span>
             @endif
-        </span>
+        @endforeach
     </div>
+
+    @unless ($compact)
+        @if ($outsideExpired > 0)
+            <p class="text-xs {{ $muted }}">
+                <span class="badge badge-sm badge-neutral">{{ number_format($outsideExpired) }}</span>
+                expired outside organization jurisdictions — not used for readiness.
+            </p>
+        @endif
+
+        @if ($hasFootprint && $stats['relevant_unknown_expiry'] > 0)
+            <p class="text-xs {{ $muted }}">No expiration date on file — cannot be shown to be in force.</p>
+        @endif
+    @endunless
+
+    <details class="text-xs {{ $muted }}">
+        <summary class="cursor-pointer select-none hover:text-base-content/80">About this check</summary>
+        <p class="mt-1 max-w-3xl leading-5">{{ AtpDisclosure::SOURCE }}</p>
+    </details>
 </section>
+@if ($wrapInCard)
+        </div>
+    </div>
+@endif

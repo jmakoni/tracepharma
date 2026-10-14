@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hostName">floor.tracepharma.io</string>
+    <string name="launchUrl">https://floor.tracepharma.io/handheld</string>
+    <string name="assetStatements">[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://floor.tracepharma.io\" } }]</string>
+    <string-array name="additional_trusted_origins">
+        <!-- Add each customer origin that must stay fullscreen inside the TWA. -->
+    </string-array>
+</resources>

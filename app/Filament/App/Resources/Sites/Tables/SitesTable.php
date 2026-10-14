@@ -78,7 +78,7 @@ class SitesTable
             ])
             ->extraModalWindowAttributes(['class' => 'tp-site-view-slideover'])
             ->mutateRecordDataUsing(function (array $data, Site $record): array {
-                $record->loadMissing(['locationDevices', 'atpLicenses']);
+                $record->loadMissing(['locationDevices', 'atpLicenses', 'fdaEstablishment']);
 
                 return $data;
             })

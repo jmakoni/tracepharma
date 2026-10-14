@@ -1,0 +1,44 @@
+{
+  "packageId": "com.tracepharma.floor",
+  "host": "floor.internal.vatengi.com",
+  "name": "TracePharma Floor",
+  "launcherName": "Floor",
+  "display": "standalone",
+  "themeColor": "#51BC8F",
+  "themeColorDark": "#0F172A",
+  "navigationColor": "#0F172A",
+  "navigationColorDark": "#0F172A",
+  "backgroundColor": "#0F172A",
+  "enableNotifications": false,
+  "startUrl": "/handheld",
+  "iconUrl": "https://floor.internal.vatengi.com/images/brand/floor-icon-512.png",
+  "maskableIconUrl": "https://floor.internal.vatengi.com/images/brand/floor-icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "upload"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://floor.internal.vatengi.com/manifest.webmanifest",
+  "fallbackType": "webview",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://floor.internal.vatengi.com/",
+  "minSdkVersion": 21,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [
+    "https://demo2.internal.vatengi.com"
+  ],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": []
+}

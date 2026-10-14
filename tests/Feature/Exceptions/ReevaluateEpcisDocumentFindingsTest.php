@@ -351,6 +351,136 @@ class ReevaluateEpcisDocumentFindingsTest extends TestCase
     }
 
     #[Test]
+    public function unknown_gtin_clears_on_reevaluate_only_after_file_gtin14_matches(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('UNKNOWN_GTIN');
+
+        try {
+            $fileGtin14 = '50'.str_pad((string) random_int(100000000000, 999999999999), 12, '0', STR_PAD_LEFT);
+            $document = $this->makeDocumentWithPayload();
+            $epcId = $this->makeSgtin($fileGtin14, 'gtin1');
+            $this->attachDocumentEpc($document, $epcId);
+            $case = $this->openCase($document, 'UNKNOWN_GTIN', 'GTIN not found in product master: '.$fileGtin14);
+            $signal = $this->signalForCase($case);
+
+            $paddedWrong = Product::query()->firstOrCreate(
+                ['gtin' => '088888200116'],
+                ['name' => 'Wrong pack indicator', 'is_active' => true],
+            );
+            $this->productIds[] = (int) $paddedWrong->getKey();
+
+            $this->assertSame(ExceptionStatus::New, $case->fresh()?->status);
+            $this->assertSame('open', $signal->fresh()?->status);
+
+            $mismatch = app(ReevaluateEpcisDocumentFindings::class)->handle($document);
+            $this->assertContains('UNKNOWN_GTIN', $mismatch['emitted']);
+            $this->assertSame(ExceptionStatus::New, $case->fresh()?->status);
+            $this->assertSame('open', $signal->fresh()?->status);
+
+            $match = Product::query()->firstOrCreate(
+                ['gtin' => $fileGtin14],
+                ['name' => 'File GTIN-14', 'is_active' => true],
+            );
+            $this->productIds[] = (int) $match->getKey();
+
+            $this->assertSame(ExceptionStatus::New, $case->fresh()?->status);
+            $this->assertSame('open', $signal->fresh()?->status);
+
+            $cleared = app(ReevaluateEpcisDocumentFindings::class)->handle($document);
+            $this->assertNotContains('UNKNOWN_GTIN', $cleared['emitted']);
+            $this->assertSame(ExceptionStatus::Cleared, $case->fresh()?->status);
+            $this->assertSame('resolved', $signal->fresh()?->status);
+            $this->assertNotNull($signal->fresh()?->resolved_at);
+            $this->assertTrue(EpcisException::query()->whereKey($signal->getKey())->exists());
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function handle_cases_clears_signal_only_case_from_epcis_exception_id(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('UNKNOWN_GTIN');
+
+        try {
+            $this->ensureProducts();
+            $document = $this->makeDocumentWithPayload();
+            $epcId = $this->makeSgtin(self::CASE_GTIN, 'sig1');
+            $this->attachDocumentEpc($document, $epcId);
+
+            $type = ExceptionType::query()->where('code', 'UNKNOWN_GTIN')->first()
+                ?? ExceptionTypeSeeder::ensure('UNKNOWN_GTIN');
+            $case = ExceptionCase::query()->create([
+                'exception_type_id' => $type->getKey(),
+                'document_id' => null,
+                'title' => 'Signal only UNKNOWN_GTIN',
+                'description' => 'GTIN not found in product master: '.self::CASE_GTIN,
+                'severity' => ExceptionSeverity::High,
+                'status' => ExceptionStatus::New,
+                'condition_still_true' => true,
+            ]);
+            $this->caseIds[] = (int) $case->getKey();
+
+            $signal = EpcisException::query()->create([
+                'document_id' => $document->getKey(),
+                'exception_type' => 'UNKNOWN_GTIN',
+                'severity' => 'error',
+                'description' => 'GTIN not found in product master: '.self::CASE_GTIN,
+                'status' => 'open',
+                'case_id' => $case->getKey(),
+            ]);
+            $case->logActivity(
+                ExceptionActivityKind::System,
+                null,
+                'Opened from ingest signal #'.$signal->getKey().' (UNKNOWN_GTIN).',
+                ExceptionActivityVisibility::Internal,
+                ['epcis_exception_id' => $signal->getKey()],
+            );
+
+            $result = app(ReevaluateEpcisDocumentFindings::class)->handleCases([$case]);
+
+            $this->assertContains((int) $case->getKey(), $result['cleared']);
+            $this->assertSame(ExceptionStatus::Cleared, $case->fresh()?->status);
+            $this->assertSame('resolved', $signal->fresh()?->status);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
+    public function leftover_open_signal_on_already_resolved_unknown_gtin_resolves_without_reopening(): void
+    {
+        $this->initializeDemo2Tenant();
+        ExceptionTypeSeeder::ensure('UNKNOWN_GTIN');
+
+        try {
+            $this->ensureProducts();
+            $document = $this->makeDocumentWithPayload();
+            $epcId = $this->makeSgtin(self::CASE_GTIN, 'res1');
+            $this->attachDocumentEpc($document, $epcId);
+            $case = $this->openCase($document, 'UNKNOWN_GTIN', 'GTIN not found in product master: '.self::CASE_GTIN);
+            $signal = $this->signalForCase($case);
+
+            $case->forceFill([
+                'status' => ExceptionStatus::Resolved,
+                'condition_still_true' => false,
+                'sla_stopped_at' => now()->subMinute(),
+            ])->save();
+            $this->assertSame('open', $signal->fresh()?->status);
+
+            app(ReevaluateEpcisDocumentFindings::class)->handle($document);
+
+            $this->assertSame(ExceptionStatus::Resolved, $case->fresh()?->status);
+            $this->assertSame('resolved', $signal->fresh()?->status);
+            $this->assertNotNull($signal->fresh()?->resolved_at);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
+    #[Test]
     public function received_floor_status_shows_reevaluate_and_does_not_delete_the_document(): void
     {
         $this->initializeDemo2Tenant();
@@ -651,6 +781,11 @@ class ReevaluateEpcisDocumentFindingsTest extends TestCase
             Storage::disk('local')->delete($path);
         }
         $this->payloadPaths = [];
+
+        if ($this->productIds !== []) {
+            Product::query()->whereIn('id', $this->productIds)->delete();
+            $this->productIds = [];
+        }
 
         tenancy()->end();
     }

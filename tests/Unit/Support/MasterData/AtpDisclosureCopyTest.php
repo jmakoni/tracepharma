@@ -32,8 +32,22 @@ class AtpDisclosureCopyTest extends TestCase
     private const FORBIDDEN_PHRASES = [
         'FDA verified',
         'FDA-verified',
+        'FDA-approved',
+        'FDA approved',
         'verified ATP',
         'unlicensed trading partner',
+        'router is live',
+        'cryptographically verified',
+    ];
+
+    /** @var list<string> */
+    private const HONESTY_SURFACES = [
+        'app/Filament/App/Pages/AtpPartnerReadiness.php',
+        'app/Filament/App/Pages/VerifyProduct.php',
+        'app/Filament/App/Pages/MobileVerifyProduct.php',
+        'resources/views/filament/app/pages/verify-product.blade.php',
+        'resources/views/filament/app/pages/mobile-verify-product.blade.php',
+        'app/Filament/App/Pages/ComplianceAlertCenter.php',
     ];
 
     #[Test]
@@ -62,15 +76,14 @@ class AtpDisclosureCopyTest extends TestCase
     #[DataProvider('disclosedSurfaces')]
     public function no_atp_surface_claims_fda_verification(string $path): void
     {
-        $contents = $this->read($path);
+        $this->assertNoForbiddenPhrases($path);
+    }
 
-        foreach (self::FORBIDDEN_PHRASES as $phrase) {
-            $this->assertStringNotContainsStringIgnoringCase(
-                $phrase,
-                $contents,
-                $path.' overclaims with "'.$phrase.'".',
-            );
-        }
+    #[Test]
+    #[DataProvider('honestySurfaces')]
+    public function vrs_and_atp_pages_do_not_overclaim_router_or_fda(string $path): void
+    {
+        $this->assertNoForbiddenPhrases($path);
     }
 
     /**
@@ -80,6 +93,29 @@ class AtpDisclosureCopyTest extends TestCase
     {
         foreach (self::DISCLOSED_SURFACES as $path) {
             yield $path => [$path];
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function honestySurfaces(): iterable
+    {
+        foreach (self::HONESTY_SURFACES as $path) {
+            yield $path => [$path];
+        }
+    }
+
+    private function assertNoForbiddenPhrases(string $path): void
+    {
+        $contents = $this->read($path);
+
+        foreach (self::FORBIDDEN_PHRASES as $phrase) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                $phrase,
+                $contents,
+                $path.' overclaims with "'.$phrase.'".',
+            );
         }
     }
 

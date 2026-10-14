@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Scout;
 
+use App\Console\Commands\ScoutReindexTenantCommand;
 use App\Jobs\Scout\ProvisionTenantScoutIndexes;
 use App\Models\Product;
 use App\Models\Tenant;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Queue;
 use Laravel\Scout\EngineManager;
 use Laravel\Scout\Engines\Engine;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Support\FakeSearchEngine;
 use Tests\TestCase;
 
@@ -44,6 +47,24 @@ class MeilisearchRolloutTest extends TestCase
         $this->artisan('tracepharma:scout-health')
             ->expectsOutputToContain('is not Meilisearch')
             ->assertSuccessful();
+    }
+
+    #[Test]
+    public function sync_index_settings_all_tenants_accepts_lazy_cursor(): void
+    {
+        $tenant = $this->resolveTenant();
+        $engine = new FakeSearchEngine([]);
+        $this->swapSearchEngine($engine, 'fake-settings');
+
+        config(['scout.driver' => 'fake-settings']);
+
+        $this->artisan('tracepharma:scout-sync-index-settings', [
+            '--all-tenants' => true,
+        ])
+            ->expectsOutputToContain("Tenant: {$tenant->getKey()}")
+            ->assertSuccessful();
+
+        $this->assertArrayHasKey($tenant->getKey().'_products', $engine->indexSettings);
     }
 
     #[Test]
@@ -121,18 +142,18 @@ class MeilisearchRolloutTest extends TestCase
             }
         });
 
-        $command = $this->app->make(\App\Console\Commands\ScoutReindexTenantCommand::class);
+        $command = $this->app->make(ScoutReindexTenantCommand::class);
         $command->setLaravel($this->app);
 
         $status = $command->run(
-            new \Symfony\Component\Console\Input\ArrayInput([
+            new ArrayInput([
                 '--tenant' => $tenant->getKey(),
                 '--model' => 'products',
             ]),
-            new \Symfony\Component\Console\Output\BufferedOutput(),
+            new BufferedOutput,
         );
 
-        $this->assertSame(\App\Console\Commands\ScoutReindexTenantCommand::FAILURE, $status);
+        $this->assertSame(ScoutReindexTenantCommand::FAILURE, $status);
     }
 
     #[Test]
