@@ -3,6 +3,7 @@ package com.tracepharma.floor;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.ViewGroup;
@@ -15,6 +16,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * In-process WebView host. The previous TWA launcher handed off to Chrome
  * and then finished; if Chrome exited (missing CCT, stale TLS, quality
@@ -24,10 +28,13 @@ public class LauncherActivity extends Activity {
     private static final int REQUEST_MEDIA = 1001;
 
     private WebView webView;
+    private final Set<String> trustedOrigins = new HashSet<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        loadTrustedOrigins();
 
         webView = new WebView(this);
         webView.setLayoutParams(new FrameLayout.LayoutParams(
@@ -55,14 +62,22 @@ public class LauncherActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false;
+                if (request == null || request.getUrl() == null) {
+                    return false;
+                }
+
+                return !isTrustedOrigin(request.getUrl());
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    request.grant(request.getResources());
+                    if (request.getOrigin() != null && isTrustedOrigin(request.getOrigin())) {
+                        request.grant(request.getResources());
+                    } else {
+                        request.deny();
+                    }
                 }
             }
         });
@@ -74,6 +89,45 @@ public class LauncherActivity extends Activity {
         } else {
             webView.loadUrl(getString(R.string.launchUrl));
         }
+    }
+
+    private void loadTrustedOrigins() {
+        addTrustedOriginFromUrl(getString(R.string.launchUrl));
+
+        for (String origin : getResources().getStringArray(R.array.additional_trusted_origins)) {
+            addTrustedOriginFromUrl(origin);
+        }
+    }
+
+    private void addTrustedOriginFromUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+
+        Uri uri = Uri.parse(url);
+        String origin = originForUri(uri);
+        if (origin != null) {
+            trustedOrigins.add(origin);
+        }
+    }
+
+    private boolean isTrustedOrigin(Uri uri) {
+        String origin = originForUri(uri);
+
+        return origin != null && trustedOrigins.contains(origin);
+    }
+
+    private String originForUri(Uri uri) {
+        if (uri == null || uri.getScheme() == null || uri.getHost() == null) {
+            return null;
+        }
+
+        String origin = uri.getScheme() + "://" + uri.getHost();
+        if (uri.getPort() != -1) {
+            origin += ":" + uri.getPort();
+        }
+
+        return origin;
     }
 
     private void requestMediaPermissions() {

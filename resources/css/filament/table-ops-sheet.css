@@ -35,11 +35,11 @@
 }
 
 .fi-ta-search-field .fi-icon {
-    color: #111827;
+    color: var(--color-base-content, #111827);
 }
 
 html.dark .fi-ta-search-field .fi-icon {
-    color: #f9fafb;
+    color: var(--color-base-content, #f9fafb);
 }
 
 .fi-ta-filter-indicators {
@@ -62,7 +62,7 @@ html.dark .fi-ta-table thead,
 .fi-ta-header-cell .fcf-header-label {
     font-size: 0.6875rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--color-base-content, #111827);
 }
 
 .fi-ta-header-cell .fi-icon,
@@ -70,9 +70,9 @@ html.dark .fi-ta-table thead,
 .fi-ta-header-cell .fi-ta-header-cell-sort-btn:hover .fi-icon,
 .fi-ta-header-cell .fcf-trigger,
 .fi-ta-header-cell .fcf-icon {
-    --fcf-trigger-color: #111827;
-    --fcf-trigger-color-hover: #111827;
-    color: #111827;
+    --fcf-trigger-color: var(--color-base-content, #111827);
+    --fcf-trigger-color-hover: var(--color-base-content, #111827);
+    color: var(--color-base-content, #111827);
 }
 
 html.dark .fi-ta-header-cell,
@@ -82,9 +82,9 @@ html.dark .fi-ta-header-cell .fcf-header-label,
 html.dark .fi-ta-header-cell .fi-icon,
 html.dark .fi-ta-header-cell .fcf-trigger,
 html.dark .fi-ta-header-cell .fcf-icon {
-    --fcf-trigger-color: #f9fafb;
-    --fcf-trigger-color-hover: #f9fafb;
-    color: #f9fafb;
+    --fcf-trigger-color: var(--color-base-content, #f9fafb);
+    --fcf-trigger-color-hover: var(--color-base-content, #f9fafb);
+    color: var(--color-base-content, #f9fafb);
 }
 
 .fi-ta-header-cell {
@@ -169,13 +169,13 @@ html.dark .fi-body table.table thead {
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #111827;
+    color: var(--color-base-content, #111827);
     background-color: transparent;
 }
 
 html.dark .fi-body table.table thead th,
 html.dark .fi-body table.table thead td {
-    color: #f9fafb;
+    color: var(--color-base-content, #f9fafb);
 }
 
 .fi-body table.table tbody td {

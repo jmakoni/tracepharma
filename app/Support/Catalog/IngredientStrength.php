@@ -20,6 +20,14 @@ final class IngredientStrength
     public const MAX_LENGTH = 255;
 
     /**
+     * MySQL GROUP_CONCAT for {@see summarize()} when each ingredient strength is unique.
+     */
+    public static function mysqlGroupConcatExpression(): string
+    {
+        return "GROUP_CONCAT(TRIM(strength) ORDER BY id SEPARATOR '; ')";
+    }
+
+    /**
      * @param  iterable<mixed>  $strengths  Per-ingredient strengths, in label order
      */
     public static function summarize(iterable $strengths): ?string
