@@ -7,6 +7,7 @@ use App\Models\AtpLicense;
 use App\Models\Fda\FdaWddFacility;
 use App\Models\Fda\FdaWddLicense;
 use App\Models\Site;
+use App\Support\Fda\FdaSiteCatalogMatch;
 use App\Support\Fda\FdaTenantLink;
 use App\Support\MasterData\SiteAtpReadiness;
 use App\Support\Places\UsState;
@@ -40,10 +41,16 @@ final class CopyFdaWddLicensesToTenantSite
         $facilityId = FdaTenantLink::wddFacilityId($tenantSite);
 
         if ($facilityId === null) {
-            return ['copied' => 0, 'pruned' => 0, 'stamped' => 0, 'unmatched' => 0];
-        }
+            $matched = FdaSiteCatalogMatch::wddFacility($tenantSite);
 
-        if (blank($tenantSite->fda_wdd_facility_id)) {
+            if ($matched === null) {
+                return ['copied' => 0, 'pruned' => 0, 'stamped' => 0, 'unmatched' => 0];
+            }
+
+            FdaTenantLink::stampSiteFromWddFacility($tenantSite, $matched);
+            $tenantSite->refresh();
+            $facilityId = (int) $matched->id;
+        } elseif (blank($tenantSite->fda_wdd_facility_id)) {
             $facility = FdaWddFacility::query()->find($facilityId);
             if ($facility !== null) {
                 FdaTenantLink::stampSiteFromWddFacility($tenantSite, $facility);

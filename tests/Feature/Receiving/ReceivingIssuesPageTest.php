@@ -97,9 +97,45 @@ class ReceivingIssuesPageTest extends TestCase
             Livewire::test(ReceivingIssues::class)
                 ->assertOk()
                 ->assertSee('No shipment selected')
-                ->assertDontSee('Unconfirmed expected');
+                ->assertDontSee('Unconfirmed expected')
+                ->assertDontSee('Shortage 0')
+                ->assertDontSee('No data 0');
         } finally {
             tenancy()->end();
+        }
+    }
+
+    #[Test]
+    public function selected_session_shows_nonzero_exception_type_chips_only(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            Filament::setCurrentPanel(Filament::getPanel('app'));
+            config(['tracepharma.regulatory_compliance.password_gate' => false]);
+            Notification::fake();
+
+            $user = $this->createOwnerUser();
+            $this->actingAs($user);
+            app(ExceptionCaseSeeder::class)->run();
+
+            $session = $this->completedSessionWithVariance($user);
+            $this->sessionId = (int) $session->getKey();
+
+            $shortage = app(FlagManualReceivingException::class)->execute($session, 'shortage', [
+                'notes' => 'Chip placement shortage',
+            ], $user);
+            $this->caseIds[] = (int) $shortage->getKey();
+
+            Livewire::withQueryParams(['session' => $session->getKey()])
+                ->test(ReceivingIssues::class)
+                ->assertOk()
+                ->assertSee('Shortage 1')
+                ->assertDontSee('Wrong site 0')
+                ->assertDontSee('Document hold 0')
+                ->assertDontSee('Wrong item 0');
+        } finally {
+            $this->cleanup();
         }
     }
 

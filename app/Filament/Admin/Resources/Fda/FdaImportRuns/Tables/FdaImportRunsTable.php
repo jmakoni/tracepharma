@@ -6,6 +6,7 @@ use App\Filament\Admin\Support\FdaRegistryBadges;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Fda\FdaImportRun;
 use App\Support\Tables\DistinctColumnOptions;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -54,7 +55,23 @@ class FdaImportRunsTable
                     ->formatStateUsing(fn (?int $state): string => $state === null
                         ? '—'
                         : number_format($state / 1000, 1).'s')
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(function (Builder $query, array $data): Builder {
+                                $from = filled($data['from'] ?? null) ? (int) round((float) $data['from'] * 1000) : null;
+                                $until = filled($data['until'] ?? null) ? (int) round((float) $data['until'] * 1000) : null;
+
+                                if (filled($from)) {
+                                    $query->where('duration_ms', '>=', $from);
+                                }
+
+                                if (filled($until)) {
+                                    $query->where('duration_ms', '<=', $until);
+                                }
+
+                                return $query;
+                            }),
+                    ),
             ])
             ->defaultSort('started_at', 'desc')
             ->paginated([10, 25, 50])

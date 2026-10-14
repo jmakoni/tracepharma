@@ -246,7 +246,10 @@ class ReceiveExceptionP3Test extends TestCase
             'views/filament/app/resources/receiving-sessions/pages/mobile-view-receiving-session.blade.php',
         ));
         $this->assertNotFalse($mobile);
-        $this->assertStringContainsString('receive-exception-badges', $mobile);
+        $this->assertStringNotContainsString('receive-exception-badges', $mobile);
+        $issues = file_get_contents(resource_path('views/filament/app/pages/receiving-issues.blade.php'));
+        $this->assertNotFalse($issues);
+        $this->assertStringContainsString('receive-exception-badges', $issues);
         $this->assertStringNotContainsString('VRS {{', $mobile);
         $this->assertStringNotContainsString('Verification {{', $mobile);
 

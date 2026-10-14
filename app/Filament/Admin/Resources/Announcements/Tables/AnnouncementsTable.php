@@ -7,6 +7,7 @@ use App\Enums\AnnouncementStatus;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Announcement;
 use App\Support\Tables\DistinctColumnOptions;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
@@ -60,7 +61,10 @@ class AnnouncementsTable
                     ->label('Tenants')
                     ->counts('tenants')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'tenants_count')),
+                    ),
                 TextColumn::make('published_at')
                     ->dateTime()
                     ->sortable()
@@ -69,11 +73,17 @@ class AnnouncementsTable
                 TextColumn::make('fan_out_succeeded_count')
                     ->label('Fan-out OK')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'fan_out_succeeded_count')),
+                    ),
                 TextColumn::make('fan_out_failed_count')
                     ->label('Fan-out failed')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'fan_out_failed_count')),
+                    ),
             ])
             ->defaultSort('created_at', 'desc')
             ->recordActions(RecordActionGroup::make([

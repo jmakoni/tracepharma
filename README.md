@@ -31,12 +31,15 @@ npm install && npm run build
 
 ### Demo hosts (Phase 1)
 
-| URL | Login |
-|---|---|
-| `https://admin2.internal.vatengi.com` | `admin@tracepharma.test` / `password` |
-| `https://demo2.internal.vatengi.com` | `owner@demo.test` / `password` |
+Demo login credentials are set locally — do not commit. Nginx: add **exact** `server_name` vhosts for the Admin and App hosts pointing at `public/` (do not change an existing wildcard that serves another app).
 
-Nginx: add **exact** `server_name` vhosts for `admin2` and `demo2` pointing at `public/` (do not change the existing `*.internal.vatengi.com` wildcard that serves another app).
+## Handheld (Android TWA)
+
+Warehouse floor is a Trusted Web Activity around existing `/floor` pages. Laravel serves the Web App Manifest and Digital Asset Links; the thin Android wrapper is `android/floor-twa/`.
+
+- Chooser (QA): `https://floor.internal.vatengi.com/handheld` — operators type a tenant host such as `demo2.internal.vatengi.com`.
+- Do not provision test tenants on `*.tracepharma.io`.
+- Device QA and Play/MDM notes: [docs/handheld/](docs/handheld/README.md).
 
 ## Tests
 
@@ -48,4 +51,4 @@ composer test
 
 ## Scope note
 
-Operational surfaces in place: inbound EPCIS, receiving sessions, SSCC labeling/commissioning, exceptions/quarantine, asset tracking, Verify Product (VRS shell), inbound integrations. Gaps and the locked next workstream (Transferring + outbound connections) are tracked in [docs/roadmap-status.md](docs/roadmap-status.md).
+Shipped surfaces and remaining gaps are tracked in [docs/roadmap-status.md](docs/roadmap-status.md). Still partial: VRS is a shell, OCI is manual evidence, and exception signals must match the case.

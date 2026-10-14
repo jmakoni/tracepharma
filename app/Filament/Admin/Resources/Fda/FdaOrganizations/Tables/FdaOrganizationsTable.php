@@ -65,15 +65,24 @@ class FdaOrganizationsTable
                 TextColumn::make('establishments_count')
                     ->label('Establishments')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'establishments_count')),
+                    ),
                 TextColumn::make('wdd_facilities_count')
                     ->label('WDD facilities')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'wdd_facilities_count')),
+                    ),
                 TextColumn::make('products_count')
                     ->label('Products')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'products_count')),
+                    ),
                 FdaRegistryBadges::activeColumn()
                     ->columnFilter(
                         ColumnFilter::select()

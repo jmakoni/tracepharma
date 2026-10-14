@@ -28,6 +28,7 @@ use App\Services\Receiving\ReceivingGate;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceiveExceptionTypes;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
 use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPackShape;
@@ -368,23 +369,32 @@ class ReceiveExceptionP0Test extends TestCase
             $this->assertStringNotContainsString('aggregation children', strtolower($blade));
 
             $this->assertTrue(ExceptionResource::canAccess());
-            $component = Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
+
+            Livewire::test(MobileViewReceivingSession::class, ['record' => $session->getKey()])
                 ->assertSuccessful()
-                ->assertSee('Shortage 1')
-                ->assertSee('No data 1')
-                ->assertSee('Quarantine '.$counts['quarantine'])
+                ->assertDontSee('Shortage 1')
+                ->assertDontSee('No data 1')
                 ->assertDontSee(self::SGTIN_URI);
 
-            $noDataUrl = $component->instance()->receiveExceptionInboxUrl('no_data');
+            $inbox = Livewire::test(ListExceptions::class)->assertSuccessful();
+            $inboxCounts = $inbox->instance()->receiveExceptionBadgeCounts();
+            $this->assertGreaterThanOrEqual(1, $inboxCounts['shortage']);
+            $this->assertGreaterThanOrEqual(1, $inboxCounts['no_data']);
+            $this->assertGreaterThanOrEqual(1, $inboxCounts['quarantine']);
+            $inbox
+                ->assertSee('Shortage '.$inboxCounts['shortage'])
+                ->assertSee('No data '.$inboxCounts['no_data'])
+                ->assertSee('Quarantine '.$inboxCounts['quarantine']);
+
+            $noDataUrl = ReceiveSessionExceptionInbox::url($session->fresh(), [ReceiveExceptionTypes::PRODUCT_NO_DATA]);
             $this->assertNotNull($noDataUrl);
             $this->assertStringContainsString('/exceptions', parse_url($noDataUrl, PHP_URL_PATH) ?? $noDataUrl);
             $this->assertStringContainsString('receiving_session_id', $noDataUrl);
             $this->assertStringContainsString((string) $session->getKey(), $noDataUrl);
             $this->assertStringContainsString('PRODUCT_NO_DATA', $noDataUrl);
-            $html = $component->html();
+            $html = $inbox->html();
             $this->assertStringContainsString('/exceptions', $html);
             $this->assertStringContainsString('PRODUCT_NO_DATA', $html);
-            $this->assertStringContainsString((string) $session->getKey(), $html);
         } finally {
             $this->cleanup($tenant);
         }
@@ -423,7 +433,7 @@ class ReceiveExceptionP0Test extends TestCase
             $this->trackCase($noise);
 
             Livewire::test(ListExceptions::class)
-                ->set('activeTab', 'all_open')
+                ->call('applyTableView', 'preset:all_open')
                 ->set('tableFilters.receiving_session_id.value', (string) $session->getKey())
                 ->set('tableFilters.type_code.value', ReceiveExceptionTypes::PRODUCT_NO_DATA)
                 ->assertCanSeeTableRecords([$noData])

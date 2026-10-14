@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hostName">floor.internal.vatengi.com</string>
+    <string name="launchUrl">https://floor.internal.vatengi.com/handheld</string>
+    <string name="assetStatements">[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://floor.internal.vatengi.com\" } }]</string>
+    <string-array name="additional_trusted_origins">
+        <item>https://demo2.internal.vatengi.com</item>
+    </string-array>
+</resources>

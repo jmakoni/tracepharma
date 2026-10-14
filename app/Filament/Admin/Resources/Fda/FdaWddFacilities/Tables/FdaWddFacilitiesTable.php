@@ -122,13 +122,19 @@ class FdaWddFacilitiesTable
                 TextColumn::make('active_licenses_count')
                     ->label('Active licenses')
                     ->sortable()
-                    ->columnFilter(ColumnFilter::range()),
+                    ->columnFilter(
+                        ColumnFilter::range()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingRange($query, $data, 'active_licenses_count')),
+                    ),
                 TextColumn::make('soonest_expiration_date')
                     ->label('Soonest expiration')
                     ->date()
                     ->sortable()
                     ->placeholder('—')
-                    ->columnFilter(ColumnFilter::date()),
+                    ->columnFilter(
+                        ColumnFilter::date()
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applyHavingDate($query, $data, 'soonest_expiration_date')),
+                    ),
                 FdaRegistryBadges::activeColumn()
                     ->columnFilter(
                         ColumnFilter::select()

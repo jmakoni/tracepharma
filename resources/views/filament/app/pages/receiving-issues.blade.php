@@ -56,6 +56,8 @@
                         @endif
                     </div>
 
+                    @include('filament.app.partials.receive-exception-badges')
+
                     <div class="stats stats-vertical sm:stats-horizontal bg-base-200 shadow" aria-live="polite">
                         <div class="stat">
                             <div class="stat-title">Pallets</div>

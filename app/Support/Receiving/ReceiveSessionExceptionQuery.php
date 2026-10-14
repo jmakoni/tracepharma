@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Receiving;
 
+use App\Filament\App\Resources\Exceptions\ExceptionResource;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Quarantine\QuarantineHold;
 use App\Models\Receiving\ReceivingSession;
@@ -143,5 +144,30 @@ final class ReceiveSessionExceptionQuery
             'wrong_item' => 0,
             'damaged' => 0,
         ];
+    }
+
+    /**
+     * Open exception counts for the Exceptions inbox (tenant + site access, not session-scoped).
+     *
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
+     */
+    public static function openInboxBadgeCounts(): array
+    {
+        $counts = self::emptyBadgeCounts();
+
+        foreach (self::badgeTypeCodes() as $key => $codes) {
+            if ($key === 'quarantine') {
+                $counts[$key] = QuarantineHold::query()->open()->count();
+
+                continue;
+            }
+
+            $counts[$key] = ExceptionResource::getEloquentQuery()
+                ->open()
+                ->whereHas('type', fn (Builder $types) => $types->whereIn('code', $codes))
+                ->count();
+        }
+
+        return $counts;
     }
 }

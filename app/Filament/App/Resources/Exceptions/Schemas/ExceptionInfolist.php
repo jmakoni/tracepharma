@@ -5,7 +5,6 @@ namespace App\Filament\App\Resources\Exceptions\Schemas;
 use App\Enums\ExceptionReceiveImpact;
 use App\Enums\ExceptionSeverity;
 use App\Enums\ExceptionStatus;
-use App\Filament\App\Resources\EpcisDocuments\EpcisDocumentResource;
 use App\Models\Exceptions\ExceptionAction;
 use App\Models\Exceptions\ExceptionCase;
 use App\Models\Exceptions\ExceptionRootCause;
@@ -89,19 +88,24 @@ class ExceptionInfolist
             Section::make('Document')
                 ->compact()
                 ->columns(['md' => 2])
+                ->visible(fn (ExceptionCase $record): bool => $record->sourceEpcisDocument() !== null)
                 ->schema([
-                    TextEntry::make('document_id')
-                        ->label('Document')
-                        ->formatStateUsing(fn (?int $state): string => $state ? '#'.$state : '—')
-                        ->url(fn (ExceptionCase $record): ?string => $record->document_id
-                            ? EpcisDocumentResource::getUrl('view', ['record' => $record->document_id], panel: 'app')
-                            : null)
+                    TextEntry::make('source_epcis_document')
+                        ->label('EPCIS document')
+                        ->state(function (ExceptionCase $record): string {
+                            $document = $record->sourceEpcisDocument();
+
+                            return $document ? '#'.$document->getKey() : '—';
+                        })
+                        ->url(fn (ExceptionCase $record): ?string => $record->sourceEpcisDocument()?->filamentViewUrl())
                         ->color('primary'),
-                    TextEntry::make('document.original_filename')
+                    TextEntry::make('source_epcis_filename')
                         ->label('Filename')
+                        ->state(fn (ExceptionCase $record): ?string => $record->sourceEpcisDocument()?->original_filename)
                         ->placeholder('—'),
-                    TextEntry::make('document.document_uuid')
+                    TextEntry::make('source_epcis_uuid')
                         ->label('UUID')
+                        ->state(fn (ExceptionCase $record): ?string => $record->sourceEpcisDocument()?->document_uuid)
                         ->placeholder('—')
                         ->copyable()
                         ->columnSpanFull(),

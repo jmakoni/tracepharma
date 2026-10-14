@@ -11,14 +11,10 @@ class SiteInfolist
     public static function configure(Schema $schema, bool $compact = false): Schema
     {
         return $schema->components([
-            View::make('filament.admin.infolists.catalog-site-profile')
+            View::make('filament.app.infolists.site-details-card')
                 ->columnSpanFull()
                 ->viewData(fn (?Site $record): array => [
                     'compact' => $compact,
-                ]),
-            View::make('filament.app.infolists.site-atp-readiness')
-                ->columnSpanFull()
-                ->viewData(fn (?Site $record): array => [
                     'linkableCounts' => true,
                 ]),
         ]);

@@ -19,6 +19,7 @@ use App\Support\Auth\Permissions;
 use App\Support\Copy\OperatorNouns;
 use App\Support\Dscsa\DscsaTransactionStatementUi;
 use App\Support\Epcis\EpcisDocumentXmlDownload;
+use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -94,11 +95,13 @@ class EpcisDocumentsTable
                     ->columnFilter(
                         ColumnFilter::select()
                             ->label('Ship-from')
-                            ->options(fn (): array => self::distinctInboundSiteOptions(
+                            ->options(fn (): array => DistinctColumnOptions::sitePair(
+                                EpcisDocument::class,
                                 'ship_from_site_name',
                                 'ship_from_gln',
+                                constrain: fn (Builder $query): Builder => $query->inboundCatalog(),
                             ))
-                            ->applyUsing(fn (Builder $query, array $data): Builder => self::applySelectedSiteFilter(
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applySiteFilter(
                                 $query,
                                 $data,
                                 'ship_from_site_name',
@@ -146,11 +149,13 @@ class EpcisDocumentsTable
                     ->columnFilter(
                         ColumnFilter::select()
                             ->label('Ship-to')
-                            ->options(fn (): array => self::distinctInboundSiteOptions(
+                            ->options(fn (): array => DistinctColumnOptions::sitePair(
+                                EpcisDocument::class,
                                 'ship_to_site_name',
                                 'ship_to_gln',
+                                constrain: fn (Builder $query): Builder => $query->inboundCatalog(),
                             ))
-                            ->applyUsing(fn (Builder $query, array $data): Builder => self::applySelectedSiteFilter(
+                            ->applyUsing(fn (Builder $query, array $data): Builder => DistinctColumnOptions::applySiteFilter(
                                 $query,
                                 $data,
                                 'ship_to_site_name',
@@ -983,67 +988,4 @@ class EpcisDocumentsTable
         return $options;
     }
 
-    /**
-     * @return array<string, string>
-     */
-    private static function distinctInboundSiteOptions(string $nameColumn, string $glnColumn, int $limit = 250): array
-    {
-        $rows = EpcisDocument::query()
-            ->inboundCatalog()
-            ->select([$nameColumn, $glnColumn])
-            ->where(function (Builder $query) use ($nameColumn, $glnColumn): void {
-                $query->where(function (Builder $named) use ($nameColumn): void {
-                    $named->whereNotNull($nameColumn)->where($nameColumn, '!=', '');
-                })->orWhere(function (Builder $gln) use ($glnColumn): void {
-                    $gln->whereNotNull($glnColumn)->where($glnColumn, '!=', '');
-                });
-            })
-            ->limit($limit)
-            ->get();
-
-        $options = [];
-
-        foreach ($rows as $row) {
-            $name = trim((string) ($row->getAttribute($nameColumn) ?? ''));
-            $gln = trim((string) ($row->getAttribute($glnColumn) ?? ''));
-            $value = $gln !== '' ? $gln : $name;
-            $label = $name !== '' ? $name : $gln;
-
-            if ($value === '') {
-                continue;
-            }
-
-            $options[$value] = $label;
-        }
-
-        natcasesort($options);
-
-        return $options;
-    }
-
-    /**
-     * @param  Builder<EpcisDocument>  $query
-     * @param  array<string, mixed>  $data
-     * @return Builder<EpcisDocument>
-     */
-    private static function applySelectedSiteFilter(
-        Builder $query,
-        array $data,
-        string $nameColumn,
-        string $glnColumn,
-    ): Builder {
-        $values = array_values(array_filter(
-            (array) ($data['values'] ?? $data['value'] ?? []),
-            fn (mixed $value): bool => filled($value),
-        ));
-
-        if ($values === []) {
-            return $query;
-        }
-
-        return $query->where(function (Builder $inner) use ($values, $nameColumn, $glnColumn): void {
-            $inner->whereIn($glnColumn, $values)
-                ->orWhereIn($nameColumn, $values);
-        });
-    }
 }

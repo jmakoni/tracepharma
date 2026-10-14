@@ -137,20 +137,20 @@ final class ReevaluateEpcisDocumentFindings
         $seen = [];
 
         foreach ($cases as $case) {
-            if (! $case instanceof ExceptionCase || $case->document_id === null) {
+            if (! $case instanceof ExceptionCase) {
                 continue;
             }
 
-            $documentId = (int) $case->document_id;
+            $document = $case->sourceEpcisDocument();
+            if ($document === null) {
+                continue;
+            }
+
+            $documentId = (int) $document->getKey();
             if (isset($seen[$documentId])) {
                 continue;
             }
             $seen[$documentId] = true;
-
-            $document = EpcisDocument::query()->find($documentId);
-            if ($document === null) {
-                continue;
-            }
 
             $result = $this->handle($document, $actor);
             $cleared = array_merge($cleared, $result['cleared']);

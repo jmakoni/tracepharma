@@ -8,6 +8,29 @@ return [
     'central_domain' => env('CENTRAL_DOMAIN', 'localhost'),
     'admin_domain' => env('ADMIN_DOMAIN', 'admin2.localhost'),
     'marketing_domain' => env('MARKETING_DOMAIN', env('CENTRAL_DOMAIN', 'localhost')),
+    'floor_chooser_domain' => env('FLOOR_CHOOSER_DOMAIN', 'floor.internal.vatengi.com'),
+
+    /*
+    | Downloadable Android TWA (com.tracepharma.floor). Fingerprints are Play
+    | App Signing + upload-keystore SHA-256 (colon-separated hex). Empty in
+    | tests is fine; production must set HANDHELD_ANDROID_SHA256.
+    */
+    'handheld' => [
+        'package_name' => env('HANDHELD_ANDROID_PACKAGE', 'com.tracepharma.floor'),
+        'sha256_cert_fingerprints' => array_values(array_filter(array_map(
+            trim(...),
+            explode(',', (string) env('HANDHELD_ANDROID_SHA256', '')),
+        ))),
+        'allowed_host_suffixes' => array_values(array_filter(array_map(
+            trim(...),
+            explode(',', (string) env(
+                'HANDHELD_ALLOWED_HOST_SUFFIXES',
+                'tracepharma.io,internal.vatengi.com',
+            )),
+        ))),
+        'theme_color' => '#51BC8F',
+        'background_color' => '#0F172A',
+    ],
     'platform_base_domain' => env('PLATFORM_BASE_DOMAIN', 'tracepharma.io'),
     'tenant_environment' => env('TENANT_ENVIRONMENT', 'prod'),
     'pair_sibling_database' => env('PAIR_SIBLING_DB_DATABASE'),

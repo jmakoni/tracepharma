@@ -48,4 +48,35 @@ final class ReceiveSessionExceptionInbox
 
         return $urls;
     }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public static function openInboxBadgeUrls(): array
+    {
+        if (! ExceptionResource::canAccess()) {
+            return [];
+        }
+
+        $urls = [];
+
+        foreach (ReceiveSessionExceptionQuery::badgeTypeCodes() as $key => $codes) {
+            if ($key === 'quarantine') {
+                $urls[$key] = ExceptionResource::getUrl('index', [
+                    'tab' => 'quarantined',
+                ], panel: 'app');
+
+                continue;
+            }
+
+            $urls[$key] = ExceptionResource::getUrl('index', [
+                'tab' => 'all_open',
+                'filters' => [
+                    'type_code' => ['value' => implode(',', $codes)],
+                ],
+            ], panel: 'app');
+        }
+
+        return $urls;
+    }
 }

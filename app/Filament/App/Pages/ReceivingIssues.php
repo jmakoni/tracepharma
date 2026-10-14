@@ -14,6 +14,7 @@ use App\Support\Auth\JobRoleAccess;
 use App\Support\Auth\Permissions;
 use App\Support\Auth\SiteAccess;
 use App\Support\Receiving\InboundPoOverReceipt;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
 use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingIssueSessionLabel;
 use App\Support\TenantFeatures;
@@ -303,6 +304,34 @@ class ReceivingIssues extends Page implements HasKnowledgeBase
             ->reject(fn (ExceptionCase $case): bool => in_array($case->getKey(), $operatorIds, true))
             ->take(15)
             ->values();
+    }
+
+    /**
+     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
+     */
+    public function receiveExceptionBadgeCounts(): array
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return ReceiveSessionExceptionQuery::emptyBadgeCounts();
+        }
+
+        return ReceiveSessionExceptionQuery::floorBadgeCounts($session);
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public function receiveExceptionInboxUrls(): array
+    {
+        $session = $this->session();
+
+        if ($session === null) {
+            return [];
+        }
+
+        return ReceiveSessionExceptionInbox::badgeUrls($session);
     }
 
     public function sessionViewUrl(): ?string

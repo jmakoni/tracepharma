@@ -103,6 +103,27 @@ class PartnerRelationManagerAuthorizationTest extends TestCase
         }
     }
 
+    #[Test]
+    public function products_tab_shows_gtin_column_by_default(): void
+    {
+        $this->initializeDemo2Tenant();
+
+        try {
+            $partner = $this->createPartner();
+            $product = $this->createProductFor($partner);
+            $this->actAs(TenantRole::Owner);
+
+            $this->assertNotEmpty($product->gtin);
+
+            $this->productsTab($partner)
+                ->assertCanSeeTableRecords([$product])
+                ->assertSee('GTIN', false)
+                ->assertSee($product->gtin, false);
+        } finally {
+            $this->cleanup();
+        }
+    }
+
     private function sitesTab(TradingPartner $partner): Testable
     {
         return Livewire::test(SitesRelationManager::class, [

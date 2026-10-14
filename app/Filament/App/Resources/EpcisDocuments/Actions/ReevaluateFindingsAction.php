@@ -63,7 +63,7 @@ final class ReevaluateFindingsAction
 
                     return $record instanceof ExceptionCase
                         && $record->status?->isOpen() === true
-                        && $record->document_id !== null;
+                        && $record->sourceEpcisDocument() !== null;
                 })
                 ->action(function () use ($case): void {
                     $record = $case();
@@ -71,7 +71,7 @@ final class ReevaluateFindingsAction
                         return;
                     }
 
-                    $document = $record->document;
+                    $document = $record->sourceEpcisDocument();
                     if ($document === null) {
                         Notification::make()
                             ->title('No linked document')

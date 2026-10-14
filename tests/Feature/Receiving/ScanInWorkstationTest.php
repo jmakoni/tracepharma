@@ -28,6 +28,7 @@ use App\Models\User;
 use App\Support\Auth\TenantRoleSeeder;
 use App\Support\Receiving\EligibleReceiveSites;
 use App\Support\Receiving\ReceiveExceptionTypes;
+use App\Support\Receiving\ReceiveSessionExceptionInbox;
 use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
@@ -124,18 +125,17 @@ class ScanInWorkstationTest extends TestCase
 
             $this->assertSame(1, ReceiveSessionExceptionQuery::floorBadgeCounts($session->fresh())['no_data']);
 
-            $component = Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
+            Livewire::test(ScanInWorkstation::class, ['sessionId' => $session->getKey()])
                 ->assertSuccessful()
-                ->assertSee('No data 1');
+                ->assertDontSee('No data 1');
 
-            $url = $component->instance()->receiveExceptionInboxUrl('no_data');
+            $url = ReceiveSessionExceptionInbox::url(
+                $session->fresh(),
+                [ReceiveExceptionTypes::PRODUCT_NO_DATA],
+            );
             $this->assertNotNull($url);
             $this->assertStringContainsString((string) $session->getKey(), $url);
             $this->assertStringContainsString('PRODUCT_NO_DATA', $url);
-            $html = $component->html();
-            $this->assertStringContainsString('/exceptions', $html);
-            $this->assertStringContainsString('PRODUCT_NO_DATA', $html);
-            $this->assertStringContainsString((string) $session->getKey(), $html);
         } finally {
             $this->cleanup();
         }

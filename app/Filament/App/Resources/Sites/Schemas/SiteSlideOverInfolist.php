@@ -42,7 +42,10 @@ class SiteSlideOverInfolist
     {
         return $schema->components([
             View::make('filament.admin.infolists.catalog-site-profile')
-                ->columnSpanFull(),
+                ->columnSpanFull()
+                ->viewData(fn (?Site $record): array => [
+                    'wrapInCard' => true,
+                ]),
             Tabs::make('Site details')
                 ->columnSpanFull()
                 ->tabs([
@@ -52,7 +55,10 @@ class SiteSlideOverInfolist
                             : null)
                         ->schema([
                             View::make('filament.app.infolists.site-atp-readiness')
-                                ->columnSpanFull(),
+                                ->columnSpanFull()
+                                ->viewData(fn (?Site $record): array => [
+                                    'wrapInCard' => true,
+                                ]),
                             Section::make()
                                 ->compact()
                                 ->heading(fn (): HtmlString => self::sectionHeading(

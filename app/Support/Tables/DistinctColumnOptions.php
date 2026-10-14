@@ -125,7 +125,7 @@ final class DistinctColumnOptions
 
         $options = [];
 
-        foreach ($query->limit($limit)->get() as $row) {
+        foreach ($query->groupBy($nameColumn, $glnColumn)->orderBy($nameColumn)->limit($limit)->get() as $row) {
             $name = trim((string) ($row->getAttribute($nameColumn) ?? ''));
             $gln = trim((string) ($row->getAttribute($glnColumn) ?? ''));
             $value = $gln !== '' ? $gln : $name;
@@ -141,6 +141,48 @@ final class DistinctColumnOptions
         natcasesort($options);
 
         return $options;
+    }
+
+    /**
+     * @param  Builder<Model>  $query
+     * @param  array<string, mixed>  $data
+     * @return Builder<Model>
+     */
+    public static function applyHavingRange(Builder $query, array $data, string $alias): Builder
+    {
+        $from = $data['from'] ?? null;
+        $until = $data['until'] ?? null;
+
+        if (filled($from)) {
+            $query->having($alias, '>=', $from);
+        }
+
+        if (filled($until)) {
+            $query->having($alias, '<=', $until);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param  Builder<Model>  $query
+     * @param  array<string, mixed>  $data
+     * @return Builder<Model>
+     */
+    public static function applyHavingDate(Builder $query, array $data, string $alias): Builder
+    {
+        $from = $data['from'] ?? null;
+        $until = $data['until'] ?? null;
+
+        if (filled($from)) {
+            $query->having($alias, '>=', $from);
+        }
+
+        if (filled($until)) {
+            $query->having($alias, '<=', $until);
+        }
+
+        return $query;
     }
 
     /**

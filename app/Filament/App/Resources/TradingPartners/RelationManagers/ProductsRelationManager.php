@@ -92,7 +92,7 @@ class ProductsRelationManager extends RelationManager
                     ->sortable()
                     ->copyable()
                     ->fontFamily(FontFamily::Mono)
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->placeholder('—'),
                 TextColumn::make('ndc')
                     ->label('NDC')
                     ->searchable()

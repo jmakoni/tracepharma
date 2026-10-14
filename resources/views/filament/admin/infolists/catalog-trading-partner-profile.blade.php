@@ -27,56 +27,76 @@
         )
         : null;
 
-    $muted = 'text-gray-500 dark:text-gray-400';
+    $identityRows = [];
+    if ($record) {
+        $identityRows[] = ['label' => 'GLN', 'value' => filled($record->gln) ? trim((string) $record->gln) : null];
+        foreach ([
+            ['SGLN', $record->sgln],
+            ['DEA', $record->dea_number],
+            ['DUNS', $record->duns_number],
+            ['HIN', $record->hin_number],
+            ['Chemical Reg', $record->chemical_reg_number],
+        ] as [$label, $value]) {
+            $trimmed = is_string($value) ? trim($value) : '';
+            if ($trimmed === '') {
+                continue;
+            }
+            $identityRows[] = ['label' => $label, 'value' => $trimmed];
+        }
+    }
 @endphp
 
 @if ($record)
-    <div class="tp-partner-profile w-full space-y-6">
-        <div class="space-y-2">
-            <h2 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                {{ $displayName }}
-            </h2>
+    <div class="card w-full bg-base-100 shadow-xl">
+        <div class="card-body gap-4">
+            <div class="tp-partner-profile w-full space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div class="min-w-0 space-y-1">
+                        <h2 class="text-2xl font-bold tracking-tight text-base-content">
+                            {{ $displayName }}
+                        </h2>
 
-            @if (filled($displayDba))
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    DBA {{ $displayDba }}
-                </p>
-            @endif
+                        @if (filled($displayDba))
+                            <p class="text-sm text-base-content/60">
+                                DBA {{ $displayDba }}
+                            </p>
+                        @endif
+                    </div>
 
-            <p class="text-sm text-gray-500 dark:text-gray-400 font-mono flex items-center gap-1.5">
-                <span>GLN {{ $val($record->gln) }}</span>
-                @if (filled($record->gln))
-                    <button
-                        type="button"
-                        x-data
-                        x-on:click.prevent.stop="window.navigator.clipboard.writeText({{ \Illuminate\Support\Js::from($record->gln) }}); $tooltip('Copied', { theme: $store.theme, timeout: 2000 })"
-                        class="inline-flex text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                        title="Copy GLN"
-                    >
-                        <x-filament::icon icon="heroicon-m-clipboard" class="h-3.5 w-3.5" />
-                    </button>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="badge badge-sm badge-neutral">{{ $typeLabel }}</span>
+                        <span class="badge badge-sm {{ $statusBadge }}">{{ $statusLabel }}</span>
+                    </div>
+                </div>
+
+                @if ($identityRows !== [])
+                    <div class="flex flex-wrap items-center gap-2" aria-label="Partner identifiers">
+                        @foreach ($identityRows as $identifier)
+                            <span class="inline-flex max-w-full items-center gap-1.5 rounded-md bg-base-200 px-2 py-1 text-xs leading-5">
+                                <span class="shrink-0 font-semibold uppercase tracking-wide text-base-content/50">{{ $identifier['label'] }}</span>
+                                <x-copyable-identifier
+                                    :value="$val($identifier['value'])"
+                                    :title="'Copy '.$identifier['label']"
+                                    class="min-w-0 break-all text-sm text-base-content"
+                                />
+                            </span>
+                        @endforeach
+                    </div>
                 @endif
-            </p>
 
-            <div class="flex flex-wrap items-center gap-2 pt-1">
-                <span class="badge badge-sm badge-neutral">{{ $typeLabel }}</span>
-                <span class="badge badge-sm {{ $statusBadge }}">{{ $statusLabel }}</span>
+                <section class="min-w-0 space-y-0.5 text-sm text-base-content" aria-label="Physical address">
+                    @forelse ($addressLines as $line)
+                        <p>{{ $line }}</p>
+                    @empty
+                        <p class="text-base-content/60">{{ $dash }}</p>
+                    @endforelse
+                    @if (filled($timezoneLine))
+                        <p class="pt-1 text-base-content/80">{{ $timezoneLine }}</p>
+                    @else
+                        <p class="pt-1 text-base-content/60">Timezone: {{ $dash }}</p>
+                    @endif
+                </section>
             </div>
         </div>
-
-        <hr class="border-t border-gray-200 dark:border-gray-800">
-
-        <section class="min-w-0 space-y-0.5 text-sm text-gray-900 dark:text-gray-100">
-            @forelse ($addressLines as $line)
-                <p>{{ $line }}</p>
-            @empty
-                <p class="{{ $muted }}">{{ $dash }}</p>
-            @endforelse
-            @if (filled($timezoneLine))
-                <p class="pt-1 text-gray-700 dark:text-gray-300">{{ $timezoneLine }}</p>
-            @else
-                <p class="pt-1 {{ $muted }}">Timezone: {{ $dash }}</p>
-            @endif
-        </section>
     </div>
 @endif

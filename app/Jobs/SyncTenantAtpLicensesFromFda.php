@@ -116,6 +116,10 @@ class SyncTenantAtpLicensesFromFda implements ShouldBeUnique, ShouldQueue
                     ->orWhereHas(
                         'atpLicenses',
                         fn (Builder $licenseQuery): Builder => $licenseQuery->whereNotNull('fda_wdd_license_id'),
+                    )
+                    ->orWhereHas(
+                        'tradingPartner',
+                        fn (Builder $partnerQuery): Builder => $partnerQuery->whereNotNull('fda_organization_id'),
                     );
             })
             ->orderBy('id')

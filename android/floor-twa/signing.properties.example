@@ -1,0 +1,8 @@
+# Copy to signing.properties (gitignored). Keep the keystore in the org vault.
+# keytool -genkeypair -keystore android.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
+# OpenSSL PKCS12 (no JDK): openssl pkcs12 -export -name upload -out android.keystore
+storeFile=android.keystore
+storeType=PKCS12
+storePassword=
+keyAlias=upload
+keyPassword=

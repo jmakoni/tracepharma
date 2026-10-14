@@ -43,8 +43,6 @@ use App\Support\Gs1\ElementString;
 use App\Support\Receiving\ExpectedInboundOrderHeader;
 use App\Support\Receiving\OutstandingReceiveTargets;
 use App\Support\Receiving\ReceiveLayout;
-use App\Support\Receiving\ReceiveSessionExceptionInbox;
-use App\Support\Receiving\ReceiveSessionExceptionQuery;
 use App\Support\Receiving\ReceivingEdgeMode;
 use App\Support\Receiving\ReceivingPolicy;
 use App\Support\Receiving\ReceivingSessionCompleteCopy;
@@ -543,29 +541,6 @@ trait InteractsWithReceivingSessionHud
         // ATTP-aligned: operator scan count = top containers when any parents
         // confirmed (auto-confirmed children are not additional scans).
         return ReceivingSessionCompleteCopy::operatorScannedCount($record);
-    }
-
-    /**
-     * @return array{shortage: int, no_data: int, quarantine: int, mismatch: int, overage: int, wrong_site: int, document_hold: int, wrong_item: int, damaged: int}
-     */
-    public function receiveExceptionBadgeCounts(): array
-    {
-        return ReceiveSessionExceptionQuery::floorBadgeCounts($this->getRecord());
-    }
-
-    public function receiveExceptionInboxUrl(string $badgeKey): ?string
-    {
-        $codes = ReceiveSessionExceptionQuery::badgeTypeCodes()[$badgeKey] ?? [];
-
-        return ReceiveSessionExceptionInbox::url($this->getRecord(), $codes);
-    }
-
-    /**
-     * @return array<string, string|null>
-     */
-    public function receiveExceptionInboxUrls(): array
-    {
-        return ReceiveSessionExceptionInbox::badgeUrls($this->getRecord());
     }
 
     public function sessionProgress(): ReceivingSessionProgress

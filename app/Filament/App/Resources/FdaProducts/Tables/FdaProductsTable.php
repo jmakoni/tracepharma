@@ -95,8 +95,8 @@ class FdaProductsTable
                     ->placeholder('—')
                     ->columnFilter(
                         ColumnFilter::select()
-                            ->attribute('strength')
-                            ->options(fn (): array => DistinctColumnOptions::of(FdaProduct::class, 'strength')),
+                            ->options(fn (): array => self::distinctDisplayedStrengthOptions())
+                            ->applyUsing(fn (Builder $query, array $data): Builder => self::applyDisplayedStrengthFilter($query, $data)),
                     ),
                 TextColumn::make('net_contents')
                     ->label('Net contents')
@@ -137,5 +137,68 @@ class FdaProductsTable
             ->recordActions(RecordActionGroup::make([
                 ViewAction::make(),
             ]));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function distinctDisplayedStrengthOptions(int $limit = 250): array
+    {
+        $options = [];
+
+        foreach (
+            FdaProduct::query()
+                ->with(['activeIngredients' => fn (Builder $query): Builder => $query->orderBy('id')])
+                ->orderBy('product_ndc')
+                ->lazy(100) as $product
+        ) {
+            $strength = $product->activeIngredientStrength();
+
+            if (blank($strength)) {
+                continue;
+            }
+
+            $options[$strength] = $strength;
+
+            if (count($options) >= $limit) {
+                break;
+            }
+        }
+
+        natcasesort($options);
+
+        return $options;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private static function applyDisplayedStrengthFilter(Builder $query, array $data): Builder
+    {
+        $values = array_values(array_filter(
+            (array) ($data['values'] ?? $data['value'] ?? []),
+            fn (mixed $value): bool => filled($value),
+        ));
+
+        if ($values === []) {
+            return $query;
+        }
+
+        $matchingIds = [];
+
+        foreach (
+            FdaProduct::query()
+                ->select('id')
+                ->with(['activeIngredients' => fn (Builder $query): Builder => $query->orderBy('id')])
+                ->lazyById(200) as $product
+        ) {
+            $strength = $product->activeIngredientStrength();
+
+            if ($strength !== null && in_array($strength, $values, true)) {
+                $matchingIds[] = $product->id;
+            }
+        }
+
+        return $query->whereIn($query->getModel()->getQualifiedKeyName(), $matchingIds);
     }
 }

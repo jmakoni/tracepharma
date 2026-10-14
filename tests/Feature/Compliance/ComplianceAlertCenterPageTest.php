@@ -42,8 +42,8 @@ class ComplianceAlertCenterPageTest extends TestCase
             Livewire::test(AtpPartnerReadiness::class)
                 ->assertSuccessful()
                 ->assertSee('Partner ATP readiness')
-                ->assertSee('manual Pulse/OCI evidence')
-                ->assertSee('not a certified live Pulse/OCI directory API');
+                ->assertSee('partner-supplied evidence')
+                ->assertSee('not a certified Pulse/OCI directory API');
         } finally {
             tenancy()->end();
         }
@@ -66,7 +66,7 @@ class ComplianceAlertCenterPageTest extends TestCase
             Livewire::test(AtpPartnerReadiness::class)
                 ->assertSuccessful()
                 ->assertSee('Repackager ATP diligence.')
-                ->assertSee('manual Pulse/OCI evidence');
+                ->assertSee('partner-supplied evidence');
         } finally {
             $tenant->forceFill(['profile' => TenantProfile::Pharmacy])->save();
             tenancy()->end();
