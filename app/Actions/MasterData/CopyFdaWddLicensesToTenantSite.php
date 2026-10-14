@@ -38,6 +38,10 @@ final class CopyFdaWddLicensesToTenantSite
             return ['copied' => 0, 'pruned' => 0, 'stamped' => 0, 'unmatched' => 0];
         }
 
+        if (FdaTenantLink::establishmentId($tenantSite) !== null) {
+            return ['copied' => 0, 'pruned' => 0, 'stamped' => 0, 'unmatched' => 0];
+        }
+
         $facilityId = FdaTenantLink::wddFacilityId($tenantSite);
 
         if ($facilityId === null) {

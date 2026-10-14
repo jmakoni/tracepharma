@@ -6,7 +6,9 @@ use App\Filament\App\Resources\FdaProducts\Actions\AddFdaProductPackagesAction;
 use App\Filament\Support\RecordActionGroup;
 use App\Models\Fda\FdaOrganization;
 use App\Models\Fda\FdaProduct;
+use App\Models\Fda\FdaProductActiveIngredient;
 use App\Support\Catalog\DisplayName;
+use App\Support\Catalog\IngredientStrength;
 use App\Support\Fda\FdaRegistryStatus;
 use App\Support\Tables\DistinctColumnOptions;
 use Filament\Actions\ViewAction;
@@ -184,21 +186,17 @@ class FdaProductsTable
             return $query;
         }
 
-        $matchingIds = [];
+        $ingredientTable = (new FdaProductActiveIngredient)->getTable();
+        $expression = IngredientStrength::mysqlGroupConcatExpression();
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
 
-        foreach (
-            FdaProduct::query()
-                ->select('id')
-                ->with(['activeIngredients' => fn (Builder $query): Builder => $query->orderBy('id')])
-                ->lazyById(200) as $product
-        ) {
-            $strength = $product->activeIngredientStrength();
-
-            if ($strength !== null && in_array($strength, $values, true)) {
-                $matchingIds[] = $product->id;
-            }
-        }
-
-        return $query->whereIn($query->getModel()->getQualifiedKeyName(), $matchingIds);
+        return $query->whereIn($query->getModel()->getQualifiedKeyName(), function (Builder $sub) use ($ingredientTable, $expression, $placeholders, $values): void {
+            $sub->select('product_id_fk')
+                ->from($ingredientTable)
+                ->whereNotNull('strength')
+                ->whereRaw("TRIM(strength) != ''")
+                ->groupBy('product_id_fk')
+                ->havingRaw("{$expression} IN ({$placeholders})", $values);
+        });
     }
 }

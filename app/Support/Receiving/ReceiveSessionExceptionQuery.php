@@ -157,7 +157,10 @@ final class ReceiveSessionExceptionQuery
 
         foreach (self::badgeTypeCodes() as $key => $codes) {
             if ($key === 'quarantine') {
-                $counts[$key] = QuarantineHold::query()->open()->count();
+                $counts[$key] = ExceptionResource::getEloquentQuery()
+                    ->open()
+                    ->withOpenQuarantine()
+                    ->count();
 
                 continue;
             }

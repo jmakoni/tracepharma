@@ -377,7 +377,7 @@ class ExceptionsTable
                     ->modalDescription('Runs the current validator on each linked document’s stored file. Events and receiving sessions are not rewritten. Only still-true hard-blocking cases are considered.')
                     ->action(function ($records): void {
                         $eligible = collect($records)->filter(function ($record): bool {
-                            if (! $record instanceof ExceptionCase || $record->document_id === null) {
+                            if (! $record instanceof ExceptionCase || $record->sourceEpcisDocument() === null) {
                                 return false;
                             }
 
