@@ -98,3 +98,32 @@
     --depth: 1;
     --noise: 0;
 }
+
+/*
+ * Filament adds html.dark before data-theme=tracepharma-dark (and can race
+ * the MutationObserver). Keep dark tokens on html.dark so utilities like
+ * text-base-content cannot stay at light #676c73 on a dark canvas.
+ */
+html.dark {
+    color-scheme: dark;
+    --color-base-100: #2d3035;
+    --color-base-200: #676c73;
+    --color-base-300: #aeb2b9;
+    --color-base-content: #fcfcfd;
+    --color-primary: #51bc8f;
+    --color-primary-content: #fcfcfd;
+    --color-secondary: #838589;
+    --color-secondary-content: #fcfcfd;
+    --color-accent: #51bc8f;
+    --color-accent-content: #fcfcfd;
+    --color-neutral: #838589;
+    --color-neutral-content: #fcfcfd;
+    --color-info: #aeb2b9;
+    --color-info-content: #2d3035;
+    --color-success: #51bc8f;
+    --color-success-content: #2d3035;
+    --color-warning: #ffab00;
+    --color-warning-content: #2d3035;
+    --color-error: #ea4758;
+    --color-error-content: #fcfcfd;
+}

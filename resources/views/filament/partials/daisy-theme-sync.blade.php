@@ -15,5 +15,13 @@
             attributes: true,
             attributeFilter: ['class'],
         });
+
+        document.addEventListener('livewire:navigated', syncDaisyTheme);
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (typeof loadDarkMode === 'function') {
+                loadDarkMode();
+            }
+            syncDaisyTheme();
+        });
     })();
 </script>

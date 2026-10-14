@@ -43,6 +43,21 @@ html.dark .fi-topbar {
     border-block-end-color: var(--color-base-300);
 }
 
+/*
+ * Filament dark:text-* on surfaces that still use daisy --color-base-100
+ * must keep readable ink. Never force a light canvas in dark mode.
+ */
+html.dark .fi-body,
+html.dark .fi-main,
+html.dark .fi-section,
+html.dark .fi-ta-text,
+html.dark .fi-ta-text-item,
+html.dark .fi-in-entry-content,
+html.dark .fi-in-entry-label,
+html.dark .fi-tabs-item-label {
+    color: var(--color-base-content);
+}
+
 @media (min-width: 1024px) {
     .fi-sidebar.fi-sidebar-open {
         box-shadow: none;
@@ -184,7 +199,7 @@ html.dark .fi-topbar {
 
 .tp-regulatory-notice__icon {
     margin-block-start: 0.125rem;
-    color: var(--color-warning-content, var(--color-warning));
+    color: var(--color-warning);
 }
 
 .tp-regulatory-notice__label {
@@ -193,7 +208,7 @@ html.dark .fi-topbar {
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-warning-content, inherit);
+    color: inherit;
 }
 
 .tp-regulatory-notice__text {

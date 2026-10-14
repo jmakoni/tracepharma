@@ -1,4 +1,4 @@
-/* Relation-manager tabs: daisyUI tabs-border, left-aligned, white menu bar only.
+/* Relation-manager tabs: daisyUI tabs-border, left-aligned, theme-aware bar.
  * Filament assigns absolute ids like "content.relationManagerTabs" (use [id$=...]).
  */
 .fi-resource-view-record-page .fi-sc-tabs[id$="relationManagerTabs"],
@@ -32,7 +32,7 @@
     gap: 0;
     padding: 0 !important;
     border-radius: 0 !important;
-    background: #ffffff !important;
+    background: var(--color-base-100, #ffffff) !important;
     box-shadow: none !important;
     --tw-ring-shadow: 0 0 #0000 !important;
     --tw-ring-offset-shadow: 0 0 #0000 !important;
@@ -43,7 +43,20 @@
 
 .dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs:not(.fi-contained),
 html.dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs:not(.fi-contained) {
+    background: var(--color-base-100, #2d3035) !important;
     border-bottom-color: var(--color-base-300, #374151) !important;
+}
+
+.fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item-label,
+.fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item > .fi-icon {
+    color: var(--color-base-content, #676c73);
+}
+
+.dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item-label,
+html.dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item-label,
+.dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item > .fi-icon,
+html.dark .fi-sc-tabs[id$="relationManagerTabs"] > .fi-tabs .fi-tabs-item > .fi-icon {
+    color: var(--color-base-content, #fcfcfd);
 }
 
 /* daisyUI tabs-border: bottom accent on active tab */
