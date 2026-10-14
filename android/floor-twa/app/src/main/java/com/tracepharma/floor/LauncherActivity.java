@@ -62,11 +62,7 @@ public class LauncherActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (request == null || request.getUrl() == null) {
-                    return false;
-                }
-
-                return !isTrustedOrigin(request.getUrl());
+                return false;
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {

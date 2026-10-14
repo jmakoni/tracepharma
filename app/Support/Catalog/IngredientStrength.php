@@ -20,11 +20,21 @@ final class IngredientStrength
     public const MAX_LENGTH = 255;
 
     /**
-     * MySQL GROUP_CONCAT for {@see summarize()} when each ingredient strength is unique.
+     * SQL aggregate matching {@see summarize()} for grouped ingredient rows.
      */
-    public static function mysqlGroupConcatExpression(): string
+    public static function mysqlGroupedSummarizedStrengthExpression(string $ingredientTable): string
     {
-        return "GROUP_CONCAT(TRIM(strength) ORDER BY id SEPARATOR '; ')";
+        $max = self::MAX_LENGTH;
+
+        return "(SELECT LEFT(GROUP_CONCAT(s ORDER BY ord SEPARATOR '; '), {$max})
+            FROM (
+                SELECT TRIM(strength) AS s, MIN(id) AS ord
+                FROM `{$ingredientTable}` AS ingredient_inner
+                WHERE ingredient_inner.product_id_fk = `{$ingredientTable}`.product_id_fk
+                  AND ingredient_inner.strength IS NOT NULL
+                  AND TRIM(ingredient_inner.strength) <> ''
+                GROUP BY TRIM(ingredient_inner.strength)
+            ) AS ingredient_deduped)";
     }
 
     /**

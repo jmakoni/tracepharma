@@ -187,10 +187,10 @@ class FdaProductsTable
         }
 
         $ingredientTable = (new FdaProductActiveIngredient)->getTable();
-        $expression = IngredientStrength::mysqlGroupConcatExpression();
+        $expression = IngredientStrength::mysqlGroupedSummarizedStrengthExpression($ingredientTable);
         $placeholders = implode(', ', array_fill(0, count($values), '?'));
 
-        return $query->whereIn($query->getModel()->getQualifiedKeyName(), function (Builder $sub) use ($ingredientTable, $expression, $placeholders, $values): void {
+        return $query->whereIn($query->getModel()->getQualifiedKeyName(), function ($sub) use ($ingredientTable, $expression, $placeholders, $values): void {
             $sub->select('product_id_fk')
                 ->from($ingredientTable)
                 ->whereNotNull('strength')
